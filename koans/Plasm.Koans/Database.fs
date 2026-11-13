@@ -3,6 +3,7 @@
 module Plasm.Koans.Database
 
 open System
+open System.IO
 open System.Threading.Tasks
 open Npgsql
 open Testcontainers.PostgreSql
@@ -120,14 +121,18 @@ let provision () : Task<KoansDatabase> =
             | null
             | "" ->
                 task {
-                    let container =
-                        PostgreSqlBuilder("postgres:18.4")
-                            .WithLabel("plasm-koans", "true")
-                            // Quiet: the learner's terminal is for the koans.
-                            .WithLogger(Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance)
-                            .Build()
+                    // Quiet: the learner's terminal (or notebook) is for the koans,
+                    // so Testcontainers' console log is set aside while it starts.
+                    let console = Console.Out
+                    Console.SetOut TextWriter.Null
 
-                    do! container.StartAsync()
+                    let container =
+                        try
+                            let c = PostgreSqlBuilder("postgres:18.4").WithLabel("plasm-koans", "true").Build()
+                            c.StartAsync().GetAwaiter().GetResult()
+                            c
+                        finally
+                            Console.SetOut console
 
                     return
                         container.GetConnectionString(),

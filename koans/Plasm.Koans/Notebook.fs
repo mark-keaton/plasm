@@ -157,6 +157,7 @@ let generate (bin: string) : string =
     let setup =
         Code
             [ $"#I \"{bin}\""
+              "#r \"Microsoft.Extensions.Logging.Abstractions.dll\""
               "#r \"Plasm.dll\""
               "#r \"Plasm.Postgres.dll\""
               "#r \"Npgsql.dll\""

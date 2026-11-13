@@ -43,6 +43,10 @@ jobs:
       - name: Restore
         run: dotnet restore Plasm.slnx
 
+      # dotnet-repl runs the koans notebook in a real .NET Interactive kernel.
+      - name: Restore tools
+        run: dotnet tool restore
+
       - name: Build
         run: dotnet build Plasm.slnx -c Release --no-restore -p:VersionSuffix=${{ env.VERSION_SUFFIX }}
 

@@ -44,6 +44,12 @@ Feature: The koans as a notebook
       Then the koan cell shows the expected and the actual value
       And it shows what the koan teaches
 
+    Scenario: The notebook runs in a real .NET Interactive kernel
+      When the notebook as shipped and the notebook with the reference answers are run by dotnet-repl
+      Then as shipped every koan cell asks for its blank
+      And with the reference answers every koan cell passes
+      And no other cell reports an error
+
     Scenario: Re-running a koan cell starts from the same data
       When a koan cell that writes to the database is run twice with its reference answer
       Then it passes both times

@@ -146,8 +146,9 @@ The same koans come as a notebook, `koans/notebook/plasm-koans.ipynb`
 (`dotnet build koans/Plasm.Koans`), run the setup cell, then edit and run each
 koan cell until it shows ✔. The notebook is generated from the lessons
 (`dotnet run --project koans/Plasm.Koans -- --notebook koans/notebook/plasm-koans.ipynb`),
-and its cells are checked in a hosted F# Interactive session, as shipped and
-with the reference answers. What each koan teaches is specified in
+and it is checked cell by cell both in a hosted F# Interactive session and in
+a real .NET Interactive kernel (`dotnet-repl`, a local tool: `dotnet tool
+restore`), as shipped and with the reference answers. What each koan teaches is specified in
 `koans/features/lessons/*.feature`, each tracing to an acceptance scenario of
 Plasm; `koans/Plasm.Koans.Specs` checks that every koan passes with its
 reference answer (`koans/answers/`) and stops at its blank as shipped.

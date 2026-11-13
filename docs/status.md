@@ -342,6 +342,11 @@ payments, EF Core 11 (rc.3 provider) with `AsNoTracking`.
 
 **Known limitations:**
 
+- Plasm depends on FSharp.Core 8.0 or later (the packages declare
+  `FSharp.Core >= 8.0.403`), so it loads into hosts with an older FSharp.Core
+  than the SDK's, such as .NET Interactive notebook kernels. The koans
+  notebook is run in a real kernel (`dotnet-repl`) by the koans checks.
+
 - `DateTime` fields mapped to `timestamptz` must be UTC; Npgsql enforces this.
 - The PostgreSQL error-detail text is redacted by Npgsql unless
   `Include Error Detail` is set. Plasm reports SQLSTATE, constraint name and
@@ -414,14 +419,11 @@ payments, EF Core 11 (rc.3 provider) with `AsNoTracking`.
 | 2026-11-12 | Test sandbox: one rolled-back transaction, a savepoint per operation and per inner transaction | `features/sandbox.feature`, ADR 0001 |
 | 2026-11-12 | Prepared queries: probe `Arg<'T>` values, built once, parameters bound per call; take/skip quote their count instead of overloading (which broke inference) | `features/prepared-queries.feature`, ADR 0001 |
 | 2026-11-13 | Architecture audit follow-up: extended prepared queries plan their own description; `not` is two-valued (`IS NOT TRUE`); only immutable captured values allow plan caching; sandboxes nest; qualified error cases and closed/unreadable/unsupported failures as values; `TxContext` without the transaction; complete pipeline module; `hasOne` tested with `Rel.exists`; dialect hooks and capability checks | the six audit features, ADR 0001 |
+| 2026-11-13 | Plasm built against FSharp.Core 8.0 (not the SDK's 11.0): a notebook kernel with FSharp.Core 10 could not load it; the koans notebook now runs in a real kernel in CI | `koans/features/notebook.feature` |
 | 2026-11-13 | Second audit follow-up: only immutable module values and captures allow plan reuse; `not` is two-valued only over nullable operands; pipeline joins nest and translate; `repo.One` keeps `take` and reports `MoreThanOneRow`; displays hide values unless enabled; prepared load queries bind their own arguments; all public unions qualified; typed `StepFailure`/`Rejection`; one shape for unsupported operations; `Tx.run` commands refuse transaction control | `reading.feature` and new rules in six features, ADR 0001 |
 
 ## Suggested next steps
 
-0. The koans notebook (`koans/notebook/plasm-koans.ipynb`) is generated and
-   its cells are verified in a hosted F# Interactive session; run it once in
-   a real .NET Interactive kernel (Polyglot Notebooks, or `dotnet-repl --run`)
-   and add that run to CI if it holds.
 
 1. Choose a license, add the repository URL to the package metadata, and
    publish pre-release packages (the CI already builds them).

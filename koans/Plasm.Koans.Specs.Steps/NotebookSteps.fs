@@ -90,9 +90,72 @@ module Notebooks =
             finally
                 Console.SetOut original)
 
+/// Runs notebooks in a real .NET Interactive kernel with dotnet-repl (a local
+/// tool pinned in dotnet-tools.json), returning each code cell's output.
+module Kernel =
+    open System.Diagnostics
+
+    let private exec (args: string) (cwd: string) =
+        let psi = ProcessStartInfo("dotnet", args, WorkingDirectory = cwd, RedirectStandardOutput = true, RedirectStandardError = true)
+        // dotnet-repl targets .NET 10; let it run on the newer runtime the repository uses.
+        psi.Environment.["DOTNET_ROLL_FORWARD"] <- "Major"
+        use p = Process.Start psi
+        let out = p.StandardOutput.ReadToEndAsync()
+        let err = p.StandardError.ReadToEndAsync()
+        p.WaitForExit()
+        p.ExitCode, out.Result + err.Result
+
+    let run (notebookJson: string) =
+        let dir = Directory.CreateTempSubdirectory("plasm-kernel").FullName
+        let input = Path.Combine(dir, "koans.ipynb")
+        let output = Path.Combine(dir, "out.ipynb")
+        File.WriteAllText(input, notebookJson)
+        let code, restoreOut = exec "tool restore" root
+        if code <> 0 then failwithf "dotnet tool restore failed:\n%s" restoreOut
+
+        let _, log =
+            exec $"tool run dotnet-repl --run \"{input}\" --exit-after-run --output-format ipynb --output-path \"{output}\" --default-kernel fsharp" root
+
+        if not (File.Exists output) then failwithf "dotnet-repl produced no notebook:\n%s" log
+        use doc = JsonDocument.Parse(File.ReadAllText output)
+
+        doc.RootElement.GetProperty("cells").EnumerateArray()
+        |> Seq.filter (fun c -> c.GetProperty("cell_type").GetString() = "code")
+        |> Seq.map (fun c ->
+            let source = c.GetProperty("source").EnumerateArray() |> Seq.map (fun l -> l.GetString()) |> String.concat ""
+
+            let text =
+                c.GetProperty("outputs").EnumerateArray()
+                |> Seq.map (fun o ->
+                    let pick (name: string) =
+                        match o.TryGetProperty name with
+                        | true, v when v.ValueKind = JsonValueKind.Array -> v.EnumerateArray() |> Seq.map (fun l -> l.GetString()) |> String.concat ""
+                        | true, v when v.ValueKind = JsonValueKind.String -> v.GetString()
+                        | _ -> ""
+
+                    let data =
+                        match o.TryGetProperty "data" with
+                        | true, d ->
+                            match d.TryGetProperty "text/plain" with
+                            | true, v when v.ValueKind = JsonValueKind.Array -> v.EnumerateArray() |> Seq.map (fun l -> l.GetString()) |> String.concat ""
+                            | true, v -> v.GetString()
+                            | _ -> ""
+                        | _ -> ""
+
+                    pick "text" + data + pick "evalue")
+                |> String.concat "\n"
+
+            { Cell = { Kind = "code"; Source = source }
+              Output = text
+              Errors = []
+              Failure = None })
+        |> List.ofSeq
+
 /// Feature: The koans as a notebook
 [<Binding>]
 type NotebookSteps(w: KoansWorld) =
+
+    let mutable kernelRuns: (CellRun list * CellRun list) option = None
 
     let mutable notebook: NotebookCell list = []
     let mutable runs: CellRun list = []
@@ -243,3 +306,46 @@ type NotebookSteps(w: KoansWorld) =
 
         for r in koanRuns do
             check (r.Output.Contains "✔ Inserting returns the stored record") $"{r.Output} %A{r.Errors} %A{r.Failure}"
+
+    [<StepDefinition("the notebook as shipped and the notebook with the reference answers are run by dotnet-repl")>]
+    member _.RunInKernel() =
+        task {
+            let! shippedProgram = shipped ()
+            let! answeredProgram = answered ()
+            let! shippedJson = Notebooks.generate shippedProgram
+            let! answeredJson = Notebooks.generate answeredProgram
+            kernelRuns <- Some(Kernel.run shippedJson, Kernel.run answeredJson)
+        }
+        |> unit
+
+    [<StepDefinition("as shipped every koan cell asks for its blank")>]
+    member _.KernelShipped() =
+        let runs, _ = kernelRuns.Value
+        let koans = runs |> List.filter (fun r -> (Notebooks.koanName r.Cell).IsSome)
+        check (koans.Length = (koanSpecs ()).Length) $"{koans.Length} koan cells ran"
+
+        for r in koans do
+            check (r.Output.Contains "Fill in the blank (__) in this cell") $"{(Notebooks.koanName r.Cell).Value}:\n{r.Output}"
+
+    [<StepDefinition("with the reference answers every koan cell passes")>]
+    member _.KernelAnswered() =
+        let _, runs = kernelRuns.Value
+
+        let failing =
+            runs
+            |> List.filter (fun r -> (Notebooks.koanName r.Cell).IsSome && not (r.Output.Contains "✔"))
+            |> List.map (fun r -> $"{(Notebooks.koanName r.Cell).Value}:\n{r.Output}")
+
+        check failing.IsEmpty (String.concat "\n\n" failing)
+
+    [<StepDefinition("no other cell reports an error")>]
+    member _.KernelNoErrors() =
+        let a, b = kernelRuns.Value
+
+        let bad =
+            a @ b
+            |> List.filter (fun r -> (Notebooks.koanName r.Cell).IsNone)
+            |> List.filter (fun r -> r.Output.Contains "error" || r.Output.Contains "Exception")
+            |> List.map (fun r -> $"{r.Cell.Source}\n=> {r.Output}")
+
+        check bad.IsEmpty (String.concat "\n\n" bad)

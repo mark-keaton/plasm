@@ -10,7 +10,6 @@
     <Compile Include="NotebookSteps.fs" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="FSharp.Core" />
     <PackageReference Include="Reqnroll" />
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Testcontainers.PostgreSql" />
