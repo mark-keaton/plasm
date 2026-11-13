@@ -1,4 +1,5 @@
 {
   "$schema": "https://schemas.reqnroll.net/reqnroll-config-latest.json",
-  "bindingAssemblies": [ { "assembly": "Plasm.Koans.Browser.Specs.Steps" } ]
+  "bindingAssemblies": [ { "assembly": "Plasm.Koans.Browser.Specs.Steps" } ],
+  "generator": { "addNonParallelizableMarkerForTags": [ "serial" ] }
 }

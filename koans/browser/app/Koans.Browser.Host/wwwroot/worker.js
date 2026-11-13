@@ -12,7 +12,7 @@ const since = () => Math.round(performance.now() - t0);
 // NameResolution.AddTyconRefsToNameEnv); with them off it compiles indefinitely.
 const dotnetStarting = dotnet.withEnvironmentVariable('MONO_INTERPRETER_OPTIONS', '-bblocks,-ssa').create();
 const db = await PGlite.create();
-post({ type: 'progress', what: 'database', ms: since() });
+post({ type: 'progress', what: 'the database', ms: since() });
 
 // Values cross the boundary as PostgreSQL text: every result value is left as
 // text (the .NET side converts by type OID) and text parameters pass through.
@@ -93,14 +93,14 @@ function execSync(sql) {
 const { setModuleImports, getAssemblyExports, getConfig } = await dotnetStarting;
 setModuleImports('worker.js', { pglite: { query, execSync } });
 const exports = (await getAssemblyExports(getConfig().mainAssemblyName)).KoansHost;
-post({ type: 'progress', what: 'runtime', ms: since() });
+post({ type: 'progress', what: 'the .NET libraries', ms: since() });
 
 // The compiler's reference assemblies.
 const names = (await (await fetch('refs/list.txt')).text()).split('\n').filter((n) => n);
 await Promise.all(names.map(async (n) => {
   exports.AddReference(n, new Uint8Array(await (await fetch('refs/' + n)).arrayBuffer()));
 }));
-post({ type: 'progress', what: 'compiler', ms: since() });
+post({ type: 'progress', what: 'the compiler', ms: since() });
 
 await exports.Init();
 post({ type: 'ready', ms: since() });

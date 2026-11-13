@@ -2,6 +2,9 @@
 # Written before the implementation. The page loads the F# compiler (WebAssembly)
 # and PostgreSQL (PGlite, WebAssembly) and runs every koan in the page itself.
 # Checks drive a real headless browser (Playwright).
+# @serial: its loading budget is measured over a simulated connection that
+# must not be shared with other scenarios' downloads.
+@serial
 Feature: The koans run in a web browser
   As a developer curious about Plasm
   I want to open a web page and start the koans

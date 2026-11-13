@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Plasm Koans in a terminal</title>
+<style>body { font: 16px/1.6 system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; } pre { background: #f4f4f4; padding: .75rem; }</style></head>
+<body>
+<h1>The Plasm Koans in a terminal</h1>
+<p>The same koans run on your machine with the .NET SDK and Docker (or a PostgreSQL server):</p>
+<pre>git clone &lt;the Plasm repository&gt;
+cd plasm
+dotnet run --project koans/Plasm.Koans</pre>
+<p>Fill in each blank (<code>__</code>) in <code>koans/Plasm.Koans/Lessons</code> and run the command again.
+Set <code>PLASM_KOANS_PG</code> to an admin connection string to use your own PostgreSQL server instead of Docker.</p>
+<p><a href="index.html">Back to the koans in the browser</a></p>
+</body>
+</html>

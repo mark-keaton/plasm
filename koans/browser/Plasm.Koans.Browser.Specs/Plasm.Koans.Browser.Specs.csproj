@@ -8,8 +8,8 @@
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ReqnrollFeatureFiles Include="../features/running-koans.feature;../features/course-experience.feature;../features/database-in-the-browser.feature;../features/pglite-provider.feature" />
-    <None Include="../features/running-koans.feature;../features/course-experience.feature;../features/database-in-the-browser.feature;../features/pglite-provider.feature" Link="Features/%(Filename)%(Extension)" />
+    <ReqnrollFeatureFiles Include="../features/running-koans.feature;../features/course-experience.feature;../features/database-in-the-browser.feature;../features/pglite-provider.feature;../features/course-in-the-browser.feature" />
+    <None Include="../features/running-koans.feature;../features/course-experience.feature;../features/database-in-the-browser.feature;../features/pglite-provider.feature;../features/course-in-the-browser.feature" Link="Features/%(Filename)%(Extension)" />
     <None Update="reqnroll.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>

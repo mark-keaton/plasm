@@ -1,9 +1,19 @@
 // The koans page. The engine (PGlite and .NET with the F# compiler) runs in a
 // Web Worker, so the page stays responsive while a koan compiles and runs; a
 // koan that does not finish is stopped by replacing the worker.
-const course = await (await fetch('course.json')).json();
 const $ = (id) => document.getElementById(id);
 const status = (text) => { $('status').textContent = text; };
+
+// The engine needs WebAssembly; without it, say so and point at the terminal version.
+if (typeof WebAssembly !== 'object') {
+  $('status').innerHTML = 'The koans run in your browser with WebAssembly, which this browser does not provide. ' +
+    'You can <a href="terminal.html">run the koans in a terminal</a> instead.';
+  throw new Error('WebAssembly is not available');
+}
+
+
+status('Loading the database, the .NET libraries and the compiler…');
+const course = await (await fetch('course.json')).json();
 
 function startEngine() {
   const worker = new Worker('worker.js', { type: 'module' });
@@ -185,4 +195,13 @@ updateProgress();
 show(0, 0);
 const ready = await engine.ready;
 window.koansReady = true;
+
+// Once the koans are ready, store the site for offline use in the background
+// (it would otherwise compete with loading). Works on HTTPS and localhost.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data === 'offline-ready') window.koansOffline = true; });
+  navigator.serviceWorker.register('sw.js').then(async () => {
+    (await navigator.serviceWorker.ready).active.postMessage('store');
+  }).catch(() => { /* offline use is optional */ });
+}
 status(`Ready (loaded in ${(ready.readyMs / 1000).toFixed(1)} s). Fill in each blank (__) and press Run.`);

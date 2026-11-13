@@ -433,3 +433,7 @@ payments, EF Core 11 (rc.3 provider) with `AsNoTracking`.
    (SQLite or SQL Server); move the catalogue queries and the link SQL behind
    it.
 5. Diagnostics as OpenTelemetry activities.
+6. Compare Plasm with [SqlHydra](https://github.com/JordanMarr/SqlHydra),
+   especially enums: how each maps .NET enums and discriminated unions to
+   PostgreSQL enum types, and what the recent Npgsql enum mapping changes
+   (data-source-level `MapEnum`) mean for Plasm's providers.

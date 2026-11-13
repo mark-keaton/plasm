@@ -42,10 +42,33 @@ let private contentType (path: string) =
     | ".css" -> "text/css"
     | _ -> "application/octet-stream"
 
-/// Every path the site has served, in order (for "only static files" checks).
-let served = Collections.Concurrent.ConcurrentQueue<string>()
+/// What the site has served: (method, path, bytes on the wire), in order.
+let served = Collections.Concurrent.ConcurrentQueue<string * string * int64>()
 
-/// Serves the staged site on a free local port; returns its base URL.
+/// Simulated connection speed in bytes per second (0 = unlimited), shared by
+/// every response, as one network link would be.
+let mutable bytesPerSecond = 0.0
+
+/// The Accept-Encoding of the last request (diagnostics).
+let mutable lastAccept = ""
+let private link = obj ()
+let mutable private linkFree = DateTime.UtcNow
+
+let private throttle (bytes: int) =
+    task {
+        if bytesPerSecond > 0.0 then
+            let finish =
+                lock link (fun () ->
+                    let start = max DateTime.UtcNow linkFree
+                    linkFree <- start.AddSeconds(float bytes / bytesPerSecond)
+                    linkFree)
+
+            let wait = finish - DateTime.UtcNow
+            if wait > TimeSpan.Zero then do! Task.Delay wait
+    }
+
+/// Serves the staged site on a free local port; returns its base URL. Like a
+/// static host, it sends the precompressed .br or .gz file when the browser accepts it.
 let private server =
     lazy
         (let site = staged.Force()
@@ -65,16 +88,29 @@ let private server =
                  try
                      let path = Uri.UnescapeDataString(ctx.Request.Url.AbsolutePath.TrimStart('/'))
                      let path = if path = "" then "index.html" else path
-                     served.Enqueue path
                      let file = Path.GetFullPath(Path.Combine(site, path))
 
-                     if file.StartsWith(Path.GetFullPath site) && File.Exists file then
+                     if ctx.Request.HttpMethod = "GET" && file.StartsWith(Path.GetFullPath site) && File.Exists file then
+                         let accepted = defaultArg (Option.ofObj ctx.Request.Headers.["Accept-Encoding"]) ""
+                         lastAccept <- accepted
+
+                         let body, encoding =
+                             if accepted.Contains "br" && File.Exists(file + ".br") then File.ReadAllBytes(file + ".br"), Some "br"
+                             elif accepted.Contains "gzip" && File.Exists(file + ".gz") then File.ReadAllBytes(file + ".gz"), Some "gzip"
+                             else File.ReadAllBytes file, None
+                         served.Enqueue(ctx.Request.HttpMethod, path, int64 body.Length)
                          ctx.Response.ContentType <- contentType file
-                         ctx.Response.Headers.["Cache-Control"] <- "no-store"
-                         let bytes = File.ReadAllBytes file
-                         ctx.Response.ContentLength64 <- int64 bytes.Length
-                         do! ctx.Response.OutputStream.WriteAsync(bytes, 0, bytes.Length)
+                         ctx.Response.Headers.["Cache-Control"] <- "no-cache"
+                         encoding |> Option.iter (fun e -> ctx.Response.Headers.["Content-Encoding"] <- e)
+                         ctx.Response.ContentLength64 <- int64 body.Length
+
+                         // In chunks, so a throttled link interleaves parallel downloads.
+                         for offset in 0 .. 65536 .. body.Length - 1 do
+                             let n = min 65536 (body.Length - offset)
+                             do! throttle n
+                             do! ctx.Response.OutputStream.WriteAsync(body, offset, n)
                      else
+                         served.Enqueue(ctx.Request.HttpMethod, path, 0L)
                          ctx.Response.StatusCode <- 404
                  finally
                      ctx.Response.Close()
@@ -119,11 +155,17 @@ let private browser =
             return! pw.Chromium.LaunchAsync options
         })
 
+/// A new browser context's page (a first visit), not yet navigated.
+let newPage () =
+    task {
+        let! b = browser.Force()
+        return! b.NewPageAsync()
+    }
+
 /// A new page with the koans loaded and ready.
 let openKoans () =
     task {
-        let! b = browser.Force()
-        let! page = b.NewPageAsync()
+        let! page = newPage ()
         let! _ = page.GotoAsync(baseUrl () + "index.html")
         let! _ = page.WaitForFunctionAsync("() => window.koansReady === true", null, PageWaitForFunctionOptions(Timeout = Nullable 180000.f))
         return page
