@@ -8,8 +8,8 @@
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ReqnrollFeatureFiles Include="../features/running-koans.feature" />
-    <None Include="../features/running-koans.feature" Link="Features/%(Filename)%(Extension)" />
+    <ReqnrollFeatureFiles Include="../features/running-koans.feature;../features/course-experience.feature" />
+    <None Include="../features/running-koans.feature;../features/course-experience.feature" Link="Features/%(Filename)%(Extension)" />
     <None Update="reqnroll.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>

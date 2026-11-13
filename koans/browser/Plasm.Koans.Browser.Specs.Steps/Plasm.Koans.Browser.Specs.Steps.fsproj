@@ -5,6 +5,7 @@
   <ItemGroup>
     <Compile Include="Site.fs" />
     <Compile Include="RunningSteps.fs" />
+    <Compile Include="CourseSteps.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Reqnroll" />

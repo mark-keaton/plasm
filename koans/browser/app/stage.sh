@@ -6,8 +6,11 @@ here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"
 site=$1
 mkdir -p "$site"
-dotnet publish "$here/Koans.Browser.Host" -c Release -o "$here/obj/publish" -v q
-rsync -a "$here/obj/publish/wwwroot/" "$site/"
+# A fresh publish folder: publishing into an old one keeps the old hashed files.
+pub=$(mktemp -d)
+trap 'rm -rf "${pub:?}"' EXIT
+dotnet publish "$here/Koans.Browser.Host" -c Release -o "$pub" -v q
+rsync -a --delete "$pub/wwwroot/" "$site/"
 (cd "$here" && [ -d node_modules/@electric-sql/pglite ] || npm install --no-audit --no-fund --silent)
 rsync -a "$here/node_modules/@electric-sql/pglite/dist/" "$site/pglite/"
 mkdir -p "$site/refs"
@@ -20,4 +23,6 @@ for dll in FSharp.Core Plasm Plasm.Koans.Core; do
 done
 (cd "$site/refs" && ls *.dll > list.txt)
 dotnet run --project "$root/koans/Plasm.Koans" -- --course "$site/course.json" > /dev/null
+# Plasm's acceptance specification, which each koan links to.
+mkdir -p "$site/spec" && cp "$root"/features/*.feature "$site/spec/"
 echo "staged $site"
