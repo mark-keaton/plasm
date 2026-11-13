@@ -16,16 +16,104 @@ type WriteError<'T> =
     | Stale of Changeset<'T>
     /// A database failure not described by the changeset's constraints.
     | Failed of DbFailure
+    /// The row was written but could not be read back into the domain model
+    /// (for example a trigger stored a value the model rejects). A write that
+    /// ran in a transaction (one with children or links) is rolled back; a
+    /// single-row write is not.
+    | Materialization of MaterializationError
+    /// The write could not be translated, or the provider cannot perform it
+    /// (`TranslationError.UnsupportedByProvider`, naming the missing
+    /// capability). Nothing was sent to the database.
+    | Translation of TranslationError
+
+/// Text for query displays (F# Interactive): SQL broken before its top-level
+/// clauses, with parameter values.
+module internal QueryDisplay =
+    open System.Text
+
+    let private clauses =
+        [ " FROM "; " INNER JOIN "; " LEFT JOIN "; " WHERE "; " GROUP BY "; " HAVING "; " ORDER BY "; " LIMIT "; " OFFSET " ]
+
+    /// Breaks the SQL before clauses that are outside parentheses and literals.
+    let pretty (sql: string) =
+        let sb = StringBuilder()
+        let mutable depth = 0
+        let mutable quoted = false
+        let mutable i = 0
+
+        while i < sql.Length do
+            let c = sql.[i]
+
+            if c = '\'' then quoted <- not quoted
+
+            if not quoted then
+                if c = '(' then depth <- depth + 1
+                elif c = ')' then depth <- depth - 1
+
+            let clause =
+                if depth = 0 && not quoted then
+                    clauses |> List.tryFind (fun k -> String.CompareOrdinal(sql, i, k, 0, k.Length) = 0)
+                else
+                    None
+
+            match clause with
+            | Some k ->
+                sb.Append('\n').Append(k.TrimStart()) |> ignore
+                i <- i + k.Length
+            | None ->
+                sb.Append c |> ignore
+                i <- i + 1
+
+        sb.ToString()
+
+    let rec value (args: obj[]) (v: obj) =
+        match v with
+        | null -> "NULL"
+        | v when v = box DBNull.Value -> "NULL"
+        | :? Sql.Bound as b ->
+            // A prepared-query argument: its bound value, and which argument it
+            // is (Arg(1).Value -> argument 1).
+            let label =
+                Text.RegularExpressions.Regex.Replace(b.Label, @"Arg\((\d+)\)\.Value|\barg(\d+)\b", "argument $1$2")
+
+            if args.Length > 0 then
+                $"{value [||] (b.Resolve args)}  ({label})"
+            else
+                $"<{label}>"
+        | v -> sprintf "%A" v
+
+    let indent (prefix: string) (text: string) =
+        text.Split('\n') |> Array.map (fun l -> prefix + l) |> String.concat "\n"
+
+    let command (dialect: ISqlDialect) (showValues: bool) (args: obj[]) (cmd: Sql.Command) =
+        let parameters =
+            cmd.Parameters
+            |> List.mapi (fun i p ->
+                if showValues then
+                    $"    {dialect.ParameterName i} = {value args p}"
+                else
+                    $"    {dialect.ParameterName i} = (value hidden; set IncludeParameterValues to show it)")
+
+        String.concat "\n" (indent "  " (pretty cmd.Sql) :: parameters)
+
+    let rec loads (steps: LoadStep list) =
+        steps
+        |> List.collect (fun l ->
+            let header = $"  then {l.Path} ({l.Relationship}, {l.Target}), one command per batch of keys:"
+            [ header; indent "  " (pretty l.Sql) ] @ loads l.Children)
 
 /// The explicit boundary where persistence descriptions are executed. Every
 /// member performs database work; nothing else in the library does.
-[<Sealed>]
 type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
     let options = defaultArg options RepoOptions.Default
 
     // Queries are immutable values, so a plan can be reused for the same value,
     // unless translation evaluated something volatile (Plan.Reusable = false).
     let plans = ConditionalWeakTable<QueryDef, Planner.Plan>()
+    let oneDefs = ConditionalWeakTable<QueryDef, QueryDef>()
+
+    // How many plans this repo has made (for tests: cache behaviour).
+    let mutable planned = 0
 
     let planFor (def: QueryDef) =
         // A prepared query is planned once, through its template.
@@ -34,6 +122,8 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
         match plans.TryGetValue def with
         | true, p -> Ok p
         | _ ->
+            Threading.Interlocked.Increment(&planned) |> ignore
+
             match Planner.plan provider.Dialect model def with
             | Ok p when p.Reusable ->
                 plans.AddOrUpdate(def, p)
@@ -72,6 +162,40 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
 
     let withSession ct snapshot body = withArgs [||] ct snapshot body
 
+    // Parameter values appear in a query's display only when this repo's
+    // diagnostics include them, or when the query's types were defined in F#
+    // Interactive (where the person typing is the one who supplied them).
+    let showValues (def: QueryDef) =
+        options.IncludeParameterValues
+        || (Reflection.Fsi.submission def.Root).IsSome
+        || def.Joins |> List.exists (fun j -> (Reflection.Fsi.submission j.Target).IsSome)
+
+    // Lets query values display their SQL; held by this repo, registered weakly.
+    let describer =
+        { new IQueryDescriber with
+            member _.Knows t = (model.TrySchema t).IsSome || (model.Redefinition t).IsSome
+
+            member _.Describe def =
+                let text =
+                    // Planned afresh, never cached: displaying a query must not
+                    // change how it later runs.
+                    if def.Joins.IsEmpty then
+                        Planner.plan provider.Dialect model (defaultArg def.Template def)
+                        |> Result.map (fun p ->
+                            let plan = Planner.describe provider.Dialect p
+                            QueryDisplay.command provider.Dialect (showValues def) def.Args (Sql.renderSelect provider.Dialect p.Root) :: QueryDisplay.loads plan.Loads)
+                    else
+                        Translate.projection model (ref false) def None
+                        |> Result.map (fun (select, _) -> [ QueryDisplay.command provider.Dialect (showValues def) def.Args (Sql.renderSelect provider.Dialect select) ])
+
+                // F# Interactive puts a long first line on its own line,
+                // indented by two like the rest.
+                match text with
+                | Ok lines -> (String.concat "\n" lines).TrimStart()
+                | Error e -> (QueryDisplay.indent "  " $"cannot be translated: {e}").TrimStart() }
+
+    do Describers.register describer
+
     let single (select: Sql.Select) (args: obj[]) (ct: CancellationToken) (read: Data.Common.DbDataReader -> 'a) =
         withArgs args ct false (fun s ->
             task {
@@ -81,6 +205,11 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
 
     member _.Model = model
     member _.Provider = provider
+    member internal _.Options = options
+    member internal _.PlansMade = planned
+
+    // Keeps the describer (registered weakly) alive as long as this repo.
+    member internal _.Describer = describer
 
     /// Describes how a query would execute. Performs no database access.
     member _.Explain(query: Query<'T>) : Result<QueryPlan, TranslationError> =
@@ -109,18 +238,18 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
               if not query.Def.Joins.IsEmpty then
                 // A joined query returns combined rows: read it as a projection.
                 match Translate.projection model (ref false) query.Def None with
-                | Error e -> return Error(Translation e)
+                | Error e -> return Error(DbError.Translation e)
                 | Ok(select, shape) ->
                     let! rows = withArgs query.Def.Args ct false (fun s -> Execution.readProjection s select shape query.Def.Root.Name)
                     return Ok(rows |> List.map unbox<'T>)
               else
                 match planFor query.Def with
-                | Error e -> return Error(Translation e)
+                | Error e -> return Error(DbError.Translation e)
                 | Ok plan ->
                     let snapshot = consistency = ReadConsistency.Snapshot && not plan.Loads.IsEmpty
 
                     if snapshot && not provider.Dialect.Capabilities.SnapshotReads then
-                        return Error(Translation(UnsupportedByProvider("snapshot reads", provider.Dialect.Name)))
+                        return Error(DbError.Translation(TranslationError.UnsupportedByProvider("snapshot reads", provider.Dialect.Name)))
                     else
                         let! rows = withArgs query.Def.Args ct snapshot (fun s -> Execution.readRoot s plan)
                         return Ok(rows |> List.map unbox<'T>)
@@ -133,7 +262,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
         Execution.guard provider (fun () ->
             task {
                 match Translate.projection model (ref false) projection.Def (Some projection.Select) with
-                | Error e -> return Error(Translation e)
+                | Error e -> return Error(DbError.Translation e)
                 | Ok(select, shape) ->
                     let! rows =
                         withArgs projection.Def.Args ct false (fun s -> Execution.readProjection s select shape projection.Def.Root.Name)
@@ -150,7 +279,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
         Execution.guard provider (fun () ->
             task {
                 match Translate.countSelect model (ref false) query.Def with
-                | Error e -> return Error(Translation e)
+                | Error e -> return Error(DbError.Translation e)
                 | Ok select ->
                     let! rows = single select query.Def.Args ct (fun r -> Convert.ToInt64(r.GetValue 0))
                     return Ok rows.[0]
@@ -163,7 +292,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
         Execution.guard provider (fun () ->
             task {
                 match Translate.existsSelect model (ref false) query.Def with
-                | Error e -> return Error(Translation e)
+                | Error e -> return Error(DbError.Translation e)
                 | Ok select ->
                     let! rows = single select query.Def.Args ct ignore
                     return Ok(rows.Count > 0)
@@ -176,7 +305,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
             match! this.All(projection, cancellationToken = defaultArg cancellationToken CancellationToken.None) with
             | Ok [] -> return Ok None
             | Ok [ x ] -> return Ok(Some x)
-            | Ok _ -> return Error(Translation(InvalidQuery "expected at most one row but the projection returned more"))
+            | Ok _ -> return Error DbError.MoreThanOneRow
             | Error e -> return Error e
         }
 
@@ -195,7 +324,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
         Execution.guard provider (fun () ->
             task {
                 match BulkExec.commands model provider.Dialect write.Def with
-                | Error e -> return Error(Translation e)
+                | Error e -> return Error(DbError.Translation e)
                 | Ok [] -> return Ok(write.Finish(box ([]: obj list)))
                 | Ok cmds ->
                     let args =
@@ -278,6 +407,27 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                 return Ok issues
             })
 
+    /// F# source for a record and a schema that map `table`, generated from the
+    /// database catalogue: column types become F# types, nullable columns
+    /// become options, the primary key becomes `key` (or `identityKey` when the
+    /// database generates it), and columns with no F# type in this dialect are
+    /// left out with a comment. Reads only the catalogue.
+    member _.Scaffold(table: string, ?cancellationToken: CancellationToken) : Task<Result<Scaffold, ScaffoldError>> =
+        let ct = defaultArg cancellationToken CancellationToken.None
+
+        task {
+            let! r =
+                Execution.guard provider (fun () ->
+                    task {
+                        let! r = withSession ct false (fun s -> Scaffolding.run table s)
+                        return Ok r
+                    })
+
+            match r with
+            | Ok inner -> return inner
+            | Error e -> return Error(ScaffoldError.Failed e)
+        }
+
     /// Runs `body` with a repository whose work happens inside one database
     /// transaction that is rolled back when `body` finishes: a test sandbox
     /// (Ecto's SQL sandbox). Transactions inside it become savepoints, each
@@ -290,11 +440,14 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
         task {
             use! conn = provider.OpenConnection ct
             use! tx = provider.BeginTransaction(conn, IsolationLevel.ReadCommitted, ct)
-            let sandbox = Repo(model, SandboxProvider(provider, conn, tx), options)
+            let sandboxProvider = SandboxProvider(provider, conn, tx)
+            let sandbox = Repo(model, sandboxProvider, options)
 
             try
                 return! body sandbox
             finally
+                sandboxProvider.End()
+
                 try
                     tx.Rollback()
                 with _ ->
@@ -304,31 +457,35 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
     /// Executes a query expected to return at most one row.
     member this.One(query: Query<'T>, ?cancellationToken: CancellationToken) =
         task {
-            let limited = Query<'T>({ query.Def with Limit = Some 2; Template = None })
-
-            let limited =
-                if limited.Def.Orders.IsEmpty then
-                    // Paging a single-row lookup needs no caller ordering; order by key.
-                    let schema = model.TrySchema typeof<'T>
-
-                    match schema with
-                    | Some s ->
-                        let v = Quotations.Var("x", typeof<'T>)
-
-                        let key =
-                            Quotations.Expr.Lambda(v, Quotations.Expr.PropertyGet(Quotations.Expr.Var v, s.Shape.Fields.[s.Key.Index]))
-
-                        Query<'T>({ limited.Def with Orders = [ key, Ascending ] })
-                    | None -> limited
-                else
-                    limited
+            // Remembered per query value, so repeated lookups reuse one plan.
+            let limited = Query<'T>(oneDefs.GetValue(query.Def, fun d -> Repo.LimitForOne(model, d)))
 
             match! this.All(limited, cancellationToken = defaultArg cancellationToken CancellationToken.None) with
             | Ok [] -> return Ok None
             | Ok [ x ] -> return Ok(Some x)
-            | Ok _ -> return Error(Translation(InvalidQuery "expected at most one row but the query matched more"))
+            | Ok _ -> return Error DbError.MoreThanOneRow
             | Error e -> return Error e
         }
+
+    /// The query `One` runs: at most two rows (enough to detect a second
+    /// match), never more than the query's own limit, ordered by key when the
+    /// query has no ordering.
+    static member private LimitForOne(model: Model, d: QueryDef) : QueryDef =
+        let limited =
+            match d.Limit, d.LimitArg with
+            | Some n, _ when n <= 2 -> d
+            | _, Some _ -> d // a prepared take: checked on the rows returned
+            | _ -> { d with Limit = Some 2; Template = None }
+
+        if not (obj.ReferenceEquals(limited, d)) && limited.Orders.IsEmpty then
+            match model.TrySchema limited.Root with
+            | Some s ->
+                let v = Quotations.Var("x", limited.Root)
+                let key = Quotations.Expr.Lambda(v, Quotations.Expr.PropertyGet(Quotations.Expr.Var v, s.Shape.Fields.[s.Key.Index]))
+                { limited with Orders = [ key, SortDirection.Ascending ] }
+            | None -> limited
+        else
+            limited
 
     /// Loads relationships onto values already in hand, returning new values.
     /// `loads` is a query whose preloads are applied; it must not filter, order
@@ -343,13 +500,13 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
 
                 if not d.Wheres.IsEmpty || not d.Orders.IsEmpty || d.Limit.IsSome || d.Offset.IsSome then
                     return
-                        Error(Translation(InvalidQuery "a load specification for existing values may only contain preloads"))
+                        Error(DbError.Translation(TranslationError.InvalidQuery "a load specification for existing values may only contain preloads"))
                 else
                     match model.Schema typeof<'T> with
-                    | Error e -> return Error(Translation e)
+                    | Error e -> return Error(DbError.Translation e)
                     | Ok schema ->
                         match Planner.planLoads provider.Dialect model schema d.Loads with
-                        | Error e -> return Error(Translation e)
+                        | Error e -> return Error(DbError.Translation e)
                         | Ok nodes when values.IsEmpty || nodes.IsEmpty -> return Ok values
                         | Ok nodes ->
                             let rows =
@@ -404,9 +561,10 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                         | Writes.Invalid s -> return Error(WriteError.Invalid(Changeset<'T>(s)))
                         | Writes.Stale s -> return Error(WriteError.Stale(Changeset<'T>(s)))
                         | Writes.Failed f -> return Error(WriteError.Failed f)
+                        | Writes.Unsupported op -> return Error(WriteError.Translation(TranslationError.UnsupportedByProvider(op, provider.Dialect.Name)))
                 with
                 | :? OperationCanceledException as ex -> return Err.rethrow ex
-                | Execution.MaterializationFailure m -> return raise (InvalidOperationException($"{m.Model}.{m.Property}: {m.Message}"))
+                | Execution.MaterializationFailure m -> return Error(WriteError.Materialization m)
                 | ex ->
                     match provider.Classify ex with
                     | Some f -> return Error(WriteError.Failed f)
@@ -416,16 +574,19 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
     /// Validates and inserts. Invalid changesets are returned without any
     /// write; generated values come back in a new record.
     member this.Insert(cs: Changeset<'T>, ?cancellationToken) =
-        if cs.Action <> Insert then invalidArg "cs" "expected an insert changeset (Changeset.insert)"
+        if cs.Action <> ChangeAction.Insert then
+            invalidArg "cs" $"repo.Insert was given a changeset for {(string cs.Action).ToLowerInvariant()}; build it with Changeset.insert, or call repo.{string cs.Action}"
         this.WriteOne(cs, defaultArg cancellationToken CancellationToken.None)
 
     /// Validates and updates only the changed fields, enforcing the version.
     member this.Update(cs: Changeset<'T>, ?cancellationToken) =
-        if cs.Action <> Update then invalidArg "cs" "expected an update changeset"
+        if cs.Action <> ChangeAction.Update then
+            invalidArg "cs" $"repo.Update was given a changeset for {(string cs.Action).ToLowerInvariant()}; build it with Changeset.update or Changeset.edit, or call repo.{string cs.Action}"
         this.WriteOne(cs, defaultArg cancellationToken CancellationToken.None)
 
     member this.Delete(cs: Changeset<'T>, ?cancellationToken) =
-        if cs.Action <> Delete then invalidArg "cs" "expected a delete changeset (Changeset.delete)"
+        if cs.Action <> ChangeAction.Delete then
+            invalidArg "cs" $"repo.Delete was given a changeset for {(string cs.Action).ToLowerInvariant()}; build it with Changeset.delete, or call repo.{string cs.Action}"
         this.WriteOne(cs, defaultArg cancellationToken CancellationToken.None)
 
     /// Runs a transaction description atomically. An empty description
@@ -477,13 +638,13 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                                     return Error(step, failure)
                             with
                             | :? OperationCanceledException as ex -> return Err.rethrow ex
-                            | Execution.MaterializationFailure m -> return Error(current, ReadFailure(Materialization m))
-                            | Translate.TranslationFailure t -> return Error(current, ReadFailure(Translation t))
+                            | Execution.MaterializationFailure m -> return Error(current, StepFailure.Failed(DbError.Materialization m))
+                            | Translate.TranslationFailure t -> return Error(current, StepFailure.Failed(DbError.Translation t))
                             | ex ->
                                 // Steps attribute their own failures; what reaches here
                                 // is from opening, beginning or committing.
                                 match provider.Classify ex with
-                                | Some f -> return Error(current, DatabaseFailure f)
+                                | Some f -> return Error(current, StepFailure.Failed(DbError.Database f))
                                 | None -> return Err.rethrow ex
                         }
 
@@ -492,7 +653,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                     | Error(step, failure) ->
                         let retryable =
                             match failure with
-                            | DatabaseFailure f -> retry.ShouldRetry f
+                            | StepFailure.Failed(DbError.Database f) -> retry.ShouldRetry f
                             | _ -> false
 
                         if not (retryable && attempt < retry.MaxAttempts) then

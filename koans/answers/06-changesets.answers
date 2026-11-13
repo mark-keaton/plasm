@@ -1,0 +1,16 @@
+# A changeset leaves its input alone
+"Ada"
+[ "Name" ]
+# Unchanged and cleared differ
+[ "CancellationReason", FieldChange.Cleared ]
+# Errors can be inspected
+false
+[ "Name"; "Email" ]
+0
+# Input cannot touch protected fields
+[ "Email" ]
+# Invalid changes are never written
+true
+3L
+# Constraints become field errors
+[ "Email" ]

@@ -14,6 +14,16 @@ open Plasm.TestDomain.Domain
 
 let schemaSql =
     """
+create table accounts (
+  id bigint generated always as identity primary key,
+  name text not null
+);
+create table profiles (
+  id bigint generated always as identity primary key,
+  account_id bigint not null references accounts(id),
+  bio text not null
+);
+create index on profiles(account_id);
 create table customers (
   id bigint generated always as identity primary key,
   name text not null,

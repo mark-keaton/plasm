@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Reqnroll host for the koans' own specifications: the runner, the
+       curriculum rules, and one test per koan from each lesson's table. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ReqnrollFeatureFiles Include="../features/*.feature;../features/lessons/*.feature" />
+    <None Include="../features/*.feature;../features/lessons/*.feature" Link="Features/%(Filename)%(Extension)" />
+    <None Update="reqnroll.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Reqnroll.xunit.v3" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Plasm.Koans.Specs.Steps/Plasm.Koans.Specs.Steps.fsproj" />
+  </ItemGroup>
+</Project>

@@ -16,6 +16,8 @@ type LimitedProvider(inner: IProvider) =
             member _.QuoteIdentifier s = inner.Dialect.QuoteIdentifier s
             member _.ParameterName i = inner.Dialect.ParameterName i
             member _.ColumnTypes t = inner.Dialect.ColumnTypes t
+            member _.NullSafeComparison negated = inner.Dialect.NullSafeComparison negated
+            member _.FunctionName name = inner.Dialect.FunctionName name
 
             member _.Capabilities =
                 { inner.Dialect.Capabilities with
@@ -516,7 +518,7 @@ type LoadingSteps(w: World) =
     [<StepDefinition("the library reports the unsupported operation")>]
     member _.ReportsUnsupported() =
         match w.Get<Result<Order list, DbError>> "result" with
-        | Error(Translation(UnsupportedByProvider(op, provider))) ->
+        | Error(DbError.Translation(TranslationError.UnsupportedByProvider(op, provider))) ->
             check (op.Contains "per-parent limit") op
             equal "LimitedSQL" provider "provider"
         | other -> failwithf "expected UnsupportedByProvider, got %A" other
@@ -589,14 +591,14 @@ type LoadingSteps(w: World) =
             let combined: Query<Order> = w.Get "combined"
 
             match w.Repo.Explain combined with
-            | Error(LoadConflict(path, _)) -> equal "Payments" path "conflict path"
+            | Error(TranslationError.LoadConflict(path, _)) -> equal "Payments" path "conflict path"
             | other -> failwithf "expected LoadConflict, got %A" other
 
             w.MarkCommands()
             let! r = w.Repo.All combined
 
             match r with
-            | Error(Translation(LoadConflict("Payments", _))) -> ()
+            | Error(DbError.Translation(TranslationError.LoadConflict("Payments", _))) -> ()
             | other -> failwithf "expected LoadConflict, got %A" other
 
             equal 0 w.CommandsSinceMark.Length "no command before reporting"

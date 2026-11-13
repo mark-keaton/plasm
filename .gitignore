@@ -10,3 +10,7 @@ features/*.feature.cs
 # Package output
 artifacts/
 .DS_Store
+# Koans: generated feature code and the copies built by the koans checks
+koans/features/**/*.feature.cs
+koans/features/*.feature.cs
+koans/.work/

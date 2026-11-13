@@ -59,6 +59,11 @@ module Rel =
     let any (predicate: 'T -> bool) (assoc: Assoc<'T list>) : bool =
         List.exists predicate (Assoc.get assoc)
 
+    /// For an optional relationship (has-one, or an optional belongs-to): true
+    /// when the related record exists and satisfies the predicate.
+    let exists (predicate: 'T -> bool) (assoc: Assoc<'T option>) : bool =
+        Option.exists predicate (Assoc.get assoc)
+
     /// True when no related record exists that fails the predicate
     /// (vacuously true for an empty relationship).
     let all (predicate: 'T -> bool) (assoc: Assoc<'T list>) : bool =

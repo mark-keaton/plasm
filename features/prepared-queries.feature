@@ -56,3 +56,25 @@ Feature: Prepared queries
     Scenario: Arguments cannot choose the ordering
       When a prepared query orders by an argument
       Then preparation fails with an explanation
+
+  Rule: Prepared queries compose like any other query
+
+    Scenario: Extending a prepared query applies the extension everywhere
+      Given Orders for several Customers
+      When I prepare a query for the Orders of a Customer
+      And I extend it with a filter, an ordering and a limit for one Customer
+      Then reading, counting and explaining the extended query all apply the extension
+      And the prepared query on its own is unchanged
+
+    Scenario: An extended prepared query still binds its arguments per call
+      Given Orders for several Customers
+      When I prepare a query for the Orders of a Customer
+      And I extend it with a filter and run it for two different Customers
+      Then each run returns only that Customer's Orders that satisfy the filter
+      And the two runs send one SQL text
+
+    Scenario: A prepared query used as a load query binds its own arguments
+      Given Orders for several Customers with Payments
+      When I preload Payments with a prepared query bound to a status, both on a query and onto Orders I already hold
+      Then each Order has only the Payments with that status
+      And no exception is thrown

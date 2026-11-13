@@ -122,3 +122,28 @@ let typeName (t: Type) =
         $"{n}<{args}>"
     else
         t.Name
+
+/// Types defined in F# Interactive live in one generated module per submission
+/// (FSI_0004.Domain+Customer). Re-evaluating a definition creates a new,
+/// unrelated type with the same name.
+module Fsi =
+    let private pattern =
+        System.Text.RegularExpressions.Regex(@"^FSI_(\d+)[.+](.+)$", System.Text.RegularExpressions.RegexOptions.Compiled)
+
+    /// The submission number and the name within it, for a type defined in F# Interactive.
+    let submission (t: Type) =
+        match t.FullName with
+        | null -> None
+        | name ->
+            let m = pattern.Match name
+
+            if m.Success then
+                Some(int m.Groups.[1].Value, m.Groups.[2].Value)
+            else
+                None
+
+    let redefined (name: string) (used: int) (mapped: int) =
+        if used < mapped then
+            $"{name} in this query comes from an earlier F# Interactive submission (FSI_{used:D4}) than the {name} this repository's model maps (FSI_{mapped:D4}); the type was redefined after the query was built. Re-evaluate the query, and anything it is built from, after redefining a type."
+        else
+            $"{name} in this query comes from a later F# Interactive submission (FSI_{used:D4}) than the {name} this repository's model maps (FSI_{mapped:D4}); the type was redefined after the mappings were built. Re-evaluate the mappings and the repository after redefining a type."

@@ -1,13 +1,13 @@
 # Acceptance specification: classification and traceability
 
-The supplied Gherkin specifications are the acceptance contract. `features/joins.feature`, and then `aggregates.feature`, `bulk-writes.feature`, `raw-sql.feature` and `prepared-queries.feature` (batch 2a) and `many-to-many.feature`, `schema-check.feature` and `sandbox.feature` (batch 2b), were added afterwards, each written and run red before its implementation. The supplied ones are kept verbatim in `docs/specs/original/`, and the executable copies in `features/` differ only
+The supplied Gherkin specifications are the acceptance contract. `features/joins.feature`, and then `aggregates.feature`, `bulk-writes.feature`, `raw-sql.feature` and `prepared-queries.feature` (batch 2a) and `many-to-many.feature`, `schema-check.feature` and `sandbox.feature` (batch 2b), were added afterwards, each written and run red before its implementation. `fsi.feature` (F# Interactive) followed the same way; its steps run each scenario in a real F# Interactive session hosted by the test. After an architecture audit, `query-semantics.feature`, `tx-steps.feature`, `query-pipeline.feature`, `error-model.feature`, `has-one.feature` and `providers.feature` were added, with new rules in `prepared-queries.feature`, `sandbox.feature` and `fsi.feature`, each run red first. A second audit added `reading.feature` and new scenarios in `query-semantics`, `query-pipeline`, `fsi`, `prepared-queries`, `tx-steps`, `error-model` and `providers`. The supplied ones are kept verbatim in `docs/specs/original/`, and the executable copies in `features/` differ only
 where Gherkin validity requires it (see each file's header). Every scenario runs
 as a test through Reqnroll: `tests/Plasm.Specs` (the C# host that generates the tests) binds to F# step
 definitions in `tests/Plasm.Specs.Steps`, against a real PostgreSQL 18 database
 (Testcontainers, with a freshly cloned database per scenario).
 
 ```sh
-dotnet test tests/Plasm.Specs          # 135 scenarios
+dotnet test tests/Plasm.Specs          # 229 scenarios (outline examples counted separately)
 dotnet test tests/Plasm.Tests          # 176 unit, property, compile-time and Ecto-compatibility tests
 ```
 
@@ -15,11 +15,11 @@ dotnet test tests/Plasm.Tests          # 176 unit, property, compile-time and Ec
 
 | Classification | Scenarios |
 |---|---:|
-| Implemented and verified | 134 |
+| Implemented and verified | 228 |
 | Implemented, deliberately changed (with rationale) | 1 |
 | Planned | 0 |
 | Unsupported, with explicit behaviour | 0 |
-| **Total** | **135** |
+| **Total** | **229** |
 
 Behaviour that is outside these scenarios and not built yet (migrations,
 other providers and so on) is listed in `docs/status.md`. None of it has an API, so
@@ -28,7 +28,6 @@ nothing pretends to work.
 Each scenario name below is also the generated test name, so a failing test points
 straight back here. "Related unit tests" lists the tests in `tests/Plasm.Tests` that cover
 the same guarantee more exhaustively.
-
 
 ### core.feature: Persistence descriptions are values and execution is explicit
 
@@ -324,3 +323,176 @@ the same guarantee more exhaustively.
 | A database error does not break the sandbox | Implemented and verified | `SandboxSteps.fs` | Batch2.fs (failed transaction step inside a sandbox) | Every operation runs in its own savepoint and rolls back to it after an error. |
 | Concurrent sandboxes are isolated | Implemented and verified | `SandboxSteps.fs` | Batch2.fs (failed transaction step inside a sandbox) |  |
 | Overlapping work in one sandbox is serialised | Implemented and verified | `SandboxSteps.fs` | Batch2.fs (failed transaction step inside a sandbox) | One connection: operations run one at a time. |
+
+### fsi.feature: Referencing Plasm is the only setup
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Referencing the packages is enough for Plasm values to display | Implemented and verified | `FsiSteps.fs` |  | Displays use `StructuredFormatDisplay`, so no printer registration is needed. The session references the built assemblies with `#r`, standing in for `#r "nuget: Plasm.Postgres"`. |
+| Referencing Plasm twice is harmless | Implemented and verified | `FsiSteps.fs` |  |  |
+
+### fsi.feature: Values display what they mean
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A query displays its SQL and parameters | Implemented and verified | `FsiSteps.fs` |  | Translated by the most recently created live repository that maps the type; no database access. |
+| A query with loads displays one command per load | Implemented and verified | `FsiSteps.fs` |  |  |
+| A query that cannot be translated displays why | Implemented and verified | `FsiSteps.fs` |  |  |
+| Relationships that were not loaded display as not loaded | Implemented and verified | `FsiSteps.fs` |  | `NotLoaded` is the union case FSI already prints. |
+| A prepared query displays its bound arguments | Implemented and verified | `FsiSteps.fs` |  | Shows each bound value with its argument position. |
+| Displaying a query leaves how it runs unchanged | Implemented and verified | `FsiSteps.fs` |  | Displays plan without the repository's plan cache. |
+| Formatting a query in compiled code hides its parameter values | Implemented and verified | `FsiSteps.fs` |  | Values appear only with `IncludeParameterValues` or F# Interactive types; `CompiledDisplaySteps` in `FsiSteps.fs`. |
+| Formatting a query shows values when the repository includes them | Implemented and verified | `FsiSteps.fs` |  |  |
+
+### fsi.feature: Results display without awaiting tasks
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A read displays its rows | Implemented and verified | `FsiSteps.fs` |  | `Plasm.Interactive.wait` blocks on the task. |
+| A failed write displays the classified error | Implemented and verified | `FsiSteps.fs` |  |  |
+
+### fsi.feature: Redefining types in a session is explained
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A query built before a type was redefined is rejected with an explanation | Implemented and verified | `FsiSteps.fs` |  | New `TranslationError.RedefinedType`; FSI types are recognised by their `FSI_nnnn` submission module. |
+| Queries re-evaluated after a redefinition work | Implemented and verified | `FsiSteps.fs` |  |  |
+
+### fsi.feature: A playground keeps experiments across submissions and undoes them
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Changes in a playground are visible in later submissions | Implemented and verified | `FsiSteps.fs` |  | `repo.Playground()` keeps one connection and transaction open across submissions; built on the sandbox provider. |
+| Resetting a playground discards its changes and keeps it open | Implemented and verified | `FsiSteps.fs` |  |  |
+| Closing a playground leaves the database unchanged | Implemented and verified | `FsiSteps.fs` |  |  |
+| A database error does not end the playground | Implemented and verified | `FsiSteps.fs` |  |  |
+| A sandbox inside a playground rolls back to the playground | Implemented and verified | `FsiSteps.fs` |  |  |
+| A playground whose connection was lost says so and starts afresh | Implemented and verified | `FsiSteps.fs` |  | Classified as a connection failure whose message says the changes were discarded. |
+
+### fsi.feature: Records can be generated from a table
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Scaffolding a table prints a record and schema that match the database | Implemented and verified | `FsiSteps.fs` |  | `repo.Scaffold table` reads `information_schema` only. |
+| Scaffolding maps nullable columns, keys and unknown types explicitly | Implemented and verified | `FsiSteps.fs` |  |  |
+| Names that are not F# identifiers are escaped | Implemented and verified | `FsiSteps.fs` |  | Double backticks for keywords and names that are not identifiers; `column` for names that do not round-trip. |
+| A table with no mappable columns is reported | Implemented and verified | `FsiSteps.fs` |  | New `ScaffoldError` (`TableNotFound`, `NoMappableColumns`, `Failed`). |
+| A missing table is reported as missing | Implemented and verified | `FsiSteps.fs` |  |  |
+
+### error-model.feature: Expected failures are returned, not thrown
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Using a sandbox's repository after the sandbox ended | Implemented and verified | `ErrorModelSteps.fs` |  | New `DbFailureKind.RepositoryClosed`; the closed playground reports the same. |
+| Using a closed playground | Implemented and verified | `ErrorModelSteps.fs` |  |  |
+| A written row that cannot be read back | Implemented and verified | `ErrorModelSteps.fs` |  | New `WriteError.Materialization`. A single-row write without children is not rolled back; one in a transaction is. |
+
+### error-model.feature: Error cases are always qualified
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Domain unions keep their own case names | Implemented and verified | `ErrorModelSteps.fs` |  | `DbError` and `TranslationError` are now `RequireQualifiedAccess` (breaking). |
+| <union> cases must be qualified | Implemented and verified | `ErrorModelSteps.fs` |  | `QualifiedUnionSteps` in `ErrorModelSteps.fs`. |
+
+### has-one.feature: Has-one relationships load like other relationships
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Preloading a has-one relationship | Implemented and verified | `HasOneSteps.fs` |  |  |
+| Filtering through a has-one relationship | Implemented and verified | `HasOneSteps.fs` |  | New `Rel.exists` for optional relationships. |
+| A has-one relationship with more than one related row is an error | Implemented and verified | `HasOneSteps.fs` |  |  |
+
+### prepared-queries.feature: Prepared queries compose like any other query
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Extending a prepared query applies the extension everywhere | Implemented and verified | `PreparedSteps.fs` |  | Found by the architecture audit: extending a prepared query used to plan the template and drop the extension. |
+| An extended prepared query still binds its arguments per call | Implemented and verified | `PreparedSteps.fs` |  |  |
+| A prepared query used as a load query binds its own arguments | Implemented and verified | `PreparedSteps.fs` |  | Load nodes carry the bound child query's arguments. |
+
+### providers.feature: Constructs the dialect can express are rendered by it
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Relationship loads without array parameters send one parameter per key | Implemented and verified | `ProviderSteps.fs` |  |  |
+| Null-safe comparisons are rendered by the dialect | Implemented and verified | `ProviderSteps.fs` |  | New `ISqlDialect.NullSafeComparison` and `FunctionName` (breaking for dialect authors). |
+| String functions are named by the dialect | Implemented and verified | `ProviderSteps.fs` |  |  |
+
+### providers.feature: Constructs the dialect cannot express are refused before execution
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| <operation> needs <capability> | Implemented and verified | `ProviderSteps.fs` |  | New capabilities `Upserts` and `RowLocking`; `Returning` is now checked. Every call reports it as `TranslationError.UnsupportedByProvider`, naming every missing capability. |
+
+### query-pipeline.feature: Pipeline queries equal their computation-expression forms
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| <operation> in a pipeline produces the same SQL | Implemented and verified | `PipelineSteps.fs` |  | The `Query` module now has every operation, including joins, grouping and child-query preloads. |
+
+### query-semantics.feature: Negation follows F# meaning, including for absent values
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Negating an optional equality keeps rows whose value is absent | Implemented and verified | `QuerySemanticsSteps.fs` |  | `not` renders `(...) IS NOT TRUE`, so an unknown comparison negates to true, as in F#. `NOT EXISTS` is kept for relationship predicates. |
+| not (a = b) and a <> b return the same rows | Implemented and verified | `QuerySemanticsSteps.fs` |  |  |
+| Negating a compound predicate over absent values | Implemented and verified | `QuerySemanticsSteps.fs` |  |  |
+| Negating a comparison that cannot be absent stays a plain NOT | Implemented and verified | `QuerySemanticsSteps.fs` |  | `IS NOT TRUE` only where an operand can be NULL. |
+
+### query-semantics.feature: Captured values are read each time the query runs
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A query sees the current contents of a captured <container> | Implemented and verified | `QuerySemanticsSteps.fs` |  | Captured arrays, collections and reference cells mark the plan volatile; only immutable captured values (primitives, strings, F# lists, options, records without mutable fields) let a plan be cached. |
+| A query capturing only immutable values is planned once | Implemented and verified | `QuerySemanticsSteps.fs` |  |  |
+| A query comparing with the current time reads the clock each run | Implemented and verified | `QuerySemanticsSteps.fs` |  | Found by the second audit: static properties such as `DateTime.UtcNow` were treated as stable. |
+| A query sees the current contents of a module-level <container> | Implemented and verified | `QuerySemanticsSteps.fs` |  | Only F# module values whose current value is immutable allow plan reuse. |
+
+### sandbox.feature: Sandboxes nest
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A sandbox inside a sandbox rolls back to the outer sandbox | Implemented and verified | `SandboxSteps.fs` |  | Sandbox transactions pass named savepoints through. |
+
+### tx-steps.feature: Write steps match their changesets
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A step whose changeset is for a different action is rejected | Implemented and verified | `TxStepSteps.fs` |  | Checked when the step is built (`ArgumentException`), like `repo.Insert/Update/Delete`. |
+| The repository rejects a mismatched changeset the same way | Implemented and verified | `TxStepSteps.fs` |  |  |
+
+### tx-steps.feature: Custom steps work inside the transaction without controlling it
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A custom step's commands run in the transaction | Implemented and verified | `TxStepSteps.fs` |  |  |
+| A custom step cannot commit or roll back the transaction | Implemented and verified | `TxStepSteps.fs` |  | `TxContext` now offers `CreateCommand()` (enlisted in the transaction) and `CancellationToken`; the connection and transaction are no longer exposed (breaking). |
+| A custom step cannot end the transaction with SQL | Implemented and verified | `TxStepSteps.fs` |  | `TxContext.CreateCommand()` returns a command that refuses transaction-control statements. |
+
+### error-model.feature: Transaction failures are typed
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A step's rejection reason comes back with its type | Implemented and verified | `ErrorModelSteps.fs` |  | `StepFailure.Rejected of Rejection`, read with `As<'R>()`. |
+| A step's invalid changes come back as the changeset's errors | Implemented and verified | `ErrorModelSteps.fs` |  |  |
+
+### providers.feature: An unsupported operation is reported the same way by every call
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| <call> reports an unsupported operation as UnsupportedByProvider | Implemented and verified | `ProviderSteps.fs` |  | `WriteError.Translation`, `DbError.Translation`, `StepFailure.Failed(DbError.Translation ...)`. |
+
+### query-pipeline.feature: Pipelines chain like expressions
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Chaining joins in a pipeline | Implemented and verified | `PipelineSteps.fs` |  | Pipeline joins nest (`((o, l), p)`); the translator follows the lambda's tuple shape. |
+
+### reading.feature: One respects the query and reports too many rows as data
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| One keeps the query's own ordering and limit | Implemented and verified | `ReadingSteps.fs` |  | Found by the second audit: `One` replaced the query's limit. |
+| A query matching no rows returns None | Implemented and verified | `ReadingSteps.fs` |  |  |
+| More than one matching row is reported as a property of the data | Implemented and verified | `ReadingSteps.fs` |  | New `DbError.MoreThanOneRow`. |
+| Reading One of the same query twice plans it once | Implemented and verified | `ReadingSteps.fs` |  |  |

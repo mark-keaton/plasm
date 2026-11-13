@@ -1,0 +1,17 @@
+# Reading returns typed rows
+30.00m
+Published
+# Counting transfers no rows
+2L
+true
+# Asking whether anything exists
+false
+# Selecting only what you need
+(OrderId 1L, 30.00m)
+false
+# Leaving the database is explicit
+129.00m
+1
+# One means at most one
+Some 99.00m
+None

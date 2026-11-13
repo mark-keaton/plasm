@@ -7,17 +7,32 @@ open System.Data.Common
 open System.Threading
 open System.Threading.Tasks
 
-/// Why a named transaction step failed.
+/// The reason a step was rejected (`Tx.fail`, or a `Tx.run` step returning
+/// Error). Read it back with its type: `rejection.As<MyError>()`.
+[<Sealed>]
+type Rejection internal (reason: obj) =
+    /// The reason as `'R`, or None if it is another type.
+    member _.As<'R>() : 'R option =
+        match reason with
+        | :? 'R as r -> Some r
+        | _ -> None
+
+    override _.ToString() = sprintf "%A" reason
+
+/// Why a named transaction step failed. Cases are qualified
+/// (`StepFailure.Failed`) so they never collide with domain unions.
+[<RequireQualifiedAccess>]
 type StepFailure =
-    /// Validation or declared-constraint errors. `Changeset` is the boxed
-    /// `Changeset<'T>` carrying them.
-    | InvalidChanges of entity: string * errors: FieldError list * changeset: obj
+    /// Validation or declared-constraint errors of the step's changeset.
+    | InvalidChanges of entity: string * errors: FieldError list
     /// Optimistic concurrency conflict (or the row no longer exists).
     | ConcurrencyConflict of entity: string
-    | DatabaseFailure of DbFailure
-    | ReadFailure of DbError
-    /// Raised by `Tx.fail` or a `Tx.run` step.
-    | Rejected of reason: obj
+    /// The step could not be translated, the provider could not perform it,
+    /// the database failed, or a row could not be read back.
+    | Failed of DbError
+    /// `Tx.fail`, or a `Tx.run` step that returned Error or tried to control
+    /// the transaction.
+    | Rejected of Rejection
 
 /// A failed transaction. Every write in it was rolled back.
 type TransactionError =
@@ -29,12 +44,112 @@ type TransactionError =
       /// Attempts made (more than one only with a retry policy).
       Attempts: int }
 
-/// Access to the transaction's connection for `Tx.run` steps. Only database
-/// work belongs here: anything else cannot be rolled back.
-type TxContext =
-    { Connection: DbConnection
-      Transaction: DbTransaction
-      CancellationToken: CancellationToken }
+/// Raised when a `Tx.run` step's command would end or nest the transaction.
+exception internal TransactionControlException of string with
+    override e.Message = e.Data0
+
+/// A command that refuses transaction-control statements (COMMIT, ROLLBACK,
+/// END, BEGIN, START, ABORT, SAVEPOINT, RELEASE) before they reach the server.
+[<Sealed; AllowNullLiteral>]
+type internal GuardedCommand(inner: DbCommand) =
+    inherit DbCommand()
+
+    static let comments = Text.RegularExpressions.Regex(@"/\*.*?\*/|--[^\n]*", Text.RegularExpressions.RegexOptions.Singleline)
+
+    static let control =
+        set [ "COMMIT"; "ROLLBACK"; "END"; "BEGIN"; "START"; "ABORT"; "SAVEPOINT"; "RELEASE" ]
+
+    let check () =
+        let text = comments.Replace(inner.CommandText, " ")
+
+        for statement in text.Split(';') do
+            let first =
+                statement.Trim().Split([| ' '; '\t'; '\r'; '\n'; '(' |], StringSplitOptions.RemoveEmptyEntries)
+                |> Array.tryHead
+                |> Option.map (fun w -> w.ToUpperInvariant())
+
+            match first with
+            | Some w when control.Contains w ->
+                raise (
+                    TransactionControlException
+                        $"a Tx.run step cannot control the transaction ({w}); the transaction is committed or rolled back by Repo.Transact"
+                )
+            | _ -> ()
+
+    override _.CommandText
+        with get () = inner.CommandText
+        and set v = inner.CommandText <- v
+
+    override _.CommandTimeout
+        with get () = inner.CommandTimeout
+        and set v = inner.CommandTimeout <- v
+
+    override _.CommandType
+        with get () = inner.CommandType
+        and set v = inner.CommandType <- v
+
+    override _.DesignTimeVisible
+        with get () = inner.DesignTimeVisible
+        and set v = inner.DesignTimeVisible <- v
+
+    override _.UpdatedRowSource
+        with get () = inner.UpdatedRowSource
+        and set v = inner.UpdatedRowSource <- v
+
+    override _.DbConnection
+        with get () = inner.Connection
+        and set _ = invalidOp "a Tx.run step's command stays on the transaction's connection"
+
+    override _.DbTransaction
+        with get () = inner.Transaction
+        and set _ = invalidOp "a Tx.run step's command stays in the transaction"
+
+    override _.DbParameterCollection = inner.Parameters
+    override _.Cancel() = inner.Cancel()
+    override _.CreateDbParameter() = inner.CreateParameter()
+    override _.Prepare() = inner.Prepare()
+
+    override _.ExecuteNonQuery() =
+        check ()
+        inner.ExecuteNonQuery()
+
+    override _.ExecuteScalar() =
+        check ()
+        inner.ExecuteScalar()
+
+    override _.ExecuteDbDataReader(behavior) =
+        check ()
+        inner.ExecuteReader(behavior)
+
+    override _.ExecuteNonQueryAsync(ct) =
+        check ()
+        inner.ExecuteNonQueryAsync(ct)
+
+    override _.ExecuteScalarAsync(ct) =
+        check ()
+        inner.ExecuteScalarAsync(ct)
+
+    override _.ExecuteDbDataReaderAsync(behavior, ct) =
+        check ()
+        inner.ExecuteReaderAsync(behavior, ct)
+
+    override _.Dispose(disposing) =
+        if disposing then inner.Dispose()
+        base.Dispose disposing
+
+/// What a `Tx.run` step may use: commands that run inside the transaction.
+/// Only database work belongs here: anything else cannot be rolled back. The
+/// transaction itself is not exposed, and a command that would end or nest it
+/// (COMMIT, ROLLBACK, BEGIN, ...) is refused before it is sent.
+[<Sealed>]
+type TxContext internal (connection: DbConnection, transaction: DbTransaction, ct: CancellationToken) =
+    /// A new command on the transaction's connection, enlisted in the transaction.
+    member _.CreateCommand() : DbCommand =
+        let cmd = connection.CreateCommand()
+        cmd.Transaction <- transaction
+        new GuardedCommand(cmd) :> DbCommand
+
+    member _.CancellationToken = ct
 
 type internal TxRuntime =
     { Session: Execution.Session
@@ -96,7 +211,7 @@ module Tx =
         Effect(fun rt ->
             task {
                 if rt.Completed.Contains name then
-                    return Error(name, Rejected(box $"step name '{name}' is used more than once in this transaction"))
+                    return Error(name, StepFailure.Rejected(Rejection(box $"step name '{name}' is used more than once in this transaction")))
                 else
                     let! outcome =
                         task {
@@ -104,11 +219,11 @@ module Tx =
                                 return! body rt
                             with
                             | :? OperationCanceledException as ex -> return Err.rethrow ex
-                            | Execution.MaterializationFailure m -> return Error(ReadFailure(Materialization m))
-                            | Translate.TranslationFailure t -> return Error(ReadFailure(Translation t))
+                            | Execution.MaterializationFailure m -> return Error(StepFailure.Failed(DbError.Materialization m))
+                            | Translate.TranslationFailure t -> return Error(StepFailure.Failed(DbError.Translation t))
                             | ex ->
                                 match rt.Session.Provider.Classify ex with
-                                | Some f -> return Error(DatabaseFailure f)
+                                | Some f -> return Error(StepFailure.Failed(DbError.Database f))
                                 | None -> return Err.rethrow ex
                         }
 
@@ -126,14 +241,27 @@ module Tx =
                 | Ok v -> return Ok(unbox<'T> v)
                 | Error(Writes.Invalid s) ->
                     let c = Changeset<'T>(s)
-                    return Error(InvalidChanges(typeof<'T>.Name, c.Errors, box c))
-                | Error(Writes.Stale _) -> return Error(ConcurrencyConflict typeof<'T>.Name)
-                | Error(Writes.Failed f) -> return Error(DatabaseFailure f)
+                    return Error(StepFailure.InvalidChanges(typeof<'T>.Name, c.Errors))
+                | Error(Writes.Stale _) -> return Error(StepFailure.ConcurrencyConflict typeof<'T>.Name)
+                | Error(Writes.Failed f) -> return Error(StepFailure.Failed(DbError.Database f))
+                | Error(Writes.Unsupported op) ->
+                    return Error(StepFailure.Failed(DbError.Translation(TranslationError.UnsupportedByProvider(op, rt.Session.Provider.Dialect.Name))))
             })
 
-    let insert name (cs: Changeset<'T>) : Tx<'T> = writeStep name cs
-    let update name (cs: Changeset<'T>) : Tx<'T> = writeStep name cs
-    let delete name (cs: Changeset<'T>) : Tx<'T> = writeStep name cs
+    let private actionStep (step: string) (expected: ChangeAction) name (cs: Changeset<'T>) =
+        if cs.Action <> expected then
+            invalidArg
+                "cs"
+                $"transaction step '{name}' is Tx.{step}, but its changeset is for {(string cs.Action).ToLowerInvariant()}; use Tx.{(string cs.Action).ToLowerInvariant()}, or build the changeset with Changeset.{step}"
+
+        writeStep name cs
+
+    /// Inserts; the changeset must be an insert (`Changeset.insert`).
+    let insert name (cs: Changeset<'T>) : Tx<'T> = actionStep "insert" ChangeAction.Insert name cs
+    /// Updates; the changeset must be an update.
+    let update name (cs: Changeset<'T>) : Tx<'T> = actionStep "update" ChangeAction.Update name cs
+    /// Deletes; the changeset must be a delete (`Changeset.delete`).
+    let delete name (cs: Changeset<'T>) : Tx<'T> = actionStep "delete" ChangeAction.Delete name cs
 
     /// Runs a query inside the transaction.
     let all name (query: Query<'T>) : Tx<'T list> =
@@ -143,13 +271,13 @@ module Tx =
             task {
               if not query.Def.Joins.IsEmpty then
                 match Translate.projection rt.Model (ref false) query.Def None with
-                | Error e -> return Error(ReadFailure(Translation e))
+                | Error e -> return Error(StepFailure.Failed(DbError.Translation e))
                 | Ok(select, shape) ->
                     let! rows = Execution.readProjection rt.Session select shape query.Def.Root.Name
                     return Ok(rows |> List.map unbox<'T>)
               else
                 match Planner.plan rt.Session.Provider.Dialect rt.Model query.Def with
-                | Error e -> return Error(ReadFailure(Translation e))
+                | Error e -> return Error(StepFailure.Failed(DbError.Translation e))
                 | Ok plan ->
                     let! rows = Execution.readRoot rt.Session plan
                     return Ok(rows |> List.map unbox<'T>)
@@ -160,7 +288,7 @@ module Tx =
         step name (fun rt ->
             task {
                 match BulkExec.commands rt.Model rt.Session.Provider.Dialect write.Def with
-                | Error e -> return Error(ReadFailure(Translation e))
+                | Error e -> return Error(StepFailure.Failed(DbError.Translation e))
                 | Ok cmds ->
                     let args =
                         match write.Def with
@@ -190,22 +318,25 @@ module Tx =
                 return Ok n
             })
 
-    let fail name (reason: obj) : Tx<'T> =
-        step name (fun _ -> Task.FromResult(Error(Rejected reason)))
+    /// Fails the transaction at this step with `reason`, read back with
+    /// `StepFailure.Rejected r -> r.As<'R>()`.
+    let fail name (reason: 'R) : Tx<'T> =
+        step name (fun _ -> Task.FromResult(Error(StepFailure.Rejected(Rejection(box reason)))))
 
     /// A custom database step. It must only perform database work through the
     /// given context; external effects cannot be rolled back.
-    let run name (f: TxContext -> Task<Result<'T, obj>>) : Tx<'T> =
+    let run name (f: TxContext -> Task<Result<'T, 'E>>) : Tx<'T> =
         step name (fun rt ->
             task {
                 let ctx =
-                    { Connection = rt.Session.Connection
-                      Transaction = Sandboxes.unwrap rt.Session.Transaction.Value
-                      CancellationToken = rt.Session.Ct }
+                    TxContext(rt.Session.Connection, Sandboxes.unwrap rt.Session.Transaction.Value, rt.Session.Ct)
 
-                match! f ctx with
-                | Ok v -> return Ok v
-                | Error r -> return Error(Rejected r)
+                try
+                    match! f ctx with
+                    | Ok v -> return Ok v
+                    | Error r -> return Error(StepFailure.Rejected(Rejection(box r)))
+                with TransactionControlException m ->
+                    return Error(StepFailure.Rejected(Rejection(box m)))
             })
 
     /// Runs `f` for each item in order, naming each step `{name}[{index}]`.

@@ -121,7 +121,7 @@ type EleganceSteps(w: World) =
     [<StepDefinition("it reports a structured materialization error")>]
     member _.MaterializationError() =
         match w.Get<Result<OrderLine list, DbError>> "result" with
-        | Error(Materialization m) ->
+        | Error(DbError.Materialization m) ->
             equal ("OrderLine", "Quantity") (m.Model, m.Property) "location"
             check (m.Message.Contains "quantity must be positive") m.Message
             check (m.Value.StartsWith "0") m.Value
@@ -278,7 +278,7 @@ type EleganceSteps(w: World) =
     [<StepDefinition("the library requires an explicit ordering")>]
     member _.RequiresOrdering() =
         match w.Get<Result<Order list, DbError>> "unordered" with
-        | Error(Translation(InvalidQuery msg)) -> check (msg.Contains "requires an explicit ordering") msg
+        | Error(DbError.Translation(TranslationError.InvalidQuery msg)) -> check (msg.Contains "requires an explicit ordering") msg
         | other -> failwithf "expected InvalidQuery, got %A" other
 
     [<StepDefinition("Or applies a documented unique ordering")>]
@@ -571,7 +571,7 @@ type EleganceSteps(w: World) =
     [<StepDefinition("the planned batching strategy")>]
     member _.Strategy() =
         let plan: QueryPlan = w.Get "plan"
-        check (plan.Loads |> List.forall (fun l -> l.Strategy = BatchedByKeys 5000)) "batched by keys"
+        check (plan.Loads |> List.forall (fun l -> l.Strategy = LoadStrategy.BatchedByKeys 5000)) "batched by keys"
         check (plan.Loads |> List.forall (fun l -> l.Sql.Contains "= ANY(@p0)")) "one key-list parameter per batch"
 
     [<StepDefinition("inspection performs no database reads or writes")>]
@@ -724,7 +724,7 @@ type EleganceSteps(w: World) =
         let e = err (w.Get<Result<Order, TransactionError>> "result")
         equal 1 e.Attempts "attempts"
         equal "increment total" e.Step "failed step"
-        check (match e.Failure with DatabaseFailure f -> f.Kind = DbFailureKind.SerializationFailure | _ -> false) $"%A{e.Failure}"
+        check (match e.Failure with StepFailure.Failed(DbError.Database f) -> f.Kind = DbFailureKind.SerializationFailure | _ -> false) $"%A{e.Failure}"
         equal 1 (w.Get<int ref> "callbacks").Value "callback invocations"
 
     [<StepDefinition("a configured transaction retry policy")>]

@@ -189,7 +189,7 @@ type BulkSteps(w: World) =
     [<StepDefinition("the bulk update fails with a classified constraint violation")>]
     member _.Classified() =
         match w.Get<Result<int, DbError>> "bulkResult" with
-        | Error(Database f) ->
+        | Error(DbError.Database f) ->
             equal DbFailureKind.CheckViolation f.Kind "failure kind"
             equal (Some "orders_total_check") f.Constraint "constraint"
         | other -> failwithf "expected a database failure, got %A" other

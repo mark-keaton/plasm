@@ -48,12 +48,46 @@ type SandboxSteps(w: World) =
     [<StepDefinition("after the sandbox ends the Customer does not exist")>]
     [<StepDefinition("after the sandbox ends neither exists")>]
     [<StepDefinition("after both end neither Customer exists")>]
+    [<StepDefinition("after the outer sandbox ends neither exists")>]
     member _.Gone() =
         task {
             let! n = committed ()
             equal 0L n "customers after the sandbox"
         }
         |> unit
+
+    [<StepDefinition("code inside a sandbox inserts a Customer and opens an inner sandbox that inserts another")>]
+    member _.Nested() =
+        task {
+            let! seen =
+                w.Repo.Sandbox(fun outer ->
+                    task {
+                        let! a = insert outer "Ada"
+                        ok a |> ignore
+
+                        let! inner =
+                            outer.Sandbox(fun inner ->
+                                task {
+                                    let! b = insert inner "Bob"
+                                    ok b |> ignore
+                                    return! names inner
+                                })
+
+                        let! after = names outer
+                        return inner, after
+                    })
+
+            w.Set("nested", seen)
+        }
+        |> unit
+
+    [<StepDefinition("the inner sandbox sees both Customers")>]
+    member _.InnerSeesBoth() =
+        equal [ "Ada"; "Bob" ] (fst (w.Get<string list * string list> "nested")) "customers inside the inner sandbox"
+
+    [<StepDefinition("after the inner sandbox ends only the outer sandbox's Customer is visible")>]
+    member _.OuterOnly() =
+        equal [ "Ada" ] (snd (w.Get<string list * string list> "nested")) "customers after the inner sandbox"
 
     [<StepDefinition("code inside a sandbox runs one transaction that succeeds and one that fails")>]
     member _.Transactions() =

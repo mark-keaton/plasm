@@ -162,7 +162,7 @@ type ManyToManySteps(w: World) =
                 w.Repo.All(
                     plasm {
                         for a in Schemas.articles do
-                            where (Rel.any (fun t -> t.Name = "fsharp") a.Tags)
+                            where (Rel.any (fun (t: Tag) -> t.Name = "fsharp") a.Tags)
                             orderBy a.Id
                     }
                 )

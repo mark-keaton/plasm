@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Plasm examples</title>
-<meta name="description" content="Worked examples of Plasm: schemas, composable queries, batched relationship loads, projections, changesets, child writes, transactions and failure handling.">
+<meta name="description" content="Worked examples of Plasm: schemas, composable queries, batched relationship loads, projections, changesets, child writes, transactions, failure handling and F# Interactive.">
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -49,6 +49,7 @@
     <a href="#prepared">16 · Prepared queries</a>
     <a href="#manytomany">17 · Many-to-many</a>
     <a href="#testing">18 · Schema check and sandbox</a>
+    <a href="#fsi">19 · F# Interactive</a>
   </nav>
 
   <main class="content">
@@ -609,6 +610,89 @@ let! count =
         })</pre>
         <div class="note">The check reports missing tables and columns (join tables included), incompatible types, non-optional fields over nullable columns, and NOT NULL columns the model never writes. Inside a sandbox, transactions become savepoints and each operation runs in its own savepoint, so a constraint violation doesn't break the rest of the test. Concurrent sandboxes are isolated from each other like ordinary transactions.</div>
       </div>
+    </section>
+
+    <section class="example" id="fsi">
+      <h2>19 · F# Interactive</h2>
+      <p>Plasm is built to be explored in F# Interactive. Referencing the package is the only setup. A query displays the SQL it would run, with its parameter values and one command per relationship load; displaying it never touches the database. The code is <code>examples/fsi-tour.fsx</code> (with its references and connection string shortened), and the output below each part is what <code>dotnet fsi</code> printed for it against PostgreSQL.</p>
+<pre class="code fsharp">#r &quot;nuget: Plasm.Postgres&quot;             // until published: #r the two built DLLs
+#load &quot;Plasm.Examples/Model.fs&quot;
+open Plasm
+open Plasm.Postgres
+open Plasm.Interactive                  // wait: show a result, not a task
+open Shop.Model
+
+let repo = Repo(Db.model, Postgres.connect connectionString);;
+
+let recent =
+    plasm {
+        for o in Db.orders do
+            where (o.Status = Published)
+            orderByDescending o.PlacedAt
+            take 5
+            preload o.Lines (plasm { for l in Db.orderLines do preload l.Product })
+    };;</pre>
+<pre class="code output">val recent: Query&lt;Order&gt; =
+  SELECT &quot;t0&quot;.&quot;id&quot; AS &quot;id&quot;, &quot;t0&quot;.&quot;customer_id&quot; AS &quot;customer_id&quot;, &quot;t0&quot;.&quot;status&quot; AS &quot;status&quot;, &quot;t0&quot;.&quot;total&quot; AS &quot;total&quot;, &quot;t0&quot;.&quot;cancellation_reason&quot; AS &quot;cancellation_reason&quot;, &quot;t0&quot;.&quot;placed_at&quot; AS &quot;placed_at&quot;, &quot;t0&quot;.&quot;version&quot; AS &quot;version&quot;
+  FROM &quot;orders&quot; AS &quot;t0&quot;
+  WHERE (&quot;t0&quot;.&quot;status&quot; = @p0)
+  ORDER BY &quot;t0&quot;.&quot;placed_at&quot; DESC, &quot;t0&quot;.&quot;id&quot; ASC
+  LIMIT @p1
+    @p0 = &quot;published&quot;
+    @p1 = 5L
+  then Lines (HasMany, OrderLine), one command per batch of keys:
+  SELECT &quot;t0&quot;.&quot;id&quot; AS &quot;id&quot;, &quot;t0&quot;.&quot;order_id&quot; AS &quot;order_id&quot;, &quot;t0&quot;.&quot;product_id&quot; AS &quot;product_id&quot;, &quot;t0&quot;.&quot;quantity&quot; AS &quot;quantity&quot;, &quot;t0&quot;.&quot;unit_price&quot; AS &quot;unit_price&quot;
+  FROM &quot;order_lines&quot; AS &quot;t0&quot;
+  WHERE (&quot;t0&quot;.&quot;order_id&quot; = ANY(@p0))
+  ORDER BY &quot;t0&quot;.&quot;id&quot; ASC
+  then Lines.Product (BelongsTo, Product), one command per batch of keys:
+  SELECT &quot;t0&quot;.&quot;id&quot; AS &quot;id&quot;, &quot;t0&quot;.&quot;sku&quot; AS &quot;sku&quot;, &quot;t0&quot;.&quot;name&quot; AS &quot;name&quot;
+  FROM &quot;products&quot; AS &quot;t0&quot;
+  WHERE (&quot;t0&quot;.&quot;id&quot; = ANY(@p0))
+  ORDER BY &quot;t0&quot;.&quot;id&quot; ASC</pre>
+      <p>A playground is a repository whose changes last across submissions but are never committed, so you can try writes against real data. <code>Reset</code> rolls everything back and keeps it open; <code>Close</code> ends it.</p>
+<pre class="code fsharp">let pg = repo.Playground();;
+pg.Insert(Changeset.insert { Id = CustomerId 0L; Name = &quot;Ada&quot;; Email = &quot;ada@example.com&quot;; Orders = NotLoaded }) |&gt; wait;;
+pg.All(plasm { for c in Db.customers do orderBy c.Name }) |&gt; wait;;
+pg.Reset();;
+pg.All(plasm { for c in Db.customers do orderBy c.Name }) |&gt; wait;;</pre>
+<pre class="code output">val it: Result&lt;Customer,WriteError&lt;Customer&gt;&gt; = Ok { Id = CustomerId 1L
+                                                     Name = &quot;Ada&quot;
+                                                     Email = &quot;ada@example.com&quot;
+                                                     Orders = NotLoaded }
+
+val it: Result&lt;Customer list,DbError&gt; = Ok [{ Id = CustomerId 1L
+                                              Name = &quot;Ada&quot;
+                                              Email = &quot;ada@example.com&quot;
+                                              Orders = NotLoaded }]
+
+val it: unit = ()
+
+val it: Result&lt;Customer list,DbError&gt; = Ok []</pre>
+      <p><code>repo.Scaffold</code> reads a table from the catalogue and prints a record and schema for it. Column types map back through the dialect, so the result passes the schema check; nullable columns become options, and columns with no F# type are left out with a comment.</p>
+<pre class="code fsharp">repo.Scaffold &quot;payments&quot; |&gt; wait;;</pre>
+<pre class="code output">val it: Result&lt;Scaffold,ScaffoldError&gt; =
+  Ok
+    
+type Payment =
+    { Id: int64
+      OrderId: int64
+      Amount: decimal
+      Status: string
+      CreatedAt: System.DateTime }
+
+let payments =
+    schema&lt;Payment&gt; &quot;payments&quot; {
+        identityKey (fun r -&gt; r.Id)
+    }</pre>
+      <p>Re-sending a type to F# Interactive creates a new type with the same name. A query built from the old one says so, instead of failing with an unmapped type.</p>
+<pre class="code fsharp">#load &quot;Plasm.Examples/Model.fs&quot;          // redefine the model, e.g. after editing it
+open Shop.Model
+let repo = Repo(Db.model, Postgres.connect connectionString);;
+recent;;                                   // built from the earlier Order</pre>
+<pre class="code output" style="white-space: pre-wrap">val it: Query&lt;Order&gt; =
+  cannot be translated: Order in this query comes from an earlier F# Interactive submission (FSI_0003) than the Order this repository&#x27;s model maps (FSI_0012); the type was redefined after the query was built. Re-evaluate the query, and anything it is built from, after redefining a type.</pre>
+      <div class="note">Scaffolding doesn't infer relationships, and scaffolded keys are plain <code>int64</code>; wrap them in single-case unions like <code>OrderId</code> and add a <code>Scalar.wrap</code> when you adopt the record. The playground holds one connection while it has changes, and its transactions become savepoints, as in a test sandbox.</div>
     </section>
   </main>
 </div>

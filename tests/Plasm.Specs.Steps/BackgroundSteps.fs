@@ -13,6 +13,13 @@ type BackgroundSteps(w: World) =
         let step = plan.Loads |> List.find (fun l -> l.Path = path)
         equal kind step.Relationship $"relationship kind of {path}"
 
+    /// Each scenario has its own database and connection pool; release the
+    /// pool's connections when the scenario ends.
+    [<AfterScenario>]
+    member _.ReleaseConnections() =
+        if not (obj.ReferenceEquals(w.Db, null)) then
+            w.Db.Provider.DataSource.Dispose()
+
     [<StepDefinition("a configured relational database")>]
     member _.Database() =
         task {

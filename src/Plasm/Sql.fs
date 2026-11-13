@@ -14,8 +14,12 @@ type ProviderCapabilities =
       ArrayParameters: bool
       /// Upper bound on keys sent in one relationship command.
       MaxKeysPerCommand: int
-      /// INSERT/UPDATE ... RETURNING.
-      Returning: bool }
+      /// INSERT/UPDATE ... RETURNING (single and bulk writes read back rows).
+      Returning: bool
+      /// Inserts that resolve conflicts (ON CONFLICT ...): upserts.
+      Upserts: bool
+      /// SELECT ... FOR UPDATE (replacing children locks them first).
+      RowLocking: bool }
 
 /// Dialect-specific rendering hooks.
 type ISqlDialect =
@@ -26,6 +30,12 @@ type ISqlDialect =
     /// Catalogue type names (information_schema data_type) a column may have
     /// to hold values of this provider type; empty when not checked.
     abstract ColumnTypes: Type -> string list
+    /// The null-safe comparison operator: equality treating NULLs as equal
+    /// (`IS NOT DISTINCT FROM`), or its negation when `negated`.
+    abstract NullSafeComparison: negated: bool -> string
+    /// The dialect's name for a function the core uses (char_length, btrim,
+    /// lower, upper, COALESCE, ...); return the name unchanged if it is the same.
+    abstract FunctionName: string -> string
 
 module internal Sql =
 
@@ -34,6 +44,7 @@ module internal Sql =
     [<Sealed; AllowNullLiteral>]
     type Bound(resolve: obj[] -> obj, label: string) =
         member _.Resolve(args: obj[]) = resolve args
+        member _.Label = label
         override _.ToString() = $"arg:{label}"
 
     type Expr =
@@ -45,6 +56,9 @@ module internal Sql =
         | Literal of string
         | Binary of op: string * Expr * Expr
         | Not of Expr
+        /// `(a) IS NOT TRUE`: F#'s `not`, for which an unknown (NULL) operand,
+        /// like a false one, makes the negation true.
+        | IsNotTrue of Expr
         | IsNull of Expr
         | IsNotNull of Expr
         | NotDistinctFrom of Expr * Expr
@@ -171,6 +185,10 @@ module internal Sql =
                 w "(NOT "
                 r.Expr a
                 w ")"
+            | IsNotTrue a ->
+                w "("
+                r.Expr a
+                w " IS NOT TRUE)"
             | IsNull a ->
                 w "("
                 r.Expr a
@@ -182,13 +200,13 @@ module internal Sql =
             | NotDistinctFrom(a, b) ->
                 w "("
                 r.Expr a
-                w " IS NOT DISTINCT FROM "
+                w $" {d.NullSafeComparison false} "
                 r.Expr b
                 w ")"
             | DistinctFrom(a, b) ->
                 w "("
                 r.Expr a
-                w " IS DISTINCT FROM "
+                w $" {d.NullSafeComparison true} "
                 r.Expr b
                 w ")"
             | AnyOf(a, values) ->
@@ -219,7 +237,7 @@ module internal Sql =
                 r.Expr p
                 w " ESCAPE '\\')"
             | Func(name, args) ->
-                w name
+                w (d.FunctionName name)
                 w "("
 
                 args

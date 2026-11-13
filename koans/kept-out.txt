@@ -1,0 +1,10 @@
+# API areas kept out of the koans (identifier  # why). The curriculum check
+# fails if a lesson uses one. Update this list as areas become ready to teach.
+Playground      # F# Interactive conveniences: taught in the F# Interactive tour instead
+Scaffold        # F# Interactive conveniences
+ISqlDialect     # provider authoring is not part of using Plasm
+IProvider       # provider authoring is not part of using Plasm
+Description     # how a query displays itself; not an API to program against
+FilterCount     # diagnostic member, not for application code
+LoadPaths       # diagnostic member, not for application code
+PlansMade       # internal

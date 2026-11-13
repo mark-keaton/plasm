@@ -12,12 +12,12 @@ let isBig (d: decimal) = d > 100m
 
 let unsupported (q: Query<'T>) =
     match err (explain q) with
-    | UnsupportedExpression(e, reason) -> e, reason
+    | TranslationError.UnsupportedExpression(e, reason) -> e, reason
     | other -> failwithf "expected UnsupportedExpression, got %O" other
 
 let invalidQuery (q: Query<'T>) =
     match err (explain q) with
-    | InvalidQuery m -> m
+    | TranslationError.InvalidQuery m -> m
     | other -> failwithf "expected InvalidQuery, got %O" other
 
 // -- NULL semantics ----------------------------------------------------------
@@ -191,7 +191,7 @@ let latestPayments n =
 let ``limitPerParent uses a ROW_NUMBER window partitioned by the foreign key`` () =
     let plan = plasm { for o in orders do preload o.Payments (latestPayments 3) } |> explain |> ok
     let step = plan.Loads |> List.exactlyOne
-    Assert.Equal(PerParentWindow(3, 5000), step.Strategy)
+    Assert.Equal(LoadStrategy.PerParentWindow(3, 5000), step.Strategy)
     contains "ROW_NUMBER() OVER (PARTITION BY \"t0\".\"order_id\" ORDER BY \"t0\".\"created_at\" DESC, \"t0\".\"id\" ASC)" step.Sql
     contains "\"s\".\"__rank\" <= @" step.Sql
 
@@ -225,7 +225,7 @@ let ``conflicting loads of one relationship are reported`` () =
         }
 
     match err (explain q) with
-    | LoadConflict(path, _) -> Assert.Equal("Payments", path)
+    | TranslationError.LoadConflict(path, _) -> Assert.Equal("Payments", path)
     | other -> failwithf "expected LoadConflict, got %O" other
 
 [<Fact>]
@@ -273,7 +273,7 @@ let ``replacePreload resolves a conflict in favour of the replacement`` () =
 let ``load steps report key batching`` () =
     let plan = plasm { for o in orders do preload o.Lines } |> explain |> ok
     let step = plan.Loads.Head
-    Assert.Equal(BatchedByKeys 5000, step.Strategy)
+    Assert.Equal(LoadStrategy.BatchedByKeys 5000, step.Strategy)
     contains "\"t0\".\"order_id\" = ANY(@p0)" step.Sql
 
 // -- Unsupported expressions -------------------------------------------------
@@ -415,7 +415,7 @@ let ``Scalar.enum with duplicate stored names is rejected`` () =
 
 [<Fact>]
 let ``the test domain model is valid`` () =
-    Assert.Equal(7, Schemas.model.Types.Length)
+    Assert.Equal(9, Schemas.model.Types.Length)
 
 // -- Option accessors and boolean operators ------------------------------------
 
@@ -434,6 +434,7 @@ let ``Option.get on an option column compares the present value`` () =
 [<Fact>]
 let ``not, || and && translate`` () =
     let sql = plasm { for o in orders do where (not (o.Total > 1m) || (o.Status = Draft && o.Total < 5m)) } |> sqlOf
+    // total cannot be NULL, so plain NOT (index-friendly) is exact.
     contains "(NOT (\"t0\".\"total\" > @p0))" sql
     contains " OR " sql
     contains " AND " sql

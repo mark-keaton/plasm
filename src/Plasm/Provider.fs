@@ -17,8 +17,26 @@ type CommandEvent =
       Rows: int
       Succeeded: bool }
 
+/// Raised (and classified as `DbFailureKind.RepositoryClosed`) when a
+/// sandbox's or playground's repository is used after it ended.
+exception internal RepositoryClosedException of string with
+    override e.Message = e.Data0
+
+module internal Closed =
+    let failure (ex: exn) =
+        match ex with
+        | RepositoryClosedException m ->
+            Some
+                { Kind = DbFailureKind.RepositoryClosed
+                  SqlState = None
+                  Constraint = None
+                  Message = m
+                  Exception = ex }
+        | _ -> None
+
 /// A database provider: dialect, connections and error classification.
-/// Everything provider-specific lives behind this interface.
+/// Provider-specific behaviour lives behind this interface and `ISqlDialect`
+/// (see docs/status.md for what is still PostgreSQL-shaped in the core).
 type IProvider =
     abstract Dialect: ISqlDialect
     abstract OpenConnection: CancellationToken -> Task<DbConnection>

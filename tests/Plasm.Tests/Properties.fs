@@ -174,7 +174,7 @@ let ``Changeset.edit records exactly the differing fields and proposes the edite
         |> List.sort
 
     let cleared =
-        cs.Changes |> List.exists (fun (n, c) -> n = "CancellationReason" && c = Cleared)
+        cs.Changes |> List.exists (fun (n, c) -> n = "CancellationReason" && c = FieldChange.Cleared)
 
     (cs.Changes |> List.map fst |> List.sort) = expected
     && cs.Proposed = Some edited

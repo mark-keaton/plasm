@@ -6,12 +6,14 @@ open System.Globalization
 open System.Text.RegularExpressions
 open Microsoft.FSharp.Quotations
 
+[<RequireQualifiedAccess>]
 type ChangeAction =
     | Insert
     | Update
     | Delete
 
 /// A proposed change to one field.
+[<RequireQualifiedAccess>]
 type FieldChange =
     /// The field is set to this value (for option fields, a `Some`).
     | Assigned of obj
@@ -129,9 +131,9 @@ type Changeset<'T> internal (state: CsState) =
             state.Changes.TryFind p.Name
             |> Option.map (fun v ->
                 if Reflection.isOption p.PropertyType && isNull v then
-                    p.Name, Cleared
+                    p.Name, FieldChange.Cleared
                 else
-                    p.Name, Assigned v))
+                    p.Name, FieldChange.Assigned v))
         |> Array.toList
 
     /// Errors on this changeset and its children (child fields are reported
@@ -184,7 +186,7 @@ module internal Cs =
     /// inserts; only changed values for updates (Ecto semantics).
     let validationTarget (s: CsState) name =
         match s.Action with
-        | Insert -> s.Current name
+        | ChangeAction.Insert -> s.Current name
         | _ -> s.Changes.TryFind name
 
     let unwrap (t: Type) (v: obj) =
@@ -257,11 +259,11 @@ type Changeset =
     /// A changeset that inserts `value`. Fields the schema marks as generated
     /// are ignored and returned from the database.
     static member insert(value: 'T) : Changeset<'T> =
-        Changeset<'T>(Cs.emptyState typeof<'T> (Some(box value)) Insert)
+        Changeset<'T>(Cs.emptyState typeof<'T> (Some(box value)) ChangeAction.Insert)
 
     /// An empty update changeset for an existing value.
     static member update(original: 'T) : Changeset<'T> =
-        Changeset<'T>(Cs.emptyState typeof<'T> (Some(box original)) Update)
+        Changeset<'T>(Cs.emptyState typeof<'T> (Some(box original)) ChangeAction.Update)
 
     /// An update changeset whose changes are the fields that `edit` alters:
     /// `order |> Changeset.edit (fun o -> { o with Status = Paid })`.
@@ -270,7 +272,7 @@ type Changeset =
         let shape = Reflection.recordShape typeof<'T>
         let before = shape.Deconstruct(box original)
         let after = shape.Deconstruct(box (edit original))
-        let mutable s = Cs.emptyState typeof<'T> (Some(box original)) Update
+        let mutable s = Cs.emptyState typeof<'T> (Some(box original)) ChangeAction.Update
 
         for i, p in Array.indexed shape.Fields do
             if not (Cs.fieldEquals before.[i] after.[i]) then
@@ -291,13 +293,13 @@ type Changeset =
     /// no other field can become a default or NULL.
     static member forKey([<ReflectedDefinition>] key: Expr<'T -> 'K>, value: 'K) : Changeset<'T> =
         Changeset<'T>(
-            { Cs.emptyState typeof<'T> None Update with
+            { Cs.emptyState typeof<'T> None ChangeAction.Update with
                 Key = Some(Cs.field key, box value) }
         )
 
     /// A changeset that deletes `value` (respecting its version, if versioned).
     static member delete(value: 'T) : Changeset<'T> =
-        Changeset<'T>(Cs.emptyState typeof<'T> (Some(box value)) Delete)
+        Changeset<'T>(Cs.emptyState typeof<'T> (Some(box value)) ChangeAction.Delete)
 
     /// For key-only changesets of versioned records: the version the update expects.
     static member expectVersion(version: int) =

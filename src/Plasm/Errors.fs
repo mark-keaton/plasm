@@ -15,6 +15,7 @@ type ConfigError =
 
 /// A query, load or write description that cannot be executed as stated.
 /// These are detected before any database command is sent.
+[<RequireQualifiedAccess>]
 type TranslationError =
     /// An expression that cannot be translated to SQL. The library never falls
     /// back to evaluating it in application memory.
@@ -28,6 +29,10 @@ type TranslationError =
     | LoadConflict of path: string * detail: string
     /// The provider cannot implement the requested operation faithfully.
     | UnsupportedByProvider of operation: string * provider: string
+    /// F# Interactive: the query and the model use different definitions of a
+    /// type with the same name, because one was evaluated before the type was
+    /// redefined in a later submission.
+    | RedefinedType of typeName: string * detail: string
 
     override this.ToString() =
         match this with
@@ -36,6 +41,7 @@ type TranslationError =
         | InvalidQuery m -> $"Invalid query: {m}"
         | LoadConflict(p, d) -> $"Conflicting loads for '{p}': {d}"
         | UnsupportedByProvider(op, p) -> $"Provider {p} does not support {op}"
+        | RedefinedType(_, d) -> d
 
 /// Classification of a database failure that application code can match on
 /// without parsing messages.
@@ -50,6 +56,9 @@ type DbFailureKind =
     | SerializationFailure
     | Deadlock
     | OtherDatabaseError
+    /// The repository can no longer be used: its sandbox ended or its
+    /// playground was closed. Nothing was sent to the database.
+    | RepositoryClosed
 
 type DbFailure =
     { Kind: DbFailureKind
@@ -69,17 +78,22 @@ type MaterializationError =
       Value: string
       Message: string }
 
-/// Failure of a read (query or relationship load).
+/// Failure of a read (query or relationship load). Cases are qualified
+/// (`DbError.Database`) so they never collide with domain unions.
+[<RequireQualifiedAccess>]
 type DbError =
     | Translation of TranslationError
     | Database of DbFailure
     | Materialization of MaterializationError
+    /// `repo.One` found more than one row for a query expected to match at most one.
+    | MoreThanOneRow
 
     override this.ToString() =
         match this with
         | Translation t -> string t
         | Database d -> string d
         | Materialization m -> $"Cannot materialize {m.Model}.{m.Property} from {m.Value}: {m.Message}"
+        | MoreThanOneRow -> "Expected at most one row, but more than one matched"
 
 /// What kind of rule a field error represents.
 [<RequireQualifiedAccess>]
@@ -111,9 +125,9 @@ exception PlasmConfigurationException of string
 
 module internal Err =
     let unsupported (e: obj) reason =
-        Translation(UnsupportedExpression(string e, reason))
+        DbError.Translation(TranslationError.UnsupportedExpression(string e, reason))
 
-    let invalid msg = Translation(InvalidQuery msg)
+    let invalid msg = DbError.Translation(TranslationError.InvalidQuery msg)
 
     let config msg = raise (PlasmConfigurationException msg)
 

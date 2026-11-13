@@ -22,6 +22,14 @@
     <Compile Include="ManyToManySteps.fs" />
     <Compile Include="SchemaCheckSteps.fs" />
     <Compile Include="SandboxSteps.fs" />
+    <Compile Include="FsiSteps.fs" />
+    <Compile Include="QuerySemanticsSteps.fs" />
+    <Compile Include="ErrorModelSteps.fs" />
+    <Compile Include="TxStepSteps.fs" />
+    <Compile Include="PipelineSteps.fs" />
+    <Compile Include="HasOneSteps.fs" />
+    <Compile Include="ProviderSteps.fs" />
+    <Compile Include="ReadingSteps.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Plasm.TestDomain/Plasm.TestDomain.fsproj" />

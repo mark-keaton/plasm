@@ -5,6 +5,7 @@ open System.Reflection
 open Microsoft.FSharp.Quotations
 open Microsoft.FSharp.Quotations.Patterns
 
+[<RequireQualifiedAccess>]
 type AssocKind =
     | HasMany
     | HasOne
@@ -144,7 +145,7 @@ type SchemaBuilder<'T> internal (table: string) =
             Assocs =
                 s.Assocs
                 @ [ { Property = Paths.property "hasMany" assoc
-                      Kind = HasMany
+                      Kind = AssocKind.HasMany
                       ForeignKey = Paths.property "hasMany foreign key" foreignKey
                       OnReplace = onReplace
                       Through = None } ] }
@@ -185,7 +186,7 @@ type SchemaBuilder<'T> internal (table: string) =
                 Assocs =
                     s.Assocs
                     @ [ { Property = Paths.property "hasOne" assoc
-                          Kind = HasOne
+                          Kind = AssocKind.HasOne
                           ForeignKey = Paths.property "hasOne foreign key" foreignKey
                           OnReplace = OnReplace.Reject
                           Through = None } ] })
@@ -205,7 +206,7 @@ type SchemaBuilder<'T> internal (table: string) =
                 Assocs =
                     s.Assocs
                     @ [ { Property = Paths.property "belongsTo" assoc
-                          Kind = BelongsTo
+                          Kind = AssocKind.BelongsTo
                           ForeignKey = Paths.property "belongsTo foreign key" foreignKey
                           OnReplace = OnReplace.Reject
                           Through = None } ] })
@@ -229,7 +230,7 @@ type SchemaBuilder<'T> internal (table: string) =
                 Assocs =
                     s.Assocs
                     @ [ { Property = Paths.property "manyToMany" assoc
-                          Kind = ManyToMany
+                          Kind = AssocKind.ManyToMany
                           ForeignKey = null
                           OnReplace = OnReplace.Reject
                           Through =

@@ -98,8 +98,51 @@ let! issues = repo.CheckSchema()
 do! repo.Sandbox(fun repo -> task { ... })
 ```
 
+### In F# Interactive
+
+```fsharp
+#r "nuget: Plasm.Postgres"          // once published; until then #r the built DLLs
+open Plasm
+open Plasm.Postgres
+open Plasm.Interactive               // wait: show a result, not a task
+
+let repo = Repo(model, Postgres.connect connectionString)
+
+repo.Scaffold "customers" |> wait    // prints a record and schema for the table
+let q = plasm { for c in customers do where (c.Name.StartsWith "A") }
+q                                    // displays its SQL and parameter values; no database access
+repo.All q |> wait                   // Ok [ ... ]
+
+let pg = repo.Playground()           // changes last across submissions, never committed
+pg.Insert(Changeset.insert ada) |> wait
+pg.Reset()                           // roll everything back; pg.Close() ends it
+```
+
+No setup call is needed: queries display themselves. A query built before you
+redefined one of its types explains that it must be re-evaluated instead of
+failing with an unmapped type.
+
 [`examples/Plasm.Examples`](examples/Plasm.Examples) has a runnable tour:
 `dotnet run --project examples/Plasm.Examples`.
+
+## Learn Plasm: the koans
+
+`koans/` is an interactive course in the style of Ruby Koans: 18 lessons and
+105 koans, each a small exercise with a blank (`__`) to fill in, run against a
+real PostgreSQL database inside a sandbox, so every koan starts from the same
+data.
+
+```sh
+dotnet run --project koans/Plasm.Koans                 # walks the path; stops at the next koan to answer
+dotnet run --project koans/Plasm.Koans -- --lesson 5   # one lesson
+dotnet run --project koans/Plasm.Koans -- --list       # every lesson and its progress
+```
+
+It starts a throwaway PostgreSQL container, or uses the server named by
+`PLASM_KOANS_PG`. What each koan teaches is specified in
+`koans/features/lessons/*.feature`, each tracing to an acceptance scenario of
+Plasm; `koans/Plasm.Koans.Specs` checks that every koan passes with its
+reference answer (`koans/answers/`) and stops at its blank as shipped.
 
 ## What it guarantees
 
@@ -131,6 +174,7 @@ do! repo.Sandbox(fun repo -> task { ... })
 | `tests/Plasm.Tests` | Translation, compile-time, property-based, Ecto-compatibility and behaviour tests |
 | `tests/Plasm.TestDomain` | Shared test domain, PostgreSQL fixture (Testcontainers) and compile checker |
 | `examples/Plasm.Examples` | Runnable API tour |
+| `koans/` | The Plasm Koans: lessons, runner, reference answers, and their own specifications |
 | `website/` | Static library website (landing page and worked examples, each with a toggle to the SQL Plasm generated for it); no build step: `python3 -m http.server -d website`. Regenerate the captured SQL with `dotnet run --project examples/Plasm.Examples -- sql` |
 | `benchmarks/` | Plasm vs EF Core 11 (single and split query) |
 | `docs/` | [ADR](docs/adr/0001-architecture.md), [acceptance](docs/acceptance.md), [status](docs/status.md), [benchmarks](docs/benchmarks.md), [Ecto compatibility](docs/ecto-compatibility.md) |
@@ -142,7 +186,7 @@ an existing server, set `PLASM_TEST_PG` to an admin connection string.
 
 ```sh
 dotnet build Plasm.slnx
-dotnet test tests/Plasm.Specs      # the 135 acceptance scenarios
+dotnet test tests/Plasm.Specs      # the 229 acceptance scenarios
 dotnet test tests/Plasm.Tests      # unit, property, compile-time and Ecto-compatibility tests
 dotnet run -c Release --project benchmarks/Plasm.Benchmarks -- counts
 ```

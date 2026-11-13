@@ -1,0 +1,4 @@
+# Pipelines and expressions agree
+true
+# Pipelines join as often as you like
+[ OrderId 1L, 1; OrderId 3L, 9 ]

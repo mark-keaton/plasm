@@ -129,7 +129,7 @@ type CompositionSteps(w: World) =
     [<StepDefinition("execution fails with the unsupported expression identified")>]
     member _.FailsIdentified() =
         match w.Get<DbError option> "failure" with
-        | Some(Translation(UnsupportedExpression(expr, reason))) ->
+        | Some(DbError.Translation(TranslationError.UnsupportedExpression(expr, reason))) ->
             check (expr.Contains(w.Get<string> "expectedExpression")) $"expression identified: {expr}"
             check (reason.Contains "will not be evaluated in application memory") $"reason: {reason}"
         | other -> failwithf "expected UnsupportedExpression, got %A" other

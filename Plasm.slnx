@@ -12,6 +12,11 @@
   <Folder Name="/examples/">
     <Project Path="examples/Plasm.Examples/Plasm.Examples.fsproj" />
   </Folder>
+  <Folder Name="/koans/">
+    <Project Path="koans/Plasm.Koans/Plasm.Koans.fsproj" />
+    <Project Path="koans/Plasm.Koans.Specs.Steps/Plasm.Koans.Specs.Steps.fsproj" />
+    <Project Path="koans/Plasm.Koans.Specs/Plasm.Koans.Specs.csproj" />
+  </Folder>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/Plasm.Benchmarks.EfModel/Plasm.Benchmarks.EfModel.csproj" />
     <Project Path="benchmarks/Plasm.Benchmarks/Plasm.Benchmarks.fsproj" />

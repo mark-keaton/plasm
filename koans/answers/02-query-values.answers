@@ -1,0 +1,16 @@
+# Building a query runs nothing
+0
+# Extending makes a new query
+4L
+2L
+# Running does not change a query
+true
+1
+# A query can explain itself
+true
+0
+# Reusable filters are functions
+1L
+# Captured values become parameters
+false
+"Bob"

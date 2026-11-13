@@ -13,8 +13,7 @@ module TxSteps =
     let txid name =
         Tx.run name (fun ctx ->
             task {
-                use cmd = ctx.Connection.CreateCommand()
-                cmd.Transaction <- ctx.Transaction
+                use cmd = ctx.CreateCommand()
                 cmd.CommandText <- "select txid_current()"
                 let! v = cmd.ExecuteScalarAsync(ctx.CancellationToken)
                 return Ok(unbox<int64> v)
@@ -103,8 +102,8 @@ type TransactionSteps(w: World) =
         equal "second order" e.Step "failed step"
 
         match e.Failure with
-        | DatabaseFailure f -> equal DbFailureKind.CheckViolation f.Kind "failure kind"
-        | other -> failwithf "expected DatabaseFailure, got %A" other
+        | StepFailure.Failed(DbError.Database f) -> equal DbFailureKind.CheckViolation f.Kind "failure kind"
+        | other -> failwithf "expected a database failure, got %A" other
 
     [<StepDefinition("no earlier step is reported as committed")>]
     member _.NothingCommitted() =
@@ -224,7 +223,7 @@ type TransactionSteps(w: World) =
             let! r = repo.All(plasm { for o in Schemas.orders do preload o.Payments }, ReadConsistency.Snapshot)
 
             match r with
-            | Error(Translation(UnsupportedByProvider(op, _))) -> equal "snapshot reads" op "operation"
+            | Error(DbError.Translation(TranslationError.UnsupportedByProvider(op, _))) -> equal "snapshot reads" op "operation"
             | other -> failwithf "expected UnsupportedByProvider, got %A" other
         }
         |> unit
@@ -244,8 +243,7 @@ type TransactionSteps(w: World) =
         let outbox topic payload =
             Tx.run $"outbox {topic}" (fun ctx ->
                 task {
-                    use cmd = ctx.Connection.CreateCommand()
-                    cmd.Transaction <- ctx.Transaction
+                    use cmd = ctx.CreateCommand()
                     cmd.CommandText <- "insert into outbox(topic, payload) values (@t, @p)"
                     cmd.Parameters.Add(NpgsqlParameter("t", box topic)) |> ignore
                     cmd.Parameters.Add(NpgsqlParameter("p", box payload)) |> ignore

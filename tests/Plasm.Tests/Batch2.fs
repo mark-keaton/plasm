@@ -14,7 +14,7 @@ let private projectionSql (p: Projection<'R>) = (ok (offlineRepo.Explain p)).Sql
 
 let private invalidQuery (r: Result<'a, TranslationError>) =
     match r with
-    | Error(InvalidQuery m) -> m
+    | Error(TranslationError.InvalidQuery m) -> m
     | other -> failwithf "expected InvalidQuery, got %A" other
 
 // -- Aggregates --------------------------------------------------------------
@@ -54,7 +54,7 @@ let ``nested aggregates are rejected`` () =
     }
     |> offlineRepo.Explain
     |> function
-        | Error(UnsupportedExpression(_, reason)) -> Assert.Contains("nested", reason)
+        | Error(TranslationError.UnsupportedExpression(_, reason)) -> Assert.Contains("nested", reason)
         | other -> failwithf "expected rejection, got %A" other
 
 [<Fact>]
@@ -163,7 +163,7 @@ let ``a bulk delete blocked by a foreign key is a classified failure`` () =
         let! r = db.Repo.Execute(Bulk.delete (Query.from orders))
 
         match r with
-        | Error(Database f) -> Assert.Equal(DbFailureKind.ForeignKeyViolation, f.Kind)
+        | Error(DbError.Database f) -> Assert.Equal(DbFailureKind.ForeignKeyViolation, f.Kind)
         | other -> failwithf "expected a foreign key violation, got %A" other
     }
 
@@ -247,7 +247,7 @@ let ``a tuple with the wrong arity is a materialization error`` () =
         let! r = db.Repo.Sql<int * int>($"SELECT 1")
 
         match r with
-        | Error(Materialization m) -> Assert.Contains("1 columns for a 2-element tuple", m.Message)
+        | Error(DbError.Materialization m) -> Assert.Contains("1 columns for a 2-element tuple", m.Message)
         | other -> failwithf "expected a materialization error, got %A" other
     }
 

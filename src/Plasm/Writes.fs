@@ -10,6 +10,8 @@ type Failure =
     | Invalid of CsState
     | Stale of CsState
     | Failed of DbFailure
+    /// The provider cannot perform this write; names what it lacks.
+    | Unsupported of operation: string
 
 let private schemaOf (model: Model) (t: Type) =
     match model.Schema t with
@@ -36,9 +38,9 @@ let rec check (model: Model) (s: CsState) : CsState =
     let mutable st = s
 
     match s.Action with
-    | Insert when s.Data.IsNone -> st <- err st schema.Key.Name (FieldErrorKind.Custom "insert") "an insert needs a complete value"
-    | Update
-    | Delete ->
+    | ChangeAction.Insert when s.Data.IsNone -> st <- err st schema.Key.Name (FieldErrorKind.Custom "insert") "an insert needs a complete value"
+    | ChangeAction.Update
+    | ChangeAction.Delete ->
         if s.Changes.ContainsKey schema.Key.Name then
             st <- err st schema.Key.Name FieldErrorKind.KeyChange "the primary key cannot be changed"
 
@@ -53,19 +55,19 @@ let rec check (model: Model) (s: CsState) : CsState =
                     (FieldErrorKind.Custom "version")
                     "a key-only change to a versioned record must state the expected version (Changeset.expectVersion)"
         | _ -> ()
-    | Insert -> ()
+    | ChangeAction.Insert -> ()
 
     let children =
         s.Children
         |> List.map (fun w ->
             match schema.TryAssoc w.Assoc with
-            | Some a when a.Kind = HasMany ->
+            | Some a when a.Kind = AssocKind.HasMany ->
                 let target = schemaOf model a.Target
                 let checkedChildren = w.Children |> List.map (check model)
 
                 let identities =
                     checkedChildren
-                    |> List.filter (fun c -> c.Action <> Insert)
+                    |> List.filter (fun c -> c.Action <> ChangeAction.Insert)
                     |> List.choose (keyValue target)
 
                 let duplicates =
@@ -84,7 +86,7 @@ let rec check (model: Model) (s: CsState) : CsState =
                         st <- err st w.Assoc (FieldErrorKind.Custom "type") $"child changeset is for {c.Type.Name}, expected {target.Name}"
 
                 { w with Children = checkedChildren }
-            | Some a when a.Kind = ManyToMany ->
+            | Some a when a.Kind = AssocKind.ManyToMany ->
                 st <-
                     err
                         st
@@ -101,7 +103,7 @@ let rec check (model: Model) (s: CsState) : CsState =
 
     for l in s.Links do
         match schema.TryAssoc l.Assoc with
-        | Some a when a.Kind = ManyToMany ->
+        | Some a when a.Kind = AssocKind.ManyToMany ->
             let target = schemaOf model a.Target
 
             if l.Targets |> List.exists (fun t -> isNull t || t.GetType() <> target.Type) then
@@ -175,14 +177,33 @@ let private finish (schema: SchemaInfo) (s: CsState) (row: obj[]) (written: Map<
 
     schema.Shape.Construct row
 
+/// Every capability this write (with its children) needs that the dialect
+/// lacks, as one message; None when it has them all.
+let unsupported (c: ProviderCapabilities) (s: CsState) : string option =
+    let rec needs (s: CsState) =
+        [ if (s.Action = ChangeAction.Insert || s.Action = ChangeAction.Update) && not c.Returning then
+              "RETURNING (reading back written rows)"
+          if s.Children |> List.exists (fun w -> w.Replace.IsSome) && not c.RowLocking then
+              "row locking (SELECT ... FOR UPDATE, to replace children)"
+          if not s.Links.IsEmpty && not c.ArrayParameters then
+              "array parameters (to write many-to-many links)"
+          yield! s.Children |> List.collect (fun w -> w.Children) |> List.collect needs ]
+
+    match needs s |> List.distinct with
+    | [] -> None
+    | missing -> Some(String.concat "; " missing)
+
 let rec write (model: Model) (sess: Session) (s: CsState) : Task<Result<obj, Failure>> =
     task {
+      match unsupported sess.Provider.Dialect.Capabilities s with
+      | Some op -> return Error(Unsupported op)
+      | None ->
         let schema = schemaOf model s.Type
 
         match s.Action with
-        | Insert -> return! insert model sess schema s
-        | Update -> return! update model sess schema s
-        | Delete -> return! delete model sess schema s
+        | ChangeAction.Insert -> return! insert model sess schema s
+        | ChangeAction.Update -> return! update model sess schema s
+        | ChangeAction.Delete -> return! delete model sess schema s
     }
 
 and private insert model sess schema s =
@@ -432,7 +453,7 @@ and private writeChildList model sess (schema: SchemaInfo) (s: CsState) (parentK
 
                             let kept =
                                 w.Children
-                                |> List.filter (fun c -> c.Action = Update)
+                                |> List.filter (fun c -> c.Action = ChangeAction.Update)
                                 |> List.choose (keyValue target)
                                 |> HashSet
 
@@ -489,9 +510,9 @@ and private writeChildList model sess (schema: SchemaInfo) (s: CsState) (parentK
                             let! r =
                                 task {
                                     match child.Action with
-                                    | Insert -> return! write model sess (setField target child a.ForeignKey parentKey)
-                                    | Update
-                                    | Delete ->
+                                    | ChangeAction.Insert -> return! write model sess (setField target child a.ForeignKey parentKey)
+                                    | ChangeAction.Update
+                                    | ChangeAction.Delete ->
                                         // The child must belong to this parent.
                                         let childKey = (keyValue target child).Value
 
@@ -518,10 +539,11 @@ and private writeChildList model sess (schema: SchemaInfo) (s: CsState) (parentK
                                 }
 
                             match r with
-                            | Ok v -> if child.Action <> Delete then produced.Add v
+                            | Ok v -> if child.Action <> ChangeAction.Delete then produced.Add v
                             | Error(Invalid c) -> failed <- Some(Invalid(replaceChild i c))
                             | Error(Stale c) -> failed <- Some(Stale(replaceChild i c))
                             | Error(Failed f) -> failed <- Some(Failed f)
+                            | Error(Unsupported op) -> failed <- Some(Unsupported op)
 
                         i <- i + 1
 

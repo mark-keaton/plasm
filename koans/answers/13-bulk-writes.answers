@@ -1,0 +1,16 @@
+# Updating what a query matches
+1
+3L
+# Updating from the current row
+293.00m
+# Deleting what a query matches
+1
+2L
+# Inserting many records
+[ "BOLT"; "NUT"; "WASHER" ]
+1
+# Inserting only what is missing
+[ "SPROCKET" ]
+# Bulk writes can be inspected
+true
+0

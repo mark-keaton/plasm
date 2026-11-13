@@ -1,0 +1,14 @@
+# Omitted children are untouched
+2L
+# Children are matched by identity
+3L
+# Removing children needs a policy
+true
+1L
+# Parent and children succeed together
+true
+4L
+# A filtered list is not the whole list
+[ ProductId 1L ]
+# The same child twice is refused
+true

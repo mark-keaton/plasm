@@ -349,7 +349,7 @@ type AggregateSteps(w: World) =
     [<StepDefinition("the query is rejected before execution with the column identified")>]
     member _.RejectedColumn() =
         match w.Get<DbError option> "rejection" with
-        | Some(Translation(InvalidQuery msg)) ->
+        | Some(DbError.Translation(TranslationError.InvalidQuery msg)) ->
             check (msg.Contains "o.Total" && msg.Contains "neither grouped nor aggregated") msg
         | other -> failwithf "expected InvalidQuery, got %A" other
 
@@ -374,7 +374,7 @@ type AggregateSteps(w: World) =
     [<StepDefinition("the query is rejected before execution with an explanation")>]
     member _.RejectedExplanation() =
         match w.Get<DbError option> "rejection" with
-        | Some(Translation(InvalidQuery msg)) ->
+        | Some(DbError.Translation(TranslationError.InvalidQuery msg)) ->
             for phrase in w.Get<string list> "expectedExplanation" do
                 check (msg.Contains phrase) $"expected '{phrase}' in: {msg}"
         | other -> failwithf "expected InvalidQuery, got %A" other

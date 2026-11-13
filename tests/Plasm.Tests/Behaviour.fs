@@ -66,7 +66,7 @@ let ``a persisted value rejected by its domain constructor is a materialization 
         let! r = db.Repo.All(Query.from orderLines)
 
         match r with
-        | Error(Materialization m) ->
+        | Error(DbError.Materialization m) ->
             Assert.Equal("OrderLine", m.Model)
             Assert.Equal("Quantity", m.Property)
             Assert.Contains("positive", m.Message)
@@ -84,7 +84,7 @@ let ``a filtered load that hides a required related record is a materialization 
         let! r = db.Repo.All(plasm { for l in orderLines do preload l.Product none })
 
         match r with
-        | Error(Materialization m) -> Assert.Equal("Product", m.Property)
+        | Error(DbError.Materialization m) -> Assert.Equal("Product", m.Property)
         | other -> failwithf "expected Materialization, got %A" other
     }
 
@@ -95,7 +95,7 @@ let ``connection failures are classified as infrastructure failures`` () =
         let! r = repo.All(Query.from orders)
 
         match r with
-        | Error(Database f) -> Assert.Equal(DbFailureKind.ConnectionFailure, f.Kind)
+        | Error(DbError.Database f) -> Assert.Equal(DbFailureKind.ConnectionFailure, f.Kind)
         | other -> failwithf "expected DbFailureKind.ConnectionFailure, got %A" other
     }
 

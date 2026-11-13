@@ -65,6 +65,7 @@ module Raw =
     let fragment<'T> (_sql: Printf.StringFormat<string>) (_args: obj) : 'T =
         invalidOp "Raw.fragment is only meaningful inside a query, where it becomes SQL"
 
+[<RequireQualifiedAccess>]
 type SortDirection =
     | Ascending
     | Descending
@@ -79,7 +80,10 @@ type internal JoinDef =
     { Kind: JoinKind
       Target: Type
       OuterKey: Expr
-      InnerKey: Expr }
+      InnerKey: Expr
+      /// A pipeline join pairs the rows so far with the joined record
+      /// ((o, l), p); the computation expression extends a flat tuple (o, l, p).
+      Nested: bool }
 
 type internal LoadSpec =
     { Assoc: PropertyInfo
@@ -130,12 +134,57 @@ and internal QueryDef =
           Args = [||]
           Problems = [] }
 
+/// Something that can describe a query for display: a `Repo`.
+type internal IQueryDescriber =
+    /// Its model maps the type, or (F# Interactive) a redefinition of it.
+    abstract Knows: Type -> bool
+    abstract Describe: QueryDef -> string
+
+/// The live repositories, most recent last, so that a query value can show the
+/// SQL it would run (F# Interactive displays). Held weakly: a repository that
+/// is no longer referenced drops out.
+module internal Describers =
+    let private live = ResizeArray<WeakReference<IQueryDescriber>>()
+
+    let register (d: IQueryDescriber) =
+        lock live (fun () ->
+            live.RemoveAll(fun r -> not (fst (r.TryGetTarget()))) |> ignore
+            live.Add(WeakReference<IQueryDescriber>(d)))
+
+    /// The most recent repository that maps `t`, or a redefinition of it (so a
+    /// query built before a type was redefined in F# Interactive explains that
+    /// instead of showing SQL from a shadowed repository); else the most
+    /// recent one.
+    let find (t: Type) =
+        lock live (fun () ->
+            let alive =
+                live
+                |> Seq.choose (fun r ->
+                    match r.TryGetTarget() with
+                    | true, d -> Some d
+                    | _ -> None)
+                |> Seq.rev
+                |> List.ofSeq
+
+            match alive |> List.tryFind (fun d -> d.Knows t) with
+            | Some d -> Some d
+            | None -> List.tryHead alive)
+
 /// An immutable description of a query over `'T` with its relationship loads.
 /// Building or extending a query never touches the database; execute it with a
 /// `Repo`.
-[<Sealed>]
+[<Sealed; StructuredFormatDisplay("{Description}")>]
 type Query<'T> internal (def: QueryDef) =
     member internal _.Def = def
+
+    /// The SQL this query runs, with its parameter values and one command per
+    /// relationship load, as translated by the most recently created repository
+    /// that maps `'T`; or why it cannot be translated. Computing it performs no
+    /// database access. F# Interactive displays queries this way.
+    member _.Description =
+        match Describers.find typeof<'T> with
+        | Some d -> d.Describe def
+        | None -> $"(create a Repo whose model maps {typeof<'T>.Name} to see the SQL this query runs)"
 
     /// Number of filters, for diagnostics and tests.
     member _.FilterCount = def.Wheres.Length
@@ -156,7 +205,9 @@ type Projection<'R> internal (def: QueryDef, select: Expr) =
     member internal _.Select = select
 
 module internal QueryOps =
-    let inline map (q: Query<'T>) f : Query<'T> = Query<'T>(f q.Def)
+    /// A derived query. It is no longer the prepared query it may have come
+    /// from, so it is planned from its own description, not the template.
+    let inline map (q: Query<'T>) f : Query<'T> = Query<'T>({ f q.Def with Template = None })
 
     let where (q: Query<'T>) (p: Expr) =
         map q (fun d -> { d with Wheres = d.Wheres @ [ p ] })
@@ -220,14 +271,17 @@ module internal QueryOps =
                           Child = child
                           Replace = replace } ] })
 
-    let join (outer: QueryDef) kind (target: Type) (outerKey: Expr) (innerKey: Expr) : QueryDef =
+    let joinWith nested (outer: QueryDef) kind (target: Type) (outerKey: Expr) (innerKey: Expr) : QueryDef =
         { outer with
             Joins =
                 outer.Joins
                 @ [ { Kind = kind
                       Target = target
                       OuterKey = outerKey
-                      InnerKey = innerKey } ] }
+                      InnerKey = innerKey
+                      Nested = nested } ] }
+
+    let join outer kind target outerKey innerKey = joinWith false outer kind target outerKey innerKey
 
 /// Computation expression for queries:
 ///
@@ -258,22 +312,22 @@ type QueryBuilder() =
     /// Appends an ascending ordering key.
     [<CustomOperation("orderBy", MaintainsVariableSpace = true)>]
     member _.OrderBy(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] key: Expr<'T -> 'K>) =
-        QueryOps.order q key Ascending
+        QueryOps.order q key SortDirection.Ascending
 
     /// Appends a descending ordering key.
     [<CustomOperation("orderByDescending", MaintainsVariableSpace = true)>]
     member _.OrderByDescending(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] key: Expr<'T -> 'K>) =
-        QueryOps.order q key Descending
+        QueryOps.order q key SortDirection.Descending
 
     /// Appends an ascending ordering key (alias of orderBy, for readability).
     [<CustomOperation("thenBy", MaintainsVariableSpace = true)>]
     member _.ThenBy(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] key: Expr<'T -> 'K>) =
-        QueryOps.order q key Ascending
+        QueryOps.order q key SortDirection.Ascending
 
     /// Appends a descending ordering key (alias of orderByDescending).
     [<CustomOperation("thenByDescending", MaintainsVariableSpace = true)>]
     member _.ThenByDescending(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] key: Expr<'T -> 'K>) =
-        QueryOps.order q key Descending
+        QueryOps.order q key SortDirection.Descending
 
     /// Limits the number of rows of this query. Not allowed in a relationship
     /// load query, where the meaning would be ambiguous: use limitPerParent.
@@ -368,7 +422,7 @@ type QueryBuilder() =
             [<ReflectedDefinition>] innerKey: Expr<'U -> 'K>,
             _result: 'T -> 'U -> 'R
         ) : Query<'R> =
-        Query<'R>(QueryOps.join outer.Def InnerJoin typeof<'U> outerKey innerKey)
+        Query<'R>(QueryOps.join { outer.Def with Template = None } InnerJoin typeof<'U> outerKey innerKey)
 
     /// Left join: every row of the outer side once per match, or once with the
     /// joined record as `None` when nothing matches.
@@ -393,7 +447,7 @@ type QueryBuilder() =
             [<ReflectedDefinition>] innerKey: Expr<'U -> 'K>,
             _result: 'T -> 'U option -> 'R
         ) : Query<'R> =
-        Query<'R>(QueryOps.join outer.Def LeftJoin typeof<'U> outerKey innerKey)
+        Query<'R>(QueryOps.join { outer.Def with Template = None } LeftJoin typeof<'U> outerKey innerKey)
 
     /// Projects each row. Only the columns the projection uses are retrieved.
     /// Must be the last operation.
@@ -470,21 +524,75 @@ type Query =
         fun (q: Query<'T>) -> QueryOps.where q predicate
 
     static member orderBy([<ReflectedDefinition>] key: Expr<'T -> 'K>) =
-        fun (q: Query<'T>) -> QueryOps.order q key Ascending
+        fun (q: Query<'T>) -> QueryOps.order q key SortDirection.Ascending
 
     static member orderByDescending([<ReflectedDefinition>] key: Expr<'T -> 'K>) =
-        fun (q: Query<'T>) -> QueryOps.order q key Descending
+        fun (q: Query<'T>) -> QueryOps.order q key SortDirection.Descending
 
-    static member take(count: int) =
-        QueryOps.checkCount "take" count
-        fun (q: Query<'T>) -> QueryOps.map q (fun d -> { d with Limit = Some count })
+    static member thenBy([<ReflectedDefinition>] key: Expr<'T -> 'K>) =
+        fun (q: Query<'T>) -> QueryOps.order q key SortDirection.Ascending
 
-    static member skip(count: int) =
-        QueryOps.checkCount "skip" count
-        fun (q: Query<'T>) -> QueryOps.map q (fun d -> { d with Offset = Some count })
+    static member thenByDescending([<ReflectedDefinition>] key: Expr<'T -> 'K>) =
+        fun (q: Query<'T>) -> QueryOps.order q key SortDirection.Descending
+
+    /// Limits the rows; in a prepared query, `Query.take size.Value` binds per call.
+    static member take([<ReflectedDefinition>] count: Expr<int>) =
+        fun (q: Query<'T>) -> QueryOps.take "take" q count
+
+    /// Skips rows (requires an ordering); `Query.skip offset.Value` binds per call.
+    static member skip([<ReflectedDefinition>] count: Expr<int>) =
+        fun (q: Query<'T>) -> QueryOps.take "skip" q count
+
+    static member groupBy([<ReflectedDefinition>] key: Expr<'T -> 'K>) =
+        fun (q: Query<'T>) -> QueryOps.map q (fun d -> { d with GroupBy = d.GroupBy @ [ key ] })
+
+    static member having([<ReflectedDefinition>] predicate: Expr<'T -> bool>) =
+        fun (q: Query<'T>) -> QueryOps.map q (fun d -> { d with Havings = d.Havings @ [ predicate ] })
+
+    static member limitPerParent(count: int) =
+        QueryOps.checkCount "limitPerParent" count
+        fun (q: Query<'T>) -> QueryOps.map q (fun d -> { d with PerParentLimit = Some count })
 
     static member preload([<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'R>>) =
         fun (q: Query<'T>) -> QueryOps.preload q assoc None false
+
+    /// Loads a has-many relationship with a query for the related records.
+    static member preload([<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C list>>, related: Query<'C>) =
+        fun (q: Query<'T>) -> QueryOps.preload q assoc (Some related.Def) false
+
+    /// Loads an optional relationship with a query for the related record.
+    static member preload([<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C option>>, related: Query<'C>) =
+        fun (q: Query<'T>) -> QueryOps.preload q assoc (Some related.Def) false
+
+    /// Loads a required relationship with a query for the related record.
+    static member preload([<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C>>, related: Query<'C>) =
+        fun (q: Query<'T>) -> QueryOps.preload q assoc (Some related.Def) false
+
+    static member replacePreload([<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'R>>) =
+        fun (q: Query<'T>) -> QueryOps.preload q assoc None true
+
+    static member replacePreload([<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C list>>, related: Query<'C>) =
+        fun (q: Query<'T>) -> QueryOps.preload q assoc (Some related.Def) true
+
+    /// Inner join on equal keys: rows become (outer, inner) pairs.
+    static member join
+        (_inner: Schema<'U>, [<ReflectedDefinition>] outerKey: Expr<'T -> 'K>, [<ReflectedDefinition>] innerKey: Expr<'U -> 'K>)
+        =
+        fun (q: Query<'T>) -> Query<'T * 'U>(QueryOps.joinWith true { q.Def with Template = None } InnerJoin typeof<'U> outerKey innerKey)
+
+    /// Left join on equal keys: rows become (outer, inner option) pairs.
+    static member leftJoin
+        (_inner: Schema<'U>, [<ReflectedDefinition>] outerKey: Expr<'T -> 'K>, [<ReflectedDefinition>] innerKey: Expr<'U -> 'K>)
+        =
+        fun (q: Query<'T>) -> Query<'T * 'U option>(QueryOps.joinWith true { q.Def with Template = None } LeftJoin typeof<'U> outerKey innerKey)
+
+    /// Projects each row; must come last. Only the columns used are read.
+    static member select([<ReflectedDefinition>] projection: Expr<'T -> 'R>) =
+        fun (q: Query<'T>) ->
+            if not q.Def.Loads.IsEmpty then
+                invalidOp "A projected query cannot load relationships; remove preload or select whole records."
+
+            Projection<'R>(q.Def, projection)
 
 [<AutoOpen>]
 module QueryBuilderInstance =

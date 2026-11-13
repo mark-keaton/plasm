@@ -16,10 +16,25 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, scalars: IR
         | true, s -> Some s
         | _ -> None
 
+    /// F# Interactive: the submission of a mapped type that `t` (from another
+    /// submission) is a redefinition of, or the reverse.
+    member internal _.Redefinition(t: Type) =
+        match Reflection.Fsi.submission t with
+        | Some(used, name) ->
+            schemas.Keys
+            |> Seq.tryPick (fun k ->
+                match Reflection.Fsi.submission k with
+                | Some(mapped, n) when n = name && mapped <> used -> Some(used, mapped)
+                | _ -> None)
+        | None -> None
+
     member internal this.Schema(t: Type) =
         match this.TrySchema t with
         | Some s -> Ok s
-        | None -> Error(UnmappedType(Reflection.typeName t))
+        | None ->
+            match this.Redefinition t with
+            | Some(used, mapped) -> Error(TranslationError.RedefinedType(t.Name, Reflection.Fsi.redefined t.Name used mapped))
+            | None -> Error(TranslationError.UnmappedType(Reflection.typeName t))
 
     /// Converts a closed (application-side) value of the given domain type to a
     /// provider parameter value. Returns Error if the type has no mapping.
@@ -124,10 +139,10 @@ module Model =
 
                         let kindOk =
                             match a.Kind, cardinality with
-                            | HasMany, Many -> true
-                            | HasOne, OptionalOne -> true
-                            | BelongsTo, (OptionalOne | RequiredOne) -> true
-                            | ManyToMany, Many -> true
+                            | AssocKind.HasMany, Many -> true
+                            | AssocKind.HasOne, OptionalOne -> true
+                            | AssocKind.BelongsTo, (OptionalOne | RequiredOne) -> true
+                            | AssocKind.ManyToMany, Many -> true
                             | _ -> false
 
                         if not kindOk then
@@ -140,12 +155,12 @@ module Model =
                             // Validate the foreign key's type against the referenced key.
                             let fkOwner, refDef =
                                 match a.Kind with
-                                | BelongsTo -> def, targetDef
-                                | HasMany
-                                | HasOne
-                                | ManyToMany -> targetDef, def
+                                | AssocKind.BelongsTo -> def, targetDef
+                                | AssocKind.HasMany
+                                | AssocKind.HasOne
+                                | AssocKind.ManyToMany -> targetDef, def
 
-                            if a.Kind = ManyToMany then
+                            if a.Kind = AssocKind.ManyToMany then
                                 match a.Through with
                                 | Some j when String.IsNullOrWhiteSpace j.Table || String.IsNullOrWhiteSpace j.OwnerColumn || String.IsNullOrWhiteSpace j.TargetColumn ->
                                     err (Some prop.Name) "manyToMany needs a join table and both of its key columns"
@@ -170,12 +185,12 @@ module Model =
                                             (Some prop.Name)
                                             $"foreign key {fkOwner.Type.Name}.{a.ForeignKey.Name} has type {Reflection.typeName fkType} but {refDef.Type.Name}.{refKey.Name} is {Reflection.typeName refKey.PropertyType}"
 
-                                    if a.Kind = BelongsTo && cardinality = RequiredOne && fkOptional then
+                                    if a.Kind = AssocKind.BelongsTo && cardinality = RequiredOne && fkOptional then
                                         err
                                             (Some prop.Name)
                                             "an optional foreign key requires Assoc<'T option> (the related record may be absent)"
 
-                                    if a.Kind = BelongsTo && cardinality = OptionalOne && not fkOptional then
+                                    if a.Kind = AssocKind.BelongsTo && cardinality = OptionalOne && not fkOptional then
                                         err
                                             (Some prop.Name)
                                             "a required foreign key should use Assoc<'T> rather than Assoc<'T option>"

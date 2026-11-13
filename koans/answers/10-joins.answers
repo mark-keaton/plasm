@@ -1,0 +1,11 @@
+# An inner join gives pairs
+[ OrderId 1L, "Ada"; OrderId 2L, "Ada"; OrderId 3L, "Bob" ]
+# A left join keeps every row
+(OrderId 4L, None)
+# Join keys are typed
+Some c.Id
+# Filters on joined columns run in SQL
+true
+2L
+# Joined queries compose
+[ "Ada"; "Bob" ]

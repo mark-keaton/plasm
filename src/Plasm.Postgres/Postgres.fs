@@ -45,7 +45,14 @@ type internal PostgresDialect(options: PostgresOptions) =
               SnapshotReads = true
               ArrayParameters = true
               MaxKeysPerCommand = options.MaxKeysPerCommand
-              Returning = true }
+              Returning = true
+              Upserts = true
+              RowLocking = true }
+
+        member _.NullSafeComparison negated =
+            if negated then "IS DISTINCT FROM" else "IS NOT DISTINCT FROM"
+
+        member _.FunctionName name = name
 
 module internal Classify =
 

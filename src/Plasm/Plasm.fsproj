@@ -23,8 +23,10 @@
     <Compile Include="Writes.fs" />
     <Compile Include="Bulk.fs" />
     <Compile Include="SchemaCheck.fs" />
+    <Compile Include="Scaffold.fs" />
     <Compile Include="Tx.fs" />
     <Compile Include="Repo.fs" />
+    <Compile Include="Interactive.fs" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Plasm.Postgres" />

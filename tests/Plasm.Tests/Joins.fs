@@ -124,7 +124,7 @@ let ``Option.map over an optional field is rejected in favour of Option.bind`` (
         |> explain
 
     match err r with
-    | UnsupportedExpression(_, reason) -> Assert.Contains("use Option.bind", reason)
+    | TranslationError.UnsupportedExpression(_, reason) -> Assert.Contains("use Option.bind", reason)
     | other -> failwithf "expected UnsupportedExpression, got %A" other
 
 [<Fact>]
@@ -138,7 +138,7 @@ let ``a left-joined source compared with a value is rejected`` () =
         |> explain
 
     match err r with
-    | UnsupportedExpression(_, reason) -> Assert.Contains("only be compared with None", reason)
+    | TranslationError.UnsupportedExpression(_, reason) -> Assert.Contains("only be compared with None", reason)
     | other -> failwithf "expected UnsupportedExpression, got %A" other
 
 [<Fact>]
@@ -151,7 +151,7 @@ let ``preload on a joined query is reported at planning, not thrown`` () =
         }
 
     match err (explain q) with
-    | InvalidQuery msg -> Assert.Contains("repo.Preload", msg)
+    | TranslationError.InvalidQuery msg -> Assert.Contains("repo.Preload", msg)
     | other -> failwithf "expected InvalidQuery, got %A" other
 
 [<Fact>]
@@ -164,7 +164,7 @@ let ``limitPerParent on a joined query is rejected`` () =
         }
 
     match err (explain q) with
-    | InvalidQuery msg -> Assert.Contains("limitPerParent", msg)
+    | TranslationError.InvalidQuery msg -> Assert.Contains("limitPerParent", msg)
     | other -> failwithf "expected InvalidQuery, got %A" other
 
 [<Fact>]

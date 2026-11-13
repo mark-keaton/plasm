@@ -1,0 +1,14 @@
+# A record needs nothing from Plasm
+"Widget"
+"Better widget"
+# Wrapped keys keep their meaning
+CustomerId 1L
+# Stored values can be rejected
+false
+"Quantity"
+# Absent values are options
+None
+Some "duplicate"
+# A model reports every mistake at once
+true
+true

@@ -92,6 +92,102 @@ type PreparedSteps(w: World) =
         let values = cmds |> List.map (fun c -> c.Parameters |> List.map snd)
         check (values.[0] <> values.[1]) $"parameter values differ: %A{values}"
 
+    [<StepDefinition("I preload Payments with a prepared query bound to a status, both on a query and onto Orders I already hold")>]
+    member _.PreparedChild() =
+        task {
+            let paymentsWith =
+                Query.prepare (fun (status: Arg<PaymentStatus>) -> plasm { for p in Schemas.payments do where (p.Status = status.Value) })
+
+            let loads = plasm { for o in Schemas.orders do preload o.Payments (paymentsWith Succeeded) }
+
+            try
+                let! viaQuery = w.Repo.All(plasm { for o in loads do orderBy o.Id })
+                let! plain = w.Repo.All(plasm { for o in Schemas.orders do orderBy o.Id })
+                let! viaPreload = w.Repo.Preload(loads, ok plain)
+                w.Set("childLoads", (Choice1Of2 [ ok viaQuery; ok viaPreload ]: Choice<Order list list, exn>))
+            with ex ->
+                w.Set("childLoads", (Choice2Of2 ex: Choice<Order list list, exn>))
+        }
+        |> unit
+
+    [<StepDefinition("each Order has only the Payments with that status")>]
+    member _.OnlyStatus() =
+        match w.Get<Choice<Order list list, exn>> "childLoads" with
+        | Choice1Of2 results ->
+            for orders in results do
+                check (not orders.IsEmpty) "no Orders were read"
+
+                for o in orders do
+                    match o.Payments with
+                    | Loaded ps ->
+                        check (not ps.IsEmpty) $"Order {o.Id} has no Payments"
+                        check (ps |> List.forall (fun p -> p.Status = Succeeded)) $"Order {o.Id}: %A{ps}"
+                    | NotLoaded -> failwithf "Order %A Payments not loaded" o.Id
+        | Choice2Of2 ex -> failwithf "an exception was thrown: %s" ex.Message
+
+    // Rule: Prepared queries compose like any other query
+
+    [<StepDefinition("I extend it with a filter, an ordering and a limit for one Customer")>]
+    member _.Extend() =
+        let ada: CustomerId = w.Get "ada"
+
+        let extended =
+            plasm {
+                for o in ordersOf ada do
+                    where (o.Total > 15m)
+                    orderByDescending o.Total
+                    take 1
+            }
+
+        w.Set("extended", extended)
+
+    [<StepDefinition("reading, counting and explaining the extended query all apply the extension")>]
+    member _.ExtensionApplied() =
+        task {
+            let q: Query<Order> = w.Get "extended"
+            let! rows = w.Repo.All q
+            let! n = w.Repo.Count q
+            let sql = (w.Repo.Explain q |> ok).Sql
+            equal [ (orders ()).[1] ] (ok rows |> ids) "rows read"
+            equal 1L (ok n |> int64) "count"
+            check (sql.Contains "LIMIT" && sql.Contains "DESC" && sql.Contains "\"total\" >") $"explained SQL lacks the extension: {sql}"
+        }
+        |> unit
+
+    [<StepDefinition("the prepared query on its own is unchanged")>]
+    member _.PreparedUnchanged() =
+        task {
+            let ada: CustomerId = w.Get "ada"
+            let! rows = w.Repo.All(ordersOf ada)
+            let os = orders ()
+            equal [ os.[0]; os.[1] ] (ok rows |> ids) "prepared query rows"
+            let sql = (w.Repo.Explain(ordersOf ada) |> ok).Sql
+            check (not (sql.Contains "LIMIT")) $"prepared query gained a limit: {sql}"
+        }
+        |> unit
+
+    [<StepDefinition("I extend it with a filter and run it for two different Customers")>]
+    member _.ExtendTwice() =
+        task {
+            let repo = repo ()
+            let extended c = plasm { for o in ordersOf c do where (o.Total >= 20m) }
+            w.MarkCommands()
+            let! a = repo.All(extended (w.Get "ada"))
+            let! b = repo.All(extended (w.Get "bob"))
+            w.Set("runs", [ ok a; ok b ])
+        }
+        |> unit
+
+    [<StepDefinition("each run returns only that Customer's Orders that satisfy the filter")>]
+    member _.FilteredRuns() =
+        let os = orders ()
+        equal [ [ os.[1] ]; [ os.[2] ] ] (w.Get<Order list list> "runs" |> List.map ids) "orders per customer"
+
+    [<StepDefinition("the two runs send one SQL text")>]
+    member _.OneText() =
+        let texts = w.CommandsSinceMark |> List.map (fun c -> c.Sql) |> List.distinct
+        equal 1 texts.Length $"distinct SQL texts: %A{texts}"
+
     // Scenario: Arguments are typed and always parameters
 
     [<StepDefinition("I prepare a query with an optional Customer argument and a list of statuses")>]

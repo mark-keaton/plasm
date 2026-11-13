@@ -85,6 +85,14 @@ module internal BulkExec =
             | UpdateAll(q, change) -> [ Count(Sql.renderUpdate dialect (ok (Translate.bulkUpdate model vol q change))) ]
             | DeleteAll q -> [ Count(Sql.renderDelete dialect (ok (Translate.bulkDelete model vol q))) ]
             | InsertAll(t, rows, conflict) ->
+                let caps = dialect.Capabilities
+
+                if conflict.IsSome && not caps.Upserts then
+                    raiseT (TranslationError.UnsupportedByProvider("upserts (INSERT ... ON CONFLICT)", dialect.Name))
+
+                if not caps.Returning then
+                    raiseT (TranslationError.UnsupportedByProvider("RETURNING (reading back inserted rows)", dialect.Name))
+
                 let schema =
                     match model.Schema t with
                     | Ok s -> s

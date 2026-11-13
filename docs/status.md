@@ -22,7 +22,7 @@ operational maturity does not transfer. That has to be earned.
 
 | Suite | What it proves | Result |
 |---|---|---|
-| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | All 65 supplied Gherkin scenarios (64 as specified, 1 with a documented deliberate change), 13 join scenarios, 37 batch-2a scenarios (aggregates 10, bulk writes 12, hand-written SQL 8, prepared queries 7) and 20 batch-2b scenarios (many-to-many 9, schema check 6, sandbox 5), each feature written and run red before it was built. See `docs/acceptance.md`. | 135 / 135 pass; repeated reruns passed (timing-sensitive scenarios: snapshot interleaving, cancellation, serialisation retry) |
+| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | All 65 supplied Gherkin scenarios (64 as specified, 1 with a documented deliberate change), 13 join scenarios, 37 batch-2a scenarios (aggregates 10, bulk writes 12, hand-written SQL 8, prepared queries 7) 20 batch-2b scenarios (many-to-many 9, schema check 6, sandbox 5) 16 F# Interactive scenarios (run in a real hosted FSI session) and 78 scenarios from the two architecture-audit follow-ups (query semantics, reading one row, transaction steps, pipeline forms, error model, has-one, providers, and new rules for prepared queries, sandboxes and FSI), each feature written and run red before it was built. See `docs/acceptance.md`. | 229 / 229 pass; repeated reruns passed (timing-sensitive scenarios: snapshot interleaving, cancellation, serialisation retry) |
 | `tests/Plasm.Tests`: `Translation.fs` | SQL-shape contracts, unsupported-expression errors, model-configuration errors | 51 pass |
 | `tests/Plasm.Tests`: `CompileTime.fs` | Typed API acceptance and rejection, checked with FSharp.Compiler.Service against the real assemblies; each rejection pins its error code and has a passing control snippet | 17 pass |
 | `tests/Plasm.Tests`: `Properties.fs` (FsCheck, real database) | Predicate-order equivalence matching F# semantics; extending a query never alters it; `edit` diffs exactly; equivalence across batch sizes with key-proportional command counts; child ordering per parent | 5 properties pass (mutation-checked by the test author: deliberately broken checks fail) |
@@ -32,7 +32,7 @@ operational maturity does not transfer. That has to be earned.
 | `tests/Plasm.Tests`: `Batch2.fs` (SQL shape and real database) | Aggregate SQL and domain-typed results, grouping errors, count/exists over joins, pages and groups; bulk misuse errors, foreign-key failures, a 40,000-row insert split into two commands that roll back together, composite conflict targets; raw SQL with list, option and domain parameters; prepared patterns, three arguments, transactions, negative counts; many-to-many configuration, duplicate and cleared links, relationship-only updates; sandbox transaction failures; join-table type checks | 26 pass |
 
 Run everything with `dotnet test` from the repository root (Docker is
-required, or set `PLASM_TEST_PG`). 311 tests (135 scenarios, 176 unit) take
+required, or set `PLASM_TEST_PG`). 405 tests (229 scenarios, 176 unit) take
 about 30 s together on the development machine.
 
 ## Supported behaviour
@@ -66,8 +66,9 @@ about 30 s together on the development machine.
   are written, in the write's transaction; targets must already exist (a
   missing one is a classified foreign-key failure). The link SQL uses
   PostgreSQL's `unnest`.
-- `hasOne` loading is implemented but **not yet covered by a test**. Treat it
-  as experimental.
+- `hasOne` (`Assoc<'T option>`, key on the related record) loads in one
+  batched command; more than one related row is a materialisation error naming
+  the owner's key. `Rel.exists` filters through an optional relationship.
 - Child writes go through `hasMany` only.
 
 **Queries:**
@@ -85,8 +86,8 @@ about 30 s together on the development machine.
     collections (`= ANY`, or `FALSE` when empty)
   - `StartsWith`, `EndsWith` and `Contains` (escaped `LIKE`)
   - `ToLower`, `ToUpper`, `Trim` and `Length` on strings
-  - `Rel.any`, as a correlated `EXISTS`, verified against PostgreSQL;
-    `Rel.all`, as `NOT EXISTS`, which is tested for SQL shape only
+  - `Rel.any`, `Rel.all` and `Rel.exists`, as correlated `EXISTS` /
+    `NOT EXISTS`, verified against PostgreSQL
 - Everything else that depends on a row is rejected with
   `UnsupportedExpression`.
 
@@ -215,10 +216,70 @@ about 30 s together on the development machine.
   from inside a `Tx.run` step waits for the step and fails after 30 s with an
   explanation; use the step's context.
 
+**F# Interactive:**
+
+- Queries display the SQL they would run, with parameter values and one command
+  per relationship load, or why they cannot be translated
+  (`StructuredFormatDisplay`; no setup call). The SQL comes from the most
+  recently created repository that maps the query's type, and nothing is
+  executed.
+- `Plasm.Interactive.wait` awaits a repository call so the result is displayed.
+- A query or model that uses a type from an earlier submission than the other
+  (the type was redefined) fails with `TranslationError.RedefinedType`, which
+  says which to re-evaluate; the query's display says the same.
+- `repo.Playground()` is a repository whose changes last across submissions on
+  one connection and transaction and are never committed. `Reset()` rolls them
+  back and keeps it open; `Close()` (or `Dispose`) ends it, after which using it
+  fails with an explanation. It behaves like a sandbox otherwise.
+- `repo.Scaffold table` returns F# source for a record and schema generated
+  from the catalogue: dialect column types become F# types, nullable columns
+  options, the primary key `key` or `identityKey`; columns with no F# type are
+  left out with a comment, and defaults are pointed out. Relationships are not
+  inferred.
+
+**Reading one row:** `repo.One` keeps the query's own ordering and `take`,
+fetches at most two rows to detect a second match, returns
+`DbError.MoreThanOneRow` when there is one, and reuses its plan for the same
+query value.
+
 **Transactions:**
 
 - `transaction { }` with `Tx.insert` / `update` / `delete` / `all` / `run` /
   `fail` / `traverse`, isolation levels, and an opt-in `RetryPolicy`.
+- `Tx.insert` / `update` / `delete` check their changeset's action when the
+  step is built, as `repo.Insert` / `Update` / `Delete` do.
+- A `Tx.run` step gets `TxContext.CreateCommand()` (enlisted in the
+  transaction) and the cancellation token. The connection and transaction are
+  not exposed, so a step cannot commit or roll back.
+
+**Failures:**
+
+- `DbError` and `TranslationError` cases are qualified (`DbError.Database`), so
+  domain unions keep their own case names.
+- Repository calls return expected failures as values: a repository used after
+  its sandbox ended or its playground was closed returns
+  `DbFailureKind.RepositoryClosed`; a written row that cannot be read back
+  returns `WriteError.Materialization`; `repo.One` over several rows returns
+  `DbError.MoreThanOneRow`. Exceptions remain for programming errors found
+  before any database work, and for cancellation.
+- An operation the provider cannot perform is always
+  `TranslationError.UnsupportedByProvider`, naming every missing capability:
+  inside `WriteError.Translation`, `DbError.Translation` or
+  `StepFailure.Failed (DbError.Translation ...)`.
+- Every public union is qualified (`ChangeAction.Insert`, `SortDirection`,
+  `FieldChange`, `AssocKind`, `LoadStrategy`, `StepFailure`, `WriteError`,
+  `DbError`, `TranslationError`).
+- Transaction failures are typed: `StepFailure.InvalidChanges (entity,
+  errors)`, `ConcurrencyConflict`, `Failed of DbError`, and `Rejected of
+  Rejection`, whose reason is read back with `rejection.As<'R>()`.
+
+**Providers:**
+
+- Database-specific SQL comes from `ISqlDialect` (`NullSafeComparison`,
+  `FunctionName`, quoting, parameters) or is guarded by a capability
+  (`ArrayParameters`, `Returning`, `Upserts`, `RowLocking`, `PerParentLimit`,
+  `SnapshotReads`). A missing capability is refused before execution, naming
+  every capability the write lacks.
 
 **Execution:**
 
@@ -304,6 +365,26 @@ payments, EF Core 11 (rc.3 provider) with `AsNoTracking`.
   never a field error.
 - `Tx.run` steps can perform arbitrary effects. Only database work through the
   given context is rolled back.
+- A single-row write without children or links runs without a transaction, so
+  if its returned row cannot be read back (`WriteError.Materialization`) the
+  row stays written.
+- Displays of query values use the most recently created live repository that
+  maps the query's type. Displaying never fills a plan cache, but the text
+  depends on which repositories exist.
+- The schema check and scaffolding read `information_schema` with
+  `current_schema()`, and many-to-many link writes use `unnest`; a second
+  provider would need these behind the provider too.
+- A transaction has no typed error channel (`Tx<'T, 'E>` would hit F#'s value
+  restriction on every transaction value); `Tx.fail` reasons are read back by
+  type with `Rejection.As<'R>()`.
+- `Tx.run` commands refuse statements that start with COMMIT, ROLLBACK, END,
+  BEGIN, START, ABORT, SAVEPOINT or RELEASE (after comments are removed). A
+  semicolon inside a string literal can make the check refuse a harmless
+  command; it never lets a control statement through.
+- Query displays show parameter values only when the describing repository
+  includes them in diagnostics (`IncludeParameterValues`) or the query's types
+  were defined in F# Interactive. In F# Interactive with a compiled model
+  (`#r` of your assembly), set `IncludeParameterValues` to see values.
 - Rows from a multi-row `INSERT ... RETURNING` are returned in insertion order.
   PostgreSQL does this in practice, but does not formally guarantee it.
 - `take` and `skip` quote their argument, so a count that is not a literal is
@@ -332,15 +413,19 @@ payments, EF Core 11 (rc.3 provider) with `AsNoTracking`.
 | 2026-11-12 | No migrations: `repo.CheckSchema` reports drift against the live catalogue | `features/schema-check.feature`, ADR 0001 |
 | 2026-11-12 | Test sandbox: one rolled-back transaction, a savepoint per operation and per inner transaction | `features/sandbox.feature`, ADR 0001 |
 | 2026-11-12 | Prepared queries: probe `Arg<'T>` values, built once, parameters bound per call; take/skip quote their count instead of overloading (which broke inference) | `features/prepared-queries.feature`, ADR 0001 |
+| 2026-11-13 | Architecture audit follow-up: extended prepared queries plan their own description; `not` is two-valued (`IS NOT TRUE`); only immutable captured values allow plan caching; sandboxes nest; qualified error cases and closed/unreadable/unsupported failures as values; `TxContext` without the transaction; complete pipeline module; `hasOne` tested with `Rel.exists`; dialect hooks and capability checks | the six audit features, ADR 0001 |
+| 2026-11-13 | Second audit follow-up: only immutable module values and captures allow plan reuse; `not` is two-valued only over nullable operands; pipeline joins nest and translate; `repo.One` keeps `take` and reports `MoreThanOneRow`; displays hide values unless enabled; prepared load queries bind their own arguments; all public unions qualified; typed `StepFailure`/`Rejection`; one shape for unsupported operations; `Tx.run` commands refuse transaction control | `reading.feature` and new rules in six features, ADR 0001 |
 
 ## Suggested next steps
 
+0. Koans in a notebook (.NET Interactive / Polyglot): run the same lessons
+   cell by cell, which also demonstrates Plasm in F# Interactive.
+
 1. Choose a license, add the repository URL to the package metadata, and
    publish pre-release packages (the CI already builds them).
-2. Prepared projections; tests for `hasOne` and against-database tests for
-   `Rel.all`.
+2. Prepared projections; `limitPerParent` from a prepared argument.
 3. Belongs-to and has-one writes; deeper nested child writes.
 4. A second provider, to prove the `IProvider` / `ISqlDialect` boundary
-   (SQLite or SQL Server); move the PostgreSQL-specific link SQL and catalogue
-   query behind it.
+   (SQLite or SQL Server); move the catalogue queries and the link SQL behind
+   it.
 5. Diagnostics as OpenTelemetry activities.

@@ -1,0 +1,17 @@
+# Independent filters combine
+1L
+# Comparing with None
+true
+1L
+# not keeps F#'s meaning
+2L
+# Membership in an empty list
+0L
+# Some code cannot be translated
+true
+# Pages need an order
+true
+[ 5.00m; 12.50m ]
+# Captured arrays are read each run
+2L
+1L

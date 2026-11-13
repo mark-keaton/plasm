@@ -206,6 +206,7 @@ let private providerArray (f: FieldMap) (keys: obj seq) =
 let rec loadInto (s: Session) (rows: IReadOnlyList<obj[]>) (nodes: Planner.LoadNode list) : Task<unit> =
     task {
         for node in nodes do
+            let s = if node.Args.Length > 0 then { s with Args = node.Args } else s
             let keys = HashSet<obj>()
 
             for r in rows do
@@ -220,8 +221,8 @@ let rec loadInto (s: Session) (rows: IReadOnlyList<obj[]>) (nodes: Planner.LoadN
 
             let batchSize =
                 match node.Strategy with
-                | BatchedByKeys n
-                | PerParentWindow(_, n) -> max 1 n
+                | LoadStrategy.BatchedByKeys n
+                | LoadStrategy.PerParentWindow(_, n) -> max 1 n
 
             match node.Through with
             | None ->
@@ -318,7 +319,7 @@ let rec loadInto (s: Session) (rows: IReadOnlyList<obj[]>) (nodes: Planner.LoadN
                                     { Model = node.Parent.Name
                                       Property = a.Name
                                       Value = $"{found.Count} rows"
-                                      Message = "a has-one relationship matched more than one record" }
+                                      Message = $"a has-one relationship matched {found.Count} records for the {node.Parent.Name} with key {key.Value}" }
                             )
 
                         if found.Count = 0 then
@@ -354,11 +355,11 @@ let guard (provider: IProvider) (body: unit -> Task<Result<'a, DbError>>) : Task
             return! body ()
         with
         | :? OperationCanceledException as ex -> return Err.rethrow ex
-        | MaterializationFailure m -> return Error(Materialization m)
-        | Translate.TranslationFailure t -> return Error(Translation t)
+        | MaterializationFailure m -> return Error(DbError.Materialization m)
+        | Translate.TranslationFailure t -> return Error(DbError.Translation t)
         | ex ->
             match provider.Classify ex with
-            | Some f -> return Error(Database f)
+            | Some f -> return Error(DbError.Database f)
             | None -> return Err.rethrow ex
     }
 

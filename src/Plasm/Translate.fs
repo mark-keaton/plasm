@@ -24,11 +24,18 @@ type Binding =
       Schema: SchemaInfo
       Optional: bool }
 
+/// The sources a tuple-typed row variable stands for (after joins). The
+/// computation expression gives a flat tuple (o, l, p); pipeline joins give
+/// nested pairs ((o, l), p).
+type Space =
+    | Source of Binding
+    | Sources of Space list
+
 type Ctx =
     { Model: Model
       Vars: Map<Var, Binding>
-      /// Tuple-typed row variables (after joins): element i is the i-th source.
-      Spaces: Map<Var, Binding list>
+      /// Tuple-typed row variables (after joins).
+      Spaces: Map<Var, Space>
       Aliases: int ref
       /// Set when a closed subexpression may evaluate differently next time
       /// (e.g. DateTime.UtcNow), which makes the translated plan non-reusable.
@@ -92,9 +99,9 @@ let rec show (e: Expr) : string =
     | _ -> string e
 
 let private fail (e: Expr) reason =
-    raise (TranslationFailure(UnsupportedExpression(show e, reason)))
+    raise (TranslationFailure(TranslationError.UnsupportedExpression(show e, reason)))
 
-let private invalid msg = raise (TranslationFailure(InvalidQuery msg))
+let private invalid msg = raise (TranslationFailure(TranslationError.InvalidQuery msg))
 
 // ---------------------------------------------------------------------------
 // Normalisation: inline pipes, applications and let-bindings.
@@ -139,13 +146,57 @@ let rec private mentions (ctx: Ctx) (e: Expr) =
 
 let isRowDependent (ctx: Ctx) (e: Expr) = mentions ctx e
 
+/// True for values whose contents cannot change: primitives, strings and
+/// immutable F# data (lists, options, sets, maps, tuples, unions and records
+/// without mutable fields) built from them. Arrays, collections such as
+/// ResizeArray, and reference cells can change after the query is built.
+let rec immutable (v: obj) =
+    match v with
+    | null -> true
+    | :? string
+    | :? decimal
+    | :? DateTime
+    | :? DateTimeOffset
+    | :? DateOnly
+    | :? TimeOnly
+    | :? TimeSpan
+    | :? Guid -> true
+    | _ ->
+        let t = v.GetType()
+
+        if t.IsPrimitive || t.IsEnum then
+            true
+        elif t.IsArray then
+            false
+        elif FSharpType.IsTuple t then
+            FSharpValue.GetTupleFields v |> Array.forall immutable
+        elif FSharpType.IsRecord(t, System.Reflection.BindingFlags.Public ||| System.Reflection.BindingFlags.NonPublic) then
+            FSharpType.GetRecordFields(t, System.Reflection.BindingFlags.Public ||| System.Reflection.BindingFlags.NonPublic)
+            |> Array.forall (fun p -> not p.CanWrite && immutable (p.GetValue v))
+        elif FSharpType.IsUnion(t, System.Reflection.BindingFlags.Public ||| System.Reflection.BindingFlags.NonPublic) then
+            // Lists and options included.
+            let _, fields = FSharpValue.GetUnionFields(v, t, true)
+            fields |> Array.forall immutable
+        elif t.IsGenericType && (t.GetGenericTypeDefinition() = typedefof<Set<int>> || t.GetGenericTypeDefinition() = typedefof<Map<int, int>>) then
+            v :?> System.Collections.IEnumerable |> Seq.cast<obj> |> Seq.forall immutable
+        else
+            false
+
 /// True for closed expressions whose value cannot change between evaluations:
 /// literals, captured values, immutable module values and constructors of them.
 let rec isStable (e: Expr) =
     match e with
-    | Value _
-    | ValueWithName _ -> true
-    | PropertyGet(None, p, []) -> not p.CanWrite
+    | Value(v, _)
+    | ValueWithName(v, _, _) -> immutable v
+    // An F# module value (let-bound at module level, or in F# Interactive)
+    // whose current value is immutable. Other static properties, such as
+    // DateTime.UtcNow, compute a value on every read.
+    | PropertyGet(None, p, []) ->
+        not p.CanWrite
+        && (p.GetCustomAttributes(typeof<CompilationMappingAttribute>, false)
+            |> Array.exists (fun a ->
+                (a :?> CompilationMappingAttribute).SourceConstructFlags.HasFlag SourceConstructFlags.Value))
+        && immutable (p.GetValue null)
     | NewUnionCase(_, args)
     | NewTuple args
     | NewRecord(_, args) -> List.forall isStable args
@@ -283,7 +334,20 @@ let private argParam ctx (e: Expr) = argParamWith ctx e e.Type id
 let (|RowBinding|_|) (ctx: Ctx) (e: Expr) =
     match e with
     | Var v -> ctx.Vars.TryFind v
-    | TupleGet(Var t, i) -> ctx.Spaces.TryFind t |> Option.bind (List.tryItem i)
+    | TupleGet _ ->
+        // Follow nested TupleGets down to the row variable, then back up.
+        let rec space (e: Expr) =
+            match e with
+            | Var t -> ctx.Spaces.TryFind t
+            | TupleGet(inner, i) ->
+                match space inner with
+                | Some(Sources items) -> List.tryItem i items
+                | _ -> None
+            | _ -> None
+
+        match space e with
+        | Some(Source b) -> Some b
+        | _ -> None
     | _ -> None
 
 let (|RowField|_|) (ctx: Ctx) (e: Expr) =
@@ -405,6 +469,18 @@ let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
         | _ when e.Type = typeof<bool> -> predicate ctx e
         | _ -> fail e "expression cannot be translated to SQL and will not be evaluated in application memory"
 
+/// True when the translated expression can be NULL: it reads an option field,
+/// a left-joined source, an aggregate or a raw fragment.
+and mayBeNull (ctx: Ctx) (e: Expr) : bool =
+    match e with
+    | RowField ctx (_, f) -> f.IsOption
+    | RowBinding ctx b -> b.Optional
+    | PropertyGet(Some(RowBinding ctx b), _, _) when b.Optional -> true
+    | Call(None, mi, _) when isAggCall mi || isRawCall mi -> true
+    | ExprShape.ShapeVar _ -> false
+    | ExprShape.ShapeLambda(_, body) -> mayBeNull ctx body
+    | ExprShape.ShapeCombination(_, args) -> List.exists (mayBeNull ctx) args
+
 and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
     if not (isRowDependent ctx e) then
         scalar ctx e
@@ -412,7 +488,14 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
         match e with
         | IfThenElse(a, b, Bool false) -> Sql.Binary("AND", predicate ctx a, predicate ctx b)
         | IfThenElse(a, Bool true, b) -> Sql.Binary("OR", predicate ctx a, predicate ctx b)
-        | SpecificCall <@ not @> (_, _, [ a ]) -> Sql.Not(predicate ctx a)
+        | SpecificCall <@ not @> (_, _, [ a ]) ->
+            // SQL's NOT leaves NULL unknown, so the row would be dropped; in F#
+            // the comparison is false and its negation true. Only operands that
+            // can be NULL need IS NOT TRUE; plain NOT keeps indexes usable.
+            match predicate ctx a with
+            | Sql.Exists _ as x -> Sql.Not x
+            | x when mayBeNull ctx a -> Sql.IsNotTrue x
+            | x -> Sql.Not x
         // Left-joined sources: presence tests and option predicates.
         | Call(None, mi, [ RowBinding ctx b ]) when b.Optional && (mi.Name = "get_IsSome" || isOptionModule mi "IsSome") ->
             Sql.IsNotNull(keyOf b)
@@ -482,6 +565,7 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
         | Call(Some coll, mi, [ x ]) when mi.Name = "Contains" && not (isRowDependent ctx coll) -> membership ctx e x coll
         | SpecificCall <@ Rel.any @> (_, _, [ Lambda(pv, body); assoc ]) -> relationship ctx e pv body assoc false
         | SpecificCall <@ Rel.all @> (_, _, [ Lambda(pv, body); assoc ]) -> relationship ctx e pv body assoc true
+        | SpecificCall <@ Rel.exists @> (_, _, [ Lambda(pv, body); assoc ]) -> relationship ctx e pv body assoc false
         | RowField ctx (b, f) when f.ScalarType = typeof<bool> && not f.IsOption -> Sql.Column(b.Alias, f.Column)
         | Call(None, mi, [ sql; args ]) when isRawCall mi -> fragment ctx e sql args
         | _ -> fail e "predicate cannot be translated to SQL and will not be evaluated in application memory"
@@ -572,6 +656,7 @@ and containsAggregate (e: Sql.Expr) : bool =
     | Sql.DistinctFrom(a, b)
     | Sql.Like(a, b) -> containsAggregate a || containsAggregate b
     | Sql.Not a
+    | Sql.IsNotTrue a
     | Sql.IsNull a
     | Sql.IsNotNull a
     | Sql.AnyOf(a, _) -> containsAggregate a
@@ -715,20 +800,20 @@ and relationship ctx (whole: Expr) (pv: Var) (body: Expr) (assoc: Expr) (all: bo
 
         let correlation =
             match a.Kind with
-            | HasMany
-            | HasOne ->
+            | AssocKind.HasMany
+            | AssocKind.HasOne ->
                 Sql.Binary(
                     "=",
                     Sql.Column(alias, (target.Field a.ForeignKey).Column),
                     Sql.Column(parent.Alias, parent.Schema.Key.Column)
                 )
-            | BelongsTo ->
+            | AssocKind.BelongsTo ->
                 Sql.Binary(
                     "=",
                     Sql.Column(alias, target.Key.Column),
                     Sql.Column(parent.Alias, (parent.Schema.Field a.ForeignKey).Column)
                 )
-            | ManyToMany ->
+            | AssocKind.ManyToMany ->
                 let j = a.Through.Value
                 Sql.Binary("=", Sql.Column(alias + "j", j.OwnerColumn), Sql.Column(parent.Alias, parent.Schema.Key.Column))
 
@@ -781,8 +866,26 @@ let private bindLambda (ctx: Ctx) (binding: Binding) (lambda: Expr) =
 let private bindSpace (ctx: Ctx) (space: Binding list) (lambda: Expr) =
     match normalize lambda with
     | Lambda(v, body) when space.Length > 1 && FSharpType.IsTuple v.Type ->
-        let n = FSharpType.GetTupleElements(v.Type).Length
-        { ctx with Spaces = ctx.Spaces.Add(v, List.take n space) }, body
+        // Shape the sources like the lambda's tuple type: each element that is
+        // itself a tuple takes as many sources as it has elements.
+        let rec shape (t: Type) (sources: Binding list) : Space * Binding list =
+            if FSharpType.IsTuple t then
+                let items, rest =
+                    FSharpType.GetTupleElements t
+                    |> Array.fold
+                        (fun (acc, remaining) et ->
+                            let item, rest = shape et remaining
+                            item :: acc, rest)
+                        ([], sources)
+
+                Sources(List.rev items), rest
+            else
+                match sources with
+                | b :: rest -> Source b, rest
+                | [] -> fail lambda "the query's row has fewer sources than this lambda's tuple"
+
+        let tree, _ = shape v.Type space
+        { ctx with Spaces = ctx.Spaces.Add(v, tree) }, body
     | Lambda(v, body) -> { ctx with Vars = ctx.Vars.Add(v, space.Head) }, body
     | other -> fail other "expected a lambda"
 
@@ -790,7 +893,7 @@ let private orderItem ctx (body: Expr) (dir: SortDirection) : Sql.OrderItem =
     if mentionsArg body then
         invalid "a prepared query cannot order by an argument: the ordering is part of the query's shape"
 
-    let desc = (dir = Descending)
+    let desc = (dir = SortDirection.Descending)
 
     { Expr = scalar ctx body
       Desc = desc
@@ -846,7 +949,7 @@ let wrap f =
         Ok(f ())
     with
     | TranslationFailure err -> Error err
-    | PlasmConfigurationException msg -> Error(InvalidQuery msg)
+    | PlasmConfigurationException msg -> Error(TranslationError.InvalidQuery msg)
 
 /// Translates the scalar part of a query (filters, ordering, paging) over a root alias.
 let translateBody (ctx: Ctx) (def: QueryDef) (alias: string) (schema: SchemaInfo) =
@@ -974,6 +1077,7 @@ let rec private ungrouped (groups: Sql.Expr list) (e: Sql.Expr) =
         | Sql.DistinctFrom(a, b)
         | Sql.Like(a, b) -> ungrouped groups a || ungrouped groups b
         | Sql.Not a
+        | Sql.IsNotTrue a
         | Sql.IsNull a
         | Sql.IsNotNull a
         | Sql.AnyOf(a, _) -> ungrouped groups a
@@ -1202,17 +1306,27 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
                 shape ctx body
             | None when space.Length = 1 -> addEntity space.Head
             | None ->
-                let tupleType =
-                    space
-                    |> List.map (fun b ->
-                        if b.Optional then
-                            typedefof<option<_>>.MakeGenericType b.Schema.Type
-                        else
-                            b.Schema.Type)
-                    |> Array.ofList
-                    |> FSharpType.MakeTupleType
+                // Rows are the tuple of the sources: flat for the computation
+                // expression, paired for each pipeline join.
+                let entity (b: Binding) =
+                    let t = if b.Optional then typedefof<option<_>>.MakeGenericType b.Schema.Type else b.Schema.Type
+                    addEntity b, t
 
-                Build(FSharpValue.PreComputeTupleConstructor tupleType, space |> List.map addEntity)
+                let pack (items: (Shape * Type) list) =
+                    match items with
+                    | [ single ] -> single
+                    | _ ->
+                        let t = items |> List.map snd |> Array.ofList |> FSharpType.MakeTupleType
+                        Build(FSharpValue.PreComputeTupleConstructor t, items |> List.map fst), t
+
+                let items =
+                    List.zip space.Tail def.Joins
+                    |> List.fold
+                        (fun items (b, j: JoinDef) ->
+                            if j.Nested then [ pack items; entity b ] else items @ [ entity b ])
+                        [ entity space.Head ]
+
+                fst (pack items)
 
         if columns.Count = 0 then
             invalid "projection does not read any column"

@@ -1,0 +1,11 @@
+# A sandbox rolls everything back
+(4L, 3L)
+# Transactions keep their meaning in a sandbox
+3L
+# A database error does not end a sandbox
+true
+true
+# The model can be checked against the database
+Ok []
+# Drift is reported precisely
+(SchemaIssueKind.MissingColumn, "Order", Some "CancellationReason")

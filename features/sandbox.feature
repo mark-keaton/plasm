@@ -40,3 +40,11 @@ Feature: Test sandboxes
     Scenario: Overlapping work in one sandbox is serialised
       When code inside a sandbox starts several reads at once
       Then they all complete with correct results
+
+  Rule: Sandboxes nest
+
+    Scenario: A sandbox inside a sandbox rolls back to the outer sandbox
+      When code inside a sandbox inserts a Customer and opens an inner sandbox that inserts another
+      Then the inner sandbox sees both Customers
+      And after the inner sandbox ends only the outer sandbox's Customer is visible
+      And after the outer sandbox ends neither exists

@@ -83,9 +83,12 @@ baseline.
     duplicates.
 - `take` or `skip` without an ordering is rejected. With an ordering, the
   primary key is appended as a documented tiebreaker.
-- Plans are cached per repo, keyed by the immutable query value. A plan that
-  evaluated a *volatile* closed expression (for example `DateTime.UtcNow`) is
-  not reused.
+- Plans are cached per repo, keyed by the query value (by reference). A plan
+  is reused only when every closed expression it evaluated is stable: a
+  literal, an immutable captured value, or an F# module value whose current
+  value is immutable. `DateTime.UtcNow`, captured or module-level arrays,
+  collections and reference cells, and any other computed property make the
+  plan volatile, so it is translated again on each run.
 
 ### Joins
 
@@ -310,6 +313,64 @@ meaning. Each operation also runs in a savepoint, because PostgreSQL aborts a
 transaction after any error, and without one a test that expects a constraint
 violation could not continue. Operations share one connection, so they run one
 at a time.
+
+### F# Interactive
+
+Plasm values display themselves through `StructuredFormatDisplay`, which F#
+Interactive honours without any printer registration, so referencing the
+package is the only setup. A query's display needs a model and a dialect, which
+a query value does not carry; each `Repo` therefore registers itself, weakly,
+and a query is described by the most recent live repository that maps its type.
+Describing plans and renders SQL but executes nothing.
+
+F# Interactive compiles each submission into its own `FSI_nnnn` module, so
+re-evaluating a record creates an unrelated type with the same name. A query
+and a model built on different submissions' types are recognised by that
+module name and fail with `RedefinedType`, saying which side to re-evaluate.
+Display prefers a repository that knows a redefinition of the type, so a stale
+query explains itself instead of showing SQL from a shadowed repository.
+
+`repo.Playground()` reuses the sandbox provider, but opens its connection and
+transaction on first use and keeps them until `Reset` or `Close`, because a
+REPL session has no single function body to wrap. `repo.Scaffold` reads only
+`information_schema` and maps column types back through
+`ISqlDialect.ColumnTypes`, so it agrees with the schema check by construction.
+
+### After the architecture audit
+
+An independent audit found two silent wrong-result bugs and several soft
+spots; each fix began as a failing scenario.
+
+- **Derived queries are planned from themselves.** A prepared query carries its
+  template so each call reuses one plan. Any operation that derives a new query
+  now drops the template, so an extension is never ignored.
+- **`not` is two-valued.** SQL's `NOT` keeps an unknown (NULL) comparison
+  unknown, which drops the row; F# treats the comparison as false. `not p`
+  renders as `(p) IS NOT TRUE`, matching F# and `<>`; `NOT EXISTS` is kept.
+- **Plan caching needs immutable captures.** A captured array, collection or
+  reference cell can change after the query is built, so it marks the plan
+  volatile. Primitives, strings and immutable F# data still allow caching.
+- **Failures are values with qualified names.** `DbError` and
+  `TranslationError` require qualification. A closed sandbox or playground,
+  an unreadable written row and an unsupported write return values; only
+  programming errors found before database work, and cancellation, throw.
+- **Steps cannot end their transaction.** `TxContext` gives commands enlisted
+  in the transaction instead of the transaction itself; write steps check the
+  changeset's action when built.
+- **Second audit.** `not` is two-valued only where an operand can be NULL
+  (an option field, a left-joined source, an aggregate or a fragment), so
+  ordinary negations keep their indexes. Pipeline joins nest their rows
+  (`((o, l), p)`) and the translator follows the lambda's tuple shape.
+  `repo.One` keeps the query's own limit. A bound prepared query used as a
+  load query binds its own arguments. Every public union is qualified.
+  Transaction failures are typed (`StepFailure.Failed of DbError`,
+  `Rejected of Rejection`), and a `Tx.run` command cannot control the
+  transaction. A query's display hides parameter values unless the repository
+  includes them or the types come from F# Interactive.
+- **The provider boundary is explicit.** The dialect renders null-safe
+  comparison and function names; RETURNING, upserts, row locking and array
+  parameters are capabilities checked before execution. The catalogue queries
+  and link SQL are still PostgreSQL-shaped (see the status document).
 
 ## Following Ecto, and differing from it on purpose
 

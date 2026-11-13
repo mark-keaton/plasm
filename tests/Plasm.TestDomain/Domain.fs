@@ -72,6 +72,20 @@ and Payment =
       Status: PaymentStatus
       CreatedAt: DateTime }
 
+type AccountId = AccountId of int64
+type ProfileId = ProfileId of int64
+
+/// An Account has at most one Profile (has-one; the key is on the Profile).
+type Account =
+    { Id: AccountId
+      Name: string
+      Profile: Assoc<Profile option> }
+
+and Profile =
+    { Id: ProfileId
+      AccountId: AccountId
+      Bio: string }
+
 type ArticleId = ArticleId of int64
 type TagId = TagId of int64
 
@@ -129,6 +143,14 @@ module Schemas =
 
     let tags = schema<Tag> "tags" { identityKey (fun t -> t.Id) }
 
+    let accounts =
+        schema<Account> "accounts" {
+            identityKey (fun a -> a.Id)
+            hasOne (fun a -> a.Profile) (fun p -> p.AccountId)
+        }
+
+    let profiles = schema<Profile> "profiles" { identityKey (fun p -> p.Id) }
+
     let scalars =
         [ Scalar.wrap CustomerId (fun (CustomerId v) -> v)
           Scalar.wrap OrderId (fun (OrderId v) -> v)
@@ -137,12 +159,14 @@ module Schemas =
           Scalar.wrap PaymentId (fun (PaymentId v) -> v)
           Scalar.wrap ArticleId (fun (ArticleId v) -> v)
           Scalar.wrap TagId (fun (TagId v) -> v)
+          Scalar.wrap AccountId (fun (AccountId v) -> v)
+          Scalar.wrap ProfileId (fun (ProfileId v) -> v)
           Scalar.tryWrap Quantity.create (fun (q: Quantity) -> q.Value)
           Scalar.enum [ Draft, "draft"; Published, "published"; Cancelled, "cancelled" ]
           Scalar.enum [ Pending, "pending"; Succeeded, "succeeded"; Failed, "failed" ] ]
 
     let schemasWith (orders: Schema<Order>) : ISchema list =
-        [ customers; orders; orderLines; products; payments; articles; tags ]
+        [ customers; orders; orderLines; products; payments; articles; tags; accounts; profiles ]
 
     let model = Model.buildOrFail scalars (schemasWith orders)
     let modelDeletingLines = Model.buildOrFail scalars (schemasWith ordersDeletingLines)

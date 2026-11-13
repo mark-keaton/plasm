@@ -1,0 +1,13 @@
+# Counting a page counts the page
+2L
+# Sum and average are typed
+(146.50m, Some 36.625m)
+# No rows is explicit
+(0m, None)
+# Grouping by a key
+[ None, 1L; Some(CustomerId 1L), 2L; Some(CustomerId 2L), 1L ]
+# Filtering groups
+[ Some(CustomerId 1L), 2L ]
+# Grouping mistakes are refused
+true
+0

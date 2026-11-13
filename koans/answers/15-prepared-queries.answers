@@ -1,0 +1,13 @@
+# Built once, run many times
+(2L, 1L)
+true
+# Arguments are parameters
+false
+# Paging by arguments
+[ OrderId 3L; OrderId 4L ]
+# Prepared queries still compose
+1L
+# Arguments are read only inside the query
+true
+# Prepared load queries
+[ Failed ]

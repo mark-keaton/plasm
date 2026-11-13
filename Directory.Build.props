@@ -1,6 +1,8 @@
 <Project>
   <PropertyGroup>
     <TargetFramework>net11.0</TargetFramework>
+    <!-- The repository root, so projects copied elsewhere in the tree (koans checks) still resolve references. -->
+    <PlasmRoot>$(MSBuildThisFileDirectory)</PlasmRoot>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <WarnOn>3390</WarnOn>

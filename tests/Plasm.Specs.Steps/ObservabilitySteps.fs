@@ -150,7 +150,7 @@ type ObservabilitySteps(w: World) =
     [<StepDefinition("the failure is distinguishable from validation and concurrency errors")>]
     member _.Distinguishable() =
         match w.Get<Result<Order list, DbError>> "read" with
-        | Error(Database f) -> equal DbFailureKind.ConnectionFailure f.Kind "read failure kind"
+        | Error(DbError.Database f) -> equal DbFailureKind.ConnectionFailure f.Kind "read failure kind"
         | other -> failwithf "expected a database failure, got %A" other
 
         match w.Get<Result<Order, WriteError<Order>>> "write" with
@@ -167,6 +167,8 @@ type ObservabilitySteps(w: World) =
             | Error(WriteError.Failed _) -> "report"
             | Error(WriteError.Invalid _) -> "show form errors"
             | Error(WriteError.Stale _) -> "reload and retry"
+            | Error(WriteError.Materialization _)
+            | Error(WriteError.Translation _) -> "report"
             | Ok _ -> "done"
 
         equal "retry later" (handle (w.Get "write")) "handled by pattern matching"

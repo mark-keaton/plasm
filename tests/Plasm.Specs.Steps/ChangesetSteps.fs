@@ -48,7 +48,7 @@ type ChangesetSteps(w: World) =
     member _.ExposesStatus() =
         let cs: Changeset<Order> = w.Get "changeset"
         equal (Some Published) (cs |> Changeset.tryGetChange (fun o -> o.Status)) "proposed status"
-        equal [ "Status", Assigned(box Published) ] cs.Changes "changes"
+        equal [ "Status", FieldChange.Assigned(box Published) ] cs.Changes "changes"
         equal (Some Published) (cs.Proposed |> Option.map (fun o -> o.Status)) "proposed record"
 
     [<StepDefinition("the original Order retains its original status")>]
@@ -90,7 +90,7 @@ type ChangesetSteps(w: World) =
         task {
             let! o = readOrder (w.Get "id")
             let cs = Changeset.update o |> Changeset.clear (fun o -> o.CancellationReason)
-            equal [ "CancellationReason", Cleared ] cs.Changes "changes"
+            equal [ "CancellationReason", FieldChange.Cleared ] cs.Changes "changes"
             let! r = w.Repo.Update cs
             w.Set("updated", ok r)
         }

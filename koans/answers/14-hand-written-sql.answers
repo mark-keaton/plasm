@@ -1,0 +1,12 @@
+# SQL can return mapped records
+[ OrderId 3L ]
+# SQL can return tuples and scalars
+[ "Ada"; "Bob"; "Cy" ]
+("cancelled", 1L)
+# Interpolation is parameters
+[]
+true
+# A fragment inside a typed query
+[ "Ada" ]
+# Commands return affected rows
+2

@@ -34,6 +34,11 @@ type internal SandboxTransaction(connection: DbConnection, inner: DbTransaction,
             finished <- true
             inner.Rollback name
 
+    // Named savepoints pass through, so a sandbox can run inside this one.
+    override _.Save(savepoint: string) = inner.Save savepoint
+    override _.Release(savepoint: string) = inner.Release savepoint
+    override _.Rollback(savepoint: string) = inner.Rollback savepoint
+
     override this.Dispose(disposing: bool) =
         if disposing && not finished then
             try
@@ -81,16 +86,23 @@ type internal SandboxProvider(inner: IProvider, connection: DbConnection, transa
     // Operations share one connection, so they run one at a time.
     let gate = new SemaphoreSlim(1, 1)
     let mutable counter = 0
+    let mutable ended = false
 
     let savepoint () =
         $"plasm_sandbox_{Interlocked.Increment(&counter)}"
 
+    /// Called when the sandbox ends; later operations fail as closed.
+    member _.End() = ended <- true
+
     interface IProvider with
         member _.Dialect = inner.Dialect
-        member _.Classify ex = inner.Classify ex
+        member _.Classify ex = Closed.failure ex |> Option.orElse (inner.Classify ex)
 
         member _.OpenConnection(ct: CancellationToken) : Task<DbConnection> =
             task {
+                if ended then
+                    raise (RepositoryClosedException "This sandbox has ended and its changes were rolled back; its repository can no longer be used.")
+
                 let! entered = gate.WaitAsync(TimeSpan.FromSeconds 30.0, ct)
 
                 if not entered then
@@ -129,7 +141,7 @@ type internal SandboxProvider(inner: IProvider, connection: DbConnection, transa
 module internal Sandboxes =
     /// The real transaction for a command (sandbox transactions are savepoints
     /// of the sandbox's transaction).
-    let unwrap (t: DbTransaction) =
+    let rec unwrap (t: DbTransaction) =
         match t with
-        | :? SandboxTransaction as s -> s.Inner
+        | :? SandboxTransaction as s -> unwrap s.Inner
         | t -> t

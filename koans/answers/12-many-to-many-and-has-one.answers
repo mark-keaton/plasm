@@ -1,0 +1,17 @@
+# Tags load through the join table
+[ "fsharp"; "sql" ]
+2
+# No tags is an empty, loaded list
+Loaded []
+# Filtering through links
+[ "Intro to Plasm"; "Deep dive" ]
+# Replacing links
+[ "ops" ]
+4L
+# Adding and removing one link
+NotLoaded
+[ "draft"; "fsharp" ]
+# At most one related record
+[ Some "Writes compilers"; None ]
+# Filtering through has-one
+[ "ada" ]

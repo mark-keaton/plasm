@@ -118,7 +118,7 @@ type RawSqlSteps(w: World) =
     [<StepDefinition("execution fails with the missing column identified")>]
     member _.MissingColumn() =
         match w.Get<DbError> "rawError" with
-        | Materialization m ->
+        | DbError.Materialization m ->
             equal "CustomerId" m.Property "property"
             check (m.Message.Contains "\"customer_id\" is missing") m.Message
         | other -> failwithf "expected a materialization error, got %A" other

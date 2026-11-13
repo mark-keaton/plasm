@@ -271,7 +271,7 @@ let ``ecto (deliberate difference): limit in a preload query is rejected; limitP
         let! rejected = db.Repo.All(plasm { for o in orders do preload o.Payments globalLimit })
 
         match rejected with
-        | Error(Translation(InvalidQuery _)) -> ()
+        | Error(DbError.Translation(TranslationError.InvalidQuery _)) -> ()
         | other -> failwithf "expected InvalidQuery, got %A" other
 
         Assert.Equal(0, db.Recorder.Count)
@@ -443,7 +443,7 @@ let ``ecto: cast/4: with valid string keys`` () =
         |> Changeset.cast(input [ "total", "12.50"; "cancellation_reason", "late" ], fun o -> o.CancellationReason)
 
     Assert.Equal<(string * FieldChange) list>(
-        [ "Total", Assigned(box 12.50m); "CancellationReason", Assigned(box (Some "late")) ],
+        [ "Total", FieldChange.Assigned(box 12.50m); "CancellationReason", FieldChange.Assigned(box (Some "late")) ],
         cs.Changes
     )
 
@@ -461,7 +461,7 @@ let ``ecto: cast/4: ignores fields that are not permitted`` () =
 let ``ecto: cast/4: with empty values`` () =
     let original = { order0 with CancellationReason = Some "late" }
     let cs = Changeset.update original |> Changeset.cast(input [ "cancellation_reason", "" ], fun o -> o.CancellationReason)
-    Assert.Equal<(string * FieldChange) list>([ "CancellationReason", Cleared ], cs.Changes)
+    Assert.Equal<(string * FieldChange) list>([ "CancellationReason", FieldChange.Cleared ], cs.Changes)
 
 // changeset_test.exs: cast errors mark the field invalid ("is invalid")
 [<Fact>]
@@ -599,7 +599,10 @@ let ``ecto: error`` () =
         match r with
         | Error e ->
             Assert.Equal("stop", e.Step)
-            Assert.Equal(Rejected(box "nope"), e.Failure)
+            match e.Failure with
+            | StepFailure.Rejected r -> Assert.Equal(Some "nope", r.As<string>())
+            | other -> failwithf "expected a rejection, got %A" other
+
             Assert.Equal<string list>([ "order" ], e.RolledBack)
         | Ok _ -> failwith "expected failure"
 
@@ -624,9 +627,8 @@ let ``ecto: multi with invalid changeset returns the failed operation and its er
         let! r = db.Repo.Transact tx
 
         match r with
-        | Error { Step = "second"; Failure = InvalidChanges("Order", errors, cs) } ->
+        | Error { Step = "second"; Failure = StepFailure.InvalidChanges("Order", errors) } ->
             Assert.Equal("Total", errors.Head.Field)
-            Assert.IsType<Changeset<Order>>(cs) |> ignore
         | other -> failwithf "unexpected %A" other
 
         let! n = db.Scalar<int64>("select count(*) from orders")
@@ -646,8 +648,7 @@ let ``ecto: run with fun`` () =
                 let! count =
                     Tx.run "count" (fun ctx ->
                         task {
-                            use cmd = ctx.Connection.CreateCommand()
-                            cmd.Transaction <- ctx.Transaction
+                            use cmd = ctx.CreateCommand()
                             cmd.CommandText <- "select count(*) from orders"
                             let! v = cmd.ExecuteScalarAsync(ctx.CancellationToken)
                             return Ok(unbox<int64> v)

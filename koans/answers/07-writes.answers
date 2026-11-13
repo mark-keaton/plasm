@@ -1,0 +1,12 @@
+# Inserting returns the stored record
+true
+ProductId 0L
+# Updates write only the changes
+true
+false
+# Stale updates are refused
+true
+# Infrastructure is not a domain error
+DbFailureKind.CheckViolation
+# Each call takes its own kind of changeset
+true

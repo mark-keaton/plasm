@@ -354,7 +354,7 @@ type JoinSteps(w: World) =
                 )
 
             match r with
-            | Error(Translation(InvalidQuery msg)) -> check (msg.Contains "requires an explicit ordering") msg
+            | Error(DbError.Translation(TranslationError.InvalidQuery msg)) -> check (msg.Contains "requires an explicit ordering") msg
             | other -> failwithf "expected InvalidQuery, got %A" other
 
             equal 0 w.CommandsSinceMark.Length "commands"
@@ -515,7 +515,7 @@ type JoinSteps(w: World) =
                 [ "not supported on joined queries"; "repo.Preload" ]
 
         match w.Get<DbError option> "loadFailure" with
-        | Some(Translation(InvalidQuery msg)) ->
+        | Some(DbError.Translation(TranslationError.InvalidQuery msg)) ->
             for phrase in expected do
                 check (msg.Contains phrase) $"expected '{phrase}' in: {msg}"
         | other -> failwithf "expected InvalidQuery, got %A" other

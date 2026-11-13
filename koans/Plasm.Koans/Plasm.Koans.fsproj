@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The Plasm Koans: fill in each blank (__) and run `dotnet run` again. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Koans.fs" />
+    <Compile Include="Shop.fs" />
+    <Compile Include="Database.fs" />
+    <Compile Include="Lessons/L01_RecordsAndSchemas.fs" />
+    <Compile Include="Lessons/L02_QueryValues.fs" />
+    <Compile Include="Lessons/L03_FiltersAndOrdering.fs" />
+    <Compile Include="Lessons/L04_Reading.fs" />
+    <Compile Include="Lessons/L05_Relationships.fs" />
+    <Compile Include="Lessons/L06_Changesets.fs" />
+    <Compile Include="Lessons/L07_Writes.fs" />
+    <Compile Include="Lessons/L08_ChildWrites.fs" />
+    <Compile Include="Lessons/L09_Transactions.fs" />
+    <Compile Include="Lessons/L10_Joins.fs" />
+    <Compile Include="Lessons/L11_AggregatesAndGrouping.fs" />
+    <Compile Include="Lessons/L12_ManyToManyAndHasOne.fs" />
+    <Compile Include="Lessons/L13_BulkWrites.fs" />
+    <Compile Include="Lessons/L14_HandWrittenSql.fs" />
+    <Compile Include="Lessons/L15_PreparedQueries.fs" />
+    <Compile Include="Lessons/L16_Failures.fs" />
+    <Compile Include="Lessons/L17_TestingWithPlasm.fs" />
+    <Compile Include="Lessons/L18_QueryPipelines.fs" />
+    <Compile Include="Path.fs" />
+    <Compile Include="Guidance.fs" />
+    <Compile Include="Runner.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- What each koan teaches comes from the lesson specifications. -->
+    <None Include="$(PlasmRoot)koans/features/lessons/*.feature" Link="lessons/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(PlasmRoot)src/Plasm/Plasm.fsproj" />
+    <ProjectReference Include="$(PlasmRoot)src/Plasm.Postgres/Plasm.Postgres.fsproj" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+  </ItemGroup>
+</Project>

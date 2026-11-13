@@ -1,0 +1,23 @@
+# Not loaded is not empty
+NotLoaded
+Loaded []
+# Reading a field never queries
+1
+# Loads are batched across parents
+2
+# Siblings load separately
+3
+(2, 1)
+# Loads nest
+"Widget"
+3
+# A child filter filters children
+4
+1
+# Filtering parents through children
+[ OrderId 1L; OrderId 3L ]
+# At most n per parent
+[ Succeeded ]
+# Loading onto values you hold
+NotLoaded
+2
