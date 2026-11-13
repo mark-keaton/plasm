@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- What every way of running the koans shares: blanks and assertions, the
+       koan context and runner, and the shop domain. Plasm only: no Npgsql or
+       Testcontainers, so it also runs in a browser. -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <!-- The oldest FSharp.Core Plasm supports, so hosts with an older one can load it. -->
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Koans.fs" />
+    <Compile Include="Shop.fs" />
+    <Compile Include="KoansData.fs" />
+    <Compile Include="Guidance.fs" />
+    <Compile Include="Runner.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(PlasmRoot)src/Plasm/Plasm.fsproj" />
+    <PackageReference Include="FSharp.Core" />
+  </ItemGroup>
+</Project>

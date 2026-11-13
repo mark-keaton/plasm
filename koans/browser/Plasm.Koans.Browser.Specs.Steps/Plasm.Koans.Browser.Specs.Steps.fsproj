@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Site.fs" />
+    <Compile Include="RunningSteps.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Reqnroll" />
+    <PackageReference Include="Microsoft.Playwright" />
+    <PackageReference Include="FSharp.Core" VersionOverride="11.0.101" />
+  </ItemGroup>
+</Project>

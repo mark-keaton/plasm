@@ -13,6 +13,7 @@
     <Project Path="examples/Plasm.Examples/Plasm.Examples.fsproj" />
   </Folder>
   <Folder Name="/koans/">
+    <Project Path="koans/Plasm.Koans.Core/Plasm.Koans.Core.fsproj" />
     <Project Path="koans/Plasm.Koans/Plasm.Koans.fsproj" />
     <Project Path="koans/Plasm.Koans.Specs.Steps/Plasm.Koans.Specs.Steps.fsproj" />
     <Project Path="koans/Plasm.Koans.Specs/Plasm.Koans.Specs.csproj" />

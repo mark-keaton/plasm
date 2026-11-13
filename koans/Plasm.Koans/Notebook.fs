@@ -100,8 +100,16 @@ type private Cell =
     | Markdown of string list
     | Code of string list
 
-/// A lesson's cells: its helpers, then one cell per koan.
-let private lessonCells (file: string) : Cell list =
+/// One koan as source: its name, whether its body is a task, its lambda's
+/// head ("fun k ->") and its body lines (indented by four).
+type KoanSource =
+    { Name: string
+      IsTask: bool
+      Lambda: string
+      Body: string list }
+
+/// A lesson's source: its helper code (opens, helpers, types) and its koans.
+let parseLesson (file: string) : string list * KoanSource list =
     let lines = File.ReadAllLines file
     let lessonAt = lines |> Array.findIndex (fun l -> l.StartsWith "let lesson =")
 
@@ -131,13 +139,68 @@ let private lessonCells (file: string) : Cell list =
                           let t = lines.[j]
                           t.Length > column && t.[column] = ')' && t.Substring(0, column).Trim() = "")
 
-                  let body = lines.[i + 3 .. close - 1] |> List.ofArray |> dedent |> List.map (fun l -> if l = "" then l else "    " + l)
-                  let call = if m.Groups.[2].Value = "Sync" then "koan" else "koanTask"
-                  let body = body |> List.rev |> List.skipWhile (fun l -> l.Trim() = "") |> List.rev
+                  let body =
+                      lines.[i + 3 .. close - 1]
+                      |> List.ofArray
+                      |> dedent
+                      |> List.map (fun l -> if l = "" then l else "    " + l)
+                      |> List.rev
+                      |> List.skipWhile (fun l -> l.Trim() = "")
+                      |> List.rev
 
-                  yield Code([ $"{call} \"{name}\" ({lambda}" ] @ (List.take (body.Length - 1) body) @ [ List.last body + ")" ]) ]
+                  yield
+                      { Name = name
+                        IsTask = m.Groups.[2].Value = "Task"
+                        Lambda = lambda
+                        Body = body } ]
 
-    (if helpers.IsEmpty then [] else [ Code helpers ]) @ koans
+    helpers, koans
+
+/// A lesson's cells: its helpers, then one cell per koan.
+let private lessonCells (file: string) : Cell list =
+    let helpers, koans = parseLesson file
+
+    let cells =
+        koans
+        |> List.map (fun k ->
+            let call = if k.IsTask then "koanTask" else "koan"
+            Code([ $"{call} \"{k.Name}\" ({k.Lambda}" ] @ (List.take (k.Body.Length - 1) k.Body) @ [ List.last k.Body + ")" ]))
+
+    (if helpers.IsEmpty then [] else [ Code helpers ]) @ cells
+
+/// The course as data for the browser: every lesson's helpers and every
+/// koan's code and guidance, in order.
+let course () : string =
+    let byTitle = guidance.Value |> List.map (fun g -> g.Title, g) |> Map.ofList
+
+    let lessons =
+        Path.lessons
+        |> List.map (fun lesson ->
+            let g = byTitle.TryFind lesson.Title
+            let helpers, koans = parseLesson lesson.Koans.Head.File
+
+            dict
+                [ "title", box lesson.Title
+                  "goal", box (g |> Option.map (fun g -> g.Goal) |> Option.defaultValue "")
+                  "helpers", box (String.concat "\n" helpers)
+                  "koans",
+                  box (
+                      koans
+                      |> List.map (fun k ->
+                          let kg = g |> Option.bind (fun g -> g.Koans.TryFind k.Name)
+
+                          dict
+                              [ "name", box k.Name
+                                "isTask", box k.IsTask
+                                "lambda", box k.Lambda
+                                "body", box (String.concat "\n" k.Body)
+                                "discovers", box (kg |> Option.map (fun x -> x.Discovers) |> Option.defaultValue "")
+                                "teaches", box (kg |> Option.map (fun x -> x.Teaches) |> Option.defaultValue "") ])
+                      |> Array.ofList
+                  ) ])
+        |> Array.ofList
+
+    JsonSerializer.Serialize(dict [ "lessons", box lessons ], JsonSerializerOptions(WriteIndented = true)) + "\n"
 
 /// The notebook (.ipynb JSON) for the lessons, referencing the built koans in `bin`.
 let generate (bin: string) : string =
@@ -163,6 +226,7 @@ let generate (bin: string) : string =
               "#r \"Npgsql.dll\""
               "#r \"Testcontainers.dll\""
               "#r \"Testcontainers.PostgreSql.dll\""
+              "#r \"Plasm.Koans.Core.dll\""
               "#r \"Plasm.Koans.dll\""
               "open Plasm"
               "open Plasm.Koans"

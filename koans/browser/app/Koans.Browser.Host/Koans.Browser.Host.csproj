@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <!-- The browser host: .NET on WebAssembly (single-threaded interpreter, no
+       workloads), run inside a Web Worker. C# because [JSImport]/[JSExport]
+       marshalling comes from a C# source generator. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>disable</Nullable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Compiled koans may use any of the framework, and Plasm reflects. -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <!-- Plain .dll files, which also serve as the compiler's references. -->
+    <WasmEnableWebcil>false</WasmEnableWebcil>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Koans.Browser/Koans.Browser.fsproj" />
+  </ItemGroup>
+</Project>

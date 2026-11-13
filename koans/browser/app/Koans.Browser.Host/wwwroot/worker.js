@@ -1,0 +1,117 @@
+// The koans' engine, in a Web Worker: PGlite (PostgreSQL) and .NET (with the
+// F# compiler). The page sends {type: 'run', ...} messages and gets results.
+import { dotnet } from './_framework/dotnet.js';
+import { PGlite } from './pglite/index.js';
+
+const post = (m) => self.postMessage(m);
+const t0 = performance.now();
+const since = () => Math.round(performance.now() - t0);
+
+// Two of Mono's interpreter optimizations make the F# compiler loop forever
+// after a few compiles (a list walk that stops advancing, in
+// NameResolution.AddTyconRefsToNameEnv); with them off it compiles indefinitely.
+const dotnetStarting = dotnet.withEnvironmentVariable('MONO_INTERPRETER_OPTIONS', '-bblocks,-ssa').create();
+const db = await PGlite.create();
+post({ type: 'progress', what: 'database', ms: since() });
+
+// Values cross the boundary as PostgreSQL text: every result value is left as
+// text (the .NET side converts by type OID) and text parameters pass through.
+const textParsers = {};
+for (const k of Object.keys(db.parsers)) textParsers[k] = (x) => x;
+const textSerializers = {};
+for (const [k, f] of Object.entries(db.serializers)) {
+  textSerializers[k] = (x) => (typeof x === 'string' ? x : f(x));
+}
+
+function errorOf(e) {
+  return {
+    code: e?.code ?? null,
+    constraint: e?.constraint ?? null,
+    message: e?.message ?? String(e),
+    detail: e?.detail ?? null,
+  };
+}
+
+async function query(sql, paramsJson, typesJson) {
+  try {
+    const params = JSON.parse(paramsJson);
+    const paramTypes = JSON.parse(typesJson);
+    const res = await db.query(sql, params, {
+      rowMode: 'array',
+      parsers: textParsers,
+      serializers: textSerializers,
+      paramTypes,
+    });
+    return JSON.stringify({
+      fields: res.fields.map((f) => [f.name, f.dataTypeID]),
+      rows: res.rows,
+      rowCount: res.rowCount ?? res.affectedRows ?? 0,
+    });
+  } catch (e) {
+    return JSON.stringify({ error: errorOf(e) });
+  }
+}
+
+// Synchronous simple-protocol query (for transaction control, which ADO.NET's
+// DbTransaction API calls synchronously). Returns "" or {"error": ...}.
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+function execSync(sql) {
+  const body = encoder.encode(sql);
+  const msg = new Uint8Array(1 + 4 + body.length + 1);
+  msg[0] = 0x51; // 'Q'
+  new DataView(msg.buffer).setInt32(1, 4 + body.length + 1);
+  msg.set(body, 5);
+  const out = db.execProtocolRawSync(msg);
+  const view = new DataView(out.buffer, out.byteOffset, out.byteLength);
+  let i = 0;
+  while (i + 5 <= out.length) {
+    const type = out[i];
+    const len = view.getInt32(i + 1);
+    if (type === 0x45) { // 'E' ErrorResponse
+      const fields = {};
+      let j = i + 5;
+      const end = i + 1 + len;
+      while (j < end && out[j] !== 0) {
+        const code = String.fromCharCode(out[j++]);
+        const start = j;
+        while (out[j] !== 0) j++;
+        fields[code] = decoder.decode(out.subarray(start, j));
+        j++;
+      }
+      return JSON.stringify({
+        error: { code: fields.C ?? null, constraint: fields.n ?? null, message: fields.M ?? 'error', detail: fields.D ?? null },
+      });
+    }
+    i += 1 + len;
+  }
+  return '';
+}
+
+
+const { setModuleImports, getAssemblyExports, getConfig } = await dotnetStarting;
+setModuleImports('worker.js', { pglite: { query, execSync } });
+const exports = (await getAssemblyExports(getConfig().mainAssemblyName)).KoansHost;
+post({ type: 'progress', what: 'runtime', ms: since() });
+
+// The compiler's reference assemblies.
+const names = (await (await fetch('refs/list.txt')).text()).split('\n').filter((n) => n);
+await Promise.all(names.map(async (n) => {
+  exports.AddReference(n, new Uint8Array(await (await fetch('refs/' + n)).arrayBuffer()));
+}));
+post({ type: 'progress', what: 'compiler', ms: since() });
+
+await exports.Init();
+post({ type: 'ready', ms: since() });
+
+self.onmessage = async (e) => {
+  const m = e.data;
+  if (m.type !== 'run') return;
+  try {
+    const result = await exports.RunKoan(m.title, m.name, m.helpers, m.isTask, m.lambda, m.body);
+    post({ type: 'result', id: m.id, result: JSON.parse(result) });
+  } catch (err) {
+    post({ type: 'result', id: m.id, result: { status: 'threw', text: String(err?.stack ?? err) } });
+  }
+};

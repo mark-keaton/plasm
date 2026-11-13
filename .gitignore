@@ -14,3 +14,6 @@ artifacts/
 koans/features/**/*.feature.cs
 koans/features/*.feature.cs
 koans/.work/
+# Browser experiments (kept locally, not committed) and agent worktrees
+koans/browser/experiments/
+.claude/worktrees/

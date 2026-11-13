@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The koans in a browser: compiles a koan's F# with FSharp.Compiler.Service
+       and runs it against PGlite through Plasm's PGlite provider. -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Compiler.fs" />
+    <Compile Include="KoanRun.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(PlasmRoot)src/Plasm/Plasm.fsproj" />
+    <ProjectReference Include="$(PlasmRoot)src/Plasm.PGlite/Plasm.PGlite.fsproj" />
+    <ProjectReference Include="$(PlasmRoot)koans/Plasm.Koans.Core/Plasm.Koans.Core.fsproj" />
+    <PackageReference Include="FSharp.Compiler.Service" />
+  </ItemGroup>
+</Project>

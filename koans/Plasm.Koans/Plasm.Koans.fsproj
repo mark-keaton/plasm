@@ -10,8 +10,6 @@
     <NoWarn>$(NoWarn);NU1510</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Koans.fs" />
-    <Compile Include="Shop.fs" />
     <Compile Include="Database.fs" />
     <Compile Include="Lessons/L01_RecordsAndSchemas.fs" />
     <Compile Include="Lessons/L02_QueryValues.fs" />
@@ -32,8 +30,6 @@
     <Compile Include="Lessons/L17_TestingWithPlasm.fs" />
     <Compile Include="Lessons/L18_QueryPipelines.fs" />
     <Compile Include="Path.fs" />
-    <Compile Include="Guidance.fs" />
-    <Compile Include="Runner.fs" />
     <Compile Include="Notebook.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
@@ -43,6 +39,7 @@
     <None Include="$(PlasmRoot)koans/features/lessons/*.feature" Link="lessons/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="$(PlasmRoot)koans/Plasm.Koans.Core/Plasm.Koans.Core.fsproj" />
     <ProjectReference Include="$(PlasmRoot)src/Plasm/Plasm.fsproj" />
     <ProjectReference Include="$(PlasmRoot)src/Plasm.Postgres/Plasm.Postgres.fsproj" />
     <PackageReference Include="FSharp.Core" />

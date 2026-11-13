@@ -4,6 +4,7 @@
 ///   --all                        run every koan instead of stopping at the first unsatisfied one
 ///   --report <file>              also write every result as JSON (for the koans' own checks)
 ///   --notebook <file> [--bin <dir>]  write the koans as a notebook (no database needed)
+///   --course <file>              write the course as JSON for the browser (no database needed)
 module Plasm.Koans.Program
 
 open System
@@ -41,6 +42,13 @@ let private writeReport (path: string) (results: KoanResult list) =
 
 [<EntryPoint>]
 let main argv =
+    match arg "--course" argv with
+    | Some path ->
+        File.WriteAllText(path, Notebook.course ())
+        printfn "Wrote the koans course to %s" path
+        0
+    | None ->
+
     match arg "--notebook" argv with
     | Some path ->
         let bin = arg "--bin" argv |> Option.defaultValue "../Plasm.Koans/bin/Debug/net11.0"
