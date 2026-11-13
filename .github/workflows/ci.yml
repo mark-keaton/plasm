@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # Pre-release packages are versioned 0.1.0-alpha.<run number>.
+  VERSION_SUFFIX: alpha.${{ github.run_number }}
+
+jobs:
+  build-test-pack:
+    name: Build, test and pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET (version from global.json)
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', '**/*.fsproj', '**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore Plasm.slnx
+
+      - name: Build
+        run: dotnet build Plasm.slnx -c Release --no-restore -p:VersionSuffix=${{ env.VERSION_SUFFIX }}
+
+      # The acceptance scenarios and unit tests run against PostgreSQL 18,
+      # started by Testcontainers on the runner's Docker.
+      - name: Test
+        run: dotnet test -c Release --no-build
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            **/TestResults/**
+          if-no-files-found: ignore
+
+      - name: Pack
+        run: dotnet pack Plasm.slnx -c Release --no-build -o artifacts -p:VersionSuffix=${{ env.VERSION_SUFFIX }}
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: artifacts/*
+          if-no-files-found: error
+
+  website-sql:
+    name: Website SQL is up to date
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # Re-runs every website example against PostgreSQL and fails if a
+      # highlighted fragment is no longer in the generated SQL, or if the
+      # committed website/sql.js differs from what the library now produces.
+      - name: Regenerate website/sql.js
+        run: dotnet run --project examples/Plasm.Examples -- sql
+
+      # Timestamps in parameter values come from the clock, so they are
+      # masked; everything else (SQL, parameters, row counts) must match.
+      - name: Check for differences
+        run: |
+          mask() { sed -E 's#[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}#<timestamp>#g'; }
+          git show HEAD:website/sql.js | mask > committed.js
+          mask < website/sql.js > generated.js
+          if ! diff -u committed.js generated.js; then
+            echo "::error file=website/sql.js::website/sql.js is out of date; run: dotnet run --project examples/Plasm.Examples -- sql"
+            exit 1
+          fi

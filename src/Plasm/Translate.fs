@@ -1,0 +1,1371 @@
+/// Translation of F# quotations into the SQL AST.
+///
+/// Rules:
+/// - A subexpression that does not reference a query row variable is *closed*:
+///   it is evaluated once, during translation, and sent as a parameter.
+/// - A row-dependent subexpression must translate to SQL. Otherwise translation
+///   fails with `UnsupportedExpression`; nothing is evaluated client-side.
+module internal Plasm.Translate
+
+open System
+open System.Collections
+open Microsoft.FSharp.Quotations
+open Microsoft.FSharp.Quotations.Patterns
+open Microsoft.FSharp.Quotations.DerivedPatterns
+open Microsoft.FSharp.Reflection
+open Microsoft.FSharp.Linq.RuntimeHelpers
+
+exception TranslationFailure of TranslationError
+
+/// A source in the query's variable space. `Optional` marks a left-joined
+/// source, which F# code sees as `'T option`.
+type Binding =
+    { Alias: string
+      Schema: SchemaInfo
+      Optional: bool }
+
+type Ctx =
+    { Model: Model
+      Vars: Map<Var, Binding>
+      /// Tuple-typed row variables (after joins): element i is the i-th source.
+      Spaces: Map<Var, Binding list>
+      Aliases: int ref
+      /// Set when a closed subexpression may evaluate differently next time
+      /// (e.g. DateTime.UtcNow), which makes the translated plan non-reusable.
+      Volatile: bool ref }
+
+    member c.Fresh() =
+        c.Aliases.Value <- c.Aliases.Value + 1
+        $"t{c.Aliases.Value}"
+
+let newCtxWith model (vol: bool ref) =
+    { Model = model
+      Vars = Map.empty
+      Spaces = Map.empty
+      Aliases = ref 0
+      Volatile = vol }
+
+let newCtx model = newCtxWith model (ref false)
+
+// ---------------------------------------------------------------------------
+// Compact expression printer for error messages
+// ---------------------------------------------------------------------------
+
+let rec show (e: Expr) : string =
+    match e with
+    | Var v -> v.Name
+    | Value(v, t) when FSharpType.IsFunction t ->
+        // A captured local function: show its source name, not the closure type.
+        let n = v.GetType().Name
+        if n.Contains "@" then n.Substring(0, n.IndexOf '@') else n
+    | Value(v, _) -> if isNull v then "None" else sprintf "%A" v
+    | ValueWithName(_, _, n) -> n
+    | PropertyGet(Some o, p, []) -> $"{show o}.{p.Name}"
+    | PropertyGet(None, p, []) -> p.Name
+    | Lambda(v, b) -> $"fun {v.Name} -> {show b}"
+    | IfThenElse(a, b, Bool false) -> $"{show a} && {show b}"
+    | IfThenElse(a, Bool true, b) -> $"{show a} || {show b}"
+    | Call(None, mi, [ a; b ]) when mi.Name.StartsWith "op_" ->
+        let op =
+            match mi.Name with
+            | "op_Equality" -> "="
+            | "op_Inequality" -> "<>"
+            | "op_LessThan" -> "<"
+            | "op_LessThanOrEqual" -> "<="
+            | "op_GreaterThan" -> ">"
+            | "op_GreaterThanOrEqual" -> ">="
+            | "op_Addition" -> "+"
+            | "op_Subtraction" -> "-"
+            | "op_Multiply" -> "*"
+            | "op_Division" -> "/"
+            | "op_PipeRight" -> "|>"
+            | n -> n
+
+        $"{show a} {op} {show b}"
+    | Call(None, mi, [ a ]) when mi.Name = "MakeDecimal" -> show a
+    | Call(None, mi, args) -> $"""{mi.Name} ({args |> List.map show |> String.concat ", "})"""
+    | Call(Some o, mi, args) -> $"""{show o}.{mi.Name}({args |> List.map show |> String.concat ", "})"""
+    | NewUnionCase(c, []) -> c.Name
+    | NewUnionCase(c, args) -> $"""{c.Name}({args |> List.map show |> String.concat ", "})"""
+    | NewTuple args -> $"""({args |> List.map show |> String.concat ", "})"""
+    | Application(f, x) -> $"{show f} {show x}"
+    | _ -> string e
+
+let private fail (e: Expr) reason =
+    raise (TranslationFailure(UnsupportedExpression(show e, reason)))
+
+let private invalid msg = raise (TranslationFailure(InvalidQuery msg))
+
+// ---------------------------------------------------------------------------
+// Normalisation: inline pipes, applications and let-bindings.
+// ---------------------------------------------------------------------------
+
+/// True when `normalize` would change something (avoids rebuilding trees).
+let rec private needsNormalize (e: Expr) =
+    match e with
+    | Call(None, mi, [ _; _ ]) when mi.Name = "op_PipeRight" || mi.Name = "op_PipeLeft" -> true
+    | Application _
+    | Let _ -> true
+    | ExprShape.ShapeVar _ -> false
+    | ExprShape.ShapeLambda(_, b) -> needsNormalize b
+    | ExprShape.ShapeCombination(_, args) -> List.exists needsNormalize args
+
+let rec normalize (e: Expr) : Expr =
+    if not (needsNormalize e) then e else
+    match e with
+    | Call(None, mi, [ x; f ]) when mi.Name = "op_PipeRight" -> normalize (Expr.Application(f, x))
+    | Call(None, mi, [ f; x ]) when mi.Name = "op_PipeLeft" -> normalize (Expr.Application(f, x))
+    | Application(f, x) ->
+        match normalize f with
+        | Lambda(v, body) -> normalize (body.Substitute(fun v2 -> if v2 = v then Some x else None))
+        | f' -> Expr.Application(f', normalize x)
+    | Let(v, value, body) -> normalize (body.Substitute(fun v2 -> if v2 = v then Some value else None))
+    | ExprShape.ShapeVar _ -> e
+    | ExprShape.ShapeLambda(v, b) -> Expr.Lambda(v, normalize b)
+    | ExprShape.ShapeCombination(o, args) -> ExprShape.RebuildShapeCombination(o, List.map normalize args)
+
+let isAggCall (mi: Reflection.MethodInfo) = mi.DeclaringType.FullName = "Plasm.Agg"
+let isRawCall (mi: Reflection.MethodInfo) = mi.DeclaringType.FullName = "Plasm.Raw"
+
+/// Does `e` mention a query row variable (or an aggregate or SQL fragment,
+/// which are SQL by definition)? Allocation-free walk; row variables are bound
+/// by the translator, never inside the expression, so shadowing does not arise.
+let rec private mentions (ctx: Ctx) (e: Expr) =
+    match e with
+    | Call(None, mi, _) when isAggCall mi || isRawCall mi -> true
+    | ExprShape.ShapeVar v -> ctx.Vars.ContainsKey v || ctx.Spaces.ContainsKey v
+    | ExprShape.ShapeLambda(_, b) -> mentions ctx b
+    | ExprShape.ShapeCombination(_, args) -> List.exists (mentions ctx) args
+
+let isRowDependent (ctx: Ctx) (e: Expr) = mentions ctx e
+
+/// True for closed expressions whose value cannot change between evaluations:
+/// literals, captured values, immutable module values and constructors of them.
+let rec isStable (e: Expr) =
+    match e with
+    | Value _
+    | ValueWithName _ -> true
+    | PropertyGet(None, p, []) -> not p.CanWrite
+    | NewUnionCase(_, args)
+    | NewTuple args
+    | NewRecord(_, args) -> List.forall isStable args
+    | Call(None, mi, args) when mi.Name = "MakeDecimal" -> List.forall isStable args
+    | Coerce(x, _) -> isStable x
+    | _ -> false
+
+/// Evaluates a closed expression (captured values, literals, constructors).
+let rec private evalDirect (e: Expr) : obj option =
+    match e with
+    | Value(v, _) -> Some v
+    | ValueWithName(v, _, _) -> Some v
+    | PropertyGet(None, p, []) -> Some(p.GetValue(null))
+    | NewUnionCase(c, args) ->
+        let vs = args |> List.map evalDirect
+        if List.forall Option.isSome vs then
+            Some(FSharpValue.MakeUnion(c, vs |> List.map Option.get |> Array.ofList, true))
+        else
+            None
+    | NewTuple args ->
+        let vs = args |> List.map evalDirect
+        if List.forall Option.isSome vs then
+            Some(FSharpValue.MakeTuple(vs |> List.map Option.get |> Array.ofList, e.Type))
+        else
+            None
+    | Call(None, mi, [ Value(lo, _); Value(mid, _); Value(hi, _); Value(neg, _); Value(scale, _) ]) when mi.Name = "MakeDecimal" ->
+        Some(box (Decimal(unbox<int> lo, unbox<int> mid, unbox<int> hi, unbox<bool> neg, unbox<byte> scale)))
+    | Coerce(x, _) -> evalDirect x
+    | _ -> None
+
+let evaluate (ctx: Ctx) (e: Expr) : obj =
+    if not (isStable e) then
+        ctx.Volatile.Value <- true
+
+    match evalDirect e with
+    | Some v -> v
+    | None ->
+        try
+            LeafExpressionConverter.EvaluateQuotation e
+        with ex ->
+            fail e $"captured expression could not be evaluated: {Err.describeExn ex}"
+
+let private unwrapOption (t: Type) (v: obj) =
+    if Reflection.isOption t then
+        Reflection.getOptionValue t v
+    else if isNull v then
+        None
+    else
+        Some v
+
+let private scalarType (t: Type) =
+    if Reflection.isOption t then Reflection.elementType t else t
+
+let toParam (ctx: Ctx) (e: Expr) (domainType: Type) (value: obj) : Sql.Expr =
+    match ctx.Model.ScalarToDb(domainType, value) with
+    | Ok v -> Sql.Param v
+    | Error msg -> fail e msg
+
+// ---------------------------------------------------------------------------
+// Prepared-query arguments
+// ---------------------------------------------------------------------------
+
+let mentionsArg (e: Expr) = Prepared.mentionsArg e
+
+let private unboxMethod =
+    match <@ unbox<int> null @> with
+    | Call(None, mi, _) -> mi.GetGenericMethodDefinition()
+    | _ -> failwith "unreachable"
+
+/// Compiles a closed expression over prepared-query arguments into a function
+/// of the argument array (once, when the query is planned).
+let private argFunction (e: Expr) : obj[] -> obj =
+    let (|ArgValue|_|) (x: Expr) =
+        match x with
+        | PropertyGet(Some(Value(:? IArg as a, _) | ValueWithName(:? IArg as a, _, _)), p, []) when p.Name = "Value" -> Some a
+        | _ -> None
+
+    match e with
+    | ArgValue a -> fun args -> args.[a.Index]
+    | _ ->
+        let argsVar = Var("args", typeof<obj[]>)
+
+        let rec subst (x: Expr) =
+            match x with
+            | ArgValue a ->
+                let item = <@@ (%%(Expr.Var argsVar): obj[]).[a.Index] @@>
+                Expr.Call(unboxMethod.MakeGenericMethod x.Type, [ item ])
+            | Value(:? IArg, _)
+            | ValueWithName(:? IArg, _, _) -> fail e "a prepared-query argument must be read with .Value"
+            | ExprShape.ShapeVar _ -> x
+            | ExprShape.ShapeLambda(v, b) -> Expr.Lambda(v, subst b)
+            | ExprShape.ShapeCombination(o, xs) -> ExprShape.RebuildShapeCombination(o, List.map subst xs)
+
+        let lambda = Expr.Lambda(argsVar, Expr.Coerce(subst e, typeof<obj>))
+
+        let f =
+            try
+                LeafExpressionConverter.EvaluateQuotation lambda :?> (obj[] -> obj)
+            with ex ->
+                fail e $"argument expression could not be compiled: {Err.describeExn ex}"
+
+        f
+
+/// A parameter bound from the arguments each time the query runs. `transform`
+/// adjusts the domain value (e.g. LIKE escaping) before conversion.
+let private argParamWith (ctx: Ctx) (e: Expr) (valueType: Type) (transform: obj -> obj) : Sql.Expr =
+    let f = argFunction e
+    let model = ctx.Model
+    let scalarT = if Reflection.isOption valueType then Reflection.elementType valueType else valueType
+
+    let resolve (args: obj[]) =
+        let v = f args
+        let inner =
+            if Reflection.isOption valueType then Reflection.getOptionValue valueType v
+            elif isNull v then None
+            else Some v
+
+        match inner with
+        | None -> box DBNull.Value
+        | Some x ->
+            match model.ScalarToDb(scalarT, transform x) with
+            | Ok p -> p
+            | Error m -> invalidOp m
+
+    Sql.Param(box (Sql.Bound(resolve, show e)))
+
+let private argParam ctx (e: Expr) = argParamWith ctx e e.Type id
+
+// ---------------------------------------------------------------------------
+// Row field resolution
+// ---------------------------------------------------------------------------
+
+/// A whole source of the variable space: a row variable, or an element of a
+/// joined tuple.
+let (|RowBinding|_|) (ctx: Ctx) (e: Expr) =
+    match e with
+    | Var v -> ctx.Vars.TryFind v
+    | TupleGet(Var t, i) -> ctx.Spaces.TryFind t |> Option.bind (List.tryItem i)
+    | _ -> None
+
+let (|RowField|_|) (ctx: Ctx) (e: Expr) =
+    match e with
+    | PropertyGet(Some(RowBinding ctx b), prop, []) when not b.Optional ->
+        b.Schema.TryField prop.Name |> Option.map (fun f -> b, f)
+    | _ -> None
+
+let (|RowAssoc|_|) (ctx: Ctx) (e: Expr) =
+    match e with
+    | PropertyGet(Some(RowBinding ctx b), prop, []) when not b.Optional ->
+        b.Schema.TryAssoc prop.Name |> Option.map (fun a -> b, a)
+    | _ -> None
+
+let private isOptionModule (mi: Reflection.MethodInfo) (name: string) =
+    mi.DeclaringType.Name = "OptionModule" && mi.Name = name
+
+/// `Option.map (fun c -> c.Field) c` / `Option.bind` over a left-joined source:
+/// the field's column, NULL when the source is missing.
+let (|OptionalField|_|) (ctx: Ctx) (e: Expr) =
+    match e with
+    | Call(None, mi, [ Lambda(x, PropertyGet(Some(Var x2), prop, [])); RowBinding ctx b ]) when
+        b.Optional
+        && x = x2
+        && (isOptionModule mi "Map" || isOptionModule mi "Bind")
+        ->
+        match b.Schema.TryField prop.Name with
+        | Some f when mi.Name = "Map" && f.IsOption ->
+            fail e $"{b.Schema.Name}.{f.Name} is optional; use Option.bind rather than Option.map"
+        | Some f when mi.Name = "Bind" && not f.IsOption ->
+            fail e $"{b.Schema.Name}.{f.Name} is not optional; use Option.map rather than Option.bind"
+        | Some f -> Some(b, f)
+        | None -> fail e $"property '{prop.Name}' of {b.Schema.Name} is not a mapped column"
+    | _ -> None
+
+let private keyOf (b: Binding) = Sql.Column(b.Alias, b.Schema.Key.Column)
+
+let private isCollectionModule (mi: Reflection.MethodInfo) =
+    match mi.DeclaringType.FullName with
+    | "Microsoft.FSharp.Collections.ListModule"
+    | "Microsoft.FSharp.Collections.SeqModule"
+    | "Microsoft.FSharp.Collections.ArrayModule" -> true
+    | _ -> false
+
+let private comparisonOps =
+    dict
+        [ "op_LessThan", "<"
+          "op_LessThanOrEqual", "<="
+          "op_GreaterThan", ">"
+          "op_GreaterThanOrEqual", ">=" ]
+
+let private arithmeticOps =
+    dict
+        [ "op_Addition", "+"
+          "op_Subtraction", "-"
+          "op_Multiply", "*"
+          "op_Division", "/"
+          "op_Modulus", "%" ]
+
+let private escapeLike (s: string) =
+    s.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_")
+
+// ---------------------------------------------------------------------------
+// Expressions
+// ---------------------------------------------------------------------------
+
+let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
+    if not (isRowDependent ctx e) && mentionsArg e then
+        argParam ctx e
+    elif not (isRowDependent ctx e) then
+        let v = evaluate ctx e
+
+        match unwrapOption e.Type v with
+        | None -> Sql.Literal "NULL"
+        | Some inner when e.Type = typeof<bool> -> Sql.Literal(if unbox<bool> inner then "TRUE" else "FALSE")
+        | Some inner -> toParam ctx e (scalarType e.Type) inner
+    else
+        match e with
+        | RowField ctx (b, f) -> Sql.Column(b.Alias, f.Column)
+        | OptionalField ctx (b, f) -> Sql.Column(b.Alias, f.Column)
+        // `Some c.Id` in a comparison or join key: the inner value.
+        | NewUnionCase(c, [ x ]) when c.Name = "Some" && Reflection.isOption e.Type -> scalar ctx x
+        | RowAssoc ctx (_, a) ->
+            fail e $"relationship '{a.Name}' cannot be used as a value; use Rel.any/Rel.all, or preload it"
+        | PropertyGet(Some(RowField ctx (b, f)), p, []) when f.IsOption && p.Name = "Value" -> Sql.Column(b.Alias, f.Column)
+        | Call(None, mi, [ RowField ctx (b, f) ]) when
+            f.IsOption
+            && mi.DeclaringType.Name = "OptionModule"
+            && (mi.Name = "GetValue" || mi.Name = "Get")
+            ->
+            Sql.Column(b.Alias, f.Column)
+        | PropertyGet(Some(RowBinding ctx b), p, []) when not b.Optional ->
+            fail e $"property '{p.Name}' of {b.Schema.Name} is not a mapped column"
+        | RowBinding ctx b when b.Optional ->
+            fail e $"a left-joined {b.Schema.Name} cannot be used as a value; use Option.map, Option.exists or IsNone"
+        | RowBinding ctx b -> fail e $"a whole {b.Schema.Name} cannot be used as a value; compare its fields"
+        | Call(None, mi, [ a; b ]) when arithmeticOps.ContainsKey mi.Name ->
+            let op =
+                if mi.Name = "op_Addition" && a.Type = typeof<string> then
+                    "||"
+                else
+                    arithmeticOps.[mi.Name]
+
+            if Reflection.isOption a.Type || Reflection.isOption b.Type then
+                fail e "arithmetic on optional values is not supported"
+
+            Sql.Binary(op, scalar ctx a, scalar ctx b)
+        | Call(Some s, mi, []) when s.Type = typeof<string> ->
+            match mi.Name with
+            | "ToLower"
+            | "ToLowerInvariant" -> Sql.Func("lower", [ scalar ctx s ])
+            | "ToUpper"
+            | "ToUpperInvariant" -> Sql.Func("upper", [ scalar ctx s ])
+            | "Trim" -> Sql.Func("btrim", [ scalar ctx s ])
+            | n -> fail e $"string method '{n}' has no SQL translation"
+        | PropertyGet(Some s, p, []) when s.Type = typeof<string> && p.Name = "Length" -> Sql.Func("char_length", [ scalar ctx s ])
+        | Call(None, mi, args) when isAggCall mi -> aggregate ctx e mi args
+        | Call(None, mi, [ sql; args ]) when isRawCall mi -> fragment ctx e sql args
+        | _ when e.Type = typeof<bool> -> predicate ctx e
+        | _ -> fail e "expression cannot be translated to SQL and will not be evaluated in application memory"
+
+and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
+    if not (isRowDependent ctx e) then
+        scalar ctx e
+    else
+        match e with
+        | IfThenElse(a, b, Bool false) -> Sql.Binary("AND", predicate ctx a, predicate ctx b)
+        | IfThenElse(a, Bool true, b) -> Sql.Binary("OR", predicate ctx a, predicate ctx b)
+        | SpecificCall <@ not @> (_, _, [ a ]) -> Sql.Not(predicate ctx a)
+        // Left-joined sources: presence tests and option predicates.
+        | Call(None, mi, [ RowBinding ctx b ]) when b.Optional && (mi.Name = "get_IsSome" || isOptionModule mi "IsSome") ->
+            Sql.IsNotNull(keyOf b)
+        | Call(None, mi, [ RowBinding ctx b ]) when b.Optional && (mi.Name = "get_IsNone" || isOptionModule mi "IsNone") ->
+            Sql.IsNull(keyOf b)
+        | PropertyGet(Some(RowBinding ctx b), p, []) when b.Optional && p.Name = "IsSome" -> Sql.IsNotNull(keyOf b)
+        | PropertyGet(Some(RowBinding ctx b), p, []) when b.Optional && p.Name = "IsNone" -> Sql.IsNull(keyOf b)
+        | Call(None, mi, [ Lambda(x, body); RowBinding ctx b ]) when b.Optional && isOptionModule mi "Exists" ->
+            let inner = { ctx with Vars = ctx.Vars.Add(x, { b with Optional = false }) }
+            Sql.Binary("AND", Sql.IsNotNull(keyOf b), predicate inner body)
+        | Call(None, mi, [ Lambda(x, body); RowBinding ctx b ]) when b.Optional && isOptionModule mi "ForAll" ->
+            let inner = { ctx with Vars = ctx.Vars.Add(x, { b with Optional = false }) }
+            Sql.Binary("OR", Sql.IsNull(keyOf b), predicate inner body)
+        | SpecificCall <@ (=) @> (_, _, [ a; b ]) -> equality ctx e a b false
+        | SpecificCall <@ (<>) @> (_, _, [ a; b ]) -> equality ctx e a b true
+        | Call(None, mi, [ a; b ]) when comparisonOps.ContainsKey mi.Name ->
+            if Reflection.isOption a.Type || Reflection.isOption b.Type then
+                fail
+                    e
+                    "ordering comparisons on optional values differ between F# (None < Some) and SQL (NULL); compare x.Value after testing x.IsSome"
+
+            Sql.Binary(comparisonOps.[mi.Name], scalar ctx a, scalar ctx b)
+        | PropertyGet(Some(RowField ctx (b, f)), p, []) when f.IsOption && p.Name = "IsSome" ->
+            Sql.IsNotNull(Sql.Column(b.Alias, f.Column))
+        | PropertyGet(Some(RowField ctx (b, f)), p, []) when f.IsOption && p.Name = "IsNone" ->
+            Sql.IsNull(Sql.Column(b.Alias, f.Column))
+        // x.IsSome / x.IsNone compile to static calls on the option type.
+        | Call(None, mi, [ RowField ctx (b, f) ]) when f.IsOption && Reflection.isOption mi.DeclaringType && mi.Name = "get_IsSome" ->
+            Sql.IsNotNull(Sql.Column(b.Alias, f.Column))
+        | Call(None, mi, [ RowField ctx (b, f) ]) when f.IsOption && Reflection.isOption mi.DeclaringType && mi.Name = "get_IsNone" ->
+            Sql.IsNull(Sql.Column(b.Alias, f.Column))
+        | Call(None, mi, [ RowField ctx (b, f) ]) when f.IsOption && mi.DeclaringType.Name = "OptionModule" ->
+            match mi.Name with
+            | "IsSome" -> Sql.IsNotNull(Sql.Column(b.Alias, f.Column))
+            | "IsNone" -> Sql.IsNull(Sql.Column(b.Alias, f.Column))
+            | n -> fail e $"Option.{n} has no SQL translation"
+        | Call(Some s, mi, [ arg ]) when s.Type = typeof<string> && arg.Type = typeof<string> ->
+            if isRowDependent ctx arg then
+                fail e "string pattern arguments must be values, not columns"
+
+            if mentionsArg arg then
+                let shape (t: string) =
+                    match mi.Name with
+                    | "StartsWith" -> escapeLike t + "%"
+                    | "EndsWith" -> "%" + escapeLike t
+                    | "Contains" -> "%" + escapeLike t + "%"
+                    | n -> fail e $"string method '{n}' has no SQL translation"
+
+                shape "" |> ignore
+                Sql.Like(scalar ctx s, argParamWith ctx arg typeof<string> (fun v -> box (shape (string v))))
+            else
+
+            let text = evaluate ctx arg :?> string
+
+            if isNull text then
+                fail e "string pattern argument is null"
+
+            let pattern =
+                match mi.Name with
+                | "StartsWith" -> escapeLike text + "%"
+                | "EndsWith" -> "%" + escapeLike text
+                | "Contains" -> "%" + escapeLike text + "%"
+                | n -> fail e $"string method '{n}' has no SQL translation"
+
+            Sql.Like(scalar ctx s, Sql.Param pattern)
+        | Call(None, mi, [ x; coll ]) when mi.Name = "Contains" && isCollectionModule mi -> membership ctx e x coll
+        | Call(Some coll, mi, [ x ]) when mi.Name = "Contains" && not (isRowDependent ctx coll) -> membership ctx e x coll
+        | SpecificCall <@ Rel.any @> (_, _, [ Lambda(pv, body); assoc ]) -> relationship ctx e pv body assoc false
+        | SpecificCall <@ Rel.all @> (_, _, [ Lambda(pv, body); assoc ]) -> relationship ctx e pv body assoc true
+        | RowField ctx (b, f) when f.ScalarType = typeof<bool> && not f.IsOption -> Sql.Column(b.Alias, f.Column)
+        | Call(None, mi, [ sql; args ]) when isRawCall mi -> fragment ctx e sql args
+        | _ -> fail e "predicate cannot be translated to SQL and will not be evaluated in application memory"
+
+and aggregate ctx (e: Expr) (mi: Reflection.MethodInfo) (args: Expr list) : Sql.Expr =
+    let arg () =
+        match args with
+        | [ x ] ->
+            let sql = scalar ctx x
+
+            if containsAggregate sql then
+                fail e "aggregates cannot be nested"
+
+            sql
+        | _ -> fail e "unexpected aggregate arguments"
+
+    match mi.Name with
+    | "count" -> Sql.Aggregate("COUNT", false, None)
+    | "countDistinct" -> Sql.Aggregate("COUNT", true, Some(arg ()))
+    // F# meaning: the sum of no values is zero (List.sum []).
+    | "sum" -> Sql.Func("COALESCE", [ Sql.Aggregate("SUM", false, Some(arg ())); Sql.Literal "0" ])
+    | "min" -> Sql.Aggregate("MIN", false, Some(arg ()))
+    | "max" -> Sql.Aggregate("MAX", false, Some(arg ()))
+    | "avg" -> Sql.Aggregate("AVG", false, Some(arg ()))
+    | n -> fail e $"Agg.{n} has no SQL translation"
+
+and fragment ctx (e: Expr) (sql: Expr) (args: Expr) : Sql.Expr =
+    let text =
+        match sql with
+        | NewObject(_, Value(:? string as t, _) :: _)
+        | Coerce(NewObject(_, Value(:? string as t, _) :: _), _) -> t.Replace("%%", "%")
+        | _ ->
+            invalid
+                $"Raw.fragment SQL must be a string literal, so values can never be spliced into SQL text; pass values as fragment arguments instead (in: {show e})"
+
+    let rec unboxed (x: Expr) =
+        match x with
+        | Coerce(y, _) -> unboxed y
+        | Call(None, mi, [ y ]) when mi.Name = "Box" -> unboxed y
+        | y -> y
+
+    let items =
+        match unboxed args with
+        | NewTuple xs -> xs
+        | Value(null, _) -> []
+        | x -> [ x ]
+
+    let parts = ResizeArray<Choice<string, Sql.Expr>>()
+    let text' = Text.StringBuilder()
+    let mutable i = 0
+
+    let flush () =
+        if text'.Length > 0 then
+            parts.Add(Choice1Of2(text'.ToString()))
+            text'.Clear() |> ignore
+
+    while i < text.Length do
+        let c = text.[i]
+
+        if c = '{' && i + 1 < text.Length && text.[i + 1] = '{' then
+            text'.Append '{' |> ignore
+            i <- i + 2
+        elif c = '}' && i + 1 < text.Length && text.[i + 1] = '}' then
+            text'.Append '}' |> ignore
+            i <- i + 2
+        elif c = '{' then
+            let close = text.IndexOf('}', i)
+
+            match (if close > i then Int32.TryParse(text.Substring(i + 1, close - i - 1)) else (false, 0)) with
+            | true, n when n >= 0 && n < items.Length ->
+                flush ()
+                parts.Add(Choice2Of2(scalar ctx items.[n]))
+                i <- close + 1
+            | true, n -> invalid $"Raw.fragment placeholder {{{n}}} has no argument ({items.Length} given)"
+            | _ -> invalid $"Raw.fragment placeholders are {{0}}, {{1}}, ...; use {{{{ for a literal brace"
+        else
+            text'.Append c |> ignore
+            i <- i + 1
+
+    flush ()
+    Sql.Fragment(List.ofSeq parts)
+
+and containsAggregate (e: Sql.Expr) : bool =
+    match e with
+    | Sql.Aggregate _ -> true
+    | Sql.Binary(_, a, b)
+    | Sql.NotDistinctFrom(a, b)
+    | Sql.DistinctFrom(a, b)
+    | Sql.Like(a, b) -> containsAggregate a || containsAggregate b
+    | Sql.Not a
+    | Sql.IsNull a
+    | Sql.IsNotNull a
+    | Sql.AnyOf(a, _) -> containsAggregate a
+    | Sql.Func(_, xs) -> List.exists containsAggregate xs
+    | Sql.Fragment ps ->
+        ps
+        |> List.exists (function
+            | Choice2Of2 x -> containsAggregate x
+            | _ -> false)
+    | _ -> false
+
+and equality ctx (whole: Expr) (a: Expr) (b: Expr) (negate: bool) : Sql.Expr =
+    let aDep, bDep = isRowDependent ctx a, isRowDependent ctx b
+
+    // `c = None` for a left-joined source tests whether it is missing.
+    let missing (src: Expr) (other: Expr) =
+        match src with
+        | RowBinding ctx bnd when bnd.Optional ->
+            if isRowDependent ctx other || not (isNull (evaluate ctx other)) then
+                fail whole "a left-joined source can only be compared with None; use Option.exists for its fields"
+
+            Some(if negate then Sql.IsNotNull(keyOf bnd) else Sql.IsNull(keyOf bnd))
+        | _ -> None
+
+    match missing a b |> Option.orElse (missing b a) with
+    | Some sql -> sql
+    | None ->
+
+        match aDep, bDep with
+        | false, true -> equality ctx whole b a negate
+        | true, false when mentionsArg b ->
+            // A bound argument: one SQL shape for every value, so options use
+            // IS [NOT] DISTINCT FROM (F#: None = None).
+            let lhs = scalar ctx a
+
+            match b with
+            | NewUnionCase(c, [ x ]) when c.Name = "Some" ->
+                let rhs = argParam ctx x
+                if negate && Reflection.isOption a.Type then Sql.DistinctFrom(lhs, rhs)
+                else Sql.Binary((if negate then "<>" else "="), lhs, rhs)
+            | _ when Reflection.isOption b.Type ->
+                let rhs = argParam ctx b
+                if negate then Sql.DistinctFrom(lhs, rhs) else Sql.NotDistinctFrom(lhs, rhs)
+            | _ ->
+                let rhs = argParam ctx b
+                if negate && Reflection.isOption a.Type then Sql.DistinctFrom(lhs, rhs)
+                else Sql.Binary((if negate then "<>" else "="), lhs, rhs)
+        | true, false ->
+            let v = evaluate ctx b
+
+            match unwrapOption b.Type v with
+            | None ->
+                // F# `= None` means "is absent": SQL IS NULL, never `= NULL`.
+                let col = scalar ctx a
+                if negate then Sql.IsNotNull col else Sql.IsNull col
+            | Some inner ->
+                let lhs = scalar ctx a
+                let rhs = toParam ctx whole (scalarType b.Type) inner
+
+                if negate && Reflection.isOption a.Type then
+                    // F#: (None <> Some x) is true, so NULL rows must match.
+                    Sql.DistinctFrom(lhs, rhs)
+                else
+                    Sql.Binary((if negate then "<>" else "="), lhs, rhs)
+        | true, true ->
+            let l, r = scalar ctx a, scalar ctx b
+
+            if Reflection.isOption a.Type || Reflection.isOption b.Type then
+                // Structural F# equality: None = None.
+                if negate then Sql.DistinctFrom(l, r) else Sql.NotDistinctFrom(l, r)
+            else
+                Sql.Binary((if negate then "<>" else "="), l, r)
+        | false, false -> scalar ctx whole
+
+and membership ctx (whole: Expr) (x: Expr) (coll: Expr) : Sql.Expr =
+    if isRowDependent ctx coll then
+        fail whole "membership collections must be values, not columns"
+
+    if Reflection.isOption x.Type then
+        fail whole "membership tests on optional columns are not supported; test IsSome and use .Value"
+
+    let elemType = x.Type
+
+    let providerType =
+        match ctx.Model.ProviderTypeOf elemType with
+        | Some t -> t
+        | None -> fail whole $"type {Reflection.typeName elemType} has no scalar mapping"
+
+    if mentionsArg coll then
+        // One SQL shape for every list (empty included): `= ANY(@p)`.
+        let f = argFunction coll
+        let model = ctx.Model
+
+        let resolve (args: obj[]) =
+            let values =
+                match f args with
+                | null -> [||]
+                | items -> (items :?> IEnumerable) |> Seq.cast<obj> |> Seq.distinct |> Seq.toArray
+
+            let arr = Array.CreateInstance(providerType, values.Length)
+
+            values
+            |> Array.iteri (fun i v ->
+                match model.ScalarToDb(elemType, v) with
+                | Ok p -> arr.SetValue(p, i)
+                | Error m -> invalidOp m)
+
+            box arr
+
+        Sql.Binary("=", scalar ctx x, Sql.Func("ANY", [ Sql.Param(box (Sql.Bound(resolve, show coll))) ]))
+    else
+
+    let items = evaluate ctx coll
+
+    if isNull items then
+        fail whole "membership collection is null"
+
+    let values =
+        (items :?> IEnumerable)
+        |> Seq.cast<obj>
+        |> Seq.distinct
+        |> Seq.map (fun v ->
+            match ctx.Model.ScalarToDb(elemType, v) with
+            | Ok p -> p
+            | Error m -> fail whole m)
+        |> Seq.toArray
+
+    let arr = Array.CreateInstance(providerType, values.Length)
+    values |> Array.iteri (fun i v -> arr.SetValue(v, i))
+    Sql.AnyOf(scalar ctx x, arr)
+
+and relationship ctx (whole: Expr) (pv: Var) (body: Expr) (assoc: Expr) (all: bool) : Sql.Expr =
+    match assoc with
+    | RowAssoc ctx (parent, a) ->
+        let target =
+            match ctx.Model.Schema a.Target with
+            | Ok s -> s
+            | Error err -> raise (TranslationFailure err)
+
+        let alias = ctx.Fresh()
+
+        let correlation =
+            match a.Kind with
+            | HasMany
+            | HasOne ->
+                Sql.Binary(
+                    "=",
+                    Sql.Column(alias, (target.Field a.ForeignKey).Column),
+                    Sql.Column(parent.Alias, parent.Schema.Key.Column)
+                )
+            | BelongsTo ->
+                Sql.Binary(
+                    "=",
+                    Sql.Column(alias, target.Key.Column),
+                    Sql.Column(parent.Alias, (parent.Schema.Field a.ForeignKey).Column)
+                )
+            | ManyToMany ->
+                let j = a.Through.Value
+                Sql.Binary("=", Sql.Column(alias + "j", j.OwnerColumn), Sql.Column(parent.Alias, parent.Schema.Key.Column))
+
+        let throughJoin: Sql.Join list =
+            match a.Through with
+            | Some j ->
+                [ { Left = false
+                    Table = j.Table
+                    Alias = alias + "j"
+                    On = Sql.Binary("=", Sql.Column(alias + "j", j.TargetColumn), Sql.Column(alias, target.Key.Column)) } ]
+            | None -> []
+
+        let inner =
+            { ctx with
+                Vars =
+                    ctx.Vars.Add(
+                        pv,
+                        { Alias = alias
+                          Schema = target
+                          Optional = false }
+                    ) }
+
+        let pred = predicate inner body
+
+        let condition =
+            if all then
+                Sql.Not(Sql.Func("COALESCE", [ pred; Sql.Literal "FALSE" ]))
+            else
+                pred
+
+        let sub =
+            { Sql.select (Sql.Table(target.Table, alias)) with
+                Joins = throughJoin
+                Where = [ correlation; condition ] }
+
+        if all then Sql.Not(Sql.Exists sub) else Sql.Exists sub
+    | _ -> fail whole "Rel.any / Rel.all must be applied directly to a relationship field of the query row"
+
+// ---------------------------------------------------------------------------
+// Query-level translation
+// ---------------------------------------------------------------------------
+
+let private bindLambda (ctx: Ctx) (binding: Binding) (lambda: Expr) =
+    match normalize lambda with
+    | Lambda(v, body) -> { ctx with Vars = ctx.Vars.Add(v, binding) }, body
+    | other -> fail other "expected a lambda"
+
+/// Binds a lambda over the variable space. Operations written before any join
+/// take the root record; later ones take the tuple of all sources so far.
+let private bindSpace (ctx: Ctx) (space: Binding list) (lambda: Expr) =
+    match normalize lambda with
+    | Lambda(v, body) when space.Length > 1 && FSharpType.IsTuple v.Type ->
+        let n = FSharpType.GetTupleElements(v.Type).Length
+        { ctx with Spaces = ctx.Spaces.Add(v, List.take n space) }, body
+    | Lambda(v, body) -> { ctx with Vars = ctx.Vars.Add(v, space.Head) }, body
+    | other -> fail other "expected a lambda"
+
+let private orderItem ctx (body: Expr) (dir: SortDirection) : Sql.OrderItem =
+    if mentionsArg body then
+        invalid "a prepared query cannot order by an argument: the ordering is part of the query's shape"
+
+    let desc = (dir = Descending)
+
+    { Expr = scalar ctx body
+      Desc = desc
+      // Match F# ordering of options: None sorts before Some.
+      NullsFirst = if Reflection.isOption body.Type then Some(not desc) else None }
+
+let translateWhereOver ctx space (lambda: Expr) =
+    let ctx, body = bindSpace ctx space lambda
+    let sql = predicate ctx body
+
+    if containsAggregate sql then
+        invalid
+            $"Agg functions cannot be used in where, which filters rows before they are grouped; use having (in: {show body})"
+
+    sql
+
+let private translateHavingOver ctx space (lambda: Expr) =
+    let ctx, body = bindSpace ctx space lambda
+    predicate ctx body
+
+let translateOrderOver ctx space (lambda: Expr, dir: SortDirection) =
+    let ctx, body = bindSpace ctx space lambda
+    orderItem ctx body dir
+
+let translateWhere ctx binding (lambda: Expr) = translateWhereOver ctx [ binding ] lambda
+
+let translateOrder ctx binding (lambda: Expr, dir: SortDirection) : Sql.OrderItem =
+    translateOrderOver ctx [ binding ] (lambda, dir)
+
+let entityColumns (alias: string) (s: SchemaInfo) =
+    s.Fields |> Array.toList |> List.map (fun f -> Sql.Column(alias, f.Column), f.Column)
+
+let private appendKey (orders: Sql.OrderItem list) (key: Sql.Expr) =
+    if orders |> List.exists (fun o -> o.Expr = key) then
+        orders
+    else
+        orders
+        @ [ { Expr = key
+              Desc = false
+              NullsFirst = None } ]
+
+/// Ensures a deterministic order for pagination: the primary key is appended as
+/// a final tiebreaker unless already present.
+let stableOrder (alias: string) (s: SchemaInfo) (orders: Sql.OrderItem list) =
+    appendKey orders (Sql.Column(alias, s.Key.Column))
+
+/// Over joined rows, a row is identified by the keys of every source.
+let private stableOrderOver (space: Binding list) orders =
+    space |> List.fold (fun os b -> appendKey os (keyOf b)) orders
+
+let wrap f =
+    try
+        Ok(f ())
+    with
+    | TranslationFailure err -> Error err
+    | PlasmConfigurationException msg -> Error(InvalidQuery msg)
+
+/// Translates the scalar part of a query (filters, ordering, paging) over a root alias.
+let translateBody (ctx: Ctx) (def: QueryDef) (alias: string) (schema: SchemaInfo) =
+    let binding =
+        { Alias = alias
+          Schema = schema
+          Optional = false }
+
+    let wheres = def.Wheres |> List.map (translateWhere ctx binding)
+    let orders = def.Orders |> List.map (translateOrder ctx binding)
+    wheres, orders
+
+let private checkProblems (def: QueryDef) =
+    match def.Problems with
+    | p :: _ -> invalid p
+    | [] -> ()
+
+let private schemaOf (model: Model) (t: Type) =
+    match model.Schema t with
+    | Ok s -> s
+    | Error e -> raise (TranslationFailure e)
+
+/// The variable space of a query: the root, then each joined source, with the
+/// SQL joins that bring them in.
+let private joinSpace (ctx: Ctx) (def: QueryDef) (root: SchemaInfo) : Binding list * Sql.Join list =
+    let rootBinding =
+        { Alias = "t0"
+          Schema = root
+          Optional = false }
+
+    def.Joins
+    |> List.indexed
+    |> List.fold
+        (fun (space: Binding list, joins: Sql.Join list) (i, j) ->
+            let target = schemaOf ctx.Model j.Target
+
+            let b =
+                { Alias = $"j{i + 1}"
+                  Schema = target
+                  Optional = (j.Kind = LeftJoin) }
+
+            let outerCtx, outerKey = bindSpace ctx space j.OuterKey
+            let innerCtx, innerKey = bindLambda ctx { b with Optional = false } j.InnerKey
+
+            let on =
+                match outerKey, innerKey with
+                | NewTuple xs, NewTuple ys when xs.Length = ys.Length ->
+                    List.zip xs ys
+                    |> List.map (fun (x, y) -> Sql.Binary("=", scalar outerCtx x, scalar innerCtx y))
+                    |> Sql.conj
+                | x, y ->
+                    if not (isRowDependent outerCtx x) || not (isRowDependent innerCtx y) then
+                        fail j.InnerKey "both sides of a join condition must read the joined sources"
+
+                    Sql.Binary("=", scalar outerCtx x, scalar innerCtx y)
+
+            space @ [ b ],
+            joins
+            @ [ { Left = (j.Kind = LeftJoin)
+                  Table = target.Table
+                  Alias = b.Alias
+                  On = on } ])
+        ([ rootBinding ], [])
+
+let private limitExprs (def: QueryDef) =
+    let fromArg (i: int) =
+        Sql.Param(box (Sql.Bound((fun args -> box (int64 (unbox<int> args.[i]))), $"arg{i + 1}")))
+
+    let limit =
+        match def.LimitArg with
+        | Some i -> Some(fromArg i)
+        | None -> def.Limit |> Option.map Sql.count
+
+    let offset =
+        match def.OffsetArg with
+        | Some i -> Some(fromArg i)
+        | None -> def.Offset |> Option.map Sql.count
+
+    limit, offset
+
+/// Root entity query (no joins; joined queries run as projections).
+let rootSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Select * SchemaInfo, TranslationError> =
+    wrap (fun () ->
+        checkProblems def
+        let schema = schemaOf model def.Root
+
+        if not def.Joins.IsEmpty then
+            invalid "a joined query returns combined rows; execute it with repo.All (it is read as a projection)"
+
+        if not def.GroupBy.IsEmpty || not def.Havings.IsEmpty then
+            invalid "a grouped query returns summaries, not records; finish it with select (grouped keys and Agg functions)"
+
+        if def.PerParentLimit.IsSome then
+            invalid "limitPerParent is only meaningful in a relationship load query"
+
+        let ctx = newCtxWith model vol
+        let wheres, orders = translateBody ctx def "t0" schema
+
+        if def.Paged && orders.IsEmpty then
+            invalid
+                $"take/skip on {schema.Name} requires an explicit ordering; pages are not stable without one (the primary key is appended as a tiebreaker to any ordering you give)"
+
+        let orders = if def.Paged then stableOrder "t0" schema orders else orders
+        let limit, offset = limitExprs def
+
+        { Sql.select (Sql.Table(schema.Table, "t0")) with
+            Columns = entityColumns "t0" schema
+            Where = wheres
+            OrderBy = orders
+            Limit = limit
+            Offset = offset },
+        schema)
+
+/// True when a SQL expression reads a column outside the grouping keys and
+/// outside any aggregate.
+let rec private ungrouped (groups: Sql.Expr list) (e: Sql.Expr) =
+    if List.contains e groups then
+        false
+    else
+        match e with
+        | Sql.Column _ -> true
+        | Sql.Aggregate _ -> false
+        | Sql.Binary(_, a, b)
+        | Sql.NotDistinctFrom(a, b)
+        | Sql.DistinctFrom(a, b)
+        | Sql.Like(a, b) -> ungrouped groups a || ungrouped groups b
+        | Sql.Not a
+        | Sql.IsNull a
+        | Sql.IsNotNull a
+        | Sql.AnyOf(a, _) -> ungrouped groups a
+        | Sql.Func(_, xs) -> List.exists (ungrouped groups) xs
+        | Sql.Fragment ps ->
+            ps
+            |> List.exists (function
+                | Choice2Of2 x -> ungrouped groups x
+                | _ -> false)
+        | _ -> false
+
+/// The translated clauses of a (possibly joined, grouped) query.
+type private Core =
+    { Ctx: Ctx
+      Schema: SchemaInfo
+      Space: Binding list
+      Joins: Sql.Join list
+      Wheres: Sql.Expr list
+      Groups: Sql.Expr list
+      Grouped: bool
+      Havings: Sql.Expr list
+      Orders: Sql.OrderItem list
+      Limit: Sql.Expr option
+      Offset: Sql.Expr option }
+
+    member c.Select(columns) =
+        { Sql.select (Sql.Table(c.Schema.Table, "t0")) with
+            Columns = columns
+            Joins = c.Joins
+            Where = c.Wheres
+            GroupBy = c.Groups
+            Having = c.Havings
+            OrderBy = c.Orders
+            Limit = c.Limit
+            Offset = c.Offset }
+
+let private core (model: Model) (vol: bool ref) (def: QueryDef) : Core =
+    checkProblems def
+    let schema = schemaOf model def.Root
+
+    if def.PerParentLimit.IsSome then
+        invalid "limitPerParent is only meaningful in a relationship load query"
+
+    let ctx = newCtxWith model vol
+    let space, joins = joinSpace ctx def schema
+    let wheres = def.Wheres |> List.map (translateWhereOver ctx space)
+
+    let groups =
+        def.GroupBy
+        |> List.collect (fun g ->
+            let c, body = bindSpace ctx space g
+
+            match body with
+            | NewTuple xs -> xs |> List.map (scalar c)
+            | x -> [ scalar c x ])
+
+    let grouped = not groups.IsEmpty || not def.Havings.IsEmpty
+    let havings = def.Havings |> List.map (translateHavingOver ctx space)
+
+    let orders =
+        def.Orders
+        |> List.map (fun (lambda, dir) ->
+            let o = translateOrderOver ctx space (lambda, dir)
+
+            if grouped && ungrouped groups o.Expr then
+                let _, body = bindSpace ctx space lambda
+                invalid $"the ordering {show body} is neither grouped nor aggregated; order by a groupBy key or an Agg function"
+
+            o)
+
+    if def.Paged && orders.IsEmpty then
+        invalid
+            $"take/skip on {schema.Name} requires an explicit ordering; pages are not stable without one (the key of every source is appended as a tiebreaker)"
+
+    let orders =
+        if not def.Paged then orders
+        elif grouped then groups |> List.fold (fun os g -> appendKey os g) orders
+        else stableOrderOver space orders
+
+    let limit, offset = limitExprs def
+
+    { Ctx = ctx
+      Schema = schema
+      Space = space
+      Joins = joins
+      Wheres = wheres
+      Groups = groups
+      Grouped = grouped
+      Havings = havings
+      Orders = orders
+      Limit = limit
+      Offset = offset }
+
+/// `SELECT COUNT(*)` for a query; a page or a grouping is counted as a whole
+/// (rows of the page, or groups).
+let countSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Select, TranslationError> =
+    wrap (fun () ->
+        let c = core model vol def
+        let count = [ Sql.Aggregate("COUNT", false, None), "n" ]
+
+        if def.Paged || c.Grouped then
+            let inner = c.Select [ Sql.Literal "1", "c0" ]
+            { Sql.select (Sql.Subquery(inner, "q")) with Columns = count }
+        else
+            { c.Select count with OrderBy = [] })
+
+/// Reads at most one row: the query matches something.
+let existsSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Select, TranslationError> =
+    wrap (fun () ->
+        let c = core model vol def
+        let one = [ Sql.Literal "1", "c0" ]
+
+        if def.Paged || c.Grouped then
+            { Sql.select (Sql.Subquery(c.Select one, "q")) with
+                Columns = one
+                Limit = Some(Sql.count 1) }
+        else
+            { c.Select one with
+                OrderBy = []
+                Limit = Some(Sql.count 1) })
+
+// ---------------------------------------------------------------------------
+// Projections (and joined queries)
+// ---------------------------------------------------------------------------
+
+/// How to rebuild a projected value from a row.
+type Shape =
+    /// Read result column `index`, converting with `convert`.
+    | Leaf of index: int * providerType: Type * convert: (obj -> Result<obj, string>) * label: string
+    /// A whole record from consecutive columns starting at `start`; `optional`
+    /// for a left-joined source (None when its key is NULL).
+    | EntityLeaf of start: int * schema: SchemaInfo * optional: bool
+    | Const of obj
+    | Build of construct: (obj[] -> obj) * parts: Shape list
+
+/// Translates a projection, or (with `select = None`) a joined query whose rows
+/// are the tuple of its sources.
+let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr option) : Result<Sql.Select * Shape, TranslationError> =
+    wrap (fun () ->
+        let c = core model vol def
+        let ctx, space = c.Ctx, c.Space
+
+        if c.Grouped && select.IsNone then
+            invalid "a grouped query returns summaries, not records; finish it with select (grouped keys and Agg functions)"
+
+        let columns = ResizeArray<Sql.Expr * string>()
+        let labels = ResizeArray<string>()
+
+        let add (sql: Sql.Expr) (label: string) =
+            let i = columns.Count
+            columns.Add(sql, $"c{i}")
+            labels.Add label
+            i
+
+        let addEntity (b: Binding) =
+            if c.Grouped then
+                invalid $"a whole {b.Schema.Name} cannot be selected from a grouped query; select grouped keys and Agg functions"
+
+            let start = columns.Count
+
+            for f in b.Schema.Fields do
+                add (Sql.Column(b.Alias, f.Column)) $"{b.Schema.Name}.{f.Name}" |> ignore
+
+            EntityLeaf(start, b.Schema, b.Optional)
+
+        let addLeaf (ctx: Ctx) (e: Expr) =
+            match e with
+            | RowField ctx (b, f) ->
+                let i = add (Sql.Column(b.Alias, f.Column)) (show e)
+                Leaf(i, f.ProviderType, f.FromDb, f.Name)
+            | OptionalField ctx (b, f) ->
+                let i = add (Sql.Column(b.Alias, f.Column)) (show e)
+
+                let convert =
+                    if f.IsOption then
+                        f.FromDb // Option.bind over an optional field: NULL is None.
+                    else
+                        let some = Reflection.makeSome e.Type
+
+                        fun (v: obj) ->
+                            if isNull v || v = box DBNull.Value then
+                                Ok null
+                            else
+                                f.FromDb v |> Result.map some
+
+                Leaf(i, f.ProviderType, convert, $"{b.Schema.Name}.{f.Name}")
+            | RowBinding ctx b -> addEntity b
+            | RowAssoc ctx (_, a) -> fail e $"relationship '{a.Name}' cannot be projected; preload whole records instead"
+            | _ ->
+                let t = e.Type
+                let scalarT = if Reflection.isOption t then Reflection.elementType t else t
+
+                if (model.ProviderTypeOf scalarT).IsNone then
+                    fail e $"computed projection of type {Reflection.typeName t} is not supported"
+
+                let sql = scalar ctx e
+                let i = add sql (show e)
+                // Computed values (arithmetic, aggregates, fragments) are read as
+                // whatever the database returns and converted to the F# type.
+                Leaf(i, typeof<obj>, (fun v -> model.ScalarFromDb(t, v)), show e)
+
+        let rec shape (ctx: Ctx) (e: Expr) : Shape =
+            if not (isRowDependent ctx e) then
+                if mentionsArg e then
+                    invalid $"a prepared-query argument cannot be selected; the caller already has its value (in: {show e})"
+
+                Const(evaluate ctx e)
+            else
+                match e with
+                | NewTuple parts ->
+                    let ctor = FSharpValue.PreComputeTupleConstructor e.Type
+                    Build(ctor, parts |> List.map (shape ctx))
+                | NewRecord(t, parts) ->
+                    let ctor = FSharpValue.PreComputeRecordConstructor(t, true)
+                    Build(ctor, parts |> List.map (shape ctx))
+                | NewUnionCase(c, parts) ->
+                    let ctor = FSharpValue.PreComputeUnionConstructor(c, true)
+                    Build(ctor, parts |> List.map (shape ctx))
+                | NewObject(ci, parts) -> Build((fun args -> ci.Invoke args), parts |> List.map (shape ctx))
+                | _ -> addLeaf ctx e
+
+        let s =
+            match select with
+            | Some sel ->
+                let ctx, body = bindSpace ctx space sel
+                shape ctx body
+            | None when space.Length = 1 -> addEntity space.Head
+            | None ->
+                let tupleType =
+                    space
+                    |> List.map (fun b ->
+                        if b.Optional then
+                            typedefof<option<_>>.MakeGenericType b.Schema.Type
+                        else
+                            b.Schema.Type)
+                    |> Array.ofList
+                    |> FSharpType.MakeTupleType
+
+                Build(FSharpValue.PreComputeTupleConstructor tupleType, space |> List.map addEntity)
+
+        if columns.Count = 0 then
+            invalid "projection does not read any column"
+
+        // Grouped (or aggregated) results may only read grouped keys outside
+        // aggregates.
+        let aggregated = c.Grouped || columns |> Seq.exists (fun (sql, _) -> containsAggregate sql)
+
+        if aggregated then
+            columns
+            |> Seq.iteri (fun i (sql, _) ->
+                if ungrouped c.Groups sql then
+                    invalid
+                        $"{labels.[i]} is neither grouped nor aggregated; add it to groupBy or wrap it in an Agg function")
+
+        c.Select(List.ofSeq columns), s)
+
+// ---------------------------------------------------------------------------
+// Bulk writes
+// ---------------------------------------------------------------------------
+
+/// SET assignments from a copy-and-update lambda body (`{ o with ... }`):
+/// fields read unchanged from `row` are skipped; the key, version, generated
+/// fields and relationships cannot be assigned.
+let private assignments (ctx: Ctx) (schema: SchemaInfo) (row: Var) (body: Expr) : (string * Sql.Expr) list =
+    let parts =
+        match body with
+        | NewRecord(t, parts) when t = schema.Type -> parts
+        | _ ->
+            invalid
+                $"a bulk change must return a copy of the row, e.g. fun o -> {{ o with Field = value }} (in: {show body})"
+
+    let sets =
+        parts
+        |> List.indexed
+        |> List.choose (fun (i, value) ->
+            let unchanged =
+                match value with
+                | PropertyGet(Some(Var v), p, []) when v = row -> Some p.Name
+                | _ -> None
+
+            match schema.Fields |> Array.tryFind (fun f -> f.Index = i) with
+            | Some f when unchanged = Some f.Name -> None
+            | Some f when f.Name = schema.Key.Name -> invalid $"the primary key {schema.Name}.{f.Name} cannot be changed by a bulk write"
+            | Some f when schema.Version |> Option.exists (fun v -> v.Name = f.Name) ->
+                invalid $"{schema.Name}.{f.Name} is the version; bulk writes increment it automatically"
+            | Some f when f.Generated -> invalid $"{schema.Name}.{f.Name} is generated by the database and cannot be assigned"
+            | Some f -> Some(f.Column, scalar ctx value)
+            | None ->
+                match schema.Assocs |> Array.tryFind (fun a -> a.Index = i) with
+                | Some a when unchanged = Some a.Name -> None
+                | Some a -> invalid $"relationship {schema.Name}.{a.Name} cannot be changed by a bulk write"
+                | None -> None)
+
+    if sets.IsEmpty then
+        invalid $"the bulk change assigns no field of {schema.Name}"
+
+    let version =
+        match schema.Version with
+        | Some v -> [ v.Column, Sql.Binary("+", Sql.Column(schema.Table, v.Column), Sql.Param(box 1)) ]
+        | None -> []
+
+    sets @ version
+
+let private bulkFilter (model: Model) (vol: bool ref) (def: QueryDef) (what: string) =
+    checkProblems def
+    let schema = schemaOf model def.Root
+
+    let reject reason =
+        invalid $"a bulk {what} applies to every row the query matches; {reason}"
+
+    if not def.Joins.IsEmpty then reject "joins are not supported (filter with Rel.any instead)"
+    if not def.Orders.IsEmpty || def.Paged then reject "ordering, take and skip have no meaning there"
+    if not def.Loads.IsEmpty then reject "relationship loads have no meaning there"
+    if not def.GroupBy.IsEmpty || not def.Havings.IsEmpty then reject "grouping has no meaning there"
+    if def.PerParentLimit.IsSome then reject "limitPerParent has no meaning there"
+
+    let ctx = newCtxWith model vol
+
+    let binding =
+        { Alias = schema.Table
+          Schema = schema
+          Optional = false }
+
+    ctx, schema, binding, def.Wheres |> List.map (translateWhere ctx binding)
+
+let bulkUpdate (model: Model) (vol: bool ref) (def: QueryDef) (change: Expr) : Result<Sql.Update, TranslationError> =
+    wrap (fun () ->
+        let ctx, schema, binding, wheres = bulkFilter model vol def "update"
+
+        match normalize change with
+        | Lambda(v, body) ->
+            let ctx = { ctx with Vars = ctx.Vars.Add(v, binding) }
+
+            ({ Table = schema.Table
+               Set = assignments ctx schema v body
+               Where = wheres
+               Returning = [] }: Sql.Update)
+        | other -> fail other "expected a lambda")
+
+let bulkDelete (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Delete, TranslationError> =
+    wrap (fun () ->
+        let _, schema, _, wheres = bulkFilter model vol def "delete"
+
+        ({ Table = schema.Table
+           Where = wheres
+           Returning = [] }: Sql.Delete))
+
+/// Columns named by an upsert's conflict target (a field or a tuple of fields).
+let conflictTarget (model: Model) (t: Type) (on: Expr) : Result<string list, TranslationError> =
+    wrap (fun () ->
+        let schema = schemaOf model t
+
+        match normalize on with
+        | Lambda(v, body) ->
+            let ctx =
+                { newCtx model with
+                    Vars =
+                        Map.ofList
+                            [ v,
+                              { Alias = schema.Table
+                                Schema = schema
+                                Optional = false } ] }
+
+            let column (x: Expr) =
+                match x with
+                | RowField ctx (_, f) -> f.Column
+                | _ -> fail x "a conflict target must be a field (or a tuple of fields) with a unique constraint"
+
+            match body with
+            | NewTuple xs -> xs |> List.map column
+            | x -> [ column x ]
+        | other -> fail other "expected a lambda")
+
+/// Assignments for `ON CONFLICT DO UPDATE` from `fun current incoming -> ...`.
+let conflictUpdate (model: Model) (vol: bool ref) (t: Type) (change: Expr) : Result<(string * Sql.Expr) list, TranslationError> =
+    wrap (fun () ->
+        let schema = schemaOf model t
+
+        match normalize change with
+        | Lambda(current, Lambda(incoming, body)) ->
+            let ctx =
+                { newCtxWith model vol with
+                    Vars =
+                        Map.ofList
+                            [ current,
+                              { Alias = schema.Table
+                                Schema = schema
+                                Optional = false }
+                              incoming,
+                              { Alias = "excluded"
+                                Schema = schema
+                                Optional = false } ] }
+
+            assignments ctx schema current body
+        | other -> fail other "expected fun current incoming -> { current with ... }")

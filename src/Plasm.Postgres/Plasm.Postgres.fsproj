@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>PostgreSQL provider for Plasm (Npgsql). Experimental.</Description>
+    <PackageId>Plasm.Postgres</PackageId>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Postgres.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Plasm/Plasm.fsproj" />
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Plasm.Tests" />
+  </ItemGroup>
+</Project>

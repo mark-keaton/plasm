@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Helpers.fs" />
+    <Compile Include="Smoke.fs" />
+    <Compile Include="WriteSmoke.fs" />
+    <Compile Include="Translation.fs" />
+    <Compile Include="CompileTime.fs" />
+    <Compile Include="Properties.fs" />
+    <Compile Include="EctoCompat.fs" />
+    <Compile Include="Behaviour.fs" />
+    <Compile Include="Joins.fs" />
+    <Compile Include="Batch2.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Plasm.TestDomain/Plasm.TestDomain.fsproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FsCheck.Xunit.v3" />
+  </ItemGroup>
+</Project>

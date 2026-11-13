@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plasm: persistence that thinks in F#</title>
+<meta name="description" content="Immutable records, compiler-checked queries, explicit changesets and batched relationship loading for F#. Ecto's design, expressed in F#.">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="logo.svg" width="28" height="28" alt=""><span>Plasm</span></a>
+    <span class="pill">experimental · PostgreSQL</span>
+    <span class="spacer"></span>
+    <nav class="links" aria-label="Main">
+      <a href="#guarantees">Guarantees</a>
+      <a href="examples.html">Examples</a>
+      <a href="#benchmarks">Benchmarks</a>
+      <a href="#status">Status</a>
+      <a href="#start">Get started</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<section class="wrap hero" id="top">
+  <div>
+    <p class="eyebrow">Ecto's design · expressed in F#</p>
+    <h1>Persistence that thinks in F#.</h1>
+    <p class="sub">Immutable records, compiler-checked queries, explicit changesets and batched relationship loading. Queries, changes and transactions are values; the repo is the only place anything touches the database.</p>
+    <div class="ctas">
+      <a class="btn primary" href="#start">Get started</a>
+      <a class="btn" href="examples.html">See examples</a>
+    </div>
+  </div>
+  <div class="hero-code">
+<pre class="code fsharp">let page customer =
+    plasm {
+        for o in Db.orders do
+            where (o.CustomerId = Some customer)
+            orderByDescending o.PlacedAt
+            take 20
+            preload o.Lines linesWithProducts
+            preload o.Payments successfulPayments
+    }
+
+let! orders = repo.All(page customerId)
+// Result&lt;Order list, DbError&gt;</pre>
+    <div class="tags">
+      <span class="tag violet">4 commands at 20, 100 or 1,000 orders</span>
+      <span class="tag teal">children restricted to the selected page</span>
+      <span class="tag amber">no cartesian product</span>
+    </div>
+  </div>
+</section>
+
+<section class="band alt" id="guarantees">
+  <div class="wrap section">
+    <div class="lede">
+      <h2>Six things it won't do behind your back</h2>
+      <p>Each one is an executable Gherkin scenario, run against a real PostgreSQL database.</p>
+    </div>
+    <div class="grid">
+      <div class="card"><h3>No hidden database access</h3><p>Relationships are <code>NotLoaded | Loaded of 'T</code>. Reading one never queries, and empty and unloaded are different values.</p></div>
+      <div class="card"><h3>Nothing runs client-side by accident</h3><p>A predicate that can't become SQL fails with the expression named. Rows are never fetched to be filtered in memory.</p></div>
+      <div class="card"><h3>No N+1, no cartesian product</h3><p>Each relationship is one command per batch of parent keys. Sibling collections load separately.</p></div>
+      <div class="card"><h3>Limits mean what they say</h3><p><code>limitPerParent 3</code> is per parent. A plain <code>take</code> in a load query is rejected as ambiguous.</p></div>
+      <div class="card"><h3>Typed throughout</h3><p>Comparing <code>o.Total</code> with a string, loading a field that isn't a relationship, or mixing <code>OrderId</code> with <code>CustomerId</code> won't compile.</p></div>
+      <div class="card"><h3>Partial data can't destroy data</h3><p>Unmentioned fields are never written. Replacing children needs an explicit scope and a declared removal policy.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap section">
+    <div class="lede">
+      <h2>How a page of orders loads</h2>
+      <p>The parent page is chosen first. Each relationship then receives exactly the selected keys as one array parameter. Records are built once, bottom-up, and shared products are a single immutable value.</p>
+    </div>
+    <ol class="flow" style="list-style: none; margin: 0; padding: 0">
+      <li class="step first"><span class="num">1 · parent</span><strong>orders</strong><code>ORDER BY placed_at DESC, id LIMIT 20</code></li>
+      <li class="step"><span class="num">2 · has many</span><strong>order_lines</strong><code>order_id = ANY(@keys)</code></li>
+      <li class="step"><span class="num">3 · belongs to, nested</span><strong>products</strong><code>id = ANY(@distinct keys)</code></li>
+      <li class="step"><span class="num">4 · has many, filtered</span><strong>payments</strong><code>order_id = ANY(@keys) AND status = @p1</code></li>
+    </ol>
+    <p class="small">You can inspect any plan without touching the database: <code>repo.Explain query</code> returns the SQL, the load paths and the batching strategy.</p>
+  </div>
+</section>
+
+<section class="band alt">
+  <div class="wrap section split">
+    <div>
+      <h2>Changes are values</h2>
+      <p class="muted">Unchanged, assigned and cleared are three different states. Validation is pure and can be inspected before anything runs.</p>
+<pre class="code fsharp">let cs =
+    order
+    |&gt; Changeset.edit (fun o -&gt; { o with Status = Cancelled })
+    |&gt; Changeset.validateRange((fun o -&gt; o.Total), min = 0m)
+
+match! repo.Update cs with
+| Ok updated -&gt; ...
+| Error(WriteError.Invalid cs) -&gt; cs.Errors   // per field
+| Error(WriteError.Stale _)    -&gt; ...         // newer version stored
+| Error(WriteError.Failed f)   -&gt; f.Kind      // classified failure</pre>
+    </div>
+    <div>
+      <h2>So are transactions</h2>
+      <p class="muted">Named steps pass typed results with <code>let!</code>. A failure names the step and what was rolled back. Retries are opt-in.</p>
+<pre class="code fsharp">let checkout name email product =
+    transaction {
+        let! customer = Tx.insert "customer" (registerCustomer name email)
+        let! order = Tx.insert "order" (placeOrder customer.Id [ line ])
+        return customer, order
+    }
+
+match! repo.Transact(checkout "Ada" "ada@example.com" widget) with
+| Ok (customer, order) -&gt; ...
+| Error e -&gt; printfn "%s failed; rolled back %A" e.Step e.RolledBack</pre>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="benchmarks">
+  <div class="wrap section">
+    <div class="lede">
+      <h2>Measured against EF Core 11</h2>
+      <p>Orders with their lines, products and successful payments. The dataset is 10,000 orders × 10 lines × 10 payments on PostgreSQL 18 over loopback; figures are BenchmarkDotNet means.</p>
+    </div>
+    <div class="table-box">
+      <table>
+        <thead><tr><th scope="col">Workload</th><th scope="col">Plasm</th><th scope="col">EF single query</th><th scope="col">EF split query</th></tr></thead>
+        <tbody>
+          <tr><td>Page of 20</td><td class="win">1.56 ms · 401 KB</td><td>2.57 ms · 610 KB</td><td>4.10 ms · 450 KB</td></tr>
+          <tr><td>Page of 100</td><td class="win">2.47 ms · 1.1 MB</td><td>18.6 ms · 2.7 MB</td><td>13.3 ms · 1.8 MB</td></tr>
+          <tr><td>Page of 1,000</td><td class="win">16.5 ms · 8.8 MB</td><td>76.2 ms · 26.7 MB</td><td>34.8 ms · 18.2 MB</td></tr>
+          <tr><td>One order, query rebuilt per call</td><td>474 µs · 207 KB</td><td>415 µs · 128 KB</td><td>453 µs · 91 KB</td></tr>
+          <tr><td>One order, prepared query</td><td class="win">392 µs · 108 KB</td><td>415 µs · 128 KB</td><td>453 µs · 91 KB</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small" style="max-width: 52rem">EF wins on tiny loads when the Plasm query is rebuilt on every call, because building and planning a quotation-based query costs about 140 µs and 100 KB. A prepared query (<code>Query.prepare</code>) is built and planned once and wins on time; EF split query still allocates less. These were measured on one machine against a local database; the full method and limitations are in <code>docs/benchmarks.md</code>.</p>
+  </div>
+</section>
+
+<section class="band alt" id="status">
+  <div class="wrap section status">
+    <div class="main">
+      <div class="lede"><h2>Honest status</h2><p>An experimental first delivery, not production-ready. Ecto's design transfers; its operational maturity has to be earned.</p></div>
+      <p class="ok">135 / 135 acceptance scenarios · 176 unit, property and compile-time tests</p>
+    </div>
+    <div>
+      <h3>Works today</h3>
+      <ul>
+        <li>Typed queries, projections, relationship predicates</li>
+        <li>Inner and left joins, with option-typed left sides</li>
+        <li>Nested batched loads, per-parent limits, snapshots</li>
+        <li>Changesets, constraints, optimistic concurrency</li>
+        <li>Atomic child writes, transactions, retries</li>
+        <li>Count, exists, aggregates, group by and having</li>
+        <li>Bulk update, delete, insert and upsert</li>
+        <li>Typed hand-written SQL; prepared queries</li>
+        <li>Many-to-many; schema check; test sandboxes</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Not yet</h3>
+      <ul>
+        <li>Right and full joins, unions, CTEs</li>
+        <li>Composite keys, JSON columns</li>
+        <li>Prepared projections; packaging</li>
+        <li>Databases other than PostgreSQL</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="band dark" id="start">
+  <div class="wrap section start">
+    <div>
+      <h2 style="font-size: 40px">Try it</h2>
+      <p class="muted">It needs the .NET 11 SDK and Docker; the test suite starts PostgreSQL for you. Then work through the <a href="examples.html" style="color: #C9C9FF">examples</a>.</p>
+    </div>
+<pre class="code shell">dotnet build Plasm.slnx
+dotnet test tests/Plasm.Specs
+dotnet run --project examples/Plasm.Examples</pre>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Plasm adapts behavioural test cases from Ecto (Apache-2.0).</span>
+    <span>[YOUR LICENSE] · [YOUR REPOSITORY URL]</span>
+  </div>
+</footer>
+<script src="highlight.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Domain.fs" />
+    <Compile Include="Database.fs" />
+    <Compile Include="CompileCheck.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Plasm/Plasm.fsproj" />
+    <ProjectReference Include="../../src/Plasm.Postgres/Plasm.Postgres.fsproj" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="FSharp.Compiler.Service" />
+  </ItemGroup>
+</Project>

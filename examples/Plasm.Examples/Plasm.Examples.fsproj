@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Model.fs" />
+    <Compile Include="Queries.fs" />
+    <Compile Include="Writes.fs" />
+    <Compile Include="SqlCapture.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Plasm/Plasm.fsproj" />
+    <ProjectReference Include="../../src/Plasm.Postgres/Plasm.Postgres.fsproj" />
+    <!-- Only used to provision a throwaway PostgreSQL database for the demo. -->
+    <ProjectReference Include="../../tests/Plasm.TestDomain/Plasm.TestDomain.fsproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Ecto-inspired persistence for F#: immutable records, compiler-checked queries, explicit changesets and batched relationship loading. Experimental.</Description>
+    <PackageId>Plasm</PackageId>
+    <!-- FS3370 informational; FS0064 from generic constraints in builders is intentional -->
+    <NoWarn>$(NoWarn);FS3370</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Assoc.fs" />
+    <Compile Include="Errors.fs" />
+    <Compile Include="Reflection.fs" />
+    <Compile Include="Scalar.fs" />
+    <Compile Include="Schema.fs" />
+    <Compile Include="Model.fs" />
+    <Compile Include="Sql.fs" />
+    <Compile Include="Query.fs" />
+    <Compile Include="Translate.fs" />
+    <Compile Include="Plan.fs" />
+    <Compile Include="Changeset.fs" />
+    <Compile Include="Provider.fs" />
+    <Compile Include="Sandbox.fs" />
+    <Compile Include="Execution.fs" />
+    <Compile Include="Writes.fs" />
+    <Compile Include="Bulk.fs" />
+    <Compile Include="SchemaCheck.fs" />
+    <Compile Include="Tx.fs" />
+    <Compile Include="Repo.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Plasm.Postgres" />
+    <InternalsVisibleTo Include="Plasm.Tests" />
+    <InternalsVisibleTo Include="Plasm.Specs.Steps" />
+  </ItemGroup>
+</Project>

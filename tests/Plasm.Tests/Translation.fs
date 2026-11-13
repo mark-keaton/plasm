@@ -1,0 +1,452 @@
+/// SQL-shape contract tests. These use Explain only: no database is contacted.
+module Plasm.Tests.Translation
+
+open System
+open Xunit
+open Plasm
+open Plasm.TestDomain.Domain
+open Plasm.TestDomain.Domain.Schemas
+open Plasm.Tests.Helpers
+
+let isBig (d: decimal) = d > 100m
+
+let unsupported (q: Query<'T>) =
+    match err (explain q) with
+    | UnsupportedExpression(e, reason) -> e, reason
+    | other -> failwithf "expected UnsupportedExpression, got %O" other
+
+let invalidQuery (q: Query<'T>) =
+    match err (explain q) with
+    | InvalidQuery m -> m
+    | other -> failwithf "expected InvalidQuery, got %O" other
+
+// -- NULL semantics ----------------------------------------------------------
+
+[<Fact>]
+let ``= None translates to IS NULL`` () =
+    plasm { for o in orders do where (o.CancellationReason = None) }
+    |> sqlOf
+    |> contains "\"t0\".\"cancellation_reason\" IS NULL"
+
+[<Fact>]
+let ``<> None translates to IS NOT NULL`` () =
+    plasm { for o in orders do where (o.CancellationReason <> None) }
+    |> sqlOf
+    |> contains "\"t0\".\"cancellation_reason\" IS NOT NULL"
+
+[<Fact>]
+let ``captured None value translates to IS NULL, not = NULL`` () =
+    let reason: string option = None
+    let sql = plasm { for o in orders do where (o.CancellationReason = reason) } |> sqlOf
+    contains "IS NULL" sql
+    notContains "= NULL" sql
+
+[<Fact>]
+let ``= Some x is plain equality`` () =
+    plasm { for o in orders do where (o.CancellationReason = Some "late") }
+    |> sqlOf
+    |> contains "(\"t0\".\"cancellation_reason\" = @p0)"
+
+[<Fact>]
+let ``<> Some x on an option includes NULL rows via IS DISTINCT FROM`` () =
+    plasm { for o in orders do where (o.CancellationReason <> Some "late") }
+    |> sqlOf
+    |> contains "\"t0\".\"cancellation_reason\" IS DISTINCT FROM @p0"
+
+[<Fact>]
+let ``option to option column comparison uses IS NOT DISTINCT FROM`` () =
+    plasm { for o in orders do where (o.CancellationReason = o.CancellationReason) }
+    |> sqlOf
+    |> contains "IS NOT DISTINCT FROM"
+
+[<Fact>]
+let ``x.IsSome translates to IS NOT NULL`` () =
+    plasm { for o in orders do where (o.CancellationReason.IsSome) }
+    |> sqlOf
+    |> contains "IS NOT NULL"
+
+[<Fact>]
+let ``Option.isNone and Option.isSome translate to null tests`` () =
+    plasm { for o in orders do where (Option.isNone o.CustomerId) }
+    |> sqlOf
+    |> contains "\"t0\".\"customer_id\" IS NULL"
+
+    plasm { for o in orders do where (Option.isSome o.CustomerId) }
+    |> sqlOf
+    |> contains "\"t0\".\"customer_id\" IS NOT NULL"
+
+// -- Membership --------------------------------------------------------------
+
+[<Fact>]
+let ``List.contains translates to = ANY with one array parameter`` () =
+    let ids = [ OrderId 1L; OrderId 2L; OrderId 3L ]
+    let sql = plasm { for o in orders do where (List.contains o.Id ids) } |> sqlOf
+    contains "(\"t0\".\"id\" = ANY(@p0))" sql
+    notContains "@p1" sql
+
+[<Fact>]
+let ``empty membership translates to FALSE`` () =
+    let ids: OrderId list = []
+    plasm { for o in orders do where (List.contains o.Id ids) } |> sqlOf |> contains "WHERE FALSE"
+
+// -- Relationship predicates -------------------------------------------------
+
+[<Fact>]
+let ``Rel.any translates to a correlated EXISTS`` () =
+    let sql =
+        plasm { for o in orders do where (Rel.any (fun p -> p.Status = Succeeded) o.Payments) }
+        |> sqlOf
+
+    contains "EXISTS (SELECT 1 FROM \"payments\" AS \"t1\" WHERE ((\"t1\".\"order_id\" = \"t0\".\"id\")" sql
+    contains "(\"t1\".\"status\" = @p0)" sql
+
+[<Fact>]
+let ``Rel.any works through a pipe`` () =
+    plasm { for o in orders do where (o.Payments |> Rel.any (fun p -> p.Amount > 5m)) }
+    |> sqlOf
+    |> contains "EXISTS ("
+
+[<Fact>]
+let ``Rel.all translates to NOT EXISTS of the negation`` () =
+    let sql = plasm { for o in orders do where (Rel.all (fun p -> p.Status = Succeeded) o.Payments) } |> sqlOf
+    contains "(NOT EXISTS (" sql
+    contains "(NOT COALESCE(" sql
+
+// -- Strings -----------------------------------------------------------------
+
+[<Fact>]
+let ``StartsWith escapes LIKE metacharacters`` () =
+    let sql = plasm { for c in customers do where (c.Name.StartsWith "50%_off\\") } |> sqlOf
+    contains "LIKE @p0 ESCAPE '\\'" sql
+    notContains "50%" sql
+
+[<Fact>]
+let ``Contains and EndsWith translate to LIKE`` () =
+    plasm { for c in customers do where (c.Name.Contains "x" && c.Email.EndsWith "@example.com") }
+    |> sqlOf
+    |> contains "LIKE"
+
+[<Fact>]
+let ``ToLower translates to lower()`` () =
+    plasm { for c in customers do where (c.Name.ToLower() = "ada") } |> sqlOf |> contains "lower(\"t0\".\"name\")"
+
+// -- Ordering and paging -----------------------------------------------------
+
+[<Fact>]
+let ``option ordering matches F# (None first ascending, last descending)`` () =
+    plasm { for o in orders do orderBy o.CancellationReason } |> sqlOf |> contains "ASC NULLS FIRST"
+    plasm { for o in orders do orderByDescending o.CancellationReason } |> sqlOf |> contains "DESC NULLS LAST"
+
+[<Fact>]
+let ``pagination appends the primary key as tiebreaker`` () =
+    plasm {
+        for o in orders do
+            orderBy o.PlacedAt
+            take 10
+    }
+    |> sqlOf
+    |> contains "ORDER BY \"t0\".\"placed_at\" ASC, \"t0\".\"id\" ASC LIMIT @p0"
+
+[<Fact>]
+let ``pagination already ordered by key adds no tiebreaker`` () =
+    let sql =
+        plasm {
+            for o in orders do
+                orderByDescending o.Id
+                skip 5
+        }
+        |> sqlOf
+
+    contains "ORDER BY \"t0\".\"id\" DESC OFFSET" sql
+
+[<Fact>]
+let ``take without ordering is rejected`` () =
+    let m = plasm { for o in orders do take 10 } |> invalidQuery
+    Assert.Contains("ordering", m)
+
+[<Fact>]
+let ``skip without ordering is rejected`` () =
+    plasm { for o in orders do skip 10 } |> invalidQuery |> ignore
+
+[<Fact>]
+let ``limitPerParent on a root query is rejected`` () =
+    plasm {
+        for o in orders do
+            orderBy o.Id
+            limitPerParent 3
+    }
+    |> invalidQuery
+    |> ignore
+
+// -- Loads -------------------------------------------------------------------
+
+let latestPayments n =
+    plasm {
+        for p in payments do
+            orderByDescending p.CreatedAt
+            limitPerParent n
+    }
+
+[<Fact>]
+let ``limitPerParent uses a ROW_NUMBER window partitioned by the foreign key`` () =
+    let plan = plasm { for o in orders do preload o.Payments (latestPayments 3) } |> explain |> ok
+    let step = plan.Loads |> List.exactlyOne
+    Assert.Equal(PerParentWindow(3, 5000), step.Strategy)
+    contains "ROW_NUMBER() OVER (PARTITION BY \"t0\".\"order_id\" ORDER BY \"t0\".\"created_at\" DESC, \"t0\".\"id\" ASC)" step.Sql
+    contains "\"s\".\"__rank\" <= @" step.Sql
+
+[<Fact>]
+let ``limitPerParent without ordering is rejected`` () =
+    let q = plasm { for p in payments do limitPerParent 3 }
+    plasm { for o in orders do preload o.Payments q } |> invalidQuery |> ignore
+
+[<Fact>]
+let ``take inside a load query is rejected as ambiguous`` () =
+    let q =
+        plasm {
+            for p in payments do
+                orderBy p.CreatedAt
+                take 3
+        }
+
+    let m = plasm { for o in orders do preload o.Payments q } |> invalidQuery
+    Assert.Contains("limitPerParent", m)
+
+[<Fact>]
+let ``conflicting loads of one relationship are reported`` () =
+    let succeeded = plasm { for p in payments do where (p.Status = Succeeded) }
+    let failed = plasm { for p in payments do where (p.Status = Failed) }
+
+    let q =
+        plasm {
+            for o in orders do
+                preload o.Payments succeeded
+                preload o.Payments failed
+        }
+
+    match err (explain q) with
+    | LoadConflict(path, _) -> Assert.Equal("Payments", path)
+    | other -> failwithf "expected LoadConflict, got %O" other
+
+[<Fact>]
+let ``identical loads from separately built queries merge into one`` () =
+    let succeeded () = plasm { for p in payments do where (p.Status = Succeeded) }
+
+    let q =
+        plasm {
+            for o in orders do
+                preload o.Payments (succeeded ())
+                preload o.Payments (succeeded ())
+        }
+
+    Assert.Equal<string list>([ "Payments" ], (ok (explain q)).LoadPaths)
+
+[<Fact>]
+let ``plain and nested loads of one relationship merge their nested loads`` () =
+    let withProduct = plasm { for l in orderLines do preload l.Product }
+
+    let q =
+        plasm {
+            for o in orders do
+                preload o.Lines
+                preload o.Lines withProduct
+        }
+
+    Assert.Equal<string list>([ "Lines"; "Lines.Product" ], (ok (explain q)).LoadPaths)
+
+[<Fact>]
+let ``replacePreload resolves a conflict in favour of the replacement`` () =
+    let succeeded = plasm { for p in payments do where (p.Status = Succeeded) }
+    let failed = plasm { for p in payments do where (p.Status = Failed) }
+
+    let q =
+        plasm {
+            for o in orders do
+                preload o.Payments succeeded
+                replacePreload o.Payments failed
+        }
+
+    let step = (ok (explain q)).Loads |> List.exactlyOne
+    contains "\"t0\".\"status\" = @p1" step.Sql
+
+[<Fact>]
+let ``load steps report key batching`` () =
+    let plan = plasm { for o in orders do preload o.Lines } |> explain |> ok
+    let step = plan.Loads.Head
+    Assert.Equal(BatchedByKeys 5000, step.Strategy)
+    contains "\"t0\".\"order_id\" = ANY(@p0)" step.Sql
+
+// -- Unsupported expressions -------------------------------------------------
+
+[<Fact>]
+let ``calling an arbitrary F# function on a column is unsupported and identified`` () =
+    let e, reason = plasm { for o in orders do where (isBig o.Total) } |> unsupported
+    Assert.Contains("isBig", e)
+    Assert.Contains("o.Total", e)
+    Assert.Contains("will not be evaluated in application memory", reason)
+
+[<Fact>]
+let ``ordering comparison on an option is unsupported`` () =
+    let e, _ = plasm { for o in orders do where (o.CancellationReason < Some "m") } |> unsupported
+    Assert.Contains("CancellationReason", e)
+
+[<Fact>]
+let ``string method with a column argument is unsupported`` () =
+    plasm { for c in customers do where (c.Email.StartsWith c.Name) } |> unsupported |> ignore
+
+[<Fact>]
+let ``using a relationship as a value is unsupported`` () =
+    plasm { for o in orders do where (o.Payments = NotLoaded) } |> unsupported |> ignore
+
+[<Fact>]
+let ``unsupported ordering key is identified`` () =
+    let e, _ = plasm { for o in orders do orderBy (string o.Total) } |> unsupported
+    Assert.Contains("Total", e)
+
+// -- Captured values are parameters ------------------------------------------
+
+[<Fact>]
+let ``captured strings never appear in the SQL text`` () =
+    let name = "x'); DROP TABLE customers; --"
+    let sql = plasm { for c in customers do where (c.Name = name) } |> sqlOf
+    notContains "DROP" sql
+    contains "(\"t0\".\"name\" = @p0)" sql
+
+[<Fact>]
+let ``captured expressions are evaluated once as parameters`` () =
+    let threshold = 40m
+    let sql = plasm { for o in orders do where (o.Total > threshold * 2m + 1m) } |> sqlOf
+    contains "(\"t0\".\"total\" > @p0)" sql
+
+[<Fact>]
+let ``SQL injection attempt is inert against a real database`` () =
+    task {
+        let! db = Plasm.TestDomain.Database.freshDefault ()
+        let! _ = Plasm.TestDomain.Database.Seed.customer db "Ada" "ada@example.com"
+        let name = "x' OR '1'='1"
+        let! r = db.Repo.All(plasm { for c in customers do where (c.Name = name) })
+        Assert.Empty(ok r)
+        let! n = db.Scalar<int64>("select count(*) from customers")
+        Assert.Equal(1L, n)
+    }
+
+// -- Model configuration -----------------------------------------------------
+
+type Address = { Street: string }
+type WithAddress = { Id: int; Home: Address }
+type Kid = { Id: int; ParentId: string }
+
+type Parent =
+    { Id: int64
+      Kids: Assoc<Kid list> }
+
+type Owner = { Id: int64 }
+
+type Pet =
+    { Id: int
+      OwnerId: int64 option
+      Owner: Assoc<Owner> }
+
+type Mood =
+    | Happy
+    | Sad
+
+let configErrors scalars schemas =
+    match Model.build scalars schemas with
+    | Ok _ -> failwith "expected configuration errors"
+    | Error es -> es
+
+[<Fact>]
+let ``unmapped scalar type identifies model and property`` () =
+    let s = schema<WithAddress> "w" { key (fun w -> w.Id) }
+    let e = configErrors [] [ s ] |> List.exactlyOne
+    Assert.Equal("WithAddress", e.Model)
+    Assert.Equal(Some "Home", e.Property)
+    Assert.Contains("Address", e.Message)
+
+[<Fact>]
+let ``relationship field without declaration is a configuration error`` () =
+    let kids = schema<Kid> "kids" { key (fun k -> k.Id) }
+    let parents = schema<Parent> "parents" { key (fun p -> p.Id) }
+    let es = configErrors [] [ kids; parents ]
+    Assert.Contains(es, fun e -> e.Model = "Parent" && e.Property = Some "Kids")
+
+[<Fact>]
+let ``foreign key type mismatch is a configuration error`` () =
+    let kids = schema<Kid> "kids" { key (fun k -> k.Id) }
+
+    let parents =
+        schema<Parent> "parents" {
+            key (fun p -> p.Id)
+            hasMany (fun p -> p.Kids) (fun k -> k.ParentId)
+        }
+
+    let es = configErrors [] [ kids; parents ]
+    Assert.Contains(es, fun e -> e.Property = Some "Kids" && e.Message.Contains "foreign key")
+
+[<Fact>]
+let ``required relationship over an optional foreign key is a configuration error`` () =
+    let owners = schema<Owner> "owners" { key (fun o -> o.Id) }
+
+    let pets =
+        schema<Pet> "pets" {
+            key (fun p -> p.Id)
+            belongsTo (fun p -> p.Owner) (fun p -> p.OwnerId)
+        }
+
+    let es = configErrors [] [ owners; pets ]
+    Assert.Contains(es, fun e -> e.Property = Some "Owner" && e.Message.Contains "Assoc<'T option>")
+
+[<Fact>]
+let ``duplicate scalar registration is a configuration error`` () =
+    let es =
+        configErrors [ Scalar.wrap OrderId (fun (OrderId v) -> v); Scalar.wrap OrderId (fun (OrderId v) -> v) ] []
+
+    Assert.Contains(es, fun e -> e.Model = "OrderId")
+
+[<Fact>]
+let ``Scalar.enum with a missing case is rejected`` () =
+    Assert.Throws<PlasmConfigurationException>(fun () -> Scalar.enum [ Happy, "happy" ] |> ignore) |> ignore
+
+[<Fact>]
+let ``Scalar.enum with duplicate stored names is rejected`` () =
+    Assert.Throws<PlasmConfigurationException>(fun () -> Scalar.enum [ Happy, "x"; Sad, "x" ] |> ignore)
+    |> ignore
+
+[<Fact>]
+let ``the test domain model is valid`` () =
+    Assert.Equal(7, Schemas.model.Types.Length)
+
+// -- Option accessors and boolean operators ------------------------------------
+
+[<Fact>]
+let ``x.Value on an option column compares the present value`` () =
+    plasm { for o in orders do where (o.CancellationReason.Value = "late") }
+    |> sqlOf
+    |> contains "(\"t0\".\"cancellation_reason\" = @p0)"
+
+[<Fact>]
+let ``Option.get on an option column compares the present value`` () =
+    plasm { for o in orders do where (Option.get o.CancellationReason = "late") }
+    |> sqlOf
+    |> contains "(\"t0\".\"cancellation_reason\" = @p0)"
+
+[<Fact>]
+let ``not, || and && translate`` () =
+    let sql = plasm { for o in orders do where (not (o.Total > 1m) || (o.Status = Draft && o.Total < 5m)) } |> sqlOf
+    contains "(NOT (\"t0\".\"total\" > @p0))" sql
+    contains " OR " sql
+    contains " AND " sql
+
+[<Fact>]
+let ``string concatenation translates to ||`` () =
+    plasm { for c in customers do where (c.Name + "!" = "Ada!") } |> sqlOf |> contains "(\"t0\".\"name\" || @p0)"
+
+[<Fact>]
+let ``nested relationship predicates get distinct aliases`` () =
+    let sql =
+        plasm { for c in customers do where (Rel.any (fun o -> Rel.any (fun p -> p.Amount > 1m) o.Payments) c.Orders) }
+        |> sqlOf
+
+    contains "\"t2\".\"order_id\" = \"t1\".\"id\"" sql
+    contains "\"t1\".\"customer_id\" = \"t0\".\"id\"" sql

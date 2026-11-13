@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="World.fs" />
+    <Compile Include="BackgroundSteps.fs" />
+    <Compile Include="ValueSteps.fs" />
+    <Compile Include="TypeSteps.fs" />
+    <Compile Include="CompositionSteps.fs" />
+    <Compile Include="LoadingSteps.fs" />
+    <Compile Include="ChangesetSteps.fs" />
+    <Compile Include="AssociationWriteSteps.fs" />
+    <Compile Include="TransactionSteps.fs" />
+    <Compile Include="ObservabilitySteps.fs" />
+    <Compile Include="EleganceSteps.fs" />
+    <Compile Include="JoinSteps.fs" />
+    <Compile Include="AggregateSteps.fs" />
+    <Compile Include="BulkSteps.fs" />
+    <Compile Include="RawSqlSteps.fs" />
+    <Compile Include="PreparedSteps.fs" />
+    <Compile Include="ManyToManySteps.fs" />
+    <Compile Include="SchemaCheckSteps.fs" />
+    <Compile Include="SandboxSteps.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Plasm.TestDomain/Plasm.TestDomain.fsproj" />
+    <PackageReference Include="Reqnroll" />
+  </ItemGroup>
+</Project>

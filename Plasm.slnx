@@ -1,0 +1,39 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Plasm/Plasm.fsproj" />
+    <Project Path="src/Plasm.Postgres/Plasm.Postgres.fsproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Plasm.TestDomain/Plasm.TestDomain.fsproj" />
+    <Project Path="tests/Plasm.Tests/Plasm.Tests.fsproj" />
+    <Project Path="tests/Plasm.Specs.Steps/Plasm.Specs.Steps.fsproj" />
+    <Project Path="tests/Plasm.Specs/Plasm.Specs.csproj" />
+  </Folder>
+  <Folder Name="/examples/">
+    <Project Path="examples/Plasm.Examples/Plasm.Examples.fsproj" />
+  </Folder>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Plasm.Benchmarks.EfModel/Plasm.Benchmarks.EfModel.csproj" />
+    <Project Path="benchmarks/Plasm.Benchmarks/Plasm.Benchmarks.fsproj" />
+  </Folder>
+  <Folder Name="/docs/">
+    <File Path="README.md" />
+    <File Path="docs/adr/0001-architecture.md" />
+    <File Path="docs/acceptance.md" />
+    <File Path="docs/status.md" />
+    <File Path="docs/benchmarks.md" />
+    <File Path="docs/ecto-compatibility.md" />
+  </Folder>
+  <Folder Name="/website/">
+    <File Path="website/index.html" />
+    <File Path="website/examples.html" />
+    <File Path="website/styles.css" />
+    <File Path="website/highlight.js" />
+    <File Path="website/sqlviews.js" />
+    <File Path="website/sql.js" />
+  </Folder>
+  <Folder Name="/features/">
+    <File Path="features/core.feature" />
+    <File Path="features/elegance.feature" />
+  </Folder>
+</Solution>

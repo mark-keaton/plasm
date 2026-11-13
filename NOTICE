@@ -1,0 +1,24 @@
+Plasm
+=====
+
+Plasm's behavioral compatibility tests (tests/Plasm.Tests/EctoCompat.fs) adapt
+test cases from Ecto:
+
+  Ecto — https://github.com/elixir-ecto/ecto
+  Copyright (c) 2013 Plataformatec
+  Copyright (c) 2020 Dashbit
+  Licensed under the Apache License, Version 2.0
+  (http://www.apache.org/licenses/LICENSE-2.0)
+
+No Ecto source code is copied. The adapted tests re-express the observable
+behavior of the following Ecto test files in F# against Plasm's API:
+
+  - integration_test/cases/preload.exs
+  - integration_test/cases/repo.exs
+  - test/ecto/changeset_test.exs
+  - test/ecto/multi_test.exs
+
+The documentation of preload queries in lib/ecto/query.ex was consulted to
+identify the global-limit semantics that Plasm deliberately rejects.
+
+Each adapted test cites its source file and original test name.

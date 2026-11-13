@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Workloads.fs" />
+    <Compile Include="Counts.fs" />
+    <Compile Include="Bench.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../tests/Plasm.TestDomain/Plasm.TestDomain.fsproj" />
+    <ProjectReference Include="../Plasm.Benchmarks.EfModel/Plasm.Benchmarks.EfModel.csproj" />
+    <PackageReference Include="BenchmarkDotNet" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" VersionOverride="11.0.0-rc.3.26522.148" />
+  </ItemGroup>
+</Project>

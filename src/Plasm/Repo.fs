@@ -1,0 +1,518 @@
+namespace Plasm
+
+open System
+open System.Data
+open System.Runtime.CompilerServices
+open System.Threading
+open System.Threading.Tasks
+
+/// Why a write did not happen (or was rolled back). Cases are qualified
+/// (`WriteError.Invalid`) so they never collide with domain unions.
+[<RequireQualifiedAccess>]
+type WriteError<'T> =
+    /// Validation or declared-constraint errors; inspect `Changeset.Errors`.
+    | Invalid of Changeset<'T>
+    /// The stored version differs from the expected one (or the row is gone).
+    | Stale of Changeset<'T>
+    /// A database failure not described by the changeset's constraints.
+    | Failed of DbFailure
+
+/// The explicit boundary where persistence descriptions are executed. Every
+/// member performs database work; nothing else in the library does.
+[<Sealed>]
+type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
+    let options = defaultArg options RepoOptions.Default
+
+    // Queries are immutable values, so a plan can be reused for the same value,
+    // unless translation evaluated something volatile (Plan.Reusable = false).
+    let plans = ConditionalWeakTable<QueryDef, Planner.Plan>()
+
+    let planFor (def: QueryDef) =
+        // A prepared query is planned once, through its template.
+        let def = defaultArg def.Template def
+
+        match plans.TryGetValue def with
+        | true, p -> Ok p
+        | _ ->
+            match Planner.plan provider.Dialect model def with
+            | Ok p when p.Reusable ->
+                plans.AddOrUpdate(def, p)
+                Ok p
+            | other -> other
+
+    let withArgs (args: obj[]) (ct: CancellationToken) (snapshot: bool) (body: Execution.Session -> Task<'a>) : Task<'a> =
+        task {
+            use! conn = provider.OpenConnection ct
+
+            let! tx =
+                if snapshot then
+                    provider.BeginSnapshot(conn, ct)
+                else
+                    Task.FromResult None
+
+            let session: Execution.Session =
+                { Provider = provider
+                  Options = options
+                  Connection = conn
+                  Transaction = tx
+                  Ct = ct
+                  Args = args }
+
+            try
+                let! r = body session
+
+                match tx with
+                | Some t -> do! t.CommitAsync(ct)
+                | None -> ()
+
+                return r
+            finally
+                tx |> Option.iter (fun t -> t.Dispose())
+        }
+
+    let withSession ct snapshot body = withArgs [||] ct snapshot body
+
+    let single (select: Sql.Select) (args: obj[]) (ct: CancellationToken) (read: Data.Common.DbDataReader -> 'a) =
+        withArgs args ct false (fun s ->
+            task {
+                let! rows = Execution.query s (Sql.renderSelect provider.Dialect select) read
+                return rows
+            })
+
+    member _.Model = model
+    member _.Provider = provider
+
+    /// Describes how a query would execute. Performs no database access.
+    member _.Explain(query: Query<'T>) : Result<QueryPlan, TranslationError> =
+        if query.Def.Joins.IsEmpty then
+            planFor query.Def |> Result.map (Planner.describe provider.Dialect)
+        else
+            Translate.projection model (ref false) query.Def None
+            |> Result.map (fun (select, _) ->
+                { Sql = (Sql.renderSelect provider.Dialect select).Sql
+                  Loads = [] })
+
+    /// Describes how a projection would execute. Performs no database access.
+    member _.Explain(projection: Projection<'R>) : Result<QueryPlan, TranslationError> =
+        Translate.projection model (ref false) projection.Def (Some projection.Select)
+        |> Result.map (fun (select, _) ->
+            { Sql = (Sql.renderSelect provider.Dialect select).Sql
+              Loads = [] })
+
+    /// Executes a query, loading requested relationships with batched queries.
+    member _.All(query: Query<'T>, ?consistency: ReadConsistency, ?cancellationToken: CancellationToken) =
+        let ct = defaultArg cancellationToken CancellationToken.None
+        let consistency = defaultArg consistency ReadConsistency.Independent
+
+        Execution.guard provider (fun () ->
+            task {
+              if not query.Def.Joins.IsEmpty then
+                // A joined query returns combined rows: read it as a projection.
+                match Translate.projection model (ref false) query.Def None with
+                | Error e -> return Error(Translation e)
+                | Ok(select, shape) ->
+                    let! rows = withArgs query.Def.Args ct false (fun s -> Execution.readProjection s select shape query.Def.Root.Name)
+                    return Ok(rows |> List.map unbox<'T>)
+              else
+                match planFor query.Def with
+                | Error e -> return Error(Translation e)
+                | Ok plan ->
+                    let snapshot = consistency = ReadConsistency.Snapshot && not plan.Loads.IsEmpty
+
+                    if snapshot && not provider.Dialect.Capabilities.SnapshotReads then
+                        return Error(Translation(UnsupportedByProvider("snapshot reads", provider.Dialect.Name)))
+                    else
+                        let! rows = withArgs query.Def.Args ct snapshot (fun s -> Execution.readRoot s plan)
+                        return Ok(rows |> List.map unbox<'T>)
+            })
+
+    /// Executes a projection. Only the projected columns are read.
+    member _.All(projection: Projection<'R>, ?cancellationToken: CancellationToken) =
+        let ct = defaultArg cancellationToken CancellationToken.None
+
+        Execution.guard provider (fun () ->
+            task {
+                match Translate.projection model (ref false) projection.Def (Some projection.Select) with
+                | Error e -> return Error(Translation e)
+                | Ok(select, shape) ->
+                    let! rows =
+                        withArgs projection.Def.Args ct false (fun s -> Execution.readProjection s select shape projection.Def.Root.Name)
+
+                    return Ok(rows |> List.map unbox<'R>)
+            })
+
+    /// Counts the rows a query matches (ignoring relationship loads) with one
+    /// command that transfers a single row. A page counts the rows of the page;
+    /// a grouped query counts its groups.
+    member _.Count(query: Query<'T>, ?cancellationToken: CancellationToken) : Task<Result<int64, DbError>> =
+        let ct = defaultArg cancellationToken CancellationToken.None
+
+        Execution.guard provider (fun () ->
+            task {
+                match Translate.countSelect model (ref false) query.Def with
+                | Error e -> return Error(Translation e)
+                | Ok select ->
+                    let! rows = single select query.Def.Args ct (fun r -> Convert.ToInt64(r.GetValue 0))
+                    return Ok rows.[0]
+            })
+
+    /// Whether a query matches any row. Reads at most one row.
+    member _.Exists(query: Query<'T>, ?cancellationToken: CancellationToken) : Task<Result<bool, DbError>> =
+        let ct = defaultArg cancellationToken CancellationToken.None
+
+        Execution.guard provider (fun () ->
+            task {
+                match Translate.existsSelect model (ref false) query.Def with
+                | Error e -> return Error(Translation e)
+                | Ok select ->
+                    let! rows = single select query.Def.Args ct ignore
+                    return Ok(rows.Count > 0)
+            })
+
+    /// Executes a projection expected to return at most one row, such as an
+    /// aggregate without groupBy (which always returns exactly one).
+    member this.One(projection: Projection<'R>, ?cancellationToken: CancellationToken) : Task<Result<'R option, DbError>> =
+        task {
+            match! this.All(projection, cancellationToken = defaultArg cancellationToken CancellationToken.None) with
+            | Ok [] -> return Ok None
+            | Ok [ x ] -> return Ok(Some x)
+            | Ok _ -> return Error(Translation(InvalidQuery "expected at most one row but the projection returned more"))
+            | Error e -> return Error e
+        }
+
+    /// Describes the SQL a bulk write would send. Performs no database access.
+    member _.Explain(write: BulkWrite<'R>) : Result<QueryPlan, TranslationError> =
+        BulkExec.commands model provider.Dialect write.Def
+        |> Result.map (fun cmds ->
+            { Sql = BulkExec.sqlOf cmds |> String.concat ";\n"
+              Loads = [] })
+
+    /// Runs a bulk write. Several commands (very large inserts) run in one
+    /// transaction; an empty insert sends nothing.
+    member _.Execute(write: BulkWrite<'R>, ?cancellationToken: CancellationToken) : Task<Result<'R, DbError>> =
+        let ct = defaultArg cancellationToken CancellationToken.None
+
+        Execution.guard provider (fun () ->
+            task {
+                match BulkExec.commands model provider.Dialect write.Def with
+                | Error e -> return Error(Translation e)
+                | Ok [] -> return Ok(write.Finish(box ([]: obj list)))
+                | Ok cmds ->
+                    let args =
+                        match write.Def with
+                        | UpdateAll(q, _)
+                        | DeleteAll q -> q.Args
+                        | InsertAll _ -> [||]
+
+                    use! conn = provider.OpenConnection ct
+
+                    let! tx =
+                        if cmds.Length > 1 then
+                            task {
+                                let! t = provider.BeginTransaction(conn, IsolationLevel.ReadCommitted, ct)
+                                return Some t
+                            }
+                        else
+                            Task.FromResult None
+
+                    try
+                        let session: Execution.Session =
+                            { Provider = provider
+                              Options = options
+                              Connection = conn
+                              Transaction = tx
+                              Ct = ct
+                              Args = args }
+
+                        let! v = BulkExec.run session write.Def cmds
+
+                        match tx with
+                        | Some t -> do! t.CommitAsync(ct)
+                        | None -> ()
+
+                        return Ok(write.Finish v)
+                    finally
+                        tx |> Option.iter (fun t -> t.Dispose())
+            })
+
+    /// Runs hand-written SQL, reading each row as `'R`: a mapped record
+    /// (columns by name, relationships not loaded), another record (fields by
+    /// name or snake_case name), a tuple (columns in order) or a scalar.
+    /// Interpolated values are always command parameters:
+    /// `repo.Sql<Order>($"SELECT * FROM orders WHERE total > {minimum}")`.
+    member _.Sql<'R>(sql: FormattableString, ?cancellationToken: CancellationToken) : Task<Result<'R list, DbError>> =
+        let ct = defaultArg cancellationToken CancellationToken.None
+
+        Execution.guard provider (fun () ->
+            task {
+                let cmd = Execution.rawCommand model provider.Dialect sql
+                let read = Execution.rawReader model typeof<'R> "SQL"
+                let! rows = withSession ct false (fun s -> Execution.query s cmd read)
+                return Ok(rows |> Seq.map unbox<'R> |> List.ofSeq)
+            })
+
+    /// Runs a hand-written command, returning the number of affected rows.
+    /// Interpolated values are always command parameters.
+    member _.ExecuteSql(sql: FormattableString, ?cancellationToken: CancellationToken) : Task<Result<int, DbError>> =
+        let ct = defaultArg cancellationToken CancellationToken.None
+
+        Execution.guard provider (fun () ->
+            task {
+                let cmd = Execution.rawCommand model provider.Dialect sql
+                let! n = withSession ct false (fun s -> Execution.execute s cmd)
+                return Ok n
+            })
+
+    /// Compares the model with the live database catalogue and reports every
+    /// difference that would make a mapped read or write fail: missing tables
+    /// and columns (join tables included), incompatible column types,
+    /// non-optional fields over nullable columns, and NOT NULL columns the
+    /// model cannot write. An empty list means none was found. Reads only the
+    /// catalogue; it does not create or migrate anything.
+    member _.CheckSchema(?cancellationToken: CancellationToken) : Task<Result<SchemaIssue list, DbError>> =
+        let ct = defaultArg cancellationToken CancellationToken.None
+
+        Execution.guard provider (fun () ->
+            task {
+                let! issues = withSession ct false (fun s -> SchemaCheck.run model s)
+                return Ok issues
+            })
+
+    /// Runs `body` with a repository whose work happens inside one database
+    /// transaction that is rolled back when `body` finishes: a test sandbox
+    /// (Ecto's SQL sandbox). Transactions inside it become savepoints, each
+    /// operation runs in its own savepoint so a database error does not end
+    /// the sandbox, and operations run one at a time. Isolation levels and
+    /// snapshot reads inside a sandbox see the sandbox's transaction.
+    member _.Sandbox(body: Repo -> Task<'T>, ?cancellationToken: CancellationToken) : Task<'T> =
+        let ct = defaultArg cancellationToken CancellationToken.None
+
+        task {
+            use! conn = provider.OpenConnection ct
+            use! tx = provider.BeginTransaction(conn, IsolationLevel.ReadCommitted, ct)
+            let sandbox = Repo(model, SandboxProvider(provider, conn, tx), options)
+
+            try
+                return! body sandbox
+            finally
+                try
+                    tx.Rollback()
+                with _ ->
+                    ()
+        }
+
+    /// Executes a query expected to return at most one row.
+    member this.One(query: Query<'T>, ?cancellationToken: CancellationToken) =
+        task {
+            let limited = Query<'T>({ query.Def with Limit = Some 2; Template = None })
+
+            let limited =
+                if limited.Def.Orders.IsEmpty then
+                    // Paging a single-row lookup needs no caller ordering; order by key.
+                    let schema = model.TrySchema typeof<'T>
+
+                    match schema with
+                    | Some s ->
+                        let v = Quotations.Var("x", typeof<'T>)
+
+                        let key =
+                            Quotations.Expr.Lambda(v, Quotations.Expr.PropertyGet(Quotations.Expr.Var v, s.Shape.Fields.[s.Key.Index]))
+
+                        Query<'T>({ limited.Def with Orders = [ key, Ascending ] })
+                    | None -> limited
+                else
+                    limited
+
+            match! this.All(limited, cancellationToken = defaultArg cancellationToken CancellationToken.None) with
+            | Ok [] -> return Ok None
+            | Ok [ x ] -> return Ok(Some x)
+            | Ok _ -> return Error(Translation(InvalidQuery "expected at most one row but the query matched more"))
+            | Error e -> return Error e
+        }
+
+    /// Loads relationships onto values already in hand, returning new values.
+    /// `loads` is a query whose preloads are applied; it must not filter, order
+    /// or page. The given values are not modified. Requested relationships are
+    /// always (re)loaded.
+    member _.Preload(loads: Query<'T>, values: 'T list, ?cancellationToken: CancellationToken) =
+        let ct = defaultArg cancellationToken CancellationToken.None
+
+        Execution.guard provider (fun () ->
+            task {
+                let d = loads.Def
+
+                if not d.Wheres.IsEmpty || not d.Orders.IsEmpty || d.Limit.IsSome || d.Offset.IsSome then
+                    return
+                        Error(Translation(InvalidQuery "a load specification for existing values may only contain preloads"))
+                else
+                    match model.Schema typeof<'T> with
+                    | Error e -> return Error(Translation e)
+                    | Ok schema ->
+                        match Planner.planLoads provider.Dialect model schema d.Loads with
+                        | Error e -> return Error(Translation e)
+                        | Ok nodes when values.IsEmpty || nodes.IsEmpty -> return Ok values
+                        | Ok nodes ->
+                            let rows =
+                                values |> List.map (fun v -> Array.copy (schema.Shape.Deconstruct(box v))) |> Array.ofList
+
+                            do! withSession ct false (fun s -> Execution.loadInto s rows nodes)
+                            return Ok(rows |> Array.map (schema.Shape.Construct >> unbox<'T>) |> List.ofArray)
+            })
+
+    member private _.WriteOne(cs: Changeset<'T>, ct: CancellationToken) : Task<Result<'T, WriteError<'T>>> =
+        task {
+            let checkedState = Writes.check model cs.State
+
+            if not (Writes.isValid checkedState) then
+                return Error(WriteError.Invalid(Changeset<'T>(checkedState)))
+            else
+                try
+                    use! conn = provider.OpenConnection ct
+
+                    let! tx =
+                        if Writes.needsTransaction checkedState then
+                            task {
+                                let! t = provider.BeginTransaction(conn, IsolationLevel.ReadCommitted, ct)
+                                return Some t
+                            }
+                        else
+                            Task.FromResult None
+
+                    use _ = { new IDisposable with member _.Dispose() = tx |> Option.iter (fun t -> t.Dispose()) }
+
+                    let session: Execution.Session =
+                        { Provider = provider
+                          Options = options
+                          Connection = conn
+                          Transaction = tx
+                          Ct = ct
+                          Args = [||] }
+
+                    let! r = Writes.write model session checkedState
+
+                    match r, tx with
+                    | Ok v, Some t ->
+                        do! t.CommitAsync(ct)
+                        return Ok(unbox<'T> v)
+                    | Ok v, None -> return Ok(unbox<'T> v)
+                    | Error e, t ->
+                        match t with
+                        | Some t -> do! t.RollbackAsync(CancellationToken.None)
+                        | None -> ()
+
+                        match e with
+                        | Writes.Invalid s -> return Error(WriteError.Invalid(Changeset<'T>(s)))
+                        | Writes.Stale s -> return Error(WriteError.Stale(Changeset<'T>(s)))
+                        | Writes.Failed f -> return Error(WriteError.Failed f)
+                with
+                | :? OperationCanceledException as ex -> return Err.rethrow ex
+                | Execution.MaterializationFailure m -> return raise (InvalidOperationException($"{m.Model}.{m.Property}: {m.Message}"))
+                | ex ->
+                    match provider.Classify ex with
+                    | Some f -> return Error(WriteError.Failed f)
+                    | None -> return Err.rethrow ex
+        }
+
+    /// Validates and inserts. Invalid changesets are returned without any
+    /// write; generated values come back in a new record.
+    member this.Insert(cs: Changeset<'T>, ?cancellationToken) =
+        if cs.Action <> Insert then invalidArg "cs" "expected an insert changeset (Changeset.insert)"
+        this.WriteOne(cs, defaultArg cancellationToken CancellationToken.None)
+
+    /// Validates and updates only the changed fields, enforcing the version.
+    member this.Update(cs: Changeset<'T>, ?cancellationToken) =
+        if cs.Action <> Update then invalidArg "cs" "expected an update changeset"
+        this.WriteOne(cs, defaultArg cancellationToken CancellationToken.None)
+
+    member this.Delete(cs: Changeset<'T>, ?cancellationToken) =
+        if cs.Action <> Delete then invalidArg "cs" "expected a delete changeset (Changeset.delete)"
+        this.WriteOne(cs, defaultArg cancellationToken CancellationToken.None)
+
+    /// Runs a transaction description atomically. An empty description
+    /// succeeds without opening a connection.
+    member _.Transact(tx: Tx<'T>, ?isolation: IsolationLevel, ?retry: RetryPolicy, ?cancellationToken: CancellationToken) =
+        let ct = defaultArg cancellationToken CancellationToken.None
+        let isolation = defaultArg isolation IsolationLevel.ReadCommitted
+        let retry = defaultArg retry RetryPolicy.None
+
+        task {
+            match tx with
+            | Pure v -> return Ok v
+            | Effect _ ->
+                let mutable attempt = 0
+                let mutable outcome = None
+
+                while outcome.IsNone do
+                    attempt <- attempt + 1
+                    let completed = ResizeArray<string>()
+                    let mutable current = "begin"
+
+                    let! result =
+                        task {
+                            try
+                                use! conn = provider.OpenConnection ct
+                                use! dbTx = provider.BeginTransaction(conn, isolation, ct)
+
+                                let rt: TxRuntime =
+                                    { Session =
+                                        { Provider = provider
+                                          Options = options
+                                          Connection = conn
+                                          Transaction = Some dbTx
+                                          Ct = ct
+                                          Args = [||] }
+                                      Model = model
+                                      Completed = completed }
+
+                                current <- "steps"
+                                let! r = Tx.run' rt tx
+
+                                match r with
+                                | Ok v ->
+                                    current <- "commit"
+                                    do! dbTx.CommitAsync(ct)
+                                    return Ok v
+                                | Error(step, failure) ->
+                                    do! dbTx.RollbackAsync(CancellationToken.None)
+                                    return Error(step, failure)
+                            with
+                            | :? OperationCanceledException as ex -> return Err.rethrow ex
+                            | Execution.MaterializationFailure m -> return Error(current, ReadFailure(Materialization m))
+                            | Translate.TranslationFailure t -> return Error(current, ReadFailure(Translation t))
+                            | ex ->
+                                // Steps attribute their own failures; what reaches here
+                                // is from opening, beginning or committing.
+                                match provider.Classify ex with
+                                | Some f -> return Error(current, DatabaseFailure f)
+                                | None -> return Err.rethrow ex
+                        }
+
+                    match result with
+                    | Ok v -> outcome <- Some(Ok v)
+                    | Error(step, failure) ->
+                        let retryable =
+                            match failure with
+                            | DatabaseFailure f -> retry.ShouldRetry f
+                            | _ -> false
+
+                        if not (retryable && attempt < retry.MaxAttempts) then
+                            outcome <-
+                                Some(
+                                    Error
+                                        { Step = step
+                                          Failure = failure
+                                          RolledBack = List.ofSeq completed
+                                          Attempts = attempt }
+                                )
+
+                return outcome.Value
+        }
+
+[<AutoOpen>]
+module ChangesetModelExtensions =
+    type Changeset with
+        /// Model-aware validation without database access: primary-key and
+        /// version changes, relationship write targets and duplicate child
+        /// identities. Repo writes run the same checks before any command.
+        static member check (model: Model) (cs: Changeset<'T>) : Changeset<'T> =
+            Changeset<'T>(Writes.check model cs.State)

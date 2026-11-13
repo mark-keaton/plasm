@@ -1,0 +1,29 @@
+<Project>
+  <!-- Set before importing the root props, whose defaults depend on it. -->
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!-- NuGet package metadata shared by Plasm and Plasm.Postgres. -->
+  <PropertyGroup>
+    <!-- CI sets VersionSuffix to alpha.<run number>; local packs are 0.1.0-alpha. -->
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <VersionSuffix Condition="'$(VersionSuffix)' == ''">alpha</VersionSuffix>
+    <Authors>Plasm contributors</Authors>
+    <PackageTags>fsharp;orm;ecto;database;postgresql;persistence</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <!-- Declared explicitly so the packages depend on FSharp.Core (the implicit
+         reference does not flow into the package under central package management). -->
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
+    <PackageReleaseNotes>Experimental pre-release; not production-ready. See docs/status.md.</PackageReleaseNotes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" />
+    <None Include="$(MSBuildThisFileDirectory)../README.md" Pack="true" PackagePath="/" Visible="false" />
+  </ItemGroup>
+</Project>
