@@ -6,10 +6,18 @@
     <Compile Include="Site.fs" />
     <Compile Include="RunningSteps.fs" />
     <Compile Include="CourseSteps.fs" />
+    <Compile Include="ServerSide.fs" />
+    <Compile Include="DatabaseSteps.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Reqnroll" />
     <PackageReference Include="Microsoft.Playwright" />
     <PackageReference Include="FSharp.Core" VersionOverride="11.0.101" />
+    <!-- The same snippets run against real PostgreSQL, through F# Interactive. -->
+    <PackageReference Include="FSharp.Compiler.Service" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Npgsql" />
+    <ProjectReference Include="$(PlasmRoot)src/Plasm.Postgres/Plasm.Postgres.fsproj" />
+    <ProjectReference Include="$(PlasmRoot)koans/Plasm.Koans.Core/Plasm.Koans.Core.fsproj" />
   </ItemGroup>
 </Project>

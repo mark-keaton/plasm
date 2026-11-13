@@ -113,3 +113,41 @@ let run (refsDir: string) (title: string) (name: string) (helpers: string) (isTa
 
             return json [ "status", box status; "text", box text; "blankLine", box blankLine; "sql", box (Array.ofList r.Sql) ]
     }
+
+/// For checks: compiles `code` (the body of `fun (repo: Repo) -> Task<string>`,
+/// indented by four), runs it (in a sandbox when `sandboxed`) and returns
+/// JSON {result, sql} or {error}.
+let evaluate (refsDir: string) (code: string) (sandboxed: bool) : Task<string> =
+    task {
+        let src =
+            String.concat
+                "\n"
+                [ "module Koan"
+                  "open System"
+                  "open System.Threading.Tasks"
+                  "open Plasm"
+                  "open Plasm.Koans"
+                  "open Plasm.Koans.Shop"
+                  "let evaluate (repo: Repo) : Task<string> ="
+                  code ]
+
+        match! Compiler.compile refsDir src with
+        | Error errors -> return json [ "error", box (errors |> List.map (fun e -> $"({e.Line},{e.Column}) {e.Code} {e.Message}") |> String.concat "\n") ]
+        | Ok assembly ->
+            let f = assembly.GetType("Koan").GetMethod("evaluate")
+            let call (r: Repo) = f.Invoke(null, [| box r |]) :?> Task<string>
+            commands.Clear()
+
+            try
+                let! result = if sandboxed then repo.Value.Sandbox(fun r -> call r) else call repo.Value
+
+                let sql =
+                    commands
+                    |> Seq.map (fun c -> c.Sql)
+                    |> Seq.filter (fun s -> not (s.StartsWith "SAVEPOINT" || s.StartsWith "RELEASE" || s.StartsWith "ROLLBACK"))
+                    |> Array.ofSeq
+
+                return json [ "result", box result; "sql", box sql ]
+            with ex ->
+                return json [ "error", box (string ex) ]
+    }

@@ -104,6 +104,7 @@ type CourseSteps(w: BrowserWorld) =
         |> unit
 
     [<StepDefinition("every koan is filled in with its reference answer and run in the page")>]
+    [<StepDefinition("every koan is run with its reference answer against PGlite in the page")>]
     member _.RunAnswered() = runAll true |> unit
 
     [<StepDefinition("every koan passes")>]

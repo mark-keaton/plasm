@@ -7,23 +7,28 @@ Feature: Plasm runs against PGlite
   I want a provider that runs Plasm against PGlite
   So that Plasm can run in a browser and the provider boundary is proven by a second implementation
 
-  Rule: The provider passes the acceptance scenarios the koans teach
+  Background:
+    Given the koans page has finished loading
 
-    Scenario: Every acceptance scenario a koan teaches passes against PGlite
-      Given the acceptance scenarios named by the koans' lesson specifications
-      When they are run with the PGlite provider instead of Npgsql
-      Then every one of them passes
+  Rule: The provider supports everything the koans teach
+
+    Scenario: Every acceptance scenario a koan teaches holds against PGlite
+      Each koan traces to an acceptance scenario of Plasm, so every koan passing
+      against PGlite exercises every scenario the koans teach.
+      When every koan is run with its reference answer against PGlite in the page
+      Then every koan passes
 
     Scenario: Values cross the boundary without loss
-      When rows with every column type the koans use are written and read through the PGlite provider
-      Then every value reads back equal, including decimals, timestamps, options and arrays
+      When rows with every column type the koans use are written and read through the PGlite provider and through Npgsql
+      Then every value reads back the same, including decimals, timestamps, options and arrays
 
     Scenario: Diagnostics report the same commands
-      When a koan runs with the PGlite provider
-      Then the commands it reports are the same as with Npgsql
+      When the same reads and writes run through the PGlite provider and through Npgsql
+      Then the commands they report are the same
 
-  Rule: What PGlite cannot do is explicit
+  Rule: PGlite's single connection is explicit
 
-    Scenario: Capabilities PGlite lacks are refused before execution
-      When an operation needs a capability the PGlite provider does not declare
-      Then it fails before execution as unsupported by the provider, naming the capability
+    Scenario: Work started while a transaction holds the connection waits for it
+      When a read starts in the page while a transaction is still open
+      Then the read completes after the transaction ends
+      And it sees the transaction's committed rows

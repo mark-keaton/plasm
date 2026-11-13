@@ -169,8 +169,18 @@ course.lessons.forEach((lesson, l) => {
   });
 });
 
+/// For checks: runs F# code (the body of `fun (repo: Repo) -> Task<string>`) in the engine.
+async function evaluate(code, sandboxed = true) {
+  const current = await engine.ready;
+  const id = ++ids;
+  return new Promise((resolve) => {
+    current.pending.set(id, resolve);
+    current.worker.postMessage({ type: 'evaluate', id, code, sandboxed });
+  });
+}
+
 // For tests: the course and a way to reach any koan.
-window.koans = { course, runKoan, show, stop };
+window.koans = { course, runKoan, show, stop, evaluate };
 updateProgress();
 show(0, 0);
 const ready = await engine.ready;

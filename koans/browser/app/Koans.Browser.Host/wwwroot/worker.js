@@ -107,6 +107,11 @@ post({ type: 'ready', ms: since() });
 
 self.onmessage = async (e) => {
   const m = e.data;
+  if (m.type === 'evaluate') {
+    const result = JSON.parse(await exports.Evaluate(m.code, m.sandboxed));
+    post({ type: 'result', id: m.id, result });
+    return;
+  }
   if (m.type !== 'run') return;
   try {
     const result = await exports.RunKoan(m.title, m.name, m.helpers, m.isTask, m.lambda, m.body);
