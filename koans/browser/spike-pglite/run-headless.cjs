@@ -22,7 +22,21 @@ const types = {
 
 // Bytes served, to report the download cost (uncompressed and with Brotli where a
 // .br file was published next to the file).
-const served = { files: 0, bytes: 0, brotli: 0 };
+const served = { files: 0, bytes: 0, paths: [] };
+
+// Brotli size of what was served: the published .br file, or compressed here
+// (after the run, so the timings are not affected).
+function brotliTotal() {
+  const zlib = require('zlib');
+  let total = 0;
+  for (const file of served.paths) {
+    const br = file + '.br';
+    total += fs.existsSync(br)
+      ? fs.statSync(br).size
+      : zlib.brotliCompressSync(fs.readFileSync(file), { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 9 } }).length;
+  }
+  return total;
+}
 
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent(new URL(req.url, 'http://x').pathname);
@@ -34,8 +48,7 @@ const server = http.createServer((req, res) => {
     if (err) { res.writeHead(404).end(); return; }
     served.files++;
     served.bytes += data.length;
-    const br = file + '.br';
-    served.brotli += fs.existsSync(br) ? fs.statSync(br).size : require('zlib').brotliCompressSync(data).length;
+    served.paths.push(file);
     res.writeHead(200, { 'Content-Type': types[path.extname(file)] ?? 'application/octet-stream' });
     res.end(data);
   });
@@ -60,7 +73,13 @@ const server = http.createServer((req, res) => {
   console.log(`\n${results.length - failed} passed, ${failed} failed`);
   console.log(`timings (ms since page script start): ${JSON.stringify(timings)}; wall clock from navigation: ${wall} ms`);
   const mb = (n) => (n / 1048576).toFixed(1) + ' MB';
-  console.log(`downloaded: ${served.files} files, ${mb(served.bytes)} uncompressed, ~${mb(served.brotli)} with Brotli`);
+  console.log(`downloaded: ${served.files} files, ${mb(served.bytes)} uncompressed, ~${mb(brotliTotal())} with Brotli`);
+  const byArea = {};
+  served.paths.forEach((p) => {
+    const area = p.startsWith(pglite) ? 'pglite' : p.includes('_framework') ? '_framework' : 'page';
+    byArea[area] = (byArea[area] ?? 0) + fs.statSync(p).size;
+  });
+  console.log('uncompressed by area: ' + Object.entries(byArea).map(([k, v]) => `${k} ${mb(v)}`).join(', '));
   await browser.close();
   server.close();
   process.exit(failed ? 1 : 0);

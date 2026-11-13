@@ -26,6 +26,11 @@ function report(name, passed, detail) {
 // PGlite
 // ---------------------------------------------------------------------------
 
+// PGlite and the .NET runtime download and start in parallel.
+const dotnetStarting = dotnet.create().then((rt) => {
+  timings.dotnetReady = Math.round(performance.now() - t0);
+  return rt;
+});
 const db = await PGlite.create(); // in memory
 timings.pgliteReady = Math.round(performance.now() - t0);
 
@@ -108,8 +113,7 @@ function execSync(sql) {
 // .NET
 // ---------------------------------------------------------------------------
 
-const { setModuleImports, runMain } = await dotnet.create();
-timings.dotnetReady = Math.round(performance.now() - t0);
+const { setModuleImports, runMain } = await dotnetStarting;
 setModuleImports('main.js', { pglite: { query, execSync }, report });
 status.textContent = 'Running...';
 
