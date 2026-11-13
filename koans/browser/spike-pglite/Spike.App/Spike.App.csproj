@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <!-- The browser app: .NET on WebAssembly (interpreter, no workloads) reaching
+       PGlite through [JSImport]. The interop shim is C# because the JSImport
+       marshalling code is produced by a C# source generator. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Plasm reads records, unions and quotations by reflection: no trimming. -->
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Spike.Scenarios/Spike.Scenarios.fsproj" />
+  </ItemGroup>
+</Project>
