@@ -29,6 +29,7 @@
     <Compile Include="Path.fs" />
     <Compile Include="Guidance.fs" />
     <Compile Include="Runner.fs" />
+    <Compile Include="Notebook.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>

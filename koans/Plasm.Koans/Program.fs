@@ -3,6 +3,7 @@
 ///   --list                       every lesson with how many of its koans pass
 ///   --all                        run every koan instead of stopping at the first unsatisfied one
 ///   --report <file>              also write every result as JSON (for the koans' own checks)
+///   --notebook <file> [--bin <dir>]  write the koans as a notebook (no database needed)
 module Plasm.Koans.Program
 
 open System
@@ -40,6 +41,14 @@ let private writeReport (path: string) (results: KoanResult list) =
 
 [<EntryPoint>]
 let main argv =
+    match arg "--notebook" argv with
+    | Some path ->
+        let bin = arg "--bin" argv |> Option.defaultValue "../Plasm.Koans/bin/Debug/net11.0"
+        File.WriteAllText(path, Notebook.generate bin)
+        printfn "Wrote the koans notebook to %s" path
+        0
+    | None ->
+
     let guidance = Guidance.load ()
     let all = Plasm.Koans.Path.lessons
     let total = all |> List.sumBy (fun l -> l.Koans.Length)

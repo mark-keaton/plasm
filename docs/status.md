@@ -418,8 +418,10 @@ payments, EF Core 11 (rc.3 provider) with `AsNoTracking`.
 
 ## Suggested next steps
 
-0. Koans in a notebook (.NET Interactive / Polyglot): run the same lessons
-   cell by cell, which also demonstrates Plasm in F# Interactive.
+0. The koans notebook (`koans/notebook/plasm-koans.ipynb`) is generated and
+   its cells are verified in a hosted F# Interactive session; run it once in
+   a real .NET Interactive kernel (Polyglot Notebooks, or `dotnet-repl --run`)
+   and add that run to CI if it holds.
 
 1. Choose a license, add the repository URL to the package metadata, and
    publish pre-release packages (the CI already builds them).

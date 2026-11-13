@@ -68,12 +68,25 @@ let run (repo: Repo) (commands: ResizeArray<CommandEvent>) (lesson: Lesson) (koa
                     | inner -> return Threw(inner.GetType().FullName, inner.Message)
             }
 
-        // A koan with a blank left is unanswered, whatever else happened.
+        // A koan with a blank left is unanswered, whatever else happened. A
+        // blank inside a query is evaluated by the translator, so it can also
+        // surface inside an error message.
+        // (Evaluated, it raises BlankException; quoted, a translation error
+        // shows the call as "__ ()".)
+        let mentionsBlank (text: string) = text.Contains "BlankException" || text.Contains "__ ()"
+
+        let blankSurfaced =
+            match outcome with
+            | Failed(_, actual) -> mentionsBlank actual
+            | Threw(t, m) -> mentionsBlank t || mentionsBlank m
+            | _ -> false
+
         let outcome =
             match outcome, blankOf lesson koan with
             | Passed, _ -> Passed
             | _, Some(file, line) -> Unanswered(file, line)
-            | Unanswered _, None -> Failed("an answer", "a blank (__) that was evaluated")
+            | Unanswered _, None -> outcome
+            | _, None when blankSurfaced -> Unanswered(koan.File, koan.Line)
             | other, None -> other
 
         let sql =
@@ -125,15 +138,16 @@ let describeNext (guidance: Guidance.LessonGuidance list) (r: KoanResult) =
     lines.Add ""
 
     match r.Outcome with
+    | Unanswered("", _) -> lines.Add "  Fill in the blank (__) in this cell"
     | Unanswered(file, line) -> lines.Add $"  Fill in the blank (__) at {relative file}:{line}"
     | Failed(expected, actual) ->
-        lines.Add $"  At {relative r.Koan.File}:{r.Koan.Line}"
+        if r.Koan.File <> "" then lines.Add $"  At {relative r.Koan.File}:{r.Koan.Line}"
         lines.Add "  Expected:"
         lines.Add(indent "    " (formatSql expected))
         lines.Add "  Actual:"
         lines.Add(indent "    " (formatSql actual))
     | Threw(t, m) ->
-        lines.Add $"  At {relative r.Koan.File}:{r.Koan.Line}"
+        if r.Koan.File <> "" then lines.Add $"  At {relative r.Koan.File}:{r.Koan.Line}"
         lines.Add $"  It threw {t}:"
         lines.Add(indent "    " m)
     | Passed -> ()

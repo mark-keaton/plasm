@@ -139,7 +139,15 @@ dotnet run --project koans/Plasm.Koans -- --list       # every lesson and its pr
 ```
 
 It starts a throwaway PostgreSQL container, or uses the server named by
-`PLASM_KOANS_PG`. What each koan teaches is specified in
+`PLASM_KOANS_PG`.
+
+The same koans come as a notebook, `koans/notebook/plasm-koans.ipynb`
+(Polyglot Notebooks, or Jupyter with the .NET kernel): build the koans
+(`dotnet build koans/Plasm.Koans`), run the setup cell, then edit and run each
+koan cell until it shows ✔. The notebook is generated from the lessons
+(`dotnet run --project koans/Plasm.Koans -- --notebook koans/notebook/plasm-koans.ipynb`),
+and its cells are checked in a hosted F# Interactive session, as shipped and
+with the reference answers. What each koan teaches is specified in
 `koans/features/lessons/*.feature`, each tracing to an acceptance scenario of
 Plasm; `koans/Plasm.Koans.Specs` checks that every koan passes with its
 reference answer (`koans/answers/`) and stops at its blank as shipped.

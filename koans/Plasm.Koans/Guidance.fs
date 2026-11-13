@@ -13,12 +13,15 @@ type KoanGuidance =
 type LessonGuidance =
     { Number: string
       Title: string
+      /// The lesson's goal: the first line of the feature's description.
+      Goal: string
       Koans: Map<string, KoanGuidance> }
 
 let private row = Regex(@"^\s*\|\s*(.+?)\s*(?<!\\)\|\s*(.+?)\s*(?<!\\)\|\s*(.+?)\s*\|\s*$")
 
 let load () : LessonGuidance list =
-    let dir = Path.Combine(AppContext.BaseDirectory, "lessons")
+    // Next to the koans assembly (also when it is loaded into F# Interactive).
+    let dir = Path.Combine(Path.GetDirectoryName(typeof<KoanGuidance>.Assembly.Location), "lessons")
 
     if not (Directory.Exists dir) then
         []
@@ -35,6 +38,13 @@ let load () : LessonGuidance list =
                     if t.StartsWith "Feature:" then Some(t.Substring("Feature:".Length).Trim()) else None)
                 |> Option.defaultValue (Path.GetFileNameWithoutExtension f)
 
+            let goal =
+                lines
+                |> Array.skipWhile (fun l -> not (l.Trim().StartsWith "Feature:"))
+                |> Array.tryItem 1
+                |> Option.map (fun l -> l.Trim())
+                |> Option.defaultValue ""
+
             let koans =
                 lines
                 |> Array.choose (fun l ->
@@ -48,5 +58,6 @@ let load () : LessonGuidance list =
 
             { Number = (Path.GetFileName f).Substring(0, 2)
               Title = title
+              Goal = goal
               Koans = koans })
         |> List.ofArray
