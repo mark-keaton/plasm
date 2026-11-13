@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>PGlite provider for Plasm (PostgreSQL compiled to WebAssembly, reached through a JavaScript bridge). Experimental spike.</Description>
+    <PackageId>Plasm.PGlite</PackageId>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="PGlite.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Plasm/Plasm.fsproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The spike's scenarios: the koans' shop, run against PGlite in the browser. -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(PlasmRoot)koans/Plasm.Koans/Shop.fs" Link="Shop.fs" />
+    <Compile Include="KoansData.fs" />
+    <Compile Include="Scenarios.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(PlasmRoot)src/Plasm/Plasm.fsproj" />
+    <ProjectReference Include="$(PlasmRoot)src/Plasm.PGlite/Plasm.PGlite.fsproj" />
+    <PackageReference Include="FSharp.Core" />
+  </ItemGroup>
+</Project>
