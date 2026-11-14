@@ -1,3 +1,13 @@
+# Preloading a belongs-to
+Loaded(Some "Bob")
+# Preloading a has-many
+Loaded 2
+NotLoaded
+# An Order without a Customer is kept
+4
+Loaded None
+# Reading a loaded relationship
+2.50m
 # Not loaded is not empty
 NotLoaded
 Loaded []

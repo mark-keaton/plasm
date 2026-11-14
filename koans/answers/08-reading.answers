@@ -1,3 +1,11 @@
+# All returns a list
+[ "WIDGET"; "GADGET"; "GIZMO" ]
+# One returns an option
+Some "Cy"
+# Count returns an int64
+3L
+# Selecting one field
+[ "Ada"; "Bob"; "Cy" ]
 # Reading returns typed rows
 30.00m
 Published

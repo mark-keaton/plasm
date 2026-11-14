@@ -1,3 +1,14 @@
+# Comparing numbers
+2L
+# Contains on text becomes LIKE
+true
+[ "Bob" ]
+# And needs both
+1L
+# Or needs either
+2L
+# Ordering largest first
+[ 99.00m; 30.00m; 12.50m; 5.00m ]
 # Independent filters combine
 1L
 # Comparing with None

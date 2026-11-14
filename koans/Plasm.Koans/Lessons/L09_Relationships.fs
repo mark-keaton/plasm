@@ -11,6 +11,59 @@ let lesson =
     Lesson.make
         "About relationships"
         [ Koan.Task(
+              "Preloading a belongs-to",
+              fun k ->
+                  task {
+                      // A relationship links records: each Order belongs to a Customer
+                      // (belongsTo in Db.orders, through the CustomerId field).
+                      // A relationship field is an Assoc: NotLoaded, or Loaded with its value.
+                      // preload asks the query to load it. byId, at the top of this lesson,
+                      // finds the Order with a given id in a list.
+                      let! orders = k.Repo.All(plasm { for o in Db.orders do preload o.Customer })
+                      let order = byId (ok orders) 3L
+                      // An Order's Customer is optional, so the loaded value is an option.
+                      order.Customer |> Assoc.map (Option.map (fun c -> c.Name)) |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Preloading a has-many",
+              fun k ->
+                  task {
+                      // An Order has many OrderLines (hasMany in Db.orders): Lines is a list.
+                      let! orders = k.Repo.All(plasm { for o in Db.orders do preload o.Lines })
+                      let order = byId (ok orders) 1L
+                      order.Lines |> Assoc.map List.length |> shouldBe __
+                      // Payments was not asked for.
+                      order.Payments |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "An Order without a Customer is kept",
+              fun k ->
+                  task {
+                      // Order 4 has no customer. Loading Customers does not drop it.
+                      let! orders = k.Repo.All(plasm { for o in Db.orders do preload o.Customer })
+                      (ok orders).Length |> shouldBe __
+                      (byId (ok orders) 4L).Customer |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Reading a loaded relationship",
+              fun k ->
+                  task {
+                      let! orders = k.Repo.All(plasm { for o in Db.orders do preload o.Lines })
+                      let order = byId (ok orders) 2L
+                      // Assoc.get takes the value out of Loaded. It never queries: on a
+                      // NotLoaded relationship it fails, saying the relationship was not loaded.
+                      let lines = order.Lines |> Assoc.get
+                      lines.Head.UnitPrice |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
               "Not loaded is not empty",
               fun k ->
                   task {

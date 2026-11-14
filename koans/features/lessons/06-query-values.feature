@@ -15,6 +15,10 @@ Feature: About query values
 
     Examples:
       | koan                              | the learner discovers                                                         | teaches                                                    |
+      | Query.from reads every row        | Query.from Db.customers is the plainest query: every Customer                 | core: Constructing a query performs no database operations |
+      | A where keeps the matching rows   | one where clause keeps only the rows for which its condition is true          | core: Reusable filters compose                             |
+      | An orderBy sorts the rows         | orderBy sorts the rows by a field, smallest first, in the database            | query-semantics: The ordering is done by the database      |
+      | take keeps the first rows         | take n keeps the first n rows of an ordered query                             | elegance: Pagination requires stable ordering              |
       | Building a query runs nothing     | plasm { } builds a description; no command is sent                            | core: Constructing a query performs no database operations |
       | Extending makes a new query       | adding a filter returns a new query and leaves the original as it was         | core: Extending a query preserves the original query       |
       | Running does not change a query   | the same query value can be run again with the same meaning                   | core: Executing a query does not mutate its description    |
