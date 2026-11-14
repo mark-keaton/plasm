@@ -27,6 +27,7 @@
     <Compile Include="ErrorModelSteps.fs" />
     <Compile Include="TxStepSteps.fs" />
     <Compile Include="TypedTxSteps.fs" />
+    <Compile Include="QueryCheckSteps.fs" />
     <Compile Include="PipelineSteps.fs" />
     <Compile Include="HasOneSteps.fs" />
     <Compile Include="ProviderSteps.fs" />

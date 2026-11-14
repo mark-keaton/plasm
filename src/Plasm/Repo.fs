@@ -102,6 +102,12 @@ module internal QueryDisplay =
             let header = $"  then {l.Path} ({l.Relationship}, {l.Target}), one command per batch of keys:"
             [ header; indent "  " (pretty l.Sql) ] @ loads l.Children)
 
+/// A query an application defines that Plasm cannot translate
+/// (`repo.CheckQueries`): its name, as Module.value, and why.
+type QueryProblem =
+    { Query: string
+      Error: TranslationError }
+
 /// A repository: where Plasm meets the database. Made from a model (the
 /// record types it can store) and a provider (the database connection), as in
 /// `Repo(model, Postgres.connect connectionString)`. It runs queries (All, One,
@@ -402,6 +408,49 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
     /// non-optional fields over nullable columns, and NOT NULL columns the
     /// model cannot write. An empty list means none was found. Reads only the
     /// catalogue; it does not create or migrate anything.
+    /// Translates every query an assembly defines as a value in its modules
+    /// (queries, projections and prepared queries, with their arguments as
+    /// parameters), without running any, and returns those Plasm cannot
+    /// translate. Call it in a test, or at start-up, so an untranslatable query
+    /// is never first found when it is used. `inNamespace` limits the check to
+    /// the modules in that namespace or module. A query built inside a function
+    /// is not a value, so it is not checked.
+    member _.CheckQueries(assembly: Reflection.Assembly, ?inNamespace: string) : QueryProblem list =
+        let within (t: Type) =
+            match inNamespace with
+            | None -> true
+            | Some n -> t.FullName = n || t.FullName.StartsWith(n + ".") || t.FullName.StartsWith(n + "+")
+
+        let isModule (t: Type) =
+            t.GetCustomAttributes(typeof<CompilationMappingAttribute>, false)
+            |> Seq.exists (fun a -> (a :?> CompilationMappingAttribute).SourceConstructFlags = SourceConstructFlags.Module)
+
+        let rec isQuery (t: Type) =
+            if t.IsGenericType && (t.GetGenericTypeDefinition() = typedefof<Query<_>> || t.GetGenericTypeDefinition() = typedefof<Projection<_>>) then
+                true
+            elif Microsoft.FSharp.Reflection.FSharpType.IsFunction t then
+                isQuery (snd (Microsoft.FSharp.Reflection.FSharpType.GetFunctionElements t))
+            else
+                false
+
+        let translates (q: ICheckable) =
+            match q.Select with
+            | Some select -> Translate.projection model (ref false) q.Def (Some select) |> Result.map ignore
+            | None when not q.Def.Joins.IsEmpty -> Translate.projection model (ref false) q.Def None |> Result.map ignore
+            | None -> planFor q.Def |> Result.map ignore
+
+        [ for t in assembly.GetTypes() do
+              if isModule t && within t then
+                  for p in t.GetProperties(Reflection.BindingFlags.Static ||| Reflection.BindingFlags.Public ||| Reflection.BindingFlags.NonPublic) do
+                      if p.GetIndexParameters().Length = 0 && isQuery p.PropertyType then
+                          match p.GetValue null with
+                          | :? ICheckable as q ->
+                              match translates q with
+                              | Error e -> yield { Query = $"{t.FullName.Replace('+', '.')}.{p.Name}"; Error = e }
+                              | Ok() -> ()
+                          // A function that builds a query each call is not a value Plasm can check.
+                          | _ -> () ]
+
     member _.CheckSchema(?cancellationToken: CancellationToken) : Task<Result<SchemaIssue list, DbError>> =
         let ct = defaultArg cancellationToken CancellationToken.None
 

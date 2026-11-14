@@ -170,12 +170,22 @@ module internal Describers =
             | Some d -> Some d
             | None -> List.tryHead alive)
 
+/// A query value Plasm can translate without running it (Repo.CheckQueries):
+/// a query, a projection, or a prepared query's template.
+type internal ICheckable =
+    abstract Def: QueryDef
+    abstract Select: Expr option
+
 /// An immutable description of a query over `'T` with its relationship loads.
 /// Building or extending a query never touches the database; execute it with a
 /// `Repo`.
 [<Sealed; StructuredFormatDisplay("{Description}")>]
 type Query<'T> internal (def: QueryDef) =
     member internal _.Def = def
+
+    interface ICheckable with
+        member _.Def = def
+        member _.Select = None
 
     /// The SQL this query runs, with its parameter values and one command per
     /// relationship load, as translated by the most recently created repository
@@ -203,6 +213,10 @@ type Query<'T> internal (def: QueryDef) =
 type Projection<'R> internal (def: QueryDef, select: Expr) =
     member internal _.Def = def
     member internal _.Select = select
+
+    interface ICheckable with
+        member _.Def = def
+        member _.Select = Some select
 
 module internal QueryOps =
     /// A derived query. It is no longer the prepared query it may have come
@@ -494,6 +508,34 @@ module internal Prepared =
         nonNegative template.OffsetArg "skip"
         { template with Template = Some template; Args = args }
 
+/// A prepared query: called like a function, and a value Plasm can find and
+/// check (Repo.CheckQueries) with its arguments as parameters.
+type internal PreparedQuery<'A, 'T>(template: QueryDef) =
+    inherit FSharpFunc<'A, Query<'T>>()
+    override _.Invoke(a: 'A) = Query<'T>(Prepared.bind template [| box a |])
+
+    interface ICheckable with
+        member _.Def = { template with Args = Array.zeroCreate 1 }
+        member _.Select = None
+
+type internal PreparedQuery2<'A, 'B, 'T>(template: QueryDef) =
+    inherit OptimizedClosures.FSharpFunc<'A, 'B, Query<'T>>()
+    override _.Invoke(a: 'A, b: 'B) = Query<'T>(Prepared.bind template [| box a; box b |])
+    override this.Invoke(a: 'A) = fun (b: 'B) -> this.Invoke(a, b)
+
+    interface ICheckable with
+        member _.Def = { template with Args = Array.zeroCreate 2 }
+        member _.Select = None
+
+type internal PreparedQuery3<'A, 'B, 'C, 'T>(template: QueryDef) =
+    inherit OptimizedClosures.FSharpFunc<'A, 'B, 'C, Query<'T>>()
+    override _.Invoke(a: 'A, b: 'B, c: 'C) = Query<'T>(Prepared.bind template [| box a; box b; box c |])
+    override this.Invoke(a: 'A) = fun (b: 'B) (c: 'C) -> this.Invoke(a, b, c)
+
+    interface ICheckable with
+        member _.Def = { template with Args = Array.zeroCreate 3 }
+        member _.Select = None
+
 /// Pipeline-style query functions, equivalent to the computation expression.
 type Query =
     /// Prepares a query with one argument. The description is built and
@@ -506,17 +548,17 @@ type Query =
     /// ```
     static member prepare(build: Arg<'A> -> Query<'T>) : 'A -> Query<'T> =
         let t = Prepared.template (fun () -> (build (Arg<'A>(0))).Def)
-        fun a -> Query<'T>(Prepared.bind t [| box a |])
+        PreparedQuery<'A, 'T>(t) :> obj :?> ('A -> Query<'T>)
 
     /// Prepares a query with two arguments.
     static member prepare2(build: Arg<'A> -> Arg<'B> -> Query<'T>) : 'A -> 'B -> Query<'T> =
         let t = Prepared.template (fun () -> (build (Arg<'A>(0)) (Arg<'B>(1))).Def)
-        fun a b -> Query<'T>(Prepared.bind t [| box a; box b |])
+        PreparedQuery2<'A, 'B, 'T>(t) :> obj :?> ('A -> 'B -> Query<'T>)
 
     /// Prepares a query with three arguments.
     static member prepare3(build: Arg<'A> -> Arg<'B> -> Arg<'C> -> Query<'T>) : 'A -> 'B -> 'C -> Query<'T> =
         let t = Prepared.template (fun () -> (build (Arg<'A>(0)) (Arg<'B>(1)) (Arg<'C>(2))).Def)
-        fun a b c -> Query<'T>(Prepared.bind t [| box a; box b; box c |])
+        PreparedQuery3<'A, 'B, 'C, 'T>(t) :> obj :?> ('A -> 'B -> 'C -> Query<'T>)
 
     static member from(_schema: Schema<'T>) : Query<'T> = Query<'T>(QueryDef.Empty typeof<'T>)
 

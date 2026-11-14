@@ -522,6 +522,15 @@ the same guarantee more exhaustively.
 |---|---|---|---|---|
 | An explicit mapping is used instead of the convention | Implemented and verified | `ConventionSteps.fs` |  |  |
 
+### query-check.feature
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Queries that translate pass | Implemented and verified | `QueryCheckSteps.fs` |  | Strict design, step 3: `repo.CheckQueries(assembly, ?inNamespace)` finds the module values whose type ends in `Query<_>` or `Projection<_>` and translates each. |
+| A query that cannot be translated is reported by its name | Implemented and verified | `QueryCheckSteps.fs` |  | `QueryProblem = { Query: "Module.value"; Error }`. |
+| A prepared query that cannot be translated is reported without being called | Implemented and verified | `QueryCheckSteps.fs` |  | `Query.prepare` returns a function value that is also checkable (`PreparedQuery` inherits `FSharpFunc`); its template is translated with its arguments as parameters. |
+| A checked prepared query reads with its argument | Implemented and verified | `QueryCheckSteps.fs` |  | Callers still apply it like a function. |
+
 ### typed-transactions.feature
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |

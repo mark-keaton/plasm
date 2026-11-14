@@ -389,6 +389,11 @@ payments, EF Core 11 (rc.3 provider) with `AsNoTracking`.
 - The schema check and scaffolding read `information_schema` with
   `current_schema()`, and many-to-many link writes use `unnest`; a second
   provider would need these behind the provider too.
+- `TxStep.File` is the path the compiler saw. Build with
+  `<PathMap>$(MSBuildProjectDirectory)=/src</PathMap>` (or deterministic CI
+  builds) to keep a build machine's directories out of logged failures.
+- Only queries defined as module values are found by `repo.CheckQueries`; a
+  query built inside a function is checked when it is first used.
 - A transaction value that never rejects leaves `'E` open: as a top-level
   value it needs its type written (`let addDan: Tx<string, unit> = ...`), and
   stored untyped it becomes `obj`. Transactions written as functions need
@@ -432,7 +437,7 @@ payments, EF Core 11 (rc.3 provider) with `AsNoTracking`.
 | 2026-11-13 | Architecture audit follow-up: extended prepared queries plan their own description; `not` is two-valued (`IS NOT TRUE`); only immutable captured values allow plan caching; sandboxes nest; qualified error cases and closed/unreadable/unsupported failures as values; `TxContext` without the transaction; complete pipeline module; `hasOne` tested with `Rel.exists`; dialect hooks and capability checks | the six audit features, ADR 0001 |
 | 2026-11-13 | Plasm built against FSharp.Core 8.0 (not the SDK's 11.0): a notebook kernel with FSharp.Core 10 could not load it; the koans notebook now runs in a real kernel in CI | `koans/features/notebook.feature` |
 | 2026-11-13 | Second audit follow-up: only immutable module values and captures allow plan reuse; `not` is two-valued only over nullable operands; pipeline joins nest and translate; `repo.One` keeps `take` and reports `MoreThanOneRow`; displays hide values unless enabled; prepared load queries bind their own arguments; all public unions qualified; typed `StepFailure`/`Rejection`; one shape for unsupported operations; `Tx.run` commands refuse transaction control | `reading.feature` and new rules in six features, ADR 0001 |
-| 2026-11-14 | Strict design, steps 1 and 2: domain scalars are stored by convention (single-case unions over built-in types, `create` functions, fieldless unions), with registered mappings as overrides; transactions are `Tx<'T, 'E>` with a typed rejection, steps found by file and line instead of names, and `Tx.one`, `Tx.count`, `Tx.orReject`, `Tx.ofResult` | `scalar-conventions.feature`, `typed-transactions.feature`, ADR 0001 amended |
+| 2026-11-14 | Strict design, steps 1 to 3: domain scalars are stored by convention (single-case unions over built-in types, `create` functions, fieldless unions), with registered mappings as overrides; transactions are `Tx<'T, 'E>` with a typed rejection, steps found by file and line instead of names, and `Tx.one`, `Tx.count`, `Tx.orReject`, `Tx.ofResult`; `repo.CheckQueries` translates every query value and prepared query an assembly defines, without running them | `scalar-conventions.feature`, `typed-transactions.feature`, `query-check.feature`, ADR 0001 amended |
 
 ## Suggested next steps
 

@@ -140,7 +140,7 @@ let reason (e: TransactionError<Refusal>) =
         }
         |> unit
 
-    [<StepDefinition("Customers named \"(.*)\", \"(.*)\" and \"(.*)\"")>]
+    [<StepDefinition("^Customers named \"([^\"]*)\", \"([^\"]*)\" and \"([^\"]*)\"$")>]
     member _.Customers(a: string, b: string, c: string) =
         task {
             for name in [ a; b; c ] do
