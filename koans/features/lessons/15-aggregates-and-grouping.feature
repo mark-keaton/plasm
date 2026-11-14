@@ -15,6 +15,10 @@ Feature: About aggregates and grouping
 
     Examples:
       | koan                            | the learner discovers                                        | teaches                                          |
+      | Counting rows with Agg.count    | select (Agg.count ()) counts in the database                 | aggregates: Counting a filtered query            |
+      | Adding up with Agg.sum          | Agg.sum adds up a column in the database                     | aggregates: Aggregating a filtered query         |
+      | The largest with Agg.max        | Agg.max gives the largest value as an option                 | aggregates: Aggregating a filtered query         |
+      | Grouping by one key             | groupBy gives one row per key, with its count                | aggregates: Grouping Orders by Customer          |
       | Counting a page counts the page | Count over a paged query counts the page                     | aggregates: Counting a page counts the page      |
       | Sum and average are typed       | Agg.sum returns decimal, Agg.avg an option                   | aggregates: Aggregating a filtered query         |
       | No rows is explicit             | sum over no rows is 0; max over no rows is None              | aggregates: Aggregates over no rows are explicit |

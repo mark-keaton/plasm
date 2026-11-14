@@ -17,10 +17,69 @@ let private linesOf (k: KoanContext) (id: int64) =
         return ok n
     }
 
+/// A new draft Order for Cy with one line: two Widgets at 10.00 each.
+let private cysOrder () =
+    let line = Changeset.insert (New.line (ProductId 1L) 2 10m)
+    // putChildren adds child changesets (here, Lines) to the parent's changeset.
+    Changeset.insert (New.order (Some(CustomerId 3L)) Draft 20m) |> Changeset.putChildren ((fun o -> o.Lines), [ line ])
+
 let lesson =
     Lesson.make
         "About child writes"
         [ Koan.Task(
+              "A parent can be saved with a child",
+              fun k ->
+                  task {
+                      // One repo.Insert writes the Order and then its line.
+                      let! _ = k.Repo.Insert(cysOrder ())
+                      let! orders = k.Repo.Count(Query.from Db.orders)
+                      ok orders |> shouldBe __
+                      let! lines = k.Repo.Count(Query.from Db.orderLines)
+                      ok lines |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "The saved parent holds its children",
+              fun k ->
+                  task {
+                      let! saved = k.Repo.Insert(cysOrder ())
+                      let order = ok saved
+                      // The returned Order's Lines are loaded with the lines just written.
+                      let lines = order.Lines |> Assoc.get
+                      lines.Length |> shouldBe __
+                      // Each line was given the new Order's key.
+                      ((List.head lines).OrderId = order.Id) |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Saved children can be read back",
+              fun k ->
+                  task {
+                      let! saved = k.Repo.Insert(cysOrder ())
+                      let id = (ok saved).Id
+                      let! o = k.Repo.One(plasm { for o in Db.orders do where (o.Id = id); preload o.Lines })
+                      let line = (ok o).Value.Lines |> Assoc.get |> List.head
+                      line.Quantity.Value |> shouldBe __
+                      line.UnitPrice |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Adding a child to an existing parent",
+              fun k ->
+                  task {
+                      // Order 2 has one line. A child changeset with no key is a new line.
+                      let! o = withLines k 2L
+                      let added = Changeset.insert (New.line (ProductId 1L) 1 10m)
+                      let! _ = k.Repo.Update(Changeset.update o |> Changeset.putChildren ((fun o -> o.Lines), [ added ]))
+                      let! n = linesOf k 2L
+                      n |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
               "Omitted children are untouched",
               fun k ->
                   task {

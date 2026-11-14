@@ -1,3 +1,17 @@
+# Inserting adds a row
+"Dan"
+4L
+# An insert assigns the key
+Some "dan@example.com"
+# An update returns the new record
+15m
+12.50m
+# The version goes up on update
+1
+2
+# Deleting a record
+3L
+2L
 # Inserting returns the stored record
 true
 ProductId 0L

@@ -12,6 +12,46 @@ let lesson =
     Lesson.make
         "About changesets"
         [ Koan.Sync(
+              "A changeset starts from a record",
+              fun _ ->
+                  // A changeset describes one change to one record; building it writes nothing.
+                  // Its Action says what saving it will do: ChangeAction.Insert, Update or Delete.
+                  let adding = Changeset.insert (New.customer "Dan" "dan@example.com")
+                  let changing = Changeset.update ada
+                  adding.Action |> shouldBe __
+                  changing.Action |> shouldBe __
+          )
+
+          Koan.Sync(
+              "Changes are visible before saving",
+              fun _ ->
+                  // Changeset.edit makes an update changeset from the fields your function alters.
+                  let cs = ada |> Changeset.edit (fun c -> { c with Email = "ada@new.example.com" })
+                  // Proposed is Some record: the original with the changes applied.
+                  let proposed = cs.Proposed.Value
+                  proposed.Email |> shouldBe __
+                  proposed.Name |> shouldBe __
+          )
+
+          Koan.Sync(
+              "A valid changeset has no errors",
+              fun _ ->
+                  // A validation checks a proposed value; validateLength checks a string's length.
+                  let cs = Changeset.insert (New.customer "Dan" "dan@example.com") |> Changeset.validateLength ((fun c -> c.Name), min = 1)
+                  cs.IsValid |> shouldBe __
+                  cs.Errors |> shouldBe __
+          )
+
+          Koan.Sync(
+              "A validation adds an error",
+              fun _ ->
+                  let cs = Changeset.insert (New.customer "" "dan@example.com") |> Changeset.validateLength ((fun c -> c.Name), min = 1)
+                  // A failed validation adds a FieldError; its Field names the field it is about.
+                  cs.IsValid |> shouldBe __
+                  (List.head cs.Errors).Field |> shouldBe __
+          )
+
+          Koan.Sync(
               "A changeset leaves its input alone",
               fun _ ->
                   let cs = ada |> Changeset.edit (fun c -> { c with Name = "Ada L." })
