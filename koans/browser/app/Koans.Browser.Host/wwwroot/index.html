@@ -112,15 +112,22 @@
   .vim-mode { font: 600 12px/1 var(--mono); letter-spacing: .06em; padding: 6px 8px; border-radius: 6px; background: var(--sunk); color: var(--ink-2); }
   .vim-mode[data-mode="insert"] { background: var(--accent-soft); color: var(--accent-ink); }
 
-  /* The editor: a textarea over a coloured copy of its code. Both use the
-     same font, padding and wrapping, so the caret sits on the coloured text. */
-  .editor { display: flex; font: 14px/1.7 var(--mono); tab-size: 4; font-variant-ligatures: contextual; }
-  #gutter { margin: 0; padding: 14px 12px 14px 16px; text-align: right; color: var(--ink-4); user-select: none; font: inherit; white-space: pre; }
-  .code { position: relative; flex: 1; min-width: 0; }
-  #highlight, #code { margin: 0; border: 0; padding: 14px 20px 14px 4px; font: inherit; letter-spacing: 0; white-space: pre; tab-size: 4; }
-  #highlight { position: absolute; inset: 0; overflow: hidden; pointer-events: none; color: var(--ink); }
-  #code { display: block; width: 100%; min-height: 8rem; resize: none; outline: none; background: transparent; color: transparent; caret-color: var(--ink); overflow-x: auto; overflow-y: hidden; position: relative; }
-  #code::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+  /* The editor (CodeMirror): the page's font, colours and blanks. */
+  .editor { font: 14px/1.7 var(--mono); font-variant-ligatures: contextual; }
+  .editor .cm-editor { background: transparent; color: var(--ink); min-height: 8rem; }
+  .editor .cm-editor.cm-focused { outline: none; }
+  .editor .cm-scroller { font: inherit; line-height: 1.7; }
+  .editor .cm-content { padding: 14px 0; caret-color: var(--ink); }
+  .editor .cm-line { padding: 0 20px 0 4px; }
+  .editor .cm-gutters { background: transparent; border: 0; color: var(--ink-4); }
+  .editor .cm-lineNumbers .cm-gutterElement { padding: 0 12px 0 16px; }
+  .editor .cm-activeLine { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+  .editor .cm-cursor { border-left-color: var(--ink); }
+  .editor .cm-fat-cursor { background: color-mix(in srgb, var(--accent) 55%, transparent) !important; }
+  .editor .cm-selectionBackground, .editor .cm-focused .cm-selectionBackground { background: color-mix(in srgb, var(--accent) 30%, transparent) !important; }
+  .cm-tooltip { background: var(--surface); color: var(--ink); border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; font: 13px/1.5 var(--mono); }
+  .cm-tooltip-autocomplete ul li[aria-selected] { background: var(--accent-soft); color: var(--accent-ink); }
+  .cm-completionDetail { color: var(--ink-3); font-style: normal; margin-left: 1em; }
   .k { color: var(--tok-k); } .t { color: var(--tok-t); } .s { color: var(--tok-s); }
   .c { color: var(--tok-c); font-style: italic; } .n { color: var(--tok-n); } .f { color: var(--tok-f); }
   mark.blank { background: var(--warn-soft); color: var(--warn-ink); border-radius: 3px; box-shadow: 0 0 0 2px var(--warn-soft), inset 0 -2px 0 var(--warn); }
@@ -246,13 +253,7 @@
             </button>
           </div>
         </div>
-        <div class="editor">
-          <pre id="gutter" aria-hidden="true"></pre>
-          <div class="code">
-            <pre id="highlight" aria-hidden="true"></pre>
-            <textarea id="code" spellcheck="false" wrap="off" autocapitalize="off" autocomplete="off" aria-label="Koan code"></textarea>
-          </div>
-        </div>
+        <div class="editor" id="code"></div>
       </section>
       <section id="result" aria-live="polite" aria-label="Result"></section>
         </div>

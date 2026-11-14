@@ -78,7 +78,7 @@ type CourseSteps(w: BrowserWorld) =
         task {
             let! koan = koanAt w.Page l k
             do! show w.Page koan
-            do! w.Page.FillAsync("#code", fill koan.Body answers.Value.[koan.Name])
+            do! typeCode w.Page (fill koan.Body answers.Value.[koan.Name])
             let! _ = run w.Page
             ()
         }
@@ -140,7 +140,7 @@ type CourseSteps(w: BrowserWorld) =
             let! third = koanAt w.Page 0 2
             do! show w.Page third
             edit <- third.Body + "\n    // my notes"
-            do! w.Page.FillAsync("#code", edit)
+            do! typeCode w.Page (edit)
         }
         |> unit
 
@@ -167,7 +167,7 @@ type CourseSteps(w: BrowserWorld) =
         task {
             let! third = koanAt w.Page 0 2
             do! show w.Page third
-            let! code = w.Page.InputValueAsync "#code"
+            let! code = codeOf w.Page
             check (code = edit) $"the third koan shows:\n{code}"
         }
         |> unit
@@ -189,7 +189,7 @@ type CourseSteps(w: BrowserWorld) =
         task {
             let! koan = koanNamed w.Page name
             do! show w.Page koan
-            let! code = w.Page.InputValueAsync "#code"
+            let! code = codeOf w.Page
             check (code = koan.Body) $"the koan shows:\n{code}"
         }
         |> unit
@@ -208,7 +208,7 @@ type CourseSteps(w: BrowserWorld) =
         task {
             let! koan = koanAt w.Page 0 0
             do! show w.Page koan
-            do! w.Page.FillAsync("#code", "    // not what was there")
+            do! typeCode w.Page ("    // not what was there")
             w.Koan <- Some koan
         }
         |> unit
@@ -219,7 +219,7 @@ type CourseSteps(w: BrowserWorld) =
     [<StepDefinition("it shows its original code with its blanks")>]
     member _.Original() =
         task {
-            let! code = w.Page.InputValueAsync "#code"
+            let! code = codeOf w.Page
             check (code = w.Koan.Value.Body) $"after reset the koan shows:\n{code}"
         }
         |> unit
@@ -291,7 +291,7 @@ type CourseSteps(w: BrowserWorld) =
     [<StepDefinition("each blank in its code is highlighted")>]
     member _.Highlighted() =
         task {
-            let! marks = w.Page.Locator("#highlight mark.blank").CountAsync()
+            let! marks = w.Page.Locator("#code mark.blank").CountAsync()
             // Blanks in code, not in comments or strings (a comment may mention __).
             let code = Regex.Replace(w.Koan.Value.Body, "//[^\n]*|\"(?:\\\\.|[^\"\\\\\n])*\"", "")
             let blanks = Regex.Matches(code, @"(?<![\w.])__(?!\w)").Count
@@ -326,7 +326,7 @@ type CourseSteps(w: BrowserWorld) =
     /// The highlighted tokens of the editor, as (class, text).
     member private _.Tokens() =
         task {
-            let! json = w.Page.EvaluateAsync<string>("() => JSON.stringify([...document.querySelectorAll('#highlight span')].map(s => [s.className, s.textContent]))")
+            let! json = w.Page.EvaluateAsync<string>("() => JSON.stringify([...document.querySelectorAll('#code .cm-content span')].map(s => [s.className, s.textContent]))")
             return JsonSerializer.Deserialize<string[][]>(json) |> Array.map (fun a -> a.[0], a.[1]) |> Set.ofArray
         }
 
@@ -348,8 +348,8 @@ type CourseSteps(w: BrowserWorld) =
         task {
             let! koan = koanAt w.Page 0 0
             do! show w.Page koan
-            do! w.Page.FocusAsync "#code"
-            do! w.Page.EvaluateAsync("() => { const c = document.getElementById('code'); c.selectionStart = c.selectionEnd = c.value.length; }") :> Task
+            let! code = codeOf w.Page
+            do! focusAt w.Page code.Length code.Length
             do! w.Page.Keyboard.TypeAsync "\n    let answer = Some \"forty-two\""
         }
         |> unit
@@ -367,7 +367,9 @@ type CourseSteps(w: BrowserWorld) =
     [<StepDefinition("each line of its code is numbered, starting from 1")>]
     member _.Numbered() =
         task {
-            let! gutter = w.Page.TextContentAsync "#gutter"
+            // CodeMirror's first gutter element only sizes the gutter.
+            let! numbers = w.Page.EvaluateAsync<string[]>("() => [...document.querySelectorAll('#code .cm-lineNumbers .cm-gutterElement')].filter(e => e.style.visibility !== 'hidden').map(e => e.textContent)")
+            let gutter = String.Join("\n", numbers)
             let lines = w.Koan.Value.Body.Split('\n').Length
             let expected = String.Join("\n", [ 1..lines ])
             check (gutter.Trim() = expected) $"the editor numbers its lines:\n{gutter}\nfor {lines} lines"
@@ -379,8 +381,8 @@ type CourseSteps(w: BrowserWorld) =
         task {
             let! koan = koanAt w.Page 0 0
             do! show w.Page koan
-            do! w.Page.FillAsync("#code", fill koan.Body answers.Value.[koan.Name])
-            do! w.Page.PressAsync("#code", "Control+Enter")
+            do! typeCode w.Page (fill koan.Body answers.Value.[koan.Name])
+            do! pressInEditor w.Page "Control+Enter"
             let! _ = w.Page.WaitForFunctionAsync("() => document.getElementById('result').dataset.status", null, PageWaitForFunctionOptions(Timeout = Nullable 120000.f))
             w.Koan <- Some koan
         }
@@ -388,7 +390,7 @@ type CourseSteps(w: BrowserWorld) =
 
     [<StepDefinition("^the learner presses Ctrl\\+(\\]|\\[) in the editor$")>]
     member _.PressBracket(key: string) =
-        w.Page.PressAsync("#code", (if key = "]" then "Control+BracketRight" else "Control+BracketLeft"))
+        pressInEditor w.Page (if key = "]" then "Control+BracketRight" else "Control+BracketLeft")
 
     /// The koan the page shows, by name.
     member private _.ShownName() =
@@ -408,8 +410,8 @@ type CourseSteps(w: BrowserWorld) =
     [<StepDefinition("^the editor has the focus, with its first blank selected$")>]
     member _.FocusOnBlank() =
         task {
-            let! state = w.Page.EvaluateAsync<string[]>("() => { const c = document.getElementById('code'); return [String(document.activeElement === c), c.value.slice(c.selectionStart, c.selectionEnd), String(c.selectionStart), c.value]; }")
-            let state = [| state.[0]; state.[1]; (if int state.[2] = firstBlankAt state.[3] then "true" else "false") |]
+            let! focused, from, until, _, code = editorState w.Page
+            let state = [| (if focused then "true" else "false"); code.Substring(from, until - from); (if from = firstBlankAt code then "true" else "false") |]
             check (state.[0] = "true") "the editor does not have the focus"
             check (state.[1] = "__" && state.[2] = "true") $"the selection is %A{state.[1]}, not the first blank"
         }
@@ -500,7 +502,7 @@ type CourseSteps(w: BrowserWorld) =
                     """async () => {
                         await document.fonts.ready;
                         const loaded = [...document.fonts].some(f => f.family.replace(/"/g, '') === 'JetBrains Mono' && f.status === 'loaded');
-                        const style = getComputedStyle(document.getElementById('highlight'));
+                        const style = getComputedStyle(document.querySelector('#code .cm-content'));
                         return [String(loaded), style.fontFamily, style.fontVariantLigatures];
                     }"""
                 )

@@ -220,3 +220,32 @@ let firstBlankLine (body: string) =
     body.Split('\n')
     |> Array.findIndex (fun l -> blank.IsMatch(match l.IndexOf "//" with | -1 -> l | i -> l.Substring(0, i)))
     |> (+) 1
+
+// ---------------------------------------------------------------------------
+// The editor (CodeMirror), through the page's window.koans.editor
+// ---------------------------------------------------------------------------
+
+/// The code in the editor.
+let codeOf (page: IPage) = page.EvaluateAsync<string>("() => window.koans.editor.get()")
+
+/// Replaces the editor's code as if the learner had typed it.
+let typeCode (page: IPage) (code: string) =
+    page.EvaluateAsync("c => window.koans.editor.type(c)", code) :> System.Threading.Tasks.Task
+
+/// Gives the editor the focus, with the cursor (or selection) at the given offsets.
+let focusAt (page: IPage) (from: int) (until: int) =
+    page.EvaluateAsync("([f, t]) => { window.koans.editor.focus(); window.koans.editor.select(f, t); }", box [| box from; box until |]) :> System.Threading.Tasks.Task
+
+/// Whether the editor has the focus, its selection (from, to, head) and its code.
+let editorState (page: IPage) =
+    task {
+        let! s = page.EvaluateAsync<string[]>("() => { const e = window.koans.editor, r = e.selection(); return [String(e.hasFocus()), String(r.from), String(r.to), String(r.head), e.get()]; }")
+        return bool.Parse s.[0], int s.[1], int s.[2], int s.[3], s.[4]
+    }
+
+/// Presses keys in the editor, as the learner would.
+let pressInEditor (page: IPage) (keys: string) =
+    task {
+        do! page.EvaluateAsync("() => window.koans.editor.focus()") :> System.Threading.Tasks.Task
+        do! page.Keyboard.PressAsync keys
+    }

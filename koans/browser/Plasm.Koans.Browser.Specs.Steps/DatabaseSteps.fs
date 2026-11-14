@@ -146,7 +146,7 @@ type DatabaseSteps(w: BrowserWorld) =
         task {
             let! koan = koanNamed w.Page name
             do! show w.Page koan
-            do! w.Page.FillAsync("#code", fill koan.Body answers.Value.[koan.Name])
+            do! typeCode w.Page (fill koan.Body answers.Value.[koan.Name])
             let! _ = run w.Page
             let! status, text = result w.Page
             return status, text

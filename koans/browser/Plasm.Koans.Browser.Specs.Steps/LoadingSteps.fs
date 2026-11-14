@@ -61,7 +61,7 @@ type LoadingSteps(w: BrowserWorld) =
             let! buttons = w.Page.Locator("nav button[data-koan]").CountAsync()
             let! first = koanAt w.Page 0 0
             let! name = w.Page.TextContentAsync "#name"
-            let! blanks = w.Page.Locator("#highlight mark.blank").CountAsync()
+            let! blanks = w.Page.Locator("#code mark.blank").CountAsync()
             let expected = Specs.koans.Value.Length
             check (buttons = expected) $"{buttons} koans listed, not the {expected} the lessons specify"
             check (name = first.Name) $"the page shows {name}"
@@ -154,7 +154,7 @@ type LoadingSteps(w: BrowserWorld) =
             for k in 0 .. count - 1 do
                 let! koan = koanAt page 0 k
                 do! show page koan
-                do! page.FillAsync("#code", fill koan.Body answers.Value.[koan.Name])
+                do! typeCode page (fill koan.Body answers.Value.[koan.Name])
                 let! _ = run page
                 ()
         }

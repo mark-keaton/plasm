@@ -87,7 +87,7 @@ type RunningSteps(w: BrowserWorld) =
     let runWith (koan: KoanInfo) (code: string) =
         task {
             do! show w.Page koan
-            do! w.Page.FillAsync("#code", code)
+            do! typeCode w.Page (code)
             let! ms = run w.Page
             w.Koan <- Some koan
             w.RunMs <- ms
@@ -245,7 +245,7 @@ type RunningSteps(w: BrowserWorld) =
         task {
             let! koan = first ()
             do! show w.Page koan
-            do! w.Page.FillAsync("#code", answered koan)
+            do! typeCode w.Page (answered koan)
             // Count main-thread timer ticks (every 50 ms) while the koan runs.
             do! w.Page.EvaluateAsync("() => { window.ticks = 0; window.ticker = setInterval(() => window.ticks++, 50); }") :> Task
             let! ms = run w.Page
@@ -268,7 +268,7 @@ type RunningSteps(w: BrowserWorld) =
         task {
             let! koan = first ()
             do! show w.Page koan
-            do! w.Page.FillAsync("#code", "    while true do ()")
+            do! typeCode w.Page ("    while true do ()")
             do! w.Page.ClickAsync "#run"
             do! Task.Delay 3000
             let! status = w.Page.GetAttributeAsync("#result", "data-status")

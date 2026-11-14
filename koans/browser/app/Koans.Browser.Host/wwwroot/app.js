@@ -1,7 +1,8 @@
 // The koans page. The engine (PGlite and .NET with the F# compiler) runs in a
 // Web Worker, so the page stays responsive while a koan compiles and runs; a
 // koan that does not finish is stopped by replacing the worker.
-import { vim as makeVim } from './vim.js';
+import { createEditor } from './editor.js';
+import { colour, firstBlank } from './fsharp.js';
 
 const $ = (id) => document.getElementById(id);
 const status = (text) => { $('status').textContent = text; };
@@ -87,48 +88,6 @@ function stop() {
 }
 
 const escape = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-// A small F# highlighter (the same one as Plasm's website): comments, strings,
-// numbers, keywords, query operations and capitalised type names; each blank
-// (__) outside comments and strings is marked.
-const keywords = new Set(('let let! do do! return return! yield match match! with fun function if then else elif for in to ' +
-  'type of and rec mutable private open module namespace member static new use use! try finally when as not true false null ' +
-  'task plasm transaction async seq').split(' '));
-const operations = new Set(('where orderBy orderByDescending thenBy thenByDescending take skip limitPerParent preload ' +
-  'replacePreload select join leftJoin on groupBy having identityKey key version generated column hasMany hasOne belongsTo manyToMany').split(' '));
-const token = /(\/\/[^\n]*)|("(?:\\.|[^"\\\n])*"?)|(\b\d[\d_]*(?:\.\d+)?(?:L|m|M)?\b)|([A-Za-z_][\w']*!?)/g;
-
-function colour(src) {
-  let out = '';
-  let last = 0;
-  for (const m of src.matchAll(token)) {
-    out += escape(src.slice(last, m.index));
-    const [text, comment, string, number, word] = m;
-    let cls = null;
-    if (word === '__' && src[m.index - 1] !== '.') { out += '<mark class="blank">__</mark>'; last = m.index + text.length; continue; }
-    if (comment) cls = 'c';
-    else if (string) cls = 's';
-    else if (number) cls = 'n';
-    else if (keywords.has(word)) cls = 'k';
-    else if (operations.has(word)) cls = 'f';
-    // Capitalised names are types or union cases, except record field labels (Name = …).
-    else if (/^[A-Z]/.test(word) && src[m.index - 1] !== '.' && !/^\s*=(?!=)/.test(src.slice(m.index + text.length))) cls = 't';
-    out += cls ? `<span class="${cls}">${escape(text)}</span>` : escape(text);
-    last = m.index + text.length;
-  }
-  return out + escape(src.slice(last));
-}
-
-/// Mirrors the editor's code behind it, coloured, and numbers its lines.
-function highlight() {
-  const code = $('code');
-  $('highlight').innerHTML = colour(code.value) + '\n';
-  const lines = code.value.split('\n').length;
-  $('gutter').textContent = Array.from({ length: lines }, (_, i) => i + 1).join('\n');
-  code.style.height = 'auto';
-  code.style.height = `${code.scrollHeight}px`;
-  $('highlight').scrollLeft = code.scrollLeft;
-}
 
 const el = (tag, attrs = {}, ...children) => {
   const e = document.createElement(tag);
@@ -294,11 +253,9 @@ function show(lessonIndex, koanIndex) {
   const url = new URL(location.href);
   url.searchParams.set('koan', addressOf(koan));
   if (url.href !== location.href) window.history.replaceState(null, '', url);
-  $('code').value = savedFor(lessonIndex, koanIndex)?.edit ?? koan.body;
-  highlight();
+  editor.set(savedFor(lessonIndex, koanIndex)?.edit ?? koan.body);
   render(results.get(`${lessonIndex}/${koanIndex}`), lessonIndex, koanIndex);
   $('koan').hidden = false;
-  highlight(); // measured once visible
   unfold(lessonIndex);
   document.querySelectorAll('nav button[data-koan]').forEach((b) => {
     const current = b.dataset.koan === `${lessonIndex}/${koanIndex}`;
@@ -326,13 +283,6 @@ function addressed() {
   return { lessonIndex: 0, koanIndex: 0 };
 }
 
-/// Where the first blank to fill in is: the first __ outside comments and strings, or -1.
-function firstBlank(code) {
-  const found = /\/\/[^\n]*|\(\*[\s\S]*?\*\)|"(?:[^"\\]|\\.)*"|\b__\b/g;
-  for (let m; (m = found.exec(code));) if (m[0] === '__') return m.index;
-  return -1;
-}
-
 /// Opens a koan ready to type: the editor has the focus, with its first blank selected.
 /// With 'push' the koan gets a history entry of its own, so Back returns to the one before.
 function go(to, history = 'push') {
@@ -341,12 +291,11 @@ function go(to, history = 'push') {
   url.searchParams.set('koan', addressOf(course.lessons[to.lessonIndex].koans[to.koanIndex]));
   if (history === 'push' && url.href !== location.href) window.history.pushState(null, '', url);
   show(to.lessonIndex, to.koanIndex);
-  const code = $('code');
-  code.focus();
-  const blank = firstBlank(code.value);
-  if (vimMode.on) vimMode.normalAt(Math.max(0, blank));
-  else if (blank >= 0) code.setSelectionRange(blank, blank + 2);
-  else code.setSelectionRange(0, 0);
+  editor.focus();
+  const blank = firstBlank(editor.get());
+  if (editor.vimOn) editor.normalAt(Math.max(0, blank));
+  else if (blank >= 0) editor.select(blank, blank + 2);
+  else editor.select(0);
 }
 
 function following({ lessonIndex, koanIndex }) {
@@ -362,7 +311,7 @@ async function runShown() {
   delete $('result').dataset.status;
   $('run').disabled = true;
   $('stop').hidden = false;
-  const r = await runKoan(lessonIndex, koanIndex, $('code').value);
+  const r = await runKoan(lessonIndex, koanIndex, editor.get());
   $('run').disabled = false;
   $('stop').hidden = true;
   if (shown.lessonIndex !== lessonIndex || shown.koanIndex !== koanIndex) return;
@@ -370,40 +319,38 @@ async function runShown() {
   if (r.status !== 'passed' && r.status !== 'stopped') document.querySelector(`nav button[data-koan="${keyOf(lessonIndex, koanIndex)}"]`).dataset.state = 'failed';
 }
 $('run').onclick = runShown;
-// Ctrl+Enter (or Cmd+Enter) in the editor runs the koan.
-$('code').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runShown(); }
-});
 $('shortcut').textContent = keys.run;
-// Vim keys in the editor, for those who want them; the choice is kept in this browser.
-const vimMode = makeVim($('code'), (mode) => {
-  $('vim-mode').hidden = !mode;
-  if (mode) { $('vim-mode').dataset.mode = mode; $('vim-mode').textContent = mode.toUpperCase(); }
+// The editor: Ctrl+Enter (or Cmd+Enter) runs the koan, and what can follow the
+// cursor comes from the F# compiler in the engine.
+const editor = createEditor($('code'), {
+  complete: (code, offset) => (shown ? complete(shown.lessonIndex, shown.koanIndex, code, offset) : []),
+  onEdit: (code) => keep(shown.lessonIndex, shown.koanIndex, (s) => { s.edit = code; }),
+  onRun: () => runShown(),
+  onVimMode: (mode) => {
+    $('vim-mode').hidden = !mode;
+    if (mode) { $('vim-mode').dataset.mode = mode; $('vim-mode').textContent = mode.toUpperCase(); }
+  },
 });
-const setVim = (on) => {
-  vimMode.enable(on);
+// Vim keys in the editor, for those who want them; the choice is kept in this browser.
+const setVim = async (on) => {
+  await editor.setVim(on);
   $('vim').setAttribute('aria-pressed', String(on));
   store.save('vim', on);
 };
-$('vim').onclick = () => { setVim(!vimMode.on); $('code').focus(); if (vimMode.on) vimMode.normalAt($('code').selectionStart); };
-setVim(store.load('vim', false) === true);
+$('vim').onclick = async () => { await setVim(!editor.vimOn); editor.focus(); if (editor.vimOn) editor.normalAt(editor.selection().head); };
+// Vim mode loads with the page when it was left on.
+if (store.load('vim', false) === true) await setVim(true);
 // Ctrl+] (or Cmd+]) opens the next koan and Ctrl+[ (or Cmd+[) the previous one, from anywhere on the page.
 document.addEventListener('keydown', (e) => {
-  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || !shown) return;
+  if (e.defaultPrevented || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || !shown) return;
   if (e.code === 'BracketRight') { e.preventDefault(); go(following(shown)); }
   else if (e.code === 'BracketLeft') { e.preventDefault(); go(preceding(shown)); }
 });
 $('stop').onclick = () => stop();
-$('code').addEventListener('input', () => {
-  highlight();
-  keep(shown.lessonIndex, shown.koanIndex, (s) => { s.edit = $('code').value; });
-});
-$('code').addEventListener('scroll', () => { $('highlight').scrollLeft = $('code').scrollLeft; });
 $('reset').onclick = () => {
   const { lessonIndex, koanIndex } = shown;
   keep(lessonIndex, koanIndex, (s) => { delete s.edit; });
-  $('code').value = course.lessons[lessonIndex].koans[koanIndex].body;
-  highlight();
+  editor.set(course.lessons[lessonIndex].koans[koanIndex].body);
 };
 
 course.lessons.forEach((lesson, l) => {
@@ -449,7 +396,7 @@ async function complete(lessonIndex, koanIndex, body, offset) {
 }
 
 // For tests: the course and a way to reach any koan.
-window.koans = { course, runKoan, show, stop, evaluate, addressOf, complete };
+window.koans = { course, runKoan, show, stop, evaluate, addressOf, complete, editor };
 updateProgress();
 go(addressed(), 'replace');
 window.addEventListener('popstate', () => go(addressed(), 'none'));

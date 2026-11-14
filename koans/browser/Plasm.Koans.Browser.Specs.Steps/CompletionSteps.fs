@@ -51,3 +51,36 @@ type CompletionSteps(w: BrowserWorld) =
     [<StepDefinition("the completions arrive within (\\d+) milliseconds")>]
     member _.Within(ms: int) =
         check (took.TotalMilliseconds <= float ms) $"the completions took {took.TotalMilliseconds:F0} ms"
+
+    [<StepDefinition("the learner types \"(.*)\" on a new line at the end of the code")>]
+    member _.TypeAtEnd(text: string) =
+        task {
+            let! code = codeOf w.Page
+            do! focusAt w.Page code.Length code.Length
+            do! w.Page.Keyboard.TypeAsync("\n" + text)
+        }
+        |> unit
+
+    [<StepDefinition("a list of completions opens, offering (\\w+)")>]
+    member _.Offered(name: string) =
+        task {
+            let! _ =
+                w.Page.WaitForFunctionAsync(
+                    "n => [...document.querySelectorAll('.cm-tooltip-autocomplete .cm-completionLabel')].some(l => l.textContent === n)",
+                    name,
+                    PageWaitForFunctionOptions(Timeout = Nullable 30000.f)
+                )
+
+            ()
+        }
+        |> unit
+
+    [<StepDefinition("choosing (\\w+) puts \"(.*)\" in the code")>]
+    member _.Choose(name: string, expected: string) =
+        task {
+            do! w.Page.ClickAsync($".cm-tooltip-autocomplete li:has(.cm-completionLabel:text-is(\"{name}\"))")
+            let! code = codeOf w.Page
+            check (code.TrimEnd().EndsWith expected) $"the code ends:\n{code}"
+        }
+        |> unit
+

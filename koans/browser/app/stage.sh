@@ -11,7 +11,9 @@ pub=$(mktemp -d)
 trap 'rm -rf "${pub:?}"' EXIT
 dotnet publish "$here/Koans.Browser.Host" -c Release -o "$pub" -v q
 rsync -a --delete "$pub/wwwroot/" "$site/"
-(cd "$here" && [ -d node_modules/@electric-sql/pglite ] || npm install --no-audit --no-fund --silent)
+# The editor (CodeMirror and its Vim mode), bundled into one module.
+(cd "$here" && [ -d node_modules/@codemirror/view ] || npm install --no-audit --no-fund --silent)
+"$here/node_modules/.bin/esbuild" "$here/editor/editor.js" --bundle --format=esm --splitting --minify --log-level=warning --chunk-names=editor-[name]-[hash] --outdir="$site"
 rsync -a --delete --exclude "*.map" --exclude "*.tar.gz" "$here/node_modules/@electric-sql/pglite/dist/" "$site/pglite/"
 mkdir -p "$site/refs"
 cp ~/.dotnet/packs/Microsoft.NETCore.App.Ref/11.0.0/ref/net11.0/*.dll "$site/refs/"

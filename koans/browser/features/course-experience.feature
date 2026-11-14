@@ -197,7 +197,7 @@ Feature: Walking the path in the browser
         | ix<Esc>       | leaves Insert mode with Escape            | a‸b                   | a‸xb                   | Normal |
         | ix<C-[>       | leaves Insert mode with Ctrl+[            | a‸b                   | a‸xb                   | Normal |
         | yyp           | copies a line below                       | ‸a⏎b                  | a⏎‸a⏎b                 | Normal |
-        | ddP           | moves a line up                           | a⏎‸b                  | ‸b⏎a                   | Normal |
+        | ddkP          | moves a line up                           | a⏎‸b⏎c                | ‸b⏎a⏎c                 | Normal |
         | xu            | undoes                                    | a‸bc                  | a‸bc                   | Normal |
         | xu<C-r>       | redoes                                    | a‸bc                  | a‸c                    | Normal |
 
@@ -207,6 +207,12 @@ Feature: Walking the path in the browser
       When the learner asks what can follow "repo." in the koan "Every koan is given a repo"
       Then the completions include All, One, Count, Insert and Explain
       And each completion says what it is
+
+    Scenario: Typing repo. offers what can follow it
+      Given the learner opens the koan "Every koan is given a repo"
+      When the learner types "repo." on a new line at the end of the code
+      Then a list of completions opens, offering Count
+      And choosing Count puts "repo.Count" in the code
 
     Scenario: Completions come quickly once the compiler has warmed up
       Given the learner has asked for completions once

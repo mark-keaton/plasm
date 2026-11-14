@@ -117,7 +117,7 @@ type GivenSteps(w: BrowserWorld) =
     [<StepDefinition("its code starts with its first comment, not with fun repo -> or task \\{")>]
     member _.OwnCode() =
         task {
-            let! code = w.Page.InputValueAsync "#code"
+            let! code = codeOf w.Page
             check (code.StartsWith "//") $"the koan's code starts:\n{code}"
             check (not (code.Contains "fun repo ->") && not (code.Contains "task {")) $"the koan's code shows its frame:\n{code}"
         }
@@ -126,7 +126,7 @@ type GivenSteps(w: BrowserWorld) =
     [<StepDefinition("it uses the repo it is given as repo")>]
     member _.UsesRepo() =
         task {
-            let! code = w.Page.InputValueAsync "#code"
+            let! code = codeOf w.Page
             check (code.Contains "repo.All(") $"the koan's code does not use repo:\n{code}"
         }
         |> unit

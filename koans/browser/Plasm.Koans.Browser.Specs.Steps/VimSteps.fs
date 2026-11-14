@@ -21,6 +21,9 @@ type VimSteps(w: BrowserWorld) =
         task {
             let! pressed = w.Page.GetAttributeAsync("#vim", "aria-pressed")
             if pressed <> "true" then do! w.Page.ClickAsync "#vim"
+            // Vim mode loads when it is first turned on; it is on once the mode shows.
+            let! _ = w.Page.WaitForSelectorAsync("#vim-mode:not([hidden])")
+            ()
         }
         |> unit
 
@@ -37,10 +40,9 @@ type VimSteps(w: BrowserWorld) =
     [<StepDefinition("^typing in the editor inserts text$")>]
     member _.TypingInserts() =
         task {
-            do! w.Page.FocusAsync "#code"
-            do! w.Page.EvaluateAsync("() => { const c = document.getElementById('code'); c.setSelectionRange(0, 0); }") :> Threading.Tasks.Task
+            do! focusAt w.Page 0 0
             do! w.Page.Keyboard.TypeAsync "jj"
-            let! code = w.Page.InputValueAsync "#code"
+            let! code = codeOf w.Page
             check (code.StartsWith "jj") $"typing jj gave:\n{code}"
         }
         |> unit
@@ -56,10 +58,10 @@ type VimSteps(w: BrowserWorld) =
     [<StepDefinition("^the cursor is on the first blank$")>]
     member _.OnBlank() =
         task {
-            let! at = w.Page.EvaluateAsync<string[]>("() => { const c = document.getElementById('code'); return [String(c.selectionStart), c.value, String(document.activeElement === c)]; }")
-            check (at.[2] = "true") "the editor does not have the focus"
-            let blank = firstBlankAt at.[1]
-            check (int at.[0] = blank) $"the cursor is at {at.[0]}, the first blank at {blank}"
+            let! focused, _, _, head, code = editorState w.Page
+            check focused "the editor does not have the focus"
+            let blank = firstBlankAt code
+            check (head = blank) $"the cursor is at {head}, the first blank at {blank}"
         }
         |> unit
 
@@ -70,8 +72,8 @@ type VimSteps(w: BrowserWorld) =
         let value = text.Replace(cursor, "")
 
         task {
-            do! w.Page.FocusAsync "#code"
-            do! w.Page.EvaluateAsync("([v, p]) => { const c = document.getElementById('code'); c.value = v; c.setSelectionRange(p, Math.min(p + 1, v.length)); }", box [| box value; box at |]) :> Threading.Tasks.Task
+            do! w.Page.EvaluateAsync("v => window.koans.editor.set(v)", value) :> Threading.Tasks.Task
+            do! focusAt w.Page at at
         }
         |> unit
 
@@ -90,9 +92,8 @@ type VimSteps(w: BrowserWorld) =
     [<Then("^the editor holds \"(.*)\"$")>]
     member _.Held(text: string) =
         task {
-            let! state = w.Page.EvaluateAsync<string[]>("() => { const c = document.getElementById('code'); return [c.value, String(c.selectionStart)]; }")
-            let at = int state.[1]
-            let actual = state.[0].Insert(at, cursor)
+            let! _, _, _, at, code = editorState w.Page
+            let actual = code.Insert(at, cursor)
             let expected = plain text
             let show (s: string) = s.Replace("\n", "⏎").Replace(" ", "·")
             check (actual = expected) $"the editor holds {show actual}, not {show expected}"
@@ -102,7 +103,7 @@ type VimSteps(w: BrowserWorld) =
     [<StepDefinition("^(?:the learner )?presses Ctrl\\+Enter$")>]
     member _.Run() =
         task {
-            do! w.Page.Keyboard.PressAsync "Control+Enter"
+            do! pressInEditor w.Page "Control+Enter"
             let! _ = w.Page.WaitForFunctionAsync("() => document.getElementById('result').dataset.status", null, PageWaitForFunctionOptions(Timeout = Nullable 120000.f))
             ()
         }
