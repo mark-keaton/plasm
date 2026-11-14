@@ -29,6 +29,17 @@ Feature: Walking the path in the browser
       Then the first two koans are shown as passed
       And the third koan shows the learner's edit
 
+    Scenario: Saved code stays with its koan when the course is rearranged
+      Given this browser holds the code and progress of an older course, saved for the second koan of lesson 1
+      When the learner reloads the page
+      Then the koan "Values do not change" shows its original code
+      And the koan "Values do not change" is not shown as passed
+
+    Scenario: An edit to a koan that has since changed is set aside
+      Given this browser holds an edit to the koan "Values do not change" made when its code read differently
+      When the learner reloads the page
+      Then the koan "Values do not change" shows its original code
+
     Scenario: A koan can be reset to its original code
       Given the learner has edited a koan
       When the learner resets it

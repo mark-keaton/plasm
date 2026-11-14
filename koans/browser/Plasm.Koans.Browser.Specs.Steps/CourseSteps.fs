@@ -84,6 +84,13 @@ type CourseSteps(w: BrowserWorld) =
 
     // The course is the same course
 
+    /// Writes to the page's storage (localStorage) as an earlier page would have.
+    let stored (entries: (string * string) list) =
+        task {
+            for key, json in entries do
+                do! w.Page.EvaluateAsync("([k, v]) => localStorage.setItem(k, v)", box [| box key; box json |]) :> Task
+        }
+
     [<StepDefinition("the browser course is compared with the koans' lesson specifications")>]
     member _.Compare() = ()
 
@@ -161,6 +168,37 @@ type CourseSteps(w: BrowserWorld) =
             do! show w.Page third
             let! code = w.Page.InputValueAsync "#code"
             check (code = edit) $"the third koan shows:\n{code}"
+        }
+        |> unit
+
+    [<StepDefinition("this browser holds the code and progress of an older course, saved for the second koan of lesson 1")>]
+    member _.OlderCourse() =
+        // The course before lessons 01-04 were added kept edits by position.
+        stored [ "plasm-koans:edits", JsonSerializer.Serialize(dict [ "0/1", "    let ada = 1\n    ada |> shouldBe CustomerId(1)" ])
+                 "plasm-koans:passed", JsonSerializer.Serialize [| "0/1" |] ]
+        |> unit
+
+    [<StepDefinition("this browser holds an edit to the koan \"(.*)\" made when its code read differently")>]
+    member _.EditToOlderKoan(name: string) =
+        stored [ "plasm-koans:koans", JsonSerializer.Serialize(dict [ name, dict [ "base", "    // an older version of this koan"; "edit", "    // the learner's edit to it" ] ]) ]
+        |> unit
+
+    [<StepDefinition("the koan \"(.*)\" shows its original code")>]
+    member _.ShowsOriginal(name: string) =
+        task {
+            let! koan = koanNamed w.Page name
+            do! show w.Page koan
+            let! code = w.Page.InputValueAsync "#code"
+            check (code = koan.Body) $"the koan shows:\n{code}"
+        }
+        |> unit
+
+    [<StepDefinition("the koan \"(.*)\" is not shown as passed")>]
+    member _.NotPassed(name: string) =
+        task {
+            let! koan = koanNamed w.Page name
+            let! state = w.Page.GetAttributeAsync($"nav button[data-koan=\"{koan.Lesson}/{koan.Index}\"]", "data-state")
+            check (state <> "passed") "the koan is shown as passed"
         }
         |> unit
 

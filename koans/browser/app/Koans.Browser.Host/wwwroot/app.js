@@ -34,14 +34,27 @@ let engine = startEngine();
 let ids = 0;
 const results = new Map(); // "lesson/koan" -> result
 
-// Progress and edits are kept in this browser (localStorage), per koan.
+// Progress and edits are kept in this browser (localStorage).
 const store = {
   load(key, fallback) { try { return JSON.parse(localStorage.getItem('plasm-koans:' + key)) ?? fallback; } catch { return fallback; } },
   save(key, value) { try { localStorage.setItem('plasm-koans:' + key, JSON.stringify(value)); } catch { /* private mode */ } },
 };
-const passed = new Set(store.load('passed', []));   // "lesson/koan" of passed koans
-const edits = store.load('edits', {});              // "lesson/koan" -> code
+// Each koan's progress is kept by its name, with the code the koan had then:
+// name -> { base, passed?, edit? }. A koan whose code has changed since starts
+// afresh, and rearranging the course moves nothing onto another koan.
+// (Pages before this kept progress by position, under 'passed' and 'edits'.)
+try { localStorage.removeItem('plasm-koans:passed'); localStorage.removeItem('plasm-koans:edits'); } catch { /* private mode */ }
+const saved = store.load('koans', {});
 const keyOf = (l, k) => `${l}/${k}`;
+const koanAt = (l, k) => course.lessons[l].koans[k];
+const savedFor = (l, k) => { const s = saved[koanAt(l, k).name]; return s && s.base === koanAt(l, k).body ? s : null; };
+const isPassed = (l, k) => !!savedFor(l, k)?.passed;
+const keep = (l, k, change) => {
+  const s = savedFor(l, k) ?? { base: koanAt(l, k).body };
+  change(s);
+  if (s.passed || s.edit !== undefined) saved[koanAt(l, k).name] = s; else delete saved[koanAt(l, k).name];
+  store.save('koans', saved);
+};
 
 /// Runs a koan (with the given code, or its original code) in the engine.
 async function runKoan(lessonIndex, koanIndex, body) {
@@ -55,8 +68,7 @@ async function runKoan(lessonIndex, koanIndex, body) {
                                  isTask: koan.isTask, lambda: koan.lambda, body: body ?? koan.body });
   });
   results.set(keyOf(lessonIndex, koanIndex), result);
-  if (result.status === 'passed') passed.add(keyOf(lessonIndex, koanIndex)); else passed.delete(keyOf(lessonIndex, koanIndex));
-  store.save('passed', [...passed]);
+  keep(lessonIndex, koanIndex, (s) => { if (result.status === 'passed') s.passed = true; else delete s.passed; });
   updateProgress();
   return result;
 }
@@ -158,20 +170,21 @@ function render(r, lessonIndex, koanIndex) {
 
 function updateProgress() {
   course.lessons.forEach((lesson, l) => {
-    const done = lesson.koans.filter((_, k) => passed.has(keyOf(l, k))).length;
+    const done = lesson.koans.filter((_, k) => isPassed(l, k)).length;
     const progress = document.querySelector(`nav h2[data-lesson="${l}"] .progress`);
     if (progress) progress.textContent = `${done} of ${lesson.koans.length}`;
     const ring = document.querySelector(`nav h2[data-lesson="${l}"] .ring`);
     if (ring) { ring.style.setProperty('--p', Math.round(100 * done / lesson.koans.length)); ring.classList.toggle('done', done === lesson.koans.length); }
     lesson.koans.forEach((_, k) => {
       const b = document.querySelector(`nav button[data-koan="${keyOf(l, k)}"]`);
-      if (b && passed.has(keyOf(l, k))) b.dataset.state = 'passed';
+      if (b && isPassed(l, k)) b.dataset.state = 'passed';
       else if (b && b.dataset.state === 'passed') delete b.dataset.state;
     });
   });
   const total = course.lessons.reduce((n, l) => n + l.koans.length, 0);
-  $('overall').textContent = `${passed.size} of ${total} passed`;
-  $('overall-bar').style.width = `${100 * passed.size / total}%`;
+  const done = course.lessons.reduce((n, l, li) => n + l.koans.filter((_, k) => isPassed(li, k)).length, 0);
+  $('overall').textContent = `${done} of ${total} passed`;
+  $('overall-bar').style.width = `${100 * done / total}%`;
 }
 
 /// Unfolds one lesson in the list; the others show only their title and progress.
@@ -271,7 +284,7 @@ function show(lessonIndex, koanIndex) {
   if (feature === 'F#') { $('teaches').textContent = koan.teaches; $('teaches').removeAttribute('href'); }
   else { $('teaches').textContent = `${feature}.feature: ${scenario}`; $('teaches').href = `spec/${feature}.feature`; }
   renderGiven(koan);
-  $('code').value = edits[keyOf(lessonIndex, koanIndex)] ?? koan.body;
+  $('code').value = savedFor(lessonIndex, koanIndex)?.edit ?? koan.body;
   highlight();
   render(results.get(`${lessonIndex}/${koanIndex}`), lessonIndex, koanIndex);
   $('koan').hidden = false;
@@ -313,14 +326,12 @@ $('shortcut').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘↵
 $('stop').onclick = () => stop();
 $('code').addEventListener('input', () => {
   highlight();
-  edits[keyOf(shown.lessonIndex, shown.koanIndex)] = $('code').value;
-  store.save('edits', edits);
+  keep(shown.lessonIndex, shown.koanIndex, (s) => { s.edit = $('code').value; });
 });
 $('code').addEventListener('scroll', () => { $('highlight').scrollLeft = $('code').scrollLeft; });
 $('reset').onclick = () => {
   const { lessonIndex, koanIndex } = shown;
-  delete edits[keyOf(lessonIndex, koanIndex)];
-  store.save('edits', edits);
+  keep(lessonIndex, koanIndex, (s) => { delete s.edit; });
   $('code').value = course.lessons[lessonIndex].koans[koanIndex].body;
   highlight();
 };
