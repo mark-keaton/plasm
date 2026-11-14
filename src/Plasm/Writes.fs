@@ -148,10 +148,10 @@ let private guarded (sess: Session) (s: CsState) (f: unit -> Task<'a>) : Task<Re
             | None -> return Error(Failed failure)
     }
 
-let private returning (schema: SchemaInfo) = schema.Fields |> Array.toList |> List.map (fun f -> f.Column)
+let private returning (schema: SchemaInfo) = Sql.returningFields schema.Table schema.Fields
 
 let private keyFilter (schema: SchemaInfo) (key: obj) =
-    Sql.Binary("=", Sql.Column(schema.Table, schema.Key.Column), Sql.Param(schema.Key.ScalarToDb key))
+    Sql.Binary("=", Sql.Column(schema.Table, schema.Key.Column), Sql.fieldScalar schema.Key key)
 
 let private setField (schema: SchemaInfo) (s: CsState) (name: string) (domainValue: obj) =
     let f = schema.Field name
@@ -221,7 +221,7 @@ and private insert model sess schema s =
                 sess.Provider.Dialect
                 { Table = schema.Table
                   Columns = cols |> List.map (fun f -> f.Column)
-                  Values = cols |> List.map (fun f -> Sql.Param(f.ToDb values.[f.Index]))
+                  Values = cols |> List.map (fun f -> Sql.fieldValue f values.[f.Index])
                   Returning = returning schema }
 
         let! inserted = guarded sess s (fun () -> query sess cmd (readEntity schema))
@@ -256,7 +256,7 @@ and private update model sess schema s =
             |> Map.toList
             |> List.map (fun (name, v) ->
                 let f = schema.Field name
-                f.Column, Sql.Param(f.ToDb v))
+                f.Column, Sql.fieldValue f v)
 
         let versionSet, versionWhere =
             match schema.Version, version with
@@ -415,7 +415,7 @@ and private writeChildList model sess (schema: SchemaInfo) (s: CsState) (parentK
                 let fk = target.Field a.ForeignKey
 
                 let ownedBy =
-                    Sql.Binary("=", Sql.Column(target.Table, fk.Column), Sql.Param(fk.ScalarToDb parentKey))
+                    Sql.Binary("=", Sql.Column(target.Table, fk.Column), Sql.fieldScalar fk parentKey)
 
                 let replaceChild (i: int) (child: CsState) =
                     let w' =
@@ -462,7 +462,7 @@ and private writeChildList model sess (schema: SchemaInfo) (s: CsState) (parentK
                             if omitted.IsEmpty then
                                 return Ok()
                             else
-                                let ids = Sql.AnyOf(Sql.Column(target.Table, target.Key.Column), keyArray target omitted)
+                                let ids = Sql.AnyOf(Sql.Column(target.Table, target.Key.Column), keyArray target omitted, Sql.storeType target.Key)
 
                                 match a.OnReplace with
                                 | OnReplace.Reject ->

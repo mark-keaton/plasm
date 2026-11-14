@@ -17,6 +17,14 @@ type ScalarMapping =
           /// stored names in F#'s comparison order (a union's declaration order),
           /// so that SQL orders and compares the values as F# does.
           Ordered: string list option
+          /// For a Scalar.enum mapping: each case's name and stored name, in F#'s
+          /// order; empty otherwise.
+          Cases: (string * string) list
+          /// The database type the column has, when it is not the provider
+          /// type's own: a PostgreSQL enum type, as its name's parts
+          /// (`["order_status"]` or `["sales"; "order_status"]`). Values are sent
+          /// as text cast to it and read back as text.
+          StoreType: string list option
           Description: string }
 
     member this.Domain = this.DomainType
@@ -65,6 +73,8 @@ module Scalar =
           ToProvider = fun v -> box (unwrap (unbox<'Domain> v))
           FromProvider = fun v -> Ok(box (create (unbox<'Provider> v)))
           Ordered = None
+          Cases = []
+          StoreType = None
           Description = $"{typeof<'Domain>.Name} as {typeof<'Provider>.Name}" }
 
     /// Maps a type whose constructor validates its input. A stored value the
@@ -81,6 +91,8 @@ module Scalar =
           ToProvider = fun v -> box (unwrap (unbox<'Domain> v))
           FromProvider = fun v -> create (unbox<'Provider> v) |> Result.map box
           Ordered = None
+          Cases = []
+          StoreType = None
           Description = $"{typeof<'Domain>.Name} as validated {typeof<'Provider>.Name}" }
 
     /// Maps a fieldless union (or any type with a finite set of values) to text
@@ -108,14 +120,19 @@ module Scalar =
 
         // F#'s order of the values (for a union, its declaration order, unless it
         // defines its own comparison). None when the type has no comparison.
-        let ordered =
+        let sorted =
             try
                 cases
                 |> List.sortWith (fun (a, _) (b, _) -> LanguagePrimitives.GenericComparer.Compare(box a, box b))
-                |> List.map snd
                 |> Some
             with _ ->
                 None
+
+        let caseName (c: 'Domain) =
+            if FSharpType.IsUnion(t, true) then
+                (fst (FSharpValue.GetUnionFields(box c, t, true))).Name
+            else
+                string c
 
         { DomainType = t
           ProviderType = typeof<string>
@@ -125,5 +142,33 @@ module Scalar =
                 match fromText.TryGetValue(unbox<string> v) with
                 | true, c -> Ok c
                 | _ -> Error $"'{v}' is not a known {t.Name}"
-          Ordered = ordered
+          Ordered = sorted |> Option.map (List.map snd)
+          Cases = sorted |> Option.defaultValue cases |> List.map (fun (c, n) -> caseName c, n)
+          StoreType = None
           Description = $"{t.Name} as text enum" }
+
+    let private identifier = Text.RegularExpressions.Regex "^[A-Za-z_][A-Za-z0-9_]*$"
+
+    /// Stores a `Scalar.enum` mapping as a PostgreSQL enum type instead of text:
+    /// `Scalar.enum [ ... ] |> Scalar.asPgEnum "order_status"` (or
+    /// `"sales.order_status"`). Values are sent as text cast to the type and read
+    /// back as text, so the driver needs no enum mapping. The type's labels must
+    /// be the stored names in the cases' order, which the schema check verifies;
+    /// the database then orders and compares the values as F# does.
+    let asPgEnum (typeName: string) (mapping: ScalarMapping) : ScalarMapping =
+        let parts = if isNull typeName then [] else typeName.Split '.' |> List.ofArray
+
+        if parts.IsEmpty || parts.Length > 2 || not (parts |> List.forall identifier.IsMatch) then
+            raise (
+                PlasmConfigurationException
+                    $"Scalar.asPgEnum: \"{typeName}\" is not an enum type name; use letters, digits and underscores, optionally after a schema and a dot."
+            )
+
+        if mapping.Cases.IsEmpty then
+            raise (PlasmConfigurationException $"Scalar.asPgEnum applies to a Scalar.enum mapping; {mapping.Description} is not one.")
+
+        { mapping with
+            StoreType = Some parts
+            // The enum type orders by its labels, which are in the cases' order.
+            Ordered = None
+            Description = $"{mapping.DomainType.Name} as enum type {typeName}" }

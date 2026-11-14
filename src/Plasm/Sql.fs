@@ -63,7 +63,14 @@ module internal Sql =
         | IsNotNull of Expr
         | NotDistinctFrom of Expr * Expr
         | DistinctFrom of Expr * Expr
-        | AnyOf of Expr * values: Array
+        /// Membership in a list of values; `cast` names the database type the
+        /// values are cast to (an enum type), when they are not sent as it.
+        | AnyOf of Expr * values: Array * cast: string list option
+        /// `CAST(e AS "type")` or, for an array, `CAST(e AS "type"[])`: a value
+        /// sent as text, given the database type it is compared with or stored as.
+        | Cast of Expr * typeName: string list * array: bool
+        /// `CAST(e AS text)`: a column read as text (an enum type's label).
+        | AsText of Expr
         | Like of Expr * pattern: Expr
         | Func of string * Expr list
         | Exists of Select
@@ -120,18 +127,18 @@ module internal Sql =
         { Table: string
           Columns: string list
           Values: Expr list
-          Returning: string list }
+          Returning: (Expr * string) list }
 
     type Update =
         { Table: string
           Set: (string * Expr) list
           Where: Expr list
-          Returning: string list }
+          Returning: (Expr * string) list }
 
     type Delete =
         { Table: string
           Where: Expr list
-          Returning: string list }
+          Returning: (Expr * string) list }
 
     type Conflict =
         | DoNothing of target: string list
@@ -143,7 +150,7 @@ module internal Sql =
           Columns: string list
           Rows: Expr list list
           OnConflict: Conflict option
-          Returning: string list }
+          Returning: (Expr * string) list }
 
     type Command =
         { Sql: string
@@ -154,6 +161,42 @@ module internal Sql =
         | [] -> Literal "TRUE"
         | [ e ] -> e
         | e :: rest -> Binary("AND", e, conj rest)
+
+    /// A database type name, quoted by the dialect: `"sales"."order_status"`,
+    /// with `[]` for its array type.
+    let typeName (d: ISqlDialect) (parts: string list) (array: bool) =
+        (parts |> List.map d.QuoteIdentifier |> String.concat ".") + (if array then "[]" else "")
+
+    /// The database type a field's values are stored as, when it is not the
+    /// provider type's own (Scalar.asPgEnum).
+    let storeType (f: FieldMap) = f.Mapping |> Option.bind (fun m -> m.StoreType)
+
+    /// A field value as a parameter, cast to the field's database type if it has one.
+    let fieldValue (f: FieldMap) (value: obj) =
+        let p = Param(f.ToDb value)
+
+        match storeType f with
+        | Some t -> Cast(p, t, false)
+        | None -> p
+
+    /// A provider value of a domain scalar as a parameter, cast likewise.
+    let fieldScalar (f: FieldMap) (value: obj) =
+        let p = Param(f.ScalarToDb value)
+
+        match storeType f with
+        | Some t -> Cast(p, t, false)
+        | None -> p
+
+    /// A field's column as it is read: as text when it has a database type of
+    /// its own, whose values the driver may not know how to read.
+    let readColumn (f: FieldMap) (column: Expr) =
+        match storeType f with
+        | Some _ -> AsText column
+        | None -> column
+
+    /// RETURNING every field of a table, each read as `readColumn` reads it.
+    let returningFields (table: string) (fields: FieldMap seq) =
+        fields |> Seq.map (fun f -> readColumn f (Column(table, f.Column)), f.Column) |> List.ofSeq
 
     type private Renderer(d: ISqlDialect) =
         let sb = StringBuilder()
@@ -209,14 +252,19 @@ module internal Sql =
                 w $" {d.NullSafeComparison true} "
                 r.Expr b
                 w ")"
-            | AnyOf(a, values) ->
+            | AnyOf(a, values, cast) ->
+                let typed (p: string) array =
+                    match cast with
+                    | Some t -> $"CAST({p} AS {typeName d t array})"
+                    | None -> p
+
                 if values.Length = 0 then
                     w "FALSE"
                 elif d.Capabilities.ArrayParameters then
                     w "("
                     r.Expr a
                     w " = ANY("
-                    w (r.Param values)
+                    w (typed (r.Param values) true)
                     w "))"
                 else
                     w "("
@@ -227,9 +275,17 @@ module internal Sql =
                     |> Seq.cast<obj>
                     |> Seq.iteri (fun i v ->
                         if i > 0 then w ", "
-                        w (r.Param v))
+                        w (typed (r.Param v) false))
 
                     w "))"
+            | Cast(e, t, array) ->
+                w "CAST("
+                r.Expr e
+                w $" AS {typeName d t array})"
+            | AsText e ->
+                w "CAST("
+                r.Expr e
+                w " AS text)"
             | Like(a, p) ->
                 w "("
                 r.Expr a
@@ -444,10 +500,19 @@ module internal Sql =
 
             r.Returning x.Returning
 
-        member _.Returning(cols: string list) =
+        member r.Returning(cols: (Expr * string) list) =
             if not cols.IsEmpty then
-                sb.Append(" RETURNING ").Append(cols |> List.map q |> String.concat ", ")
-                |> ignore
+                sb.Append(" RETURNING ") |> ignore
+
+                cols
+                |> List.iteri (fun i (e, name) ->
+                    if i > 0 then sb.Append(", ") |> ignore
+
+                    match e with
+                    | Column(_, n) when n = name -> sb.Append(q n) |> ignore
+                    | _ ->
+                        r.Expr e
+                        sb.Append(" AS ").Append(q name) |> ignore)
 
         member _.Result() =
             { Sql = sb.ToString()

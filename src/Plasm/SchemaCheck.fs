@@ -17,6 +17,9 @@ type SchemaIssueKind =
     /// A NOT NULL column without a default that the model never writes:
     /// inserts would fail.
     | UnwritableColumn
+    /// An enum type's labels differ from the union's cases (missing, extra or
+    /// in a different order).
+    | EnumLabels
 
 /// A difference between the model and the database that would make a mapped
 /// read or write fail.
@@ -39,6 +42,9 @@ module internal SchemaCheck =
     type private Column =
         { Name: string
           DataType: string
+          /// The column type's schema and name (for an enum column, the enum type's).
+          UdtSchema: string
+          UdtName: string
           Nullable: bool
           HasDefault: bool }
 
@@ -58,7 +64,7 @@ module internal SchemaCheck =
 
             let cmd: Sql.Command =
                 { Sql =
-                    "SELECT table_name, column_name, data_type, is_nullable, column_default IS NOT NULL OR is_identity = 'YES' OR is_generated <> 'NEVER' "
+                    "SELECT table_name, column_name, data_type, is_nullable, column_default IS NOT NULL OR is_identity = 'YES' OR is_generated <> 'NEVER', udt_schema, udt_name "
                     + "FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ANY("
                     + dialect.ParameterName 0
                     + ")"
@@ -69,8 +75,53 @@ module internal SchemaCheck =
                     r.GetString 0,
                     { Name = r.GetString 1
                       DataType = r.GetString 2
+                      UdtSchema = r.GetString 5
+                      UdtName = r.GetString 6
                       Nullable = (r.GetString 3 = "YES")
                       HasDefault = r.GetBoolean 4 })
+
+            // Fields stored as an enum type (Scalar.asPgEnum), and each type's
+            // labels in the database's order, keyed by (schema, name).
+            let enumFields =
+                schemas
+                |> List.collect (fun sc ->
+                    sc.Fields
+                    |> Array.toList
+                    |> List.choose (fun f -> f.Mapping |> Option.bind (fun m -> m.StoreType)))
+
+            let! currentSchema =
+                if enumFields.IsEmpty then
+                    Task.FromResult ""
+                else
+                    task {
+                        let! r = Execution.query s { Sql = "SELECT current_schema()"; Parameters = [] } (fun r -> r.GetString 0)
+                        return Seq.head r
+                    }
+
+            let qualified (parts: string list) =
+                match parts with
+                | [ schema; name ] -> schema, name
+                | _ -> currentSchema, List.last parts
+
+            let! labelRows =
+                if enumFields.IsEmpty then
+                    Task.FromResult(ResizeArray())
+                else
+                    let names = enumFields |> List.map (qualified >> snd) |> List.distinct |> Array.ofList
+
+                    Execution.query
+                        s
+                        { Sql =
+                            "SELECT n.nspname, t.typname, e.enumlabel FROM pg_type t "
+                            + "JOIN pg_namespace n ON n.oid = t.typnamespace JOIN pg_enum e ON e.enumtypid = t.oid "
+                            + "WHERE t.typname = ANY("
+                            + dialect.ParameterName 0
+                            + ") ORDER BY n.nspname, t.typname, e.enumsortorder"
+                          Parameters = [ box names ] }
+                        (fun r -> (r.GetString 0, r.GetString 1), r.GetString 2)
+
+            let enumLabels =
+                labelRows |> List.ofSeq |> List.groupBy fst |> List.map (fun (k, rs) -> k, rs |> List.map snd) |> Map.ofList
 
             let byTable =
                 rows |> Seq.groupBy fst |> Seq.map (fun (t, cs) -> t, cs |> Seq.map snd |> List.ofSeq) |> Map.ofSeq
@@ -99,6 +150,39 @@ module internal SchemaCheck =
                         $"""column is {c.DataType}; {Reflection.typeName providerType} needs {String.concat " or " allowed}"""
                 | _ -> ()
 
+            // A field stored as an enum type: the column must have that type, and
+            // the type's labels must be the stored names, in the cases' order.
+            let enumCheck modelName (f: FieldMap) table (c: Column) (m: ScalarMapping) (storeType: string list) =
+                let schemaName, typeName = qualified storeType
+                let display = String.concat "." storeType
+                let domain = Reflection.typeName m.DomainType
+                let issue kind message = add kind modelName (Some f.Name) table (Some c.Name) message
+
+                match enumLabels.TryFind(schemaName, typeName) with
+                | None -> issue SchemaIssueKind.IncompatibleType $"enum type {display} does not exist"
+                | Some _ when c.DataType <> "USER-DEFINED" ->
+                    issue SchemaIssueKind.IncompatibleType $"column is {c.DataType}; {domain} needs the enum type {display}"
+                | Some _ when (c.UdtSchema, c.UdtName) <> (schemaName, typeName) ->
+                    issue SchemaIssueKind.IncompatibleType $"column is {c.UdtName}; {domain} needs the enum type {display}"
+                | Some labels ->
+                    let stored = m.Cases |> List.map snd
+
+                    for l in labels do
+                        if not (List.contains l stored) then
+                            issue SchemaIssueKind.EnumLabels $"label {l} is not a {domain} case; reading it would fail"
+
+                    for case, l in m.Cases do
+                        if not (List.contains l labels) then
+                            issue SchemaIssueKind.EnumLabels $"no label {l} for {case}; writing it would fail"
+
+                    if List.sort labels = List.sort stored && labels <> stored then
+                        let order = String.concat ", " labels
+                        let cases = m.Cases |> List.map fst |> String.concat ", "
+
+                        issue
+                            SchemaIssueKind.EnumLabels
+                            $"labels are ordered {order} but the cases {cases}; the database would sort differently from F#"
+
             let unwritable modelName table (columns: Column list) (written: string list) =
                 for c in columns do
                     if not c.Nullable && not c.HasDefault && not (List.contains c.Name written) then
@@ -118,7 +202,9 @@ module internal SchemaCheck =
                         match columns |> List.tryFind (fun c -> c.Name = f.Column) with
                         | None -> add SchemaIssueKind.MissingColumn sc.Name (Some f.Name) sc.Table (Some f.Column) "column does not exist"
                         | Some c ->
-                            typeCheck sc.Name (Some f.Name) sc.Table c f.ProviderType
+                            match f.Mapping |> Option.bind (fun m -> m.StoreType |> Option.map (fun t -> m, t)) with
+                            | Some(m, t) -> enumCheck sc.Name f sc.Table c m t
+                            | None -> typeCheck sc.Name (Some f.Name) sc.Table c f.ProviderType
 
                             if c.Nullable && not f.IsOption then
                                 add

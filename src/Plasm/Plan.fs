@@ -213,7 +213,7 @@ module internal Planner =
                   @ (ownerColumn |> List.map (fun (_, n) -> Sql.Column("s", n), n))
 
               let build (keys: Array) : Sql.Select =
-                  let keyFilter = Sql.AnyOf(matchExpr, keys)
+                  let keyFilter = Sql.AnyOf(matchExpr, keys, Sql.storeType matchField)
 
                   match strategy with
                   | LoadStrategy.BatchedByKeys _ ->

@@ -454,7 +454,9 @@ let rawCommand (model: Model) (dialect: ISqlDialect) (sql: FormattableString) : 
     let format = sql.Format
     let args = sql.GetArguments()
 
-    let toProvider (v: obj) : obj =
+    // Each hole's provider value, and the database type to cast it to when its
+    // domain type is stored as one (Scalar.asPgEnum): (type, is an array).
+    let toProvider (v: obj) : obj * (string list * bool) option =
         let scalar (x: obj) =
             if isNull x then
                 box DBNull.Value
@@ -463,14 +465,19 @@ let rawCommand (model: Model) (dialect: ISqlDialect) (sql: FormattableString) : 
                 | Ok p -> p
                 | Error m -> invalidArg "sql" $"interpolated value: {m}"
 
+        let cast (t: Type) array =
+            model.StoreTypeOf t |> Option.map (fun st -> st, array)
+
         match v with
-        | null -> box DBNull.Value
+        | null -> box DBNull.Value, None
         | :? string
-        | :? (byte[]) -> v
+        | :? (byte[]) -> v, None
         | _ when Reflection.isOption (v.GetType()) ->
+            let castTo = cast (Reflection.elementType (v.GetType())) false
+
             match Reflection.getOptionValue (v.GetType()) v with
-            | Some x -> scalar x
-            | None -> box DBNull.Value
+            | Some x -> scalar x, castTo
+            | None -> box DBNull.Value, castTo
         | :? System.Collections.IEnumerable as items ->
             // Lists and arrays become one array parameter (`= ANY({ids})`).
             let values = items |> Seq.cast<obj> |> Seq.toArray
@@ -483,8 +490,8 @@ let rawCommand (model: Model) (dialect: ISqlDialect) (sql: FormattableString) : 
             let providerType = model.ProviderTypeOf elemType |> Option.defaultValue elemType
             let arr = Array.CreateInstance(providerType, values.Length)
             values |> Array.iteri (fun i x -> arr.SetValue(scalar x, i))
-            box arr
-        | _ -> scalar v
+            box arr, cast elemType true
+        | _ -> scalar v, cast (v.GetType()) false
 
     let sb = Text.StringBuilder()
     let ps = ResizeArray<obj>()
@@ -500,8 +507,13 @@ let rawCommand (model: Model) (dialect: ISqlDialect) (sql: FormattableString) : 
             let close = format.IndexOf('}', i)
             let spec = format.Substring(i + 1, close - i - 1)
             let n = int (spec.Split([| ','; ':' |]).[0])
-            ps.Add(toProvider args.[n])
-            sb.Append(dialect.ParameterName(ps.Count - 1)) |> ignore
+            let value, castTo = toProvider args.[n]
+            ps.Add value
+            let name = dialect.ParameterName(ps.Count - 1)
+
+            match castTo with
+            | Some(t, array) -> sb.Append($"CAST({name} AS {Sql.typeName dialect t array})") |> ignore
+            | None -> sb.Append name |> ignore
             i <- close + 1
         else
             sb.Append c |> ignore

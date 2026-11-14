@@ -1,13 +1,13 @@
 # Acceptance specification: classification and traceability
 
-The supplied Gherkin specifications are the acceptance contract. `features/joins.feature`, and then `aggregates.feature`, `bulk-writes.feature`, `raw-sql.feature` and `prepared-queries.feature` (batch 2a) and `many-to-many.feature`, `schema-check.feature` and `sandbox.feature` (batch 2b), were added afterwards, each written and run red before its implementation. `fsi.feature` (F# Interactive) followed the same way; its steps run each scenario in a real F# Interactive session hosted by the test. After an architecture audit, `query-semantics.feature`, `tx-steps.feature`, `query-pipeline.feature`, `error-model.feature`, `has-one.feature` and `providers.feature` were added, with new rules in `prepared-queries.feature`, `sandbox.feature` and `fsi.feature`, each run red first. A second audit added `reading.feature` and new scenarios in `query-semantics`, `query-pipeline`, `fsi`, `prepared-queries`, `tx-steps`, `error-model` and `providers`. The supplied ones are kept verbatim in `docs/specs/original/`, and the executable copies in `features/` differ only
+The supplied Gherkin specifications are the acceptance contract. `features/joins.feature`, and then `aggregates.feature`, `bulk-writes.feature`, `raw-sql.feature` and `prepared-queries.feature` (batch 2a) and `many-to-many.feature`, `schema-check.feature` and `sandbox.feature` (batch 2b), were added afterwards, each written and run red before its implementation. `fsi.feature` (F# Interactive) followed the same way; its steps run each scenario in a real F# Interactive session hosted by the test. After an architecture audit, `query-semantics.feature`, `tx-steps.feature`, `query-pipeline.feature`, `error-model.feature`, `has-one.feature` and `providers.feature` were added, with new rules in `prepared-queries.feature`, `sandbox.feature` and `fsi.feature`, each run red first. A second audit added `reading.feature` and new scenarios in `query-semantics`, `query-pipeline`, `fsi`, `prepared-queries`, `tx-steps`, `error-model` and `providers`. The comparison with the F# data-access libraries (`docs/comparison.md`) added a rule to `query-semantics.feature` (union ordering) and `pg-enums.feature`. The supplied ones are kept verbatim in `docs/specs/original/`, and the executable copies in `features/` differ only
 where Gherkin validity requires it (see each file's header). Every scenario runs
 as a test through Reqnroll: `tests/Plasm.Specs` (the C# host that generates the tests) binds to F# step
 definitions in `tests/Plasm.Specs.Steps`, against a real PostgreSQL 18 database
 (Testcontainers, with a freshly cloned database per scenario).
 
 ```sh
-dotnet test tests/Plasm.Specs          # 229 scenarios (outline examples counted separately)
+dotnet test tests/Plasm.Specs          # 260 scenarios (outline examples counted separately)
 dotnet test tests/Plasm.Tests          # 176 unit, property, compile-time and Ecto-compatibility tests
 ```
 
@@ -15,11 +15,11 @@ dotnet test tests/Plasm.Tests          # 176 unit, property, compile-time and Ec
 
 | Classification | Scenarios |
 |---|---:|
-| Implemented and verified | 228 |
+| Implemented and verified | 259 |
 | Implemented, deliberately changed (with rationale) | 1 |
 | Planned | 0 |
 | Unsupported, with explicit behaviour | 0 |
-| **Total** | **229** |
+| **Total** | **260** |
 
 Behaviour that is outside these scenarios and not built yet (migrations,
 other providers and so on) is listed in `docs/status.md`. None of it has an API, so
@@ -447,6 +447,56 @@ the same guarantee more exhaustively.
 | A query capturing only immutable values is planned once | Implemented and verified | `QuerySemanticsSteps.fs` |  |  |
 | A query comparing with the current time reads the clock each run | Implemented and verified | `QuerySemanticsSteps.fs` |  | Found by the second audit: static properties such as `DateTime.UtcNow` were treated as stable. |
 | A query sees the current contents of a module-level <container> | Implemented and verified | `QuerySemanticsSteps.fs` |  | Only F# module values whose current value is immutable allow plan reuse. |
+
+### query-semantics.feature: Union cases stored as text compare in the order F# declares them
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Ordering by a union follows its declaration, <direction> | Implemented and verified | `QuerySemanticsSteps.fs` |  | Found by the comparison with the F# libraries: ordering compared the stored text alphabetically. A `Scalar.enum` value now orders by its position in the declaration (`CASE ... WHEN 'draft' THEN 0 ... END`); an index on the text column does not serve that ordering. |
+| Comparing a union with a case keeps F# meaning (<comparison>) | Implemented and verified | `QuerySemanticsSteps.fs` |  | The constant side is sent as its position. |
+| A prepared query compares a union argument in declaration order | Implemented and verified | `QuerySemanticsSteps.fs` |  | The argument's position is bound per call. |
+| The earliest and latest case of a union follow its declaration | Implemented and verified | `QuerySemanticsSteps.fs` |  | `Agg.min`/`Agg.max` take the minimum position and read back its stored name. |
+| The ordering is done by the database | Implemented and verified | `QuerySemanticsSteps.fs` |  |  |
+
+### pg-enums.feature: Values are written and read without driver configuration
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Inserting and reading a Shipment keeps its status | Implemented and verified | `PgEnumSteps.fs` |  | `Scalar.asPgEnum`: values are sent as text in `CAST(@p AS "type")` and read as `CAST(col AS text)`, so Npgsql needs no `MapEnum`. |
+| The enum type is created after the data source first connected | Implemented and verified | `PgEnumSteps.fs` |  | The trap in Npgsql's type loading: reads of the column fail unless they are text. |
+| Updating a status through a changeset | Implemented and verified | `PgEnumSteps.fs` |  |  |
+| An optional status is written and read, including None | Implemented and verified | `PgEnumSteps.fs` |  |  |
+| Bulk writes accept statuses | Implemented and verified | `PgEnumSteps.fs` |  | Bulk insert, upsert (with `RETURNING` read as text) and bulk update. |
+
+### pg-enums.feature: Queries keep their F# meaning
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Filtering on a status | Implemented and verified | `PgEnumSteps.fs` |  |  |
+| Filtering on a captured <container> of statuses | Implemented and verified | `PgEnumSteps.fs` |  | `= ANY(CAST(@p AS "type"[]))`. |
+| Ordering and comparisons follow the union's case order | Implemented and verified | `PgEnumSteps.fs` |  | The database orders an enum type by its labels, which the schema check holds to the cases' order. |
+| The earliest and latest status follow the union's case order | Implemented and verified | `PgEnumSteps.fs` |  |  |
+| A prepared query binds a status argument | Implemented and verified | `PgEnumSteps.fs` |  |  |
+| A status in raw SQL is sent as the enum type | Implemented and verified | `PgEnumSteps.fs` |  | An interpolated hole of a mapped type is cast. |
+| A filter on the status can use an index | Implemented and verified | `PgEnumSteps.fs` |  | The cast is on the parameter, never the column. |
+
+### pg-enums.feature: The schema check finds mismatches before a request fails
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A matching enum type passes | Implemented and verified | `PgEnumSteps.fs` |  | An unqualified type name is looked up in `current_schema()`, like tables. |
+| A text column mapped to an enum type is reported | Implemented and verified | `PgEnumSteps.fs` |  |  |
+| A missing enum type is reported | Implemented and verified | `PgEnumSteps.fs` |  |  |
+| A label the model does not list is reported | Implemented and verified | `PgEnumSteps.fs` |  | New `SchemaIssueKind.EnumLabels`. |
+| A case the type lacks is reported | Implemented and verified | `PgEnumSteps.fs` |  |  |
+| Labels in a different order from the cases are reported | Implemented and verified | `PgEnumSteps.fs` |  |  |
+
+### pg-enums.feature: Mistakes are reported where they are made
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A stored label the model does not list fails to load, naming it | Implemented and verified | `PgEnumSteps.fs` |  |  |
+| An invalid type name is rejected when the mapping is made | Implemented and verified | `PgEnumSteps.fs` |  | Names are identifiers, optionally schema-qualified; they are always quoted in SQL. |
 
 ### sandbox.feature: Sandboxes nest
 

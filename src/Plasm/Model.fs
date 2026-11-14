@@ -88,6 +88,15 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, scalars: IR
         | true, m -> m.Ordered
         | _ -> None
 
+    /// The database type `t` (or its option's element) is stored as, when it is
+    /// not the provider type's own (Scalar.asPgEnum).
+    member internal _.StoreTypeOf(t: Type) =
+        let t = if Reflection.isOption t then Reflection.elementType t else t
+
+        match scalars.TryGetValue t with
+        | true, m -> m.StoreType
+        | _ -> None
+
     member internal _.ProviderTypeOf(t: Type) =
         if Scalar.isBuiltIn t then
             Some t

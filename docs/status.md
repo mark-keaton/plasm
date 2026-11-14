@@ -47,7 +47,10 @@ about 30 s together on the development machine.
   `Scalar.tryWrap` (validating constructors) and `Scalar.enum` (fieldless
   unions as text). Comparisons, `orderBy` and `Agg.min`/`Agg.max` on a
   `Scalar.enum` type follow F#'s order (a union's declaration order), not the
-  alphabetical order of the stored text. Unions with fields, nested records, collections as columns
+  alphabetical order of the stored text. `Scalar.asPgEnum "type"` stores a
+  `Scalar.enum` as a PostgreSQL enum type (sent as text cast to the type, read
+  as text; no Npgsql enum mapping needed), and the schema check verifies the
+  type's labels and their order. Unions with fields, nested records, collections as columns
   and nested options are configuration errors.
 - Single-column primary keys, assigned or database-generated.
 - Database-generated columns (`generated`) and an integer version for
@@ -436,6 +439,5 @@ payments, EF Core 11 (rc.3 provider) with `AsNoTracking`.
    it.
 5. Diagnostics as OpenTelemetry activities.
 6. Close the gaps found by the comparison with the F# data-access libraries
-   ([comparison.md](comparison.md)): fieldless unions stored as
-   PostgreSQL enum types (`Scalar.asPgEnum`); typed parameters and several
+   ([comparison.md](comparison.md)): typed parameters (such as `jsonb`) and several
    result sets in raw SQL; then the larger EF Core gaps listed there.

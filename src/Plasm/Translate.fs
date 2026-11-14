@@ -250,9 +250,16 @@ let private unwrapOption (t: Type) (v: obj) =
 let private scalarType (t: Type) =
     if Reflection.isOption t then Reflection.elementType t else t
 
+/// A parameter of a domain type, cast to the database type the type is stored
+/// as when it has one (Scalar.asPgEnum).
+let private typedParam (model: Model) (domainType: Type) (p: Sql.Expr) =
+    match model.StoreTypeOf domainType with
+    | Some t -> Sql.Cast(p, t, false)
+    | None -> p
+
 let toParam (ctx: Ctx) (e: Expr) (domainType: Type) (value: obj) : Sql.Expr =
     match ctx.Model.ScalarToDb(domainType, value) with
-    | Ok v -> Sql.Param v
+    | Ok v -> typedParam ctx.Model domainType (Sql.Param v)
     | Error msg -> fail e msg
 
 // ---------------------------------------------------------------------------
@@ -321,7 +328,7 @@ let private argParamWith (ctx: Ctx) (e: Expr) (valueType: Type) (transform: obj 
             | Ok p -> p
             | Error m -> invalidOp m
 
-    Sql.Param(box (Sql.Bound(resolve, show e)))
+    typedParam model scalarT (Sql.Param(box (Sql.Bound(resolve, show e))))
 
 let private argParam ctx (e: Expr) = argParamWith ctx e e.Type id
 
@@ -709,7 +716,9 @@ and containsAggregate (e: Sql.Expr) : bool =
     | Sql.IsNotTrue a
     | Sql.IsNull a
     | Sql.IsNotNull a
-    | Sql.AnyOf(a, _) -> containsAggregate a
+    | Sql.AnyOf(a, _, _)
+    | Sql.Cast(a, _, _)
+    | Sql.AsText a -> containsAggregate a
     | Sql.Func(_, xs) -> List.exists containsAggregate xs
     | Sql.Fragment ps ->
         ps
@@ -816,7 +825,12 @@ and membership ctx (whole: Expr) (x: Expr) (coll: Expr) : Sql.Expr =
 
             box arr
 
-        Sql.Binary("=", scalar ctx x, Sql.Func("ANY", [ Sql.Param(box (Sql.Bound(resolve, show coll))) ]))
+        let values: Sql.Expr =
+            match model.StoreTypeOf elemType with
+            | Some t -> Sql.Cast(Sql.Param(box (Sql.Bound(resolve, show coll))), t, true)
+            | None -> Sql.Param(box (Sql.Bound(resolve, show coll)))
+
+        Sql.Binary("=", scalar ctx x, Sql.Func("ANY", [ values ]))
     else
 
     let items = evaluate ctx coll
@@ -836,7 +850,7 @@ and membership ctx (whole: Expr) (x: Expr) (coll: Expr) : Sql.Expr =
 
     let arr = Array.CreateInstance(providerType, values.Length)
     values |> Array.iteri (fun i v -> arr.SetValue(v, i))
-    Sql.AnyOf(scalar ctx x, arr)
+    Sql.AnyOf(scalar ctx x, arr, ctx.Model.StoreTypeOf elemType)
 
 and relationship ctx (whole: Expr) (pv: Var) (body: Expr) (assoc: Expr) (all: bool) : Sql.Expr =
     match assoc with
@@ -974,7 +988,7 @@ let translateOrder ctx binding (lambda: Expr, dir: SortDirection) : Sql.OrderIte
     translateOrderOver ctx [ binding ] (lambda, dir)
 
 let entityColumns (alias: string) (s: SchemaInfo) =
-    s.Fields |> Array.toList |> List.map (fun f -> Sql.Column(alias, f.Column), f.Column)
+    s.Fields |> Array.toList |> List.map (fun f -> Sql.readColumn f (Sql.Column(alias, f.Column)), f.Column)
 
 let private appendKey (orders: Sql.OrderItem list) (key: Sql.Expr) =
     if orders |> List.exists (fun o -> o.Expr = key) then
@@ -1130,7 +1144,9 @@ let rec private ungrouped (groups: Sql.Expr list) (e: Sql.Expr) =
         | Sql.IsNotTrue a
         | Sql.IsNull a
         | Sql.IsNotNull a
-        | Sql.AnyOf(a, _) -> ungrouped groups a
+        | Sql.AnyOf(a, _, _)
+        | Sql.Cast(a, _, _)
+        | Sql.AsText a -> ungrouped groups a
         | Sql.Func(_, xs) -> List.exists (ungrouped groups) xs
         | Sql.Fragment ps ->
             ps
@@ -1289,17 +1305,17 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
             let start = columns.Count
 
             for f in b.Schema.Fields do
-                add (Sql.Column(b.Alias, f.Column)) $"{b.Schema.Name}.{f.Name}" |> ignore
+                add (Sql.readColumn f (Sql.Column(b.Alias, f.Column))) $"{b.Schema.Name}.{f.Name}" |> ignore
 
             EntityLeaf(start, b.Schema, b.Optional)
 
         let addLeaf (ctx: Ctx) (e: Expr) =
             match e with
             | RowField ctx (b, f) ->
-                let i = add (Sql.Column(b.Alias, f.Column)) (show e)
+                let i = add (Sql.readColumn f (Sql.Column(b.Alias, f.Column))) (show e)
                 Leaf(i, f.ProviderType, f.FromDb, f.Name)
             | OptionalField ctx (b, f) ->
-                let i = add (Sql.Column(b.Alias, f.Column)) (show e)
+                let i = add (Sql.readColumn f (Sql.Column(b.Alias, f.Column))) (show e)
 
                 let convert =
                     if f.IsOption then
@@ -1323,7 +1339,11 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
                 if (model.ProviderTypeOf scalarT).IsNone then
                     fail e $"computed projection of type {Reflection.typeName t} is not supported"
 
-                let sql = scalar ctx e
+                let sql =
+                    match model.StoreTypeOf scalarT with
+                    | Some _ -> Sql.AsText(scalar ctx e) // e.g. Agg.max over an enum column
+                    | None -> scalar ctx e
+
                 let i = add sql (show e)
                 // Computed values (arithmetic, aggregates, fragments) are read as
                 // whatever the database returns and converted to the F# type.

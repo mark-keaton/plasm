@@ -79,11 +79,10 @@ In rough order of importance for teams leaving EF Core:
    four, SQLProvider about ten, EF Core many.
 2. **No migrations.** Plasm checks the schema but does not change it. EF Core
    generates migrations; the others leave schema to other tools, as Plasm does.
-3. **PostgreSQL enum types.** Plasm stores a fieldless union as text. Against a
-   native `CREATE TYPE ... AS ENUM` column it fails on both providers (filters
-   with 42883, inserts with 42804, `= ANY` with 42883), and the schema check
-   rejects the column. Verified on Npgsql 10.0.3 and PGlite 0.5.16
-   ([enums.md](comparisons/enums.md)).
+3. ~~**PostgreSQL enum types.**~~ Done with `Scalar.asPgEnum` (below). Before
+   it, a native `CREATE TYPE ... AS ENUM` column failed on both providers
+   (filters with 42883, inserts with 42804, `= ANY` with 42883), verified on
+   Npgsql 10.0.3 and PGlite 0.5.16 ([enums.md](comparisons/enums.md)).
 4. **Modelling.** No embedded or owned types, JSON columns, composite keys,
    array columns, inheritance, or keyless and view entities.
 5. **Querying.** No set operations or `distinct`, no nested collections
@@ -109,7 +108,7 @@ library that supports PostgreSQL enums does it through CLR enums (SqlHydra
 generates them and a `MapEnum` registration helper since 4.1). None maps an F#
 union to a PostgreSQL enum.
 
-The recommended design for Plasm sidesteps the driver entirely: send the union
+Plasm now implements the recommended design ([pg-enums.feature](../features/pg-enums.feature)). It sidesteps the driver entirely: send the union
 as text with a cast to the enum type (`@p::"order_status"`,
 `ANY(@p::"order_status"[])`), and read the column as `::text`. It needs no
 `MapEnum`, is unaffected by when the type was created, works on PGlite as well,
@@ -120,8 +119,20 @@ Scalar.enum [ Pending, "pending"; Shipped, "shipped"; Cancelled, "cancelled" ]
 |> Scalar.asPgEnum "order_status"
 ```
 
-The schema check would verify the type exists and that its labels match the
-union's cases in order, so ordering in SQL agrees with F#.
+The schema check verifies that the type exists and that its labels match the
+union's cases in order, so ordering in SQL agrees with F#. An unqualified type
+name is looked up in `current_schema()`, as tables are.
+
+Plasm does not create or change the type; a migration tool does:
+
+```sql
+CREATE TYPE order_status AS ENUM ('pending', 'shipped', 'cancelled');
+-- A new label can be added later (PostgreSQL 12+ allows this inside a
+-- transaction, but the new label cannot be used until that transaction commits):
+ALTER TYPE order_status ADD VALUE 'returned' AFTER 'shipped';
+```
+
+Add the case to the union in the same position.
 
 The research also found a defect, since fixed: an ordering comparison
 (`o.Status < Shipped`), `orderBy` or `Agg.min`/`Agg.max` on a union stored with
@@ -136,8 +147,7 @@ ordering. A PostgreSQL enum type orders by declaration natively.
 Each becomes a feature file, written red first:
 
 1. ~~Ordering on a text-stored union follows F# (the defect above).~~ Done.
-2. Fieldless unions stored as PostgreSQL enum types (`Scalar.asPgEnum`); a
-   draft feature is in [enums.md](comparisons/enums.md).
-3. Raw SQL: a typed parameter override for enum and `jsonb` values, and several
+2. ~~Fieldless unions stored as PostgreSQL enum types (`Scalar.asPgEnum`).~~ Done.
+3. Raw SQL: a typed parameter override for `jsonb` values (enum-typed holes are already cast), and several
    result sets.
 4. The larger EF Core gaps above, in the order the project chooses.

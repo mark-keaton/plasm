@@ -108,7 +108,7 @@ module internal BulkExec =
                         | UpdateOnConflict(on, change) ->
                             Sql.DoUpdate(ok (Translate.conflictTarget model t on), ok (Translate.conflictUpdate model vol t change)))
 
-                let returning = schema.Fields |> Array.toList |> List.map (fun f -> f.Column)
+                let returning = Sql.returningFields schema.Table schema.Fields
                 let perCommand = max 1 (maxParameters / max 1 cols.Length)
 
                 rows
@@ -118,7 +118,7 @@ module internal BulkExec =
                         chunk
                         |> List.map (fun r ->
                             let vs = schema.Shape.Deconstruct r
-                            cols |> List.map (fun f -> Sql.Param(f.ToDb vs.[f.Index])))
+                            cols |> List.map (fun f -> Sql.fieldValue f vs.[f.Index]))
 
                     Rows(
                         Sql.renderInsertMany
