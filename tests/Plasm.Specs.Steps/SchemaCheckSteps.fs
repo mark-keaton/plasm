@@ -74,7 +74,8 @@ type SchemaCheckSteps(w: World) =
         check (not cmds.IsEmpty) "the catalogue was read"
 
         for c in cmds do
-            check (c.Sql.StartsWith "SELECT" && c.Sql.Contains "information_schema.columns") c.Sql
+            let catalogue = [ "information_schema.columns"; "pg_index"; "pg_constraint"; "pg_type" ]
+            check (c.Sql.StartsWith "SELECT" && catalogue |> List.exists c.Sql.Contains) c.Sql
 
     [<StepDefinition("a model with a field whose column does not exist and a record whose table does not exist")>]
     member _.Missing() =

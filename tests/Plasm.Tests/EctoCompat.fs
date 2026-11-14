@@ -358,25 +358,11 @@ let ``ecto: unique constraint`` () =
         let! first = db.Repo.Insert cs
         ok (first |> Result.mapError string) |> ignore
 
-        // Without a declared constraint the violation is a database failure.
-        let! undeclared = db.Repo.Insert cs
+        // A constraint with PostgreSQL's default name maps to its field, with
+        // nothing declared on the changeset (constraints.feature).
+        let! duplicate = db.Repo.Insert cs
 
-        match undeclared with
-        | Error(WriteError.Failed f) ->
-            Assert.Equal(DbFailureKind.UniqueViolation, f.Kind)
-            Assert.Equal(Some "customers_email_key", f.Constraint)
-        | other -> failwithf "expected Failed, got %A" other
-
-        // A constraint with another name does not capture it.
-        let! otherName = db.Repo.Insert(cs |> Changeset.uniqueConstraint((fun c -> c.Email), "other_name"))
-
-        match otherName with
-        | Error(WriteError.Failed _) -> ()
-        | other -> failwithf "expected Failed, got %A" other
-
-        let! declared = db.Repo.Insert(cs |> Changeset.uniqueConstraint((fun c -> c.Email), "customers_email_key"))
-
-        match declared with
+        match duplicate with
         | Error(WriteError.Invalid c) ->
             Assert.Equal<FieldError list>(
                 [ { Field = "Email"
@@ -396,21 +382,11 @@ let ``ecto: foreign key constraint`` () =
         let! db = freshDefault ()
         let! o = Seed.order db None "draft" 1m (Seed.at 1)
         let line = { New.line (ProductId 999L) 1 1m with OrderId = o }
-        let! undeclared = db.Repo.Insert(Changeset.insert line)
-
-        match undeclared with
-        | Error(WriteError.Failed f) -> Assert.Equal(DbFailureKind.ForeignKeyViolation, f.Kind)
-        | other -> failwithf "expected Failed, got %A" other
-
-        let! declared =
-            db.Repo.Insert(
-                Changeset.insert line
-                |> Changeset.foreignKeyConstraint((fun l -> l.ProductId), "order_lines_product_fkey")
-            )
+        let! declared = db.Repo.Insert(Changeset.insert line)
 
         match declared with
         | Error(WriteError.Invalid c) ->
-            Assert.Equal(FieldErrorKind.ForeignKeyConstraint "order_lines_product_fkey", c.Errors.Head.Kind)
+            Assert.Equal(FieldErrorKind.ForeignKeyConstraint "order_lines_product_id_fkey", c.Errors.Head.Kind)
             Assert.Equal("ProductId", c.Errors.Head.Field)
         | other -> failwithf "expected Invalid, got %A" other
     }

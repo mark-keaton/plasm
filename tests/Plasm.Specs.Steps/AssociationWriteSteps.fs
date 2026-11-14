@@ -188,9 +188,12 @@ type AssociationWriteSteps(w: World) =
             | Error(WriteError.Invalid cs) -> equal [ "Lines[0].UnitPrice" ] (cs.Errors |> List.map (fun e -> e.Field)) "child error path"
             | other -> failwithf "expected Invalid, got %A" other
 
+            // The database's check (order_lines_unit_price_check) comes back as
+            // the child field's error.
             match b with
-            | Error(WriteError.Failed f) -> equal DbFailureKind.CheckViolation f.Kind "database failure"
-            | other -> failwithf "expected Failed, got %A" other
+            | Error(WriteError.Invalid cs) ->
+                equal [ "Lines[0].UnitPrice", FieldErrorKind.CheckConstraint "order_lines_unit_price_check" ] (cs.Errors |> List.map (fun e -> e.Field, e.Kind)) "child error from the database"
+            | other -> failwithf "expected Invalid, got %A" other
         }
         |> unit
 

@@ -20,6 +20,12 @@ type SchemaIssueKind =
     /// An enum type's labels differ from the union's cases (missing, extra or
     /// in a different order).
     | EnumLabels
+    /// A field the schema states is unique has no unique constraint or index
+    /// on its column alone.
+    | MissingUnique
+    /// A field that references another record (a typed id) has no foreign key
+    /// to that record's table.
+    | MissingReference
 
 /// A difference between the model and the database that would make a mapped
 /// read or write fail.
@@ -123,6 +129,38 @@ module internal SchemaCheck =
             let enumLabels =
                 labelRows |> List.ofSeq |> List.groupBy fst |> List.map (fun (k, rs) -> k, rs |> List.map snd) |> Map.ofList
 
+            // Single-column unique indexes (constraints included), and
+            // single-column foreign keys with the table they reference.
+            let! uniqueRows =
+                Execution.query
+                    s
+                    { Sql =
+                        "SELECT t.relname::text, a.attname::text FROM pg_index i "
+                        + "JOIN pg_class t ON t.oid = i.indrelid JOIN pg_namespace n ON n.oid = t.relnamespace "
+                        + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = i.indkey[0] "
+                        + "WHERE i.indisunique AND i.indnkeyatts = 1 AND n.nspname = current_schema() AND t.relname::text = ANY("
+                        + dialect.ParameterName 0
+                        + ")"
+                      Parameters = [ box tables ] }
+                    (fun r -> r.GetString 0, r.GetString 1)
+
+            let! referenceRows =
+                Execution.query
+                    s
+                    { Sql =
+                        "SELECT t.relname::text, a.attname::text, r.relname::text FROM pg_constraint c "
+                        + "JOIN pg_class t ON t.oid = c.conrelid JOIN pg_class r ON r.oid = c.confrelid "
+                        + "JOIN pg_namespace n ON n.oid = t.relnamespace "
+                        + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = c.conkey[1] "
+                        + "WHERE c.contype = 'f' AND array_length(c.conkey, 1) = 1 AND n.nspname = current_schema() AND t.relname::text = ANY("
+                        + dialect.ParameterName 0
+                        + ")"
+                      Parameters = [ box tables ] }
+                    (fun r -> (r.GetString 0, r.GetString 1), r.GetString 2)
+
+            let uniques = set uniqueRows
+            let references = referenceRows |> List.ofSeq
+
             let byTable =
                 rows |> Seq.groupBy fst |> Seq.map (fun (t, cs) -> t, cs |> Seq.map snd |> List.ofSeq) |> Map.ofSeq
 
@@ -216,6 +254,28 @@ module internal SchemaCheck =
                                     $"column is nullable but {sc.Name}.{f.Name} is not optional; a NULL would fail to load. Make the field an option, or the column NOT NULL"
 
                     unwritable sc.Name sc.Table columns (sc.Fields |> Array.toList |> List.map (fun f -> f.Column))
+
+                    for f in sc.Fields do
+                        if columns |> List.exists (fun c -> c.Name = f.Column) then
+                            if f.Unique && not (uniques.Contains(sc.Table, f.Column)) then
+                                add
+                                    SchemaIssueKind.MissingUnique
+                                    sc.Name
+                                    (Some f.Name)
+                                    sc.Table
+                                    (Some f.Column)
+                                    $"the schema states {sc.Name}.{f.Name} is unique, but no unique constraint or index holds it; add `constraint {sc.Table}_{f.Column}_key unique ({f.Column})`"
+
+                            match f.References |> Option.bind (fun t -> model.Schemas.TryGetValue t |> function | true, target -> Some target | _ -> None) with
+                            | Some target when not (references |> List.contains ((sc.Table, f.Column), target.Table)) ->
+                                add
+                                    SchemaIssueKind.MissingReference
+                                    sc.Name
+                                    (Some f.Name)
+                                    sc.Table
+                                    (Some f.Column)
+                                    $"{sc.Name}.{f.Name} holds a {target.Name} key, but no foreign key references {target.Table}; add `references {target.Table}`"
+                            | _ -> ()
 
             for sc, a, j in joinTables do
                 let target = model.Schemas.[a.Target]

@@ -272,18 +272,18 @@ let ``updating a child that belongs to another parent is rejected and rolled bac
     }
 
 [<Fact>]
-let ``a database failure in a child write rolls back the parent`` () =
+let ``a database check failing in a child write rolls back the parent`` () =
     task {
         let! db = freshDefault ()
         let! p, order, _ = seedOrderWithLines db 1
-        // unit_price < 0 violates order_lines_price_check in the database only.
+        // unit_price < 0 violates order_lines_unit_price_check in the database only.
         let cs =
             order
             |> Changeset.edit (fun o -> { o with Total = 99m })
             |> Changeset.putChildren((fun o -> o.Lines), [ Changeset.insert (New.line p 1 -1m) ])
 
         let! r = db.Repo.Update cs
-        Assert.True(match r with Error(WriteError.Failed f) -> f.Kind = DbFailureKind.CheckViolation | _ -> false)
+        Assert.True(match r with Error(WriteError.Invalid cs) -> cs.Errors |> List.exists (fun e -> e.Kind = FieldErrorKind.CheckConstraint "order_lines_unit_price_check") | _ -> false)
         let! total = db.Scalar<decimal>("select total from orders")
         let! v = db.Scalar<int>("select version from orders")
         Assert.Equal(10m, total)

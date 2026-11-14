@@ -99,6 +99,13 @@ module internal Conventions =
             else
                 None
 
+/// A reference the model infers (constraints.feature): `Model.Field` holds the
+/// key of `Target`, because its type is `Target`'s key type (a typed id).
+type ModelReference =
+    { Model: string
+      Field: string
+      Target: string }
+
 /// A validated set of schemas and scalar mappings. Construct with `Model.build`;
 /// all configuration errors are reported together, before any query runs.
 type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, registered: IReadOnlyDictionary<Type, ScalarMapping>) =
@@ -212,6 +219,14 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, registered:
             match tryScalar t with
             | true, m -> Some m.ProviderType
             | _ -> None
+
+    /// The references the model infers from typed ids, in schema order.
+    member _.References: ModelReference list =
+        [ for s in schemas.Values do
+              for f in s.Fields do
+                  match f.References with
+                  | Some target -> yield { Model = s.Type.Name; Field = f.Name; Target = target.Name }
+                  | None -> () ]
 
     /// The record types this model can persist.
     member _.Types = schemas.Keys |> Seq.toList
@@ -373,6 +388,8 @@ module Model =
                                   Generated =
                                     def.Generated.Contains prop.Name
                                     || (keyGenerated && Some prop.Name = keyName)
+                                  Unique = def.Unique.Contains prop.Name
+                                  References = None
                                   Mapping = mapping
                                   ProviderType =
                                     match mapping with
@@ -463,6 +480,27 @@ module Model =
             match resolveSchema scalarDict defs d with
             | Ok s -> resolved.[d.Type] <- s
             | Error es -> errors.AddRange es
+
+        // A typed id that is the key type of exactly one schema references it.
+        // Built-in key types (int64, Guid, ...) are never inferred.
+        let keysOf =
+            resolved.Values
+            |> Seq.filter (fun s -> not (Scalar.isBuiltIn s.Key.ScalarType))
+            |> Seq.groupBy (fun s -> s.Key.ScalarType)
+            |> Seq.choose (fun (t, owners) -> match List.ofSeq owners with [ owner ] -> Some(t, owner.Type) | _ -> None)
+            |> dict
+
+        for t in List.ofSeq resolved.Keys do
+            let s = resolved.[t]
+
+            let fields =
+                s.Fields
+                |> Array.map (fun f ->
+                    match keysOf.TryGetValue f.ScalarType with
+                    | true, target when f.Name <> s.Key.Name -> { f with References = Some target }
+                    | _ -> f)
+
+            resolved.[t] <- { s with Fields = fields; Key = fields |> Array.find (fun f -> f.Name = s.Key.Name) }
 
         if errors.Count > 0 then
             Error(List.ofSeq errors)

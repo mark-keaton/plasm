@@ -71,14 +71,15 @@ let lesson =
               "A failure is a value",
               fun repo ->
                   task {
-                      // Ada's email is taken, and the customers table's email has a
-                      // unique constraint (see the schema). The failure comes back as
-                      // an Error you can match on; nothing is thrown. (Lesson 20 goes deeper.)
+                      // Ada's email is taken, and Db.customers states the email is
+                      // unique. The failure comes back as an Error you can match on,
+                      // here as invalid changes naming the field; nothing is thrown.
+                      // (Lessons 10 and 20 go deeper.)
                       let! r = repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
 
                       match err r with
-                      | WriteError.Failed failure -> failure.Constraint |> shouldBe __
-                      | other -> failwithf "expected a database failure, got %A" other
+                      | WriteError.Invalid cs -> cs.Errors |> List.map (fun e -> e.Field) |> shouldBe __
+                      | other -> failwithf "expected invalid changes, got %A" other
                   }
           )
 

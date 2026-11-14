@@ -46,9 +46,9 @@ create table orders (
 create table order_lines (
   id bigint generated always as identity primary key,
   order_id bigint not null references orders(id),
-  product_id bigint not null constraint order_lines_product_fkey references products(id),
+  product_id bigint not null constraint order_lines_product_id_fkey references products(id),
   quantity int not null,
-  unit_price numeric(12,2) not null constraint order_lines_price_check check (unit_price >= 0)
+  unit_price numeric(12,2) not null constraint order_lines_unit_price_check check (unit_price >= 0)
 );
 create index on order_lines(order_id);
 create table payments (

@@ -107,6 +107,7 @@ module Schemas =
     let customers =
         schema<Customer> "customers" {
             identityKey (fun c -> c.Id)
+            unique (fun c -> c.Email)
             hasMany (fun c -> c.Orders) (fun o -> o.CustomerId)
         }
 
@@ -131,7 +132,11 @@ module Schemas =
             belongsTo (fun l -> l.Product) (fun l -> l.ProductId)
         }
 
-    let products = schema<Product> "products" { identityKey (fun p -> p.Id) }
+    let products =
+        schema<Product> "products" {
+            identityKey (fun p -> p.Id)
+            unique (fun p -> p.Sku)
+        }
 
     let payments = schema<Payment> "payments" { identityKey (fun p -> p.Id) }
 

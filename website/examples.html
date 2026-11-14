@@ -246,7 +246,8 @@ match repo.Explain(Query.from Db.orders |&gt; orderPage 0 20) with
 <pre class="code fsharp">let registerCustomer name email =
     Changeset.insert { Id = CustomerId 0L; Name = name; Email = email; Orders = NotLoaded }
     |&gt; Changeset.validateFormat((fun c -&gt; c.Email), "^[^@\\s]+@[^@\\s]+$")
-    |&gt; Changeset.uniqueConstraint((fun c -&gt; c.Email), "customers_email_key")
+    // A duplicate email is the Email field's error: the schema states
+    // unique (fun c -&gt; c.Email), and customers_email_key is the default name.
 
 let cancelFromForm (form: IReadOnlyDictionary&lt;string, string&gt;) (order: Order) =
     Changeset.update order

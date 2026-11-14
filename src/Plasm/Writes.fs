@@ -122,17 +122,30 @@ let rec check (model: Model) (s: CsState) : CsState =
 let rec isValid (s: CsState) =
     s.Errors.IsEmpty && s.Children |> List.forall (fun w -> w.Children |> List.forall isValid)
 
-let private constraintError (s: CsState) (f: DbFailure) : CsState option =
+/// The field a violated constraint belongs to, by PostgreSQL's default
+/// names: <table>_<column>_key (unique), _fkey (reference) and _check (a
+/// column check). Any other name stays a database failure (constraints.feature).
+let private conventional (schema: SchemaInfo) (name: string) =
+    let table = schema.Table.Split('.') |> Array.last
+
+    schema.Fields
+    |> Array.tryPick (fun f ->
+        let stem = $"{table}_{f.Column}"
+
+        if name = stem + "_key" then Some(f.Name, FieldErrorKind.UniqueConstraint name, "has already been taken")
+        elif name = stem + "_fkey" then Some(f.Name, FieldErrorKind.ForeignKeyConstraint name, "does not exist")
+        elif name = stem + "_check" then Some(f.Name, FieldErrorKind.CheckConstraint name, "is invalid")
+        else None)
+
+let private constraintError (schema: SchemaInfo) (s: CsState) (f: DbFailure) : CsState option =
     match f.Constraint with
     | Some name ->
-        s.Constraints
-        |> List.tryFind (fun c -> c.Name = name)
-        |> Option.map (fun c -> Cs.addError s c.Field (c.Kind name) c.Message)
+        conventional schema name |> Option.map (fun (field, kind, message) -> Cs.addError s field kind message)
     | None -> None
 
 /// Runs a command, translating declared constraint violations into
 /// changeset errors. Other database failures stay database failures.
-let private guarded (sess: Session) (s: CsState) (f: unit -> Task<'a>) : Task<Result<'a, Failure>> =
+let private guarded (sess: Session) (schema: SchemaInfo) (s: CsState) (f: unit -> Task<'a>) : Task<Result<'a, Failure>> =
     task {
         try
             let! v = f ()
@@ -143,7 +156,7 @@ let private guarded (sess: Session) (s: CsState) (f: unit -> Task<'a>) : Task<Re
         | ex ->
             let failure = classifyOrRaise sess ex
 
-            match constraintError s failure with
+            match constraintError schema s failure with
             | Some withError -> return Error(Invalid withError)
             | None -> return Error(Failed failure)
     }
@@ -224,7 +237,7 @@ and private insert model sess schema s =
                   Values = cols |> List.map (fun f -> Sql.fieldValue f values.[f.Index])
                   Returning = returning schema }
 
-        let! inserted = guarded sess s (fun () -> query sess cmd (readEntity schema))
+        let! inserted = guarded sess schema s (fun () -> query sess cmd (readEntity schema))
 
         match inserted with
         | Error e -> return Error e
@@ -274,7 +287,7 @@ and private update model sess schema s =
                 match s.Data with
                 | Some d -> Task.FromResult(Ok(Some(schema.Shape.Deconstruct d)))
                 | None ->
-                    guarded sess s (fun () ->
+                    guarded sess schema s (fun () ->
                         task {
                             let select =
                                 { Sql.select (Sql.Table(schema.Table, schema.Table)) with
@@ -299,7 +312,7 @@ and private update model sess schema s =
                           Where = where
                           Returning = returning schema }
 
-                guarded sess s (fun () ->
+                guarded sess schema s (fun () ->
                     task {
                         let! rows = query sess cmd (readEntity schema)
                         return Seq.tryHead rows
@@ -332,7 +345,7 @@ and private delete _model sess schema s =
                   Where = keyFilter schema key :: versionWhere
                   Returning = [] }
 
-        let! n = guarded sess s (fun () -> execute sess cmd)
+        let! n = guarded sess schema s (fun () -> execute sess cmd)
 
         match n with
         | Error e -> return Error e
@@ -350,7 +363,7 @@ and private writeChildren model sess (schema: SchemaInfo) (s: CsState) (parentKe
         | Error e -> return Error e
         | Ok written when s.Links.IsEmpty -> return Ok written
         | Ok written ->
-            let! links = guarded sess s (fun () -> writeLinks model sess schema s parentKey)
+            let! links = guarded sess schema s (fun () -> writeLinks model sess schema s parentKey)
             return links |> Result.map (Map.fold (fun m k v -> Map.add k v m) written)
     }
 

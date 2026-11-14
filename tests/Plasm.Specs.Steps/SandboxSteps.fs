@@ -143,7 +143,7 @@ type SandboxSteps(w: World) =
         let duplicate, _, _ = w.Get<Result<Customer, WriteError<Customer>> * Result<Customer, WriteError<Customer>> * string list> "violation"
 
         match duplicate with
-        | Error(WriteError.Failed f) -> equal DbFailureKind.UniqueViolation f.Kind "kind"
+        | Error(WriteError.Invalid cs) -> equal [ FieldErrorKind.UniqueConstraint "customers_email_key" ] (cs.Errors |> List.map (fun e -> e.Kind)) "kind"
         | other -> failwithf "expected a unique violation, got %A" other
 
     [<StepDefinition("later work in the same sandbox succeeds")>]

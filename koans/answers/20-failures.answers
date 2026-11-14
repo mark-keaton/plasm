@@ -3,9 +3,9 @@ Ok None
 # A failure is an Error you can match on
 "refused"
 # A failed write says what kind of failure
-DbFailureKind.UniqueViolation
-# A unique violation names its constraint
-Some "customers_email_key"
+DbFailureKind.CheckViolation
+# A broken rule names its constraint
+Some "orders_cancelled_has_reason"
 # Failures are values
 DbFailureKind.RepositoryClosed
 # Error cases are qualified

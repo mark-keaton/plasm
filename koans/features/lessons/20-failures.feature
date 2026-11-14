@@ -17,8 +17,8 @@ Feature: About failures
       | koan                                     | the learner discovers                                                         | teaches                                                                   |
       | Nothing found is not a failure           | One of a query matching no rows is Ok None                                    | reading: A query matching no rows returns None                            |
       | A failure is an Error you can match on   | a write the database refuses comes back as an Error, not an exception         | core: Database constraints produce structured errors                      |
-      | A failed write says what kind of failure | WriteError.Failed carries a DbFailureKind, here UniqueViolation               | core: Database constraints produce structured errors                      |
-      | A unique violation names its constraint  | the failure names the constraint it broke, customers_email_key                | core: Database constraints produce structured errors                      |
+      | A failed write says what kind of failure | WriteError.Failed carries a DbFailureKind, here CheckViolation                | core: Database constraints produce structured errors                      |
+      | A broken rule names its constraint       | the failure names the constraint it broke, orders_cancelled_has_reason        | core: Database constraints produce structured errors                      |
       | Failures are values                      | a read through an ended sandbox returns an error instead of throwing          | error-model: Using a sandbox's repository after the sandbox ended         |
       | Error cases are qualified                | DbError.Database never collides with a domain case called Database            | error-model: Domain unions keep their own case names                      |
       | Unreadable rows are named                | a stored value the model rejects names its model and field                    | error-model: A written row that cannot be read back                       |

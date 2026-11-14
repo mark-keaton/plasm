@@ -307,7 +307,7 @@ type FsiSteps(w: World) =
     [<StepDefinition("the session displays a unique constraint violation naming the constraint")>]
     member _.DisplaysViolation() =
         let out = displayed ()
-        contains "UniqueViolation" out
+        contains "Email has already been taken" out
         contains "customers_email_key" out
 
     [<StepDefinition("the session remains usable")>]
@@ -409,7 +409,7 @@ type FsiSteps(w: World) =
     [<StepDefinition("the violation is displayed as usual")>]
     member _.ViolationDisplayed() =
         let out = displayed ()
-        contains "UniqueViolation" out
+        contains "Email has already been taken" out
         contains "customers_email_key" out
 
     [<StepDefinition("earlier changes in the playground are kept")>]

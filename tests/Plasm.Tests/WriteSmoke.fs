@@ -43,10 +43,7 @@ let ``write path smoke`` () =
 
         // constraint
         let! dup =
-            db.Repo.Insert(
-                Changeset.insert (New.customer "Bob" "ada@example.com")
-                |> Changeset.uniqueConstraint((fun c -> c.Email), "customers_email_key")
-            )
+            db.Repo.Insert(Changeset.insert (New.customer "Bob" "ada@example.com"))
 
         match dup with
         | Error(WriteError.Invalid cs) -> printfn "%A" cs.Errors

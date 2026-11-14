@@ -128,7 +128,7 @@ let lesson =
               "Parent and children succeed together",
               fun repo ->
                   task {
-                      // The second line's negative price breaks order_lines_price_check.
+                      // The second line's negative price breaks order_lines_unit_price_check.
                       let lines = [ Changeset.insert (New.line (ProductId 1L) 1 10m); Changeset.insert (New.line (ProductId 2L) 1 -1m) ]
                       let! r = repo.Insert(Changeset.insert (New.order None Draft 9m) |> Changeset.putChildren ((fun o -> o.Lines), lines))
                       Result.isError r |> shouldBe __

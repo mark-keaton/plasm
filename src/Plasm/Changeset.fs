@@ -20,12 +20,6 @@ type FieldChange =
     /// An optional field is explicitly set to `None`.
     | Cleared
 
-type internal ConstraintMap =
-    { Name: string
-      Field: string
-      Kind: string -> FieldErrorKind
-      Message: string }
-
 type internal ReplaceScopeDef =
     | AllChildren
     | MatchingChildren of QueryDef
@@ -54,7 +48,6 @@ and internal CsState =
       Action: ChangeAction
       Changes: Map<string, obj>
       Errors: FieldError list
-      Constraints: ConstraintMap list
       Children: ChildWrite list
       /// Many-to-many link changes (join-table rows only).
       Links: LinkWrite list }
@@ -143,7 +136,17 @@ type Changeset<'T> internal (state: CsState) =
     member this.IsValid = this.Errors.IsEmpty
 
     override this.ToString() =
-        $"Changeset<{typeof<'T>.Name}>(action=%A{state.Action}, changes=%A{this.Changes |> List.map fst}, valid={this.IsValid})"
+        let error (e: FieldError) =
+            match e.Kind with
+            | FieldErrorKind.UniqueConstraint name
+            | FieldErrorKind.ForeignKeyConstraint name
+            | FieldErrorKind.CheckConstraint name -> $"{e.Field} {e.Message} ({name})"
+            | _ -> $"{e.Field} {e.Message}"
+
+        let errors =
+            if this.IsValid then "" else $""", errors=[{this.Errors |> List.map error |> String.concat "; "}]"""
+
+        $"Changeset<{typeof<'T>.Name}>(action=%A{state.Action}, changes=%A{this.Changes |> List.map fst}, valid={this.IsValid}{errors})"
 
 module internal Cs =
     let emptyState t data action =
@@ -154,7 +157,6 @@ module internal Cs =
           Action = action
           Changes = Map.empty
           Errors = []
-          Constraints = []
           Children = []
           Links = [] }
 
@@ -462,35 +464,9 @@ type Changeset =
         fun (cs: Changeset<'T>) -> Cs.map cs (fun s -> Cs.addError s name (FieldErrorKind.Custom "error") message)
 
     // -- Constraints ----------------------------------------------------------
-
-    /// Translates a violation of the named unique constraint into a field error.
-    /// Violations of constraints not declared remain database failures.
-    static member uniqueConstraint([<ReflectedDefinition>] field: Expr<'T -> 'F>, constraintName: string, ?message: string) =
-        let c =
-            { Name = constraintName
-              Field = Cs.field field
-              Kind = FieldErrorKind.UniqueConstraint
-              Message = defaultArg message "has already been taken" }
-
-        fun (cs: Changeset<'T>) -> Cs.map cs (fun s -> { s with Constraints = s.Constraints @ [ c ] })
-
-    static member foreignKeyConstraint([<ReflectedDefinition>] field: Expr<'T -> 'F>, constraintName: string, ?message: string) =
-        let c =
-            { Name = constraintName
-              Field = Cs.field field
-              Kind = FieldErrorKind.ForeignKeyConstraint
-              Message = defaultArg message "does not exist" }
-
-        fun (cs: Changeset<'T>) -> Cs.map cs (fun s -> { s with Constraints = s.Constraints @ [ c ] })
-
-    static member checkConstraint([<ReflectedDefinition>] field: Expr<'T -> 'F>, constraintName: string, ?message: string) =
-        let c =
-            { Name = constraintName
-              Field = Cs.field field
-              Kind = FieldErrorKind.CheckConstraint
-              Message = defaultArg message "is invalid" }
-
-        fun (cs: Changeset<'T>) -> Cs.map cs (fun s -> { s with Constraints = s.Constraints @ [ c ] })
+    // A unique, foreign-key or column check constraint with PostgreSQL's default
+    // name (<table>_<column>_key, _fkey, _check) comes back as its field's
+    // error with nothing declared here (constraints.feature).
 
     // -- Associations ---------------------------------------------------------
 

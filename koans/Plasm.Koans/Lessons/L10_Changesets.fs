@@ -111,9 +111,11 @@ let lesson =
               "Constraints become field errors",
               fun repo ->
                   task {
-                      let again =
-                          Changeset.insert (New.customer "Ada again" "ada@example.com")
-                          |> Changeset.uniqueConstraint ((fun c -> c.Email), "customers_email_key")
+                      // Db.customers states `unique (fun c -> c.Email)`, and the table's
+                      // constraint has PostgreSQL's default name, customers_email_key.
+                      // A duplicate comes back as the field's error; nothing is
+                      // declared on the changeset.
+                      let again = Changeset.insert (New.customer "Ada again" "ada@example.com")
 
                       let! r = repo.Insert again
 

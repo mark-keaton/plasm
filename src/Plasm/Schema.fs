@@ -78,6 +78,8 @@ type SchemaDef =
           Columns: Map<string, string>
           Version: PropertyInfo option
           Generated: Set<string>
+          /// Fields whose values are unique in the table (constraints.feature).
+          Unique: Set<string>
           Assocs: AssocDef list }
 
 /// A persistence mapping for the immutable record type `'T`.
@@ -106,6 +108,7 @@ type SchemaBuilder<'T> internal (table: string) =
           Columns = Map.empty
           Version = None
           Generated = Set.empty
+          Unique = Set.empty
           Assocs = [] }
 
     member _.Run(def: SchemaDef) : Schema<'T> = Schema<'T>(def)
@@ -139,6 +142,15 @@ type SchemaBuilder<'T> internal (table: string) =
     member _.Generated(s: SchemaDef, [<ReflectedDefinition>] field: Expr<'T -> 'F>) =
         let p = Paths.property "generated" field
         add s (fun s -> { s with Generated = s.Generated.Add p.Name })
+
+    /// A field whose values are unique in the table. The database holds it
+    /// with a unique constraint named <table>_<column>_key (PostgreSQL's
+    /// default), which the schema check verifies; a duplicate comes back as
+    /// the field's error.
+    [<CustomOperation("unique")>]
+    member _.Unique(s: SchemaDef, [<ReflectedDefinition>] field: Expr<'T -> 'F>) =
+        let p = Paths.property "unique" field
+        add s (fun s -> { s with Unique = s.Unique.Add p.Name })
 
     static member private AddHasMany(s: SchemaDef, assoc: Expr, foreignKey: Expr, onReplace) =
         { s with
@@ -257,6 +269,11 @@ type internal FieldMap =
       ScalarType: Type
       IsOption: bool
       Generated: bool
+      /// Its values are unique in the table (`unique` in the schema).
+      Unique: bool
+      /// The record type whose key this field holds: a typed id that is the
+      /// key type of exactly one other schema (inferred by Model.build).
+      References: Type option
       Mapping: ScalarMapping option
       ProviderType: Type
       /// Some(x) for option fields (precomputed; identity otherwise).

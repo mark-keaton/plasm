@@ -226,7 +226,7 @@ Feature: Predictable functional persistence for F#
       Then those fields cannot be changed through that input path
 
     Scenario: Database constraints produce structured errors
-      Given a named uniqueness constraint is associated with a changeset
+      Given a changeset for a field the model states is unique
       When a concurrent operation causes that constraint to be violated
       Then the write returns the corresponding structured constraint error
       And unrelated database failures are not misreported as validation errors

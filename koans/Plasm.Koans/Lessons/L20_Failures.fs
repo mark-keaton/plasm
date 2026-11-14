@@ -49,7 +49,9 @@ let lesson =
                   task {
                       // WriteError.Failed is a failure reported by the database. Its Kind is a DbFailureKind:
                       // UniqueViolation, ForeignKeyViolation, CheckViolation, NotNullViolation, and others.
-                      let! r = repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
+                      // The orders table's rule orders_cancelled_has_reason (a cancelled order needs a
+                      // reason) spans two columns, so it is no single field's error.
+                      let! r = repo.Insert(Changeset.insert (New.order None Cancelled 5m))
 
                       match r with
                       | Error(WriteError.Failed f) -> f.Kind |> shouldBe __
@@ -58,10 +60,10 @@ let lesson =
           )
 
           Koan.Task(
-              "A unique violation names its constraint",
+              "A broken rule names its constraint",
               fun repo ->
                   task {
-                      let! r = repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
+                      let! r = repo.Insert(Changeset.insert (New.order None Cancelled 5m))
 
                       match r with
                       // Constraint is the name of the database constraint that refused the row, if any.

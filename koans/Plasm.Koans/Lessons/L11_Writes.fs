@@ -127,8 +127,11 @@ let lesson =
               "Infrastructure is not a domain error",
               fun repo ->
                   task {
-                      // orders_total_check is not declared on the changeset, so it stays a database failure.
-                      let! r = repo.Insert(Changeset.insert (New.order None Draft -1m))
+                      // The orders table has a rule across two columns: a cancelled
+                      // order needs a reason (orders_cancelled_has_reason). It belongs to
+                      // no single field, so breaking it is a database failure, not a
+                      // field's error.
+                      let! r = repo.Insert(Changeset.insert (New.order None Cancelled 5m))
 
                       match r with
                       | Error(WriteError.Failed f) -> f.Kind |> shouldBe __

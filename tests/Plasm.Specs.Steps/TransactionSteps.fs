@@ -104,8 +104,9 @@ type TransactionSteps(w: World) =
         check (e.RolledBack |> List.forall (fun s -> s.Line < e.Step.Line)) $"the failing step {e.Step} is after the steps before it: %A{e.RolledBack}"
 
         match e.Failure with
-        | TxFailure.Failed(DbError.Database f) -> equal DbFailureKind.CheckViolation f.Kind "failure kind"
-        | other -> failwithf "expected a database failure, got %A" other
+        | TxFailure.InvalidChanges("Order", errors) ->
+            equal [ "Total", FieldErrorKind.CheckConstraint "orders_total_check" ] (errors |> List.map (fun e -> e.Field, e.Kind)) "the check's field"
+        | other -> failwithf "expected the Total field's error, got %A" other
 
     [<StepDefinition("no earlier step is reported as committed")>]
     member _.NothingCommitted() =

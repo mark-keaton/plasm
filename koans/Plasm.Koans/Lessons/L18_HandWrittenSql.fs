@@ -107,7 +107,7 @@ let lesson =
               "Commands return affected rows",
               fun repo ->
                   task {
-                      let! n = repo.ExecuteSql $"update orders set status = 'cancelled' where status = 'published'"
+                      let! n = repo.ExecuteSql $"update orders set status = 'cancelled', cancellation_reason = 'archived' where status = 'published'"
                       ok n |> shouldBe __
                   }
           ) ]

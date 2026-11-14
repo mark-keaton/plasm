@@ -24,4 +24,4 @@ Feature: About changesets
       | Errors can be inspected             | validation errors are values, named by field, before any database work        | core: Invalid changes can be inspected without execution    |
       | Input cannot touch protected fields | cast only accepts the fields you permit                                       | core: External input cannot change protected fields         |
       | Invalid changes are never written   | inserting an invalid changeset returns it with its errors and writes nothing  | core: Invalid changes are not persisted                     |
-      | Constraints become field errors     | a declared unique constraint is reported on its field                         | core: Database constraints produce structured errors        |
+      | Constraints become field errors     | a duplicate of a unique field comes back as that field's error, by the constraint's default name | core: Database constraints produce structured errors        |

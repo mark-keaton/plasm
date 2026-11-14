@@ -1,0 +1,65 @@
+# Executable acceptance specification (Reqnroll): database constraints stated
+# once, in the model. Written before the implementation, following core.feature.
+@implemented
+Feature: Database constraints are stated once, in the model
+  As an F# application developer
+  I want uniqueness and references stated once in the model
+  So that a violation comes back as the field's error and the schema check finds a missing constraint
+
+  A schema states which fields are unique. A field whose type is the key type
+  of another schema (a typed id such as CustomerId) references that schema; the
+  model infers it. Constraints have PostgreSQL's default names:
+  <table>_<column>_key for uniqueness, <table>_<column>_fkey for a reference
+  and <table>_<column>_check for a column check. A violation of a constraint so
+  named comes back as the field's error, with nothing declared on the
+  changeset; any other violation stays a database failure.
+
+  Background:
+    Given a configured relational database
+    And mappings for Customers, Orders, OrderLines, Products, and Payments
+
+  Rule: Violations come back as the field's errors
+
+    Scenario: A duplicate of a unique field is the field's error
+      Given a Customer with the email "ada@example.com"
+      When I insert another Customer with the email "ada@example.com"
+      Then the insert fails with a uniqueness error on Email, naming customers_email_key
+
+    Scenario: A duplicate on a record written with its children is the record's field error
+      Given a Customer with the email "ada@example.com"
+      When I insert another Customer with the email "ada@example.com" together with an Order
+      Then the insert fails with a uniqueness error on Email, naming customers_email_key
+      And no Order was written
+
+    Scenario: A reference to a missing row is the field's error
+      When I insert an Order for the Customer with id 999
+      Then the insert fails with a reference error on CustomerId, naming orders_customer_id_fkey
+
+    Scenario: A broken column check is the field's error
+      When I insert an Order with the total -1
+      Then the insert fails with a check error on Total, naming orders_total_check
+
+    Scenario: A constraint whose name follows no convention stays a database failure
+      Given a table constraint named "orders_sane" that refuses a total of 13
+      When I insert an Order with the total 13
+      Then the insert fails as a database failure naming "orders_sane"
+
+  Rule: The model knows the constraints
+
+    Scenario: A typed id references the schema whose key it is
+      When I list the references the model infers
+      Then Order.CustomerId references Customer
+      And OrderLine.ProductId references Product
+      And no record's own key references itself
+
+  Rule: The schema check finds a missing constraint
+
+    Scenario: A unique field without a unique constraint is reported
+      Given the customers table has lost its unique constraint on email
+      When I check the model against the database
+      Then the missing uniqueness of Customer.Email is reported
+
+    Scenario: A reference without a foreign key is reported
+      Given the orders table has lost its foreign key on customer_id
+      When I check the model against the database
+      Then the missing reference from Order.CustomerId to customers is reported

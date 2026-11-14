@@ -522,6 +522,19 @@ the same guarantee more exhaustively.
 |---|---|---|---|---|
 | An explicit mapping is used instead of the convention | Implemented and verified | `ConventionSteps.fs` |  |  |
 
+### constraints.feature
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A duplicate of a unique field is the field's error | Implemented and verified | `ConstraintSteps.fs` | `EctoCompat.fs` | Strict design, step 4: a violated constraint named `<table>_<column>_key`, `_fkey` or `_check` maps to that field (`Writes.conventional`); `Changeset.uniqueConstraint`/`foreignKeyConstraint`/`checkConstraint` were deleted. |
+| A duplicate on a record written with its children is the record's field error | Implemented and verified | `ConstraintSteps.fs` |  | Asked for by the Kanban example (a board's slug taken while its cards are inserted). |
+| A reference to a missing row is the field's error | Implemented and verified | `ConstraintSteps.fs` |  |  |
+| A broken column check is the field's error | Implemented and verified | `ConstraintSteps.fs` |  |  |
+| A constraint whose name follows no convention stays a database failure | Implemented and verified | `ConstraintSteps.fs` |  | A table-level check over several columns guards against impossible rows; its violation is a bug, not input. |
+| A typed id references the schema whose key it is | Implemented and verified | `ConstraintSteps.fs` |  | `Model.References`; only typed ids (never built-in key types) are inferred. |
+| A unique field without a unique constraint is reported | Implemented and verified | `ConstraintSteps.fs` |  | `unique (fun c -> c.Email)` in the schema; `SchemaIssueKind.MissingUnique`. |
+| A reference without a foreign key is reported | Implemented and verified | `ConstraintSteps.fs` |  | `SchemaIssueKind.MissingReference`. |
+
 ### query-check.feature
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |

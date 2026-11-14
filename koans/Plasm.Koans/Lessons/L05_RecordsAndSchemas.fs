@@ -64,7 +64,7 @@ let lesson =
                       // each case as text: Draft as "draft", Published as "published", and so on.
                       // Here the status column of Order 2 is changed with SQL, as text.
                       // (The change is made in this koan's sandbox and vanishes when it ends.)
-                      let! _ = repo.ExecuteSql $"update orders set status = 'cancelled' where id = 2"
+                      let! _ = repo.ExecuteSql $"update orders set status = 'cancelled', cancellation_reason = 'test' where id = 2"
                       let! order = repo.One(plasm { for o in Db.orders do where (o.Id = OrderId 2L) })
                       // Is Status the text, or a case of OrderStatus?
                       (ok order).Value.Status |> shouldBe __

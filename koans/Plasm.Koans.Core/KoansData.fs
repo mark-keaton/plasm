@@ -30,15 +30,18 @@ create table orders (
   status text not null,
   total numeric(12,2) not null constraint orders_total_check check (total >= 0),
   cancellation_reason text,
+  -- A rule across two columns, so it belongs to no single field: a cancelled
+  -- order needs a reason. Its violation stays a database failure.
+  constraint orders_cancelled_has_reason check (status <> 'cancelled' or cancellation_reason is not null),
   placed_at timestamptz not null,
   version int not null default 1
 );
 create table order_lines (
   id bigint generated always as identity primary key,
   order_id bigint not null references orders(id),
-  product_id bigint not null constraint order_lines_product_fkey references products(id),
+  product_id bigint not null constraint order_lines_product_id_fkey references products(id),
   quantity int not null,
-  unit_price numeric(12,2) not null constraint order_lines_price_check check (unit_price >= 0)
+  unit_price numeric(12,2) not null constraint order_lines_unit_price_check check (unit_price >= 0)
 );
 create index on order_lines(order_id);
 create table payments (

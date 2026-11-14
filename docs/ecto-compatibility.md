@@ -25,8 +25,8 @@ Outcomes and failure semantics are compared, not SQL text. Each test is named
 | repo.exs | insert and update with empty changeset | Same: an empty update is a no-op that issues no command and never reports stale |
 | repo.exs | insert and update with changeset read after writes | Same: generated id returned in a new value, submitted value unchanged |
 | repo.exs | optimistic locking in update/delete operations | Same outcome (`Stale` instead of `StaleEntryError`). Versioning is declared on the schema rather than per changeset. |
-| repo.exs | unique constraint | Same: an undeclared constraint is a database failure (Ecto raises `ConstraintError`, Plasm returns `Failed` with `UniqueViolation`); a constraint declared under another name does not capture it; a declared one becomes a field error "has already been taken" |
-| repo.exs | foreign key constraint | Same pattern |
+| repo.exs | unique constraint | Deliberately different (strict design, step 4): Ecto needs `unique_constraint` on each changeset. Plasm maps a constraint with PostgreSQL's default name (`customers_email_key`) to its field with nothing declared, "has already been taken"; any other name stays a database failure (`Failed` with `UniqueViolation`) |
+| repo.exs | foreign key constraint | Same pattern (`<table>_<column>_fkey`, "does not exist") |
 | repo.exs | invalid changeset is not written | Same: no command issued |
 | changeset_test.exs | cast/4: with valid string keys | Same (field name, camelCase or snake_case keys) |
 | changeset_test.exs | cast/4 permitted fields | Same: unpermitted keys (id, version) ignored |

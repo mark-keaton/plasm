@@ -23,5 +23,5 @@ Feature: About writes
       | Inserting returns the stored record       | the returned record has its generated key; the input is unchanged    | core: Generated values are returned immutably                        |
       | Updates write only the changes            | an update sends only the fields the changeset changed                | elegance: Projected values do not imply complete entity state        |
       | Stale updates are refused                 | a version mismatch returns WriteError.Stale and overwrites nothing   | core: Stale updates do not overwrite newer state                     |
-      | Infrastructure is not a domain error      | a lost connection is WriteError.Failed, not a validation error       | core: Infrastructure failures remain distinct from domain errors     |
+      | Infrastructure is not a domain error      | breaking a rule across columns is WriteError.Failed, not a field error | core: Infrastructure failures remain distinct from domain errors     |
       | Each call takes its own kind of changeset | repo.Update refuses an insert changeset before doing anything        | tx-steps: The repository rejects a mismatched changeset the same way |

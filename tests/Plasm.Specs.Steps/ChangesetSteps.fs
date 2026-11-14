@@ -203,11 +203,9 @@ type ChangesetSteps(w: World) =
 
     // Scenario: Database constraints produce structured errors
 
-    [<StepDefinition("a named uniqueness constraint is associated with a changeset")>]
+    [<StepDefinition("a changeset for a field the model states is unique")>]
     member _.UniqueConstraint() =
-        let cs =
-            Changeset.insert (New.customer "Ada" "ada@example.com")
-            |> Changeset.uniqueConstraint((fun c -> c.Email), "customers_email_key")
+        let cs = Changeset.insert (New.customer "Ada" "ada@example.com")
 
         check cs.IsValid "valid before execution"
         w.Set("changeset", cs)
@@ -237,13 +235,15 @@ type ChangesetSteps(w: World) =
     [<StepDefinition("unrelated database failures are not misreported as validation errors")>]
     member _.UnrelatedFailures() =
         task {
-            // orders_total_check is not declared on this changeset.
-            let! r = w.Repo.Insert(Changeset.insert (New.order None Draft -1m))
+            // A table-level rule whose name follows no column's convention belongs
+            // to no field, so breaking it stays a database failure.
+            let! _ = w.Db.Exec "alter table orders add constraint orders_not_thirteen check (total <> 13)"
+            let! r = w.Repo.Insert(Changeset.insert (New.order None Draft 13m))
 
             match r with
             | Error(WriteError.Failed f) ->
                 equal DbFailureKind.CheckViolation f.Kind "failure kind"
-                equal (Some "orders_total_check") f.Constraint "constraint"
+                equal (Some "orders_not_thirteen") f.Constraint "constraint"
             | other -> failwithf "expected Failed, got %A" other
         }
         |> unit
