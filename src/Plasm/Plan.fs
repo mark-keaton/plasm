@@ -103,7 +103,7 @@ module internal Planner =
         // declared order, else by its key.
         let owned =
             [ for a in parent.Assocs do
-                  if a.Owned && not (loads |> List.exists (fun l -> l.Assoc.Name = a.Name)) then
+                  if (a.Owned || a.Linked) && not (loads |> List.exists (fun l -> l.Assoc.Name = a.Name)) then
                       let target =
                           match model.Schema a.Target with
                           | Ok t -> t

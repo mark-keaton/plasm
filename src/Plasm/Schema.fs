@@ -71,7 +71,10 @@ type internal AssocDef =
       /// An owned list (`owns`): a plain list, always loaded and written with
       /// its owner (owned-collections.feature).
       Owned: bool
-      /// For an owned list: the order its items are read in (default: by key).
+      /// A linked list (`links`): a plain list of shared records, always loaded
+      /// with its owner; writing the owner writes only join-table rows.
+      Linked: bool
+      /// For an owned or linked list: the order its items are read in (default: by key).
       Order: Expr option }
 
 /// Schema definition state (opaque).
@@ -176,6 +179,45 @@ type SchemaBuilder<'T> internal (table: string) =
                       OnReplace = OnReplace.Delete
                       Through = None
                       Owned = true
+                      Linked = false
+                      Order = order } ] }
+
+    /// Shared records this one links to through `joinTable`, as a plain list
+    /// (`Tags: Tag list`): always loaded with it, in the order of their key.
+    /// Writing this record writes only join-table rows; the linked records
+    /// belong to their own aggregates.
+    [<CustomOperation("links")>]
+    member _.Links(s: SchemaDef, [<ReflectedDefinition>] list: Expr<'T -> 'C list>, joinTable: string, ownerColumn: string, targetColumn: string) =
+        add s (fun s -> SchemaBuilder<'T>.AddLinked(s, list, joinTable, ownerColumn, targetColumn, None))
+
+    /// Like `links`, with the order the linked records are read in.
+    [<CustomOperation("linksOrderedBy")>]
+    member _.LinksOrderedBy
+        (
+            s: SchemaDef,
+            [<ReflectedDefinition>] list: Expr<'T -> 'C list>,
+            joinTable: string,
+            ownerColumn: string,
+            targetColumn: string,
+            [<ReflectedDefinition>] order: Expr<'C -> 'O>
+        ) =
+        add s (fun s -> SchemaBuilder<'T>.AddLinked(s, list, joinTable, ownerColumn, targetColumn, Some(order :> Expr)))
+
+    static member private AddLinked(s: SchemaDef, list: Expr, joinTable, ownerColumn, targetColumn, order: Expr option) =
+        { s with
+            Assocs =
+                s.Assocs
+                @ [ { Property = Paths.property "links" list
+                      Kind = AssocKind.ManyToMany
+                      ForeignKey = null
+                      OnReplace = OnReplace.Reject
+                      Through =
+                        Some
+                            { Table = joinTable
+                              OwnerColumn = ownerColumn
+                              TargetColumn = targetColumn }
+                      Owned = false
+                      Linked = true
                       Order = order } ] }
 
     /// A field whose values are unique in the table. The database holds it
@@ -197,6 +239,7 @@ type SchemaBuilder<'T> internal (table: string) =
                       OnReplace = onReplace
                       Through = None
                       Owned = false
+                      Linked = false
                       Order = None } ] }
 
     /// One-to-many: `foreignKey` selects the child's column that references this
@@ -240,6 +283,7 @@ type SchemaBuilder<'T> internal (table: string) =
                           OnReplace = OnReplace.Reject
                           Through = None
                           Owned = false
+                          Linked = false
                           Order = None } ] })
 
     /// Many-to-one: `foreignKey` selects this record's column referencing the
@@ -262,6 +306,7 @@ type SchemaBuilder<'T> internal (table: string) =
                           OnReplace = OnReplace.Reject
                           Through = None
                           Owned = false
+                          Linked = false
                           Order = None } ] })
 
     /// Many-to-many through `joinTable`, whose `ownerColumn` references this
@@ -292,6 +337,7 @@ type SchemaBuilder<'T> internal (table: string) =
                                   OwnerColumn = ownerColumn
                                   TargetColumn = targetColumn }
                           Owned = false
+                          Linked = false
                           Order = None } ] })
 
 [<AutoOpen>]
@@ -505,6 +551,9 @@ type internal AssocMap =
       WrapSome: obj -> obj
       /// An owned list: a plain list, always loaded and written with its owner.
       Owned: bool
+      /// A linked list: a plain list of shared records, always loaded; only
+      /// join-table rows are written through it.
+      Linked: bool
       /// For an owned list: the order its items are read in (None: by key).
       Order: Expr option }
 

@@ -308,5 +308,16 @@ module internal SchemaCheck =
 
                     unwritable sc.Name j.Table columns [ j.OwnerColumn; j.TargetColumn ]
 
+                    // Each side of the join table references its record's table.
+                    for column, table in [ j.OwnerColumn, sc.Table; j.TargetColumn, target.Table ] do
+                        if columns |> List.exists (fun c -> c.Name = column) && not (references |> List.contains ((j.Table, column), table)) then
+                            add
+                                SchemaIssueKind.MissingReference
+                                sc.Name
+                                (Some a.Name)
+                                j.Table
+                                (Some column)
+                                $"{j.Table}.{column} has no foreign key to {table}; add `references {table}`"
+
             return List.ofSeq issues
         }

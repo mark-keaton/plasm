@@ -380,7 +380,7 @@ module Model =
             for i, prop in Array.indexed shape.Fields do
                 let t = prop.PropertyType
 
-                let owned = assocDefs.TryFind prop.Name |> Option.exists (fun a -> a.Owned)
+                let owned = assocDefs.TryFind prop.Name |> Option.exists (fun a -> a.Owned || a.Linked)
 
                 if Reflection.isAssoc t || owned then
                     match assocDefs.TryFind prop.Name with
@@ -388,7 +388,7 @@ module Model =
                         err (Some prop.Name) "relationship field has no hasMany, hasOne, belongsTo or manyToMany declaration"
                     | Some a ->
                         // An owned list is its own payload: a plain list.
-                        let payload = if a.Owned then t else Reflection.elementType t
+                        let payload = if a.Owned || a.Linked then t else Reflection.elementType t
 
                         let cardinality, target =
                             if Reflection.isList payload then
@@ -471,10 +471,11 @@ module Model =
                                   ForeignKey = (if isNull a.ForeignKey then "" else a.ForeignKey.Name)
                                   Through = a.Through
                                   OnReplace = a.OnReplace
-                                  Ctors = if a.Owned then Reflection.listCtors t else Reflection.assocCtors t
+                                  Ctors = if a.Owned || a.Linked then Reflection.listCtors t else Reflection.assocCtors t
                                   MakeList = Reflection.makeList target
                                   WrapSome = Reflection.makeSome (typedefof<option<_>>.MakeGenericType target)
                                   Owned = a.Owned
+                                  Linked = a.Linked
                                   Order = a.Order }
                 else
                     let isOpt = Reflection.isOption t

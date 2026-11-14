@@ -522,6 +522,20 @@ the same guarantee more exhaustively.
 |---|---|---|---|---|
 | An explicit mapping is used instead of the convention | Implemented and verified | `ConventionSteps.fs` |  |  |
 
+### linked-collections.feature
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Reading a card reads its tags, in their order | Implemented and verified | `LinkedSteps.fs` |  | Step 7b, asked for by the Kanban example: `links`/`linksOrderedBy (fun c -> c.Tags) "card_tags" "card_id" "tag_id" (fun t -> t.Name)`, a plain list of shared records, always loaded. |
+| A card without tags reads with an empty list | Implemented and verified | `LinkedSteps.fs` |  |  |
+| Every card's tags are read in one more command | Implemented and verified | `LinkedSteps.fs` |  |  |
+| Inserting a card links it to its tags | Implemented and verified | `LinkedSteps.fs` |  | Join-table rows only (`PutLinks`). |
+| Changing the tags of a card read writes only its links | Implemented and verified | `LinkedSteps.fs` |  |  |
+| A link to a tag that does not exist is the field's error | Implemented and verified | `LinkedSteps.fs` |  | `<join table>_<target column>_fkey` maps to the list field. |
+| Changing a linked tag through the card is refused | Implemented and verified | `LinkedSteps.fs` |  | A linked record belongs to its own aggregate. |
+| Deleting a card deletes its links, not its tags | Implemented and verified | `LinkedSteps.fs` |  |  |
+| A join table without its foreign key is reported | Implemented and verified | `LinkedSteps.fs` |  | For every join table (manyToMany too): both sides must reference their tables. |
+
 ### owned-collections.feature
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |

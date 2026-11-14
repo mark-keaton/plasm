@@ -62,6 +62,56 @@ let rec private owned (model: Model) (s: CsState) : CsState =
 
     let state t action (v: obj) = Cs.emptyState t (Some v) action
 
+    // Linked lists: only join-table rows are written (linked-collections.feature).
+    let linksDeclared = s.Links |> List.map (fun l -> l.Assoc) |> set
+
+    let s =
+        schema.Assocs
+        |> Array.filter (fun a -> a.Linked && not (linksDeclared.Contains a.Name))
+        |> Array.fold
+            (fun (st: CsState) a ->
+                let target = schemaOf model a.Target
+                let keyOf (c: obj) = (target.Shape.Deconstruct c).[target.Key.Index]
+                let put targets = { st with Links = st.Links @ [ { Assoc = a.Name; Mode = PutLinks; Targets = targets } ] }
+
+                match st.Action with
+                | ChangeAction.Insert ->
+                    match st.Proposed with
+                    | Some p ->
+                        match items a (schema.Shape.Deconstruct p).[a.Index] with
+                        | [] -> st
+                        | targets -> put targets
+                    | None -> st
+                | ChangeAction.Update ->
+                    match st.Changes.TryFind a.Name, st.Data with
+                    | None, _ -> st
+                    | Some _, None -> Cs.addError st a.Name (FieldErrorKind.Custom "linked") $"{a.Name} is linked: change it from a {schema.Name} you read, not from its key alone"
+                    | Some newList, Some old ->
+                        let before = Collections.Generic.Dictionary<obj, obj>(HashIdentity.Structural)
+
+                        for c in items a (schema.Shape.Deconstruct old).[a.Index] do
+                            before.[keyOf c] <- c
+
+                        let after = items a newList
+
+                        let changed =
+                            after
+                            |> List.tryFind (fun c ->
+                                match before.TryGetValue(keyOf c) with
+                                | true, o -> not (Cs.fieldEquals o c)
+                                | _ -> false)
+
+                        match changed with
+                        | Some _ ->
+                            Cs.addError
+                                st
+                                a.Name
+                                (FieldErrorKind.Custom "linked")
+                                $"a linked {target.Name} belongs to its own aggregate: change it there, not through {schema.Name}.{a.Name}"
+                        | None -> { put after with Changes = st.Changes.Remove a.Name }
+                | ChangeAction.Delete -> put [])
+            s
+
     schema.Assocs
     |> Array.filter (fun a -> a.Owned && not (declared.Contains a.Name))
     |> Array.fold
@@ -227,6 +277,16 @@ let rec isValid (s: CsState) =
 /// column check). Any other name stays a database failure (constraints.feature).
 let private conventional (schema: SchemaInfo) (name: string) =
     let table = schema.Table.Split('.') |> Array.last
+
+    // A linked list's join table: a link to a record that does not exist.
+    let linked =
+        schema.Assocs
+        |> Array.tryPick (fun a ->
+            match a.Through with
+            | Some j when a.Linked && name = $"{j.Table}_{j.TargetColumn}_fkey" -> Some(a.Name, FieldErrorKind.ForeignKeyConstraint name, "does not exist")
+            | _ -> None)
+
+    if linked.IsSome then linked else
 
     schema.Fields
     |> Array.tryPick (fun f ->
@@ -434,7 +494,7 @@ and private delete model sess schema s =
 
         // What the record owns goes first (owned-collections.feature).
         let! children =
-            if s.Children.IsEmpty then Task.FromResult(Ok Map.empty) else writeChildren model sess schema s key false
+            if s.Children.IsEmpty && s.Links.IsEmpty then Task.FromResult(Ok Map.empty) else writeChildren model sess schema s key false
 
         match children with
         | Error e -> return Error e
