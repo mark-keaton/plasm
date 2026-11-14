@@ -123,17 +123,19 @@ Scalar.enum [ Pending, "pending"; Shipped, "shipped"; Cancelled, "cancelled" ]
 The schema check would verify the type exists and that its labels match the
 union's cases in order, so ordering in SQL agrees with F#.
 
-The research also found a defect in Plasm today: an ordering comparison
-(`o.Status < Shipped`) or `orderBy` on a union stored with `Scalar.enum`
-compares the stored text alphabetically, while F# compares union cases in
-declaration order. Plasm already refuses ordering comparisons on options for
-the same reason; it does not yet check unions.
+The research also found a defect, since fixed: an ordering comparison
+(`o.Status < Shipped`), `orderBy` or `Agg.min`/`Agg.max` on a union stored with
+`Scalar.enum` compared the stored text alphabetically, while F# compares union
+cases in declaration order. Plasm now compares each value's position in the
+declaration (`CASE "status" WHEN 'pending' THEN 0 ... END`), so the result is
+F#'s; the cost is that an index on the text column does not serve that
+ordering. A PostgreSQL enum type orders by declaration natively.
 
 ## Gaps to specify next
 
 Each becomes a feature file, written red first:
 
-1. Ordering on a text-stored union follows F# (the defect above).
+1. ~~Ordering on a text-stored union follows F# (the defect above).~~ Done.
 2. Fieldless unions stored as PostgreSQL enum types (`Scalar.asPgEnum`); a
    draft feature is in [enums.md](comparisons/enums.md).
 3. Raw SQL: a typed parameter override for enum and `jsonb` values, and several

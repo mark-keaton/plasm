@@ -326,6 +326,27 @@ let private argParamWith (ctx: Ctx) (e: Expr) (valueType: Type) (transform: obj 
 let private argParam ctx (e: Expr) = argParamWith ctx e e.Type id
 
 // ---------------------------------------------------------------------------
+// Values stored as text from a finite table (Scalar.enum)
+// ---------------------------------------------------------------------------
+
+/// `CASE col WHEN 'a' THEN 0 WHEN 'b' THEN 1 ... END`: a stored name's position
+/// in F#'s order, so SQL compares the values as F# does rather than as text.
+let private positionOf (names: string list) (stored: Sql.Expr) : Sql.Expr =
+    let quote (n: string) = "'" + n.Replace("'", "''") + "'"
+
+    Sql.Fragment(
+        [ Choice1Of2 "CASE "; Choice2Of2 stored ]
+        @ (names |> List.mapi (fun i n -> Choice1Of2 $" WHEN {quote n} THEN {i}"))
+        @ [ Choice1Of2 " END" ]
+    )
+
+/// `(ARRAY['a', 'b', ...])[position + 1]`: the stored name at a position.
+let private nameAt (names: string list) (position: Sql.Expr) : Sql.Expr =
+    let quote (n: string) = "'" + n.Replace("'", "''") + "'"
+    let array = names |> List.map quote |> String.concat ", "
+    Sql.Fragment [ Choice1Of2 $"(ARRAY[{array}])["; Choice2Of2 position; Choice1Of2 " + 1]" ]
+
+// ---------------------------------------------------------------------------
 // Row field resolution
 // ---------------------------------------------------------------------------
 
@@ -517,7 +538,7 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
                     e
                     "ordering comparisons on optional values differ between F# (None < Some) and SQL (NULL); compare x.Value after testing x.IsSome"
 
-            Sql.Binary(comparisonOps.[mi.Name], scalar ctx a, scalar ctx b)
+            Sql.Binary(comparisonOps.[mi.Name], ordered ctx a, ordered ctx b)
         | PropertyGet(Some(RowField ctx (b, f)), p, []) when f.IsOption && p.Name = "IsSome" ->
             Sql.IsNotNull(Sql.Column(b.Alias, f.Column))
         | PropertyGet(Some(RowField ctx (b, f)), p, []) when f.IsOption && p.Name = "IsNone" ->
@@ -587,8 +608,11 @@ and aggregate ctx (e: Expr) (mi: Reflection.MethodInfo) (args: Expr list) : Sql.
     | "countDistinct" -> Sql.Aggregate("COUNT", true, Some(arg ()))
     // F# meaning: the sum of no values is zero (List.sum []).
     | "sum" -> Sql.Func("COALESCE", [ Sql.Aggregate("SUM", false, Some(arg ())); Sql.Literal "0" ])
-    | "min" -> Sql.Aggregate("MIN", false, Some(arg ()))
-    | "max" -> Sql.Aggregate("MAX", false, Some(arg ()))
+    | "min"
+    | "max" as name ->
+        match args, ctx.Model.OrderedNames e.Type with
+        | [ x ], Some names -> nameAt names (Sql.Aggregate(name.ToUpperInvariant(), false, Some(ordered ctx x)))
+        | _ -> Sql.Aggregate(name.ToUpperInvariant(), false, Some(arg ()))
     | "avg" -> Sql.Aggregate("AVG", false, Some(arg ()))
     | n -> fail e $"Agg.{n} has no SQL translation"
 
@@ -647,6 +671,32 @@ and fragment ctx (e: Expr) (sql: Expr) (args: Expr) : Sql.Expr =
 
     flush ()
     Sql.Fragment(List.ofSeq parts)
+
+/// A value as SQL compares it: its position in F#'s order when it is stored as
+/// text from a finite table, otherwise the value itself.
+and ordered ctx (e: Expr) : Sql.Expr =
+    match ctx.Model.OrderedNames e.Type with
+    | None -> scalar ctx e
+    | Some names ->
+        let t = scalarType e.Type
+        let model = ctx.Model
+
+        let position (v: obj) =
+            match model.ScalarToDb(t, v) with
+            | Ok(:? string as stored) -> List.findIndex ((=) stored) names
+            | Ok other -> invalidOp $"{Reflection.typeName t} was not stored as text: {other}"
+            | Error m -> invalidOp m
+
+        if not (isRowDependent ctx e) && mentionsArg e then
+            argParamWith ctx e typeof<int> (fun v -> box (position v))
+        elif not (isRowDependent ctx e) then
+            match unwrapOption e.Type (evaluate ctx e) with
+            | None -> Sql.Literal "NULL"
+            | Some v -> Sql.Param(box (position v))
+        else
+            let stored = scalar ctx e
+            if containsAggregate stored then fail e "aggregates cannot be nested"
+            positionOf names stored
 
 and containsAggregate (e: Sql.Expr) : bool =
     match e with
@@ -895,7 +945,7 @@ let private orderItem ctx (body: Expr) (dir: SortDirection) : Sql.OrderItem =
 
     let desc = (dir = SortDirection.Descending)
 
-    { Expr = scalar ctx body
+    { Expr = ordered ctx body
       Desc = desc
       // Match F# ordering of options: None sorts before Some.
       NullsFirst = if Reflection.isOption body.Type then Some(not desc) else None }

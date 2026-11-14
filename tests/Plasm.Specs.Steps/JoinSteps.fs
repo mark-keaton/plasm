@@ -330,7 +330,7 @@ type JoinSteps(w: World) =
     [<StepDefinition("the ordering includes the key of every joined source")>]
     member _.OrderingHasKeys() =
         let sql: string = w.Get "pageSql"
-        check (sql.Contains "ORDER BY \"j1\".\"status\" ASC, \"t0\".\"id\" ASC, \"j1\".\"id\" ASC") sql
+        check (sql.Contains "ORDER BY (CASE \"j1\".\"status\" WHEN 'pending' THEN 0 WHEN 'succeeded' THEN 1 WHEN 'failed' THEN 2 END) ASC, \"t0\".\"id\" ASC, \"j1\".\"id\" ASC") sql
 
     [<StepDefinition("the pages are disjoint and together complete")>]
     member _.DisjointComplete() =

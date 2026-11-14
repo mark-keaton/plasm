@@ -45,7 +45,9 @@ about 30 s together on the development machine.
   `TimeOnly`, `TimeSpan` and `byte[]`, each optionally as `option`.
 - Explicit domain scalars: `Scalar.wrap` (single-case wrappers),
   `Scalar.tryWrap` (validating constructors) and `Scalar.enum` (fieldless
-  unions as text). Unions with fields, nested records, collections as columns
+  unions as text). Comparisons, `orderBy` and `Agg.min`/`Agg.max` on a
+  `Scalar.enum` type follow F#'s order (a union's declaration order), not the
+  alphabetical order of the stored text. Unions with fields, nested records, collections as columns
   and nested options are configuration errors.
 - Single-column primary keys, assigned or database-generated.
 - Database-generated columns (`generated`) and an integer version for
@@ -434,7 +436,6 @@ payments, EF Core 11 (rc.3 provider) with `AsNoTracking`.
    it.
 5. Diagnostics as OpenTelemetry activities.
 6. Close the gaps found by the comparison with the F# data-access libraries
-   ([comparison.md](comparison.md)): ordering on a text-stored union must
-   follow F#'s case order (a defect today); fieldless unions stored as
+   ([comparison.md](comparison.md)): fieldless unions stored as
    PostgreSQL enum types (`Scalar.asPgEnum`); typed parameters and several
    result sets in raw SQL; then the larger EF Core gaps listed there.

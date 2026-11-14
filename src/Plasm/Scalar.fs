@@ -13,6 +13,10 @@ type ScalarMapping =
           ProviderType: Type
           ToProvider: obj -> obj
           FromProvider: obj -> Result<obj, string>
+          /// For a type stored as text from a finite table (Scalar.enum): the
+          /// stored names in F#'s comparison order (a union's declaration order),
+          /// so that SQL orders and compares the values as F# does.
+          Ordered: string list option
           Description: string }
 
     member this.Domain = this.DomainType
@@ -60,6 +64,7 @@ module Scalar =
           ProviderType = typeof<'Provider>
           ToProvider = fun v -> box (unwrap (unbox<'Domain> v))
           FromProvider = fun v -> Ok(box (create (unbox<'Provider> v)))
+          Ordered = None
           Description = $"{typeof<'Domain>.Name} as {typeof<'Provider>.Name}" }
 
     /// Maps a type whose constructor validates its input. A stored value the
@@ -75,6 +80,7 @@ module Scalar =
           ProviderType = typeof<'Provider>
           ToProvider = fun v -> box (unwrap (unbox<'Domain> v))
           FromProvider = fun v -> create (unbox<'Provider> v) |> Result.map box
+          Ordered = None
           Description = $"{typeof<'Domain>.Name} as validated {typeof<'Provider>.Name}" }
 
     /// Maps a fieldless union (or any type with a finite set of values) to text
@@ -100,6 +106,17 @@ module Scalar =
         let toText = dict (cases |> List.map (fun (c, n) -> box c, n))
         let fromText = dict (cases |> List.map (fun (c, n) -> n, box c))
 
+        // F#'s order of the values (for a union, its declaration order, unless it
+        // defines its own comparison). None when the type has no comparison.
+        let ordered =
+            try
+                cases
+                |> List.sortWith (fun (a, _) (b, _) -> LanguagePrimitives.GenericComparer.Compare(box a, box b))
+                |> List.map snd
+                |> Some
+            with _ ->
+                None
+
         { DomainType = t
           ProviderType = typeof<string>
           ToProvider = fun v -> box toText.[v]
@@ -108,4 +125,5 @@ module Scalar =
                 match fromText.TryGetValue(unbox<string> v) with
                 | true, c -> Ok c
                 | _ -> Error $"'{v}' is not a known {t.Name}"
+          Ordered = ordered
           Description = $"{t.Name} as text enum" }

@@ -79,6 +79,15 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, scalars: IR
                 | true, m -> convert m.ProviderType value |> Result.bind m.FromProvider
                 | _ -> Error $"type {Reflection.typeName t} has no scalar mapping"
 
+    /// The stored names of `t` (or of its option's element) in F#'s comparison
+    /// order, when `t` is stored as text from a finite table.
+    member internal _.OrderedNames(t: Type) =
+        let t = if Reflection.isOption t then Reflection.elementType t else t
+
+        match scalars.TryGetValue t with
+        | true, m -> m.Ordered
+        | _ -> None
+
     member internal _.ProviderTypeOf(t: Type) =
         if Scalar.isBuiltIn t then
             Some t

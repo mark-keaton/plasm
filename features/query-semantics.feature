@@ -74,3 +74,43 @@ Feature: Queries keep their F# meaning
       Given Orders for several Customers
       When I run a query that captures only immutable values twice
       Then it is translated once
+
+  # OrderStatus is declared Draft | Published | Cancelled and stored as the text
+  # "draft", "published", "cancelled": alphabetical order would put cancelled first.
+  Rule: Union cases stored as text compare in the order F# declares them
+
+    Scenario Outline: Ordering by a union follows its declaration, <direction>
+      Given Orders in every status
+      When I order Orders by Status <direction>
+      Then the Orders come in the order sorting them by Status in F# gives
+
+      Examples:
+        | direction  |
+        | ascending  |
+        | descending |
+
+    Scenario Outline: Comparing a union with a case keeps F# meaning (<comparison>)
+      Given Orders in every status
+      When I keep Orders whose Status <comparison> Published
+      Then the result equals evaluating the predicate over the same Orders in F#
+
+      Examples:
+        | comparison |
+        | <          |
+        | <=         |
+        | >          |
+        | >=         |
+
+    Scenario: A prepared query compares a union argument in declaration order
+      Given Orders in every status
+      When I run a prepared query for Orders whose Status is before a given status, with Cancelled
+      Then the Draft and Published Orders are returned
+
+    Scenario: The earliest and latest case of a union follow its declaration
+      Given Orders in every status
+      When I select the minimum and maximum Status of the Orders
+      Then they are Draft and Cancelled
+
+    Scenario: The ordering is done by the database
+      When I explain a query that orders Orders by Status
+      Then the SQL orders by the position of each stored name in the declaration

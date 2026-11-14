@@ -287,7 +287,7 @@ type EleganceSteps(w: World) =
             // Ordering by a non-unique column gets the primary key as a tiebreaker.
             let page n = plasm { for o in Schemas.orders do orderBy o.Status; skip (n * 3); take 3 }
             let plan = w.Repo.Explain(page 0) |> ok
-            check (plan.Sql.Contains "ORDER BY \"t0\".\"status\" ASC, \"t0\".\"id\" ASC") plan.Sql
+            check (plan.Sql.Contains "ORDER BY (CASE \"t0\".\"status\" WHEN 'draft' THEN 0 WHEN 'published' THEN 1 WHEN 'cancelled' THEN 2 END) ASC, \"t0\".\"id\" ASC") plan.Sql
             let! p0 = all (page 0)
             let! p1 = all (page 1)
             let! p2 = all (page 2)

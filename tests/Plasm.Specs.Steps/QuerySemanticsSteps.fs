@@ -229,3 +229,109 @@ type QuerySemanticsSteps(w: World) =
 
         w.Set("captured", query)
         w.Set("change", change)
+
+    // Rule: Union cases stored as text compare in the order F# declares them
+
+    [<StepDefinition("Orders in every status")>]
+    member _.EveryStatus() =
+        task {
+            // Seeded so that neither insertion order nor the stored text agrees
+            // with the declaration (Draft, Published, Cancelled).
+            let! a = Seed.order w.Db None "cancelled" 10m (Seed.at 1)
+            let! b = Seed.order w.Db None "published" 20m (Seed.at 2)
+            let! c = Seed.order w.Db None "draft" 30m (Seed.at 3)
+            let! d = Seed.order w.Db None "cancelled" 40m (Seed.at 4)
+            let! e = Seed.order w.Db None "draft" 50m (Seed.at 5)
+            w.Set("orders", [ a; b; c; d; e ])
+            return ()
+        }
+        |> unit
+
+    [<StepDefinition("^I order Orders by Status (ascending|descending)$")>]
+    member _.OrderByStatus(direction: string) =
+        task {
+            let query =
+                if direction = "ascending" then
+                    plasm {
+                        for o in Schemas.orders do
+                            orderBy o.Status
+                            thenBy o.Id
+                    }
+                else
+                    plasm {
+                        for o in Schemas.orders do
+                            orderByDescending o.Status
+                            thenBy o.Id
+                    }
+
+            let! rows = w.Repo.All query
+            let! all = everyOrder ()
+
+            let expected =
+                if direction = "ascending" then
+                    all |> List.sortBy (fun o -> o.Status, o.Id)
+                else
+                    all |> List.sortBy (fun o -> o.Id) |> List.sortByDescending (fun o -> o.Status)
+
+            w.Set("sorted", (ok rows |> List.map (fun o -> o.Id), expected |> List.map (fun o -> o.Id)))
+        }
+        |> unit
+
+    [<StepDefinition("the Orders come in the order sorting them by Status in F# gives")>]
+    member _.SortedAsFSharp() =
+        let rows, expected = w.Get<OrderId list * OrderId list> "sorted"
+        equal expected rows "Orders sorted by Status"
+
+    [<StepDefinition("^I keep Orders whose Status (<|<=|>|>=) Published$")>]
+    member _.CompareStatus(comparison: string) =
+        let query, predicate =
+            match comparison with
+            | "<" -> plasm { for o in Schemas.orders do where (o.Status < Published) }, (fun (o: Order) -> o.Status < Published)
+            | "<=" -> plasm { for o in Schemas.orders do where (o.Status <= Published) }, (fun o -> o.Status <= Published)
+            | ">" -> plasm { for o in Schemas.orders do where (o.Status > Published) }, (fun o -> o.Status > Published)
+            | _ -> plasm { for o in Schemas.orders do where (o.Status >= Published) }, (fun o -> o.Status >= Published)
+
+        compare "single" query predicate |> unit
+
+    [<StepDefinition("I run a prepared query for Orders whose Status is before a given status, with Cancelled")>]
+    member _.PreparedBefore() =
+        task {
+            let before =
+                Query.prepare (fun (status: Arg<OrderStatus>) ->
+                    plasm {
+                        for o in Schemas.orders do
+                            where (o.Status < status.Value)
+                            orderBy o.Id
+                    })
+
+            let! rows = w.Repo.All(before Cancelled)
+            w.Set("before", ok rows |> List.map (fun o -> o.Status) |> List.distinct |> List.sort)
+        }
+        |> unit
+
+    [<StepDefinition("the Draft and Published Orders are returned")>]
+    member _.DraftAndPublished() =
+        equal [ Draft; Published ] (w.Get<OrderStatus list> "before") "statuses returned"
+
+    [<StepDefinition("I select the minimum and maximum Status of the Orders")>]
+    member _.MinMaxStatus() =
+        task {
+            let! r = w.Repo.All(plasm { for o in Schemas.orders do select (Agg.min o.Status, Agg.max o.Status) })
+            w.Set("minMax", ok r)
+        }
+        |> unit
+
+    [<StepDefinition("they are Draft and Cancelled")>]
+    member _.DraftAndCancelled() =
+        equal [ Some Draft, Some Cancelled ] (w.Get<(OrderStatus option * OrderStatus option) list> "minMax") "minimum and maximum Status"
+
+    [<StepDefinition("I explain a query that orders Orders by Status")>]
+    member _.ExplainOrderByStatus() =
+        w.Set("sql", (w.Repo.Explain(plasm { for o in Schemas.orders do orderBy o.Status }) |> ok).Sql)
+
+    [<StepDefinition("the SQL orders by the position of each stored name in the declaration")>]
+    member _.OrdersByPosition() =
+        let sql = w.Get<string> "sql"
+        check
+            (sql.Contains "ORDER BY (CASE \"t0\".\"status\" WHEN 'draft' THEN 0 WHEN 'published' THEN 1 WHEN 'cancelled' THEN 2 END)")
+            $"the ordering is not by declaration position: {sql}"
