@@ -31,3 +31,10 @@ type LessonSteps(w: KoansWorld) =
     [<StepDefinition("it teaches the acceptance scenario \"(.*)\"")>]
     member _.Teaches(scenario: string) =
         check ((implementedScenarios ()).Contains scenario) $"'{scenario}' is not an implemented acceptance scenario of Plasm"
+
+    /// Only the orientation lesson's koans teach an F# topic instead of a scenario.
+    [<StepDefinition("it teaches the F# topic \"(.*)\"")>]
+    member _.TeachesFSharp(topic: string) =
+        let lesson = koanSpecs () |> List.tryFind (fun s -> s.Koan = w.Koan) |> Option.map (fun s -> s.Number)
+        check (lesson = Some orientationLesson) $"'{w.Koan}' names an F# topic but is in lesson %A{lesson}; only lesson 01 may"
+        check (isFSharpTopic topic) $"'{topic}' is not 'F#: topic'"

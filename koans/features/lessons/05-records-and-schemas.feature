@@ -3,7 +3,7 @@
 Feature: About records and schemas
   Domain types are ordinary immutable F# records and single-case unions. Persistence lives in separate schema values and scalar mappings, and a model is validated once, before any query runs.
 
-  Prerequisites: none.
+  Prerequisites: lesson 04.
 
   Background:
     Given the koans database with its starting data

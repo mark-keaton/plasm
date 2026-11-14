@@ -26,10 +26,19 @@ Feature: The curriculum is verified
 
   Rule: Koans teach the specified behaviour
 
+    Lesson 01, the orientation lesson, teaches the F# the course relies on
+    rather than Plasm, so its koans name an F# topic. Every other koan names
+    an implemented acceptance scenario of Plasm.
+
     Scenario: Every koan traces to an acceptance scenario
       When the lesson specifications are read
-      Then every koan names the acceptance scenario of Plasm that it teaches
+      Then every koan after the orientation lesson names the acceptance scenario of Plasm that it teaches
       And every named scenario exists in Plasm's features and is implemented
+
+    Scenario: The orientation lesson names the F# it teaches
+      When the lesson specifications are read
+      Then every koan of lesson 01 names the F# topic it teaches, as "F#: topic"
+      And no koan of a later lesson names an F# topic instead of a scenario
 
     Scenario: Koans use only the API areas ready to teach
       When the koans' source is checked against the list of API areas ready to teach

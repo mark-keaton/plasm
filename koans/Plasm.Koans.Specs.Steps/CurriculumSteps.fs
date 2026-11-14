@@ -69,16 +69,41 @@ type CurriculumSteps(w: KoansWorld) =
     [<StepDefinition("the lesson specifications are read")>]
     member _.ReadSpecs() = ()
 
-    [<StepDefinition("every koan names the acceptance scenario of Plasm that it teaches")>]
+    [<StepDefinition("every koan after the orientation lesson names the acceptance scenario of Plasm that it teaches")>]
     member _.AllTeach() =
-        for s in koanSpecs () do
+        let later = koanSpecs () |> List.filter (fun s -> s.Number <> orientationLesson)
+        check (not later.IsEmpty) "no lesson after the orientation lesson"
+
+        for s in later do
             check (Regex.IsMatch(s.Teaches, @"^[a-z-]+: .+")) $"{s.Koan}: '{s.Teaches}' is not 'feature: scenario'"
 
     [<StepDefinition("every named scenario exists in Plasm's features and is implemented")>]
     member _.ScenariosExist() =
         let known = implementedScenarios ()
-        let unknown = koanSpecs () |> List.filter (fun s -> not (known.Contains s.Teaches)) |> List.map (fun s -> s.Koan, s.Teaches)
+
+        let unknown =
+            koanSpecs ()
+            |> List.filter (fun s -> s.Number <> orientationLesson && not (known.Contains s.Teaches))
+            |> List.map (fun s -> s.Koan, s.Teaches)
+
         check unknown.IsEmpty $"unknown or unimplemented scenarios: %A{unknown}"
+
+    [<StepDefinition("every koan of lesson 01 names the F# topic it teaches, as \"F#: topic\"")>]
+    member _.OrientationTeaches() =
+        let orientation = koanSpecs () |> List.filter (fun s -> s.Number = orientationLesson)
+        check (not orientation.IsEmpty) "there is no lesson 01"
+
+        for s in orientation do
+            check (isFSharpTopic s.Teaches) $"{s.Koan}: '{s.Teaches}' is not 'F#: topic'"
+
+    [<StepDefinition("no koan of a later lesson names an F# topic instead of a scenario")>]
+    member _.OnlyOrientationIsExempt() =
+        let exempt =
+            koanSpecs ()
+            |> List.filter (fun s -> s.Number <> orientationLesson && s.Teaches.StartsWith "F#")
+            |> List.map (fun s -> s.Koan, s.Teaches)
+
+        check exempt.IsEmpty $"koans after lesson 01 that name an F# topic: %A{exempt}"
 
     [<StepDefinition("the koans' source is checked against the list of API areas ready to teach")>]
     member _.ReadKeptOut() = ()
