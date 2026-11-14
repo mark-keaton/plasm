@@ -5,8 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Plasm Koans</title>
 <style>
-  /* Colours and type follow Plasm's website. Fonts are local only, so the
-     course needs nothing from another site and works offline. */
+  /* Colours and type follow Plasm's website. Fonts come from this site (or
+     the reader's machine), so the course works offline. JetBrains Mono (OFL,
+     fonts/JetBrainsMono-OFL.txt) joins F# operators such as |> and ->. */
+  @font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+  @font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-Italic.woff2") format("woff2"); font-weight: 400; font-style: italic; font-display: swap; }
   :root {
     --paper: #F6F5F0; --surface: #FFFFFF; --sunk: #F0EFE9;
     --ink: #16181D; --ink-2: #3A3D45; --ink-3: #4A4D55; --ink-4: #8A8D95;
@@ -104,7 +107,7 @@
 
   /* The editor: a textarea over a coloured copy of its code. Both use the
      same font, padding and wrapping, so the caret sits on the coloured text. */
-  .editor { display: flex; font: 14px/1.7 var(--mono); tab-size: 4; }
+  .editor { display: flex; font: 14px/1.7 var(--mono); tab-size: 4; font-variant-ligatures: contextual; }
   #gutter { margin: 0; padding: 14px 12px 14px 16px; text-align: right; color: var(--ink-4); user-select: none; font: inherit; white-space: pre; }
   .code { position: relative; flex: 1; min-width: 0; }
   #highlight, #code { margin: 0; border: 0; padding: 14px 20px 14px 4px; font: inherit; letter-spacing: 0; white-space: pre; tab-size: 4; }

@@ -72,3 +72,7 @@ Feature: Walking the path in the browser
     Scenario: A koan can be run from the keyboard
       When the learner fills in the first koan's blanks and presses Ctrl+Enter
       Then the koan shows that it passed
+
+    Scenario: F# operators are drawn as single symbols
+      When a koan is shown
+      Then its code is set in a font that joins operators such as |> and ->

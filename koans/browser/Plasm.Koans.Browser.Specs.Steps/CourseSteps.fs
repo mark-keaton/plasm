@@ -332,3 +332,22 @@ type CourseSteps(w: BrowserWorld) =
             w.Koan <- Some koan
         }
         |> unit
+
+    [<StepDefinition("^its code is set in a font that joins operators such as \|> and ->$")>]
+    member _.LigatureFont() =
+        task {
+            let! state =
+                w.Page.EvaluateAsync<string[]>(
+                    """async () => {
+                        await document.fonts.ready;
+                        const loaded = [...document.fonts].some(f => f.family.replace(/"/g, '') === 'JetBrains Mono' && f.status === 'loaded');
+                        const style = getComputedStyle(document.getElementById('highlight'));
+                        return [String(loaded), style.fontFamily, style.fontVariantLigatures];
+                    }"""
+                )
+
+            check (state.[0] = "true") $"JetBrains Mono was not loaded from the site (the editor uses {state.[1]})"
+            check (state.[1].StartsWith "\"JetBrains Mono\"") $"the editor's font is {state.[1]}"
+            check (state.[2] <> "none") "the editor turns ligatures off"
+        }
+        |> unit
