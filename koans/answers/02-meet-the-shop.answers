@@ -1,3 +1,10 @@
+# Every koan is given k
+3L
+# ok opens a Result
+4L
+# k.Commands shows what was sent
+0
+1
 # The shop has three customers
 [ "Ada"; "Bob"; "Cy" ]
 # Counting rows

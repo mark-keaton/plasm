@@ -1,7 +1,7 @@
 # Lesson 02 of the Plasm Koans. Each row is one koan: what the learner discovers,
 # and the acceptance scenario of Plasm it teaches (feature: scenario).
 Feature: Meet the shop
-  The koans database is a small shop: customers place orders, each order has lines, and each line is for a product. Every koan starts from the same data, and its changes vanish when it ends.
+  Every koan is given k, its way in to the koans database. The database is a small shop: customers place orders, each order has lines, and each line is for a product. Every koan starts from the same data, and its changes vanish when it ends.
 
   Prerequisites: lesson 01.
 
@@ -15,6 +15,9 @@ Feature: Meet the shop
 
     Examples:
       | koan                              | the learner discovers                                                                                | teaches                                                                  |
+      | Every koan is given k             | each koan is fun k -> ...; k.Repo reaches the koans database, and Count answers Ok 3L for the three customers | aggregates: Counting a filtered query                                    |
+      | ok opens a Result                 | a repo answers with a Result; ok takes the value out of an Ok, so ok (Ok 4L) is 4L                    | core: Unsupported translation is explicit                                |
+      | k.Commands shows what was sent    | k.Commands starts empty in every koan and holds one command after one Count                          | core: Query execution exposes diagnostic information                     |
       | The shop has three customers      | k.Repo.All(Query.from Db.customers) reads every customer, each as a Customer record                  | core: Querying a mapped property uses its declared type                  |
       | Counting rows                     | k.Repo.Count counts a table's rows without reading them                                              | aggregates: Counting a filtered query                                    |
       | The database numbers the rows     | the database gives each row a key in the order the starting data inserts it, so Bob is CustomerId 2L | elegance: Domain scalar wrappers preserve their meaning                  |

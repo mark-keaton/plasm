@@ -128,7 +128,7 @@ failing with an unmapped type.
 ## Learn Plasm: the koans
 
 `koans/` is an interactive course in the style of Ruby Koans: 22 lessons and
-214 koans, each a small exercise with a blank (`__`) to fill in, run against a
+217 koans, each a small exercise with a blank (`__`) to fill in, run against a
 real PostgreSQL database inside a sandbox, so every koan starts from the same
 data. It starts with no Plasm at all (the F# the course uses), then the shop's
 data, what a repo is and the promises Plasm keeps, before the library itself;

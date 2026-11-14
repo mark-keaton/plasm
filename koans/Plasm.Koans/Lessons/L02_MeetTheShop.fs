@@ -9,14 +9,50 @@ let lesson =
     Lesson.make
         "Meet the shop"
         [ Koan.Task(
+              "Every koan is given k",
+              fun k ->
+                  task {
+                      // Every koan is a function, fun k -> ... (the line above the
+                      // code): k is what the koan is given (KoanContext, under Given).
+                      // k.Repo is a repository, Plasm's way in to the koans database.
+                      // Count asks how many rows a query matches; Query.from
+                      // Db.customers is every row of the customers table.
+                      let! customers = k.Repo.Count(Query.from Db.customers)
+                      customers |> shouldBe (Ok __)
+                  }
+          )
+
+          Koan.Task(
+              "ok opens a Result",
+              fun k ->
+                  task {
+                      // A repo answers with a Result: Ok with the answer, or Error
+                      // saying what went wrong. ok (under Given) takes the value out
+                      // of an Ok; given an Error it fails the koan and shows the error.
+                      let! orders = k.Repo.Count(Query.from Db.orders)
+                      orders |> shouldBe (Ok 4L)
+                      ok orders |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "k.Commands shows what was sent",
+              fun k ->
+                  task {
+                      // k.Commands lists the SQL this koan has sent to the database,
+                      // in order. A koan has sent nothing when it starts.
+                      k.Commands.Length |> shouldBe __
+                      let! _ = k.Repo.Count(Query.from Db.products)
+                      k.Commands.Length |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
               "The shop has three customers",
               fun k ->
                   task {
-                      // Every koan is given k (see KoanContext under Given). k.Repo
-                      // is a repository: it reads and writes the koans database.
-                      // Query.from Db.customers means "every row of the customers
-                      // table"; All returns them as Customer records, and ok takes
-                      // them out of the Result that All returns.
+                      // All reads every row a query matches, each as a record: here
+                      // every customer as a Customer (under Given).
                       let! customers = k.Repo.All(Query.from Db.customers)
                       let names = ok customers |> List.map (fun c -> c.Name) |> List.sort
                       names |> shouldBe __
