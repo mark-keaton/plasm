@@ -1,5 +1,5 @@
-/// Lesson 03: What a repo is.
-module Plasm.Koans.Lessons.L03_WhatARepoIs
+/// Lesson 02: What a repo is.
+module Plasm.Koans.Lessons.L02_WhatARepoIs
 
 open Plasm
 open Plasm.Koans
@@ -9,6 +9,33 @@ let lesson =
     Lesson.make
         "What a repo is"
         [ Koan.Task(
+              "Every koan is given a repo",
+              fun repo ->
+                  task {
+                      // repo is a Repo (a repository): Plasm's way in to a database.
+                      // It runs queries and writes. Every koan is given one, and
+                      // whatever a koan changes is undone when it ends. Count asks how
+                      // many rows a query matches; Query.from Db.customers is every
+                      // row of the customers table.
+                      let! customers = repo.Count(Query.from Db.customers)
+                      customers |> shouldBe (Ok __)
+                  }
+          )
+
+          Koan.Task(
+              "ok opens a Result",
+              fun repo ->
+                  task {
+                      // A repo answers with a Result: Ok with the answer, or Error
+                      // saying what went wrong. ok (under Given) takes the value out
+                      // of an Ok; given an Error it fails the koan and shows the error.
+                      let! orders = repo.Count(Query.from Db.orders)
+                      orders |> shouldBe (Ok 4L)
+                      ok orders |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
               "A repo pairs a model with a database",
               fun repo ->
                   task {
@@ -21,6 +48,21 @@ let lesson =
                       // and lists every difference it finds.
                       let! issues = repo.CheckSchema()
                       ok issues |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "In your app, you make the repo",
+              fun repo ->
+                  task {
+                      // A Repo is made from a model, the record types it can store
+                      // (Db.model, from Shop.fs), and a provider, the connection to
+                      // the database. In your app the provider is
+                      // Postgres.connect connectionString; here it is the koans' own,
+                      // repo.Provider. Both repos read the same database.
+                      let mine = Repo(Db.model, repo.Provider)
+                      let! customers = mine.Count(Query.from Db.customers)
+                      ok customers |> shouldBe __
                   }
           )
 

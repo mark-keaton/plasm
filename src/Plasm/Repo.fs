@@ -102,8 +102,12 @@ module internal QueryDisplay =
             let header = $"  then {l.Path} ({l.Relationship}, {l.Target}), one command per batch of keys:"
             [ header; indent "  " (pretty l.Sql) ] @ loads l.Children)
 
-/// The explicit boundary where persistence descriptions are executed. Every
-/// member performs database work; nothing else in the library does.
+/// A repository: where Plasm meets the database. Made from a model (the
+/// record types it can store) and a provider (the database connection), as in
+/// `Repo(model, Postgres.connect connectionString)`. It runs queries (All, One,
+/// Count) and writes (Insert, Update, Delete), each returning a Result. It is
+/// the explicit boundary where descriptions are executed: every member performs
+/// database work; nothing else in the library does.
 type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
     let options = defaultArg options RepoOptions.Default
 

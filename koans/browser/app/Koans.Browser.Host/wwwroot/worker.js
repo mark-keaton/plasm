@@ -137,6 +137,14 @@ self.onmessage = async (e) => {
     }
     return;
   }
+  if (m.type === 'hover') {
+    try {
+      post({ type: 'result', id: m.id, result: JSON.parse(await exports.Hover(m.helpers, m.isTask, m.framed, m.body, m.offset)) });
+    } catch (err) {
+      post({ type: 'result', id: m.id, result: {} });
+    }
+    return;
+  }
   if (m.type !== 'run') return;
   try {
     const result = await exports.RunKoan(m.title, m.name, m.helpers, m.isTask, m.framed, m.body);

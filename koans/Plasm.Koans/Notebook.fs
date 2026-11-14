@@ -188,7 +188,7 @@ let course () : string =
 
     let given (helpers: Given.Definition list) (body: string) =
         let g = Given.forKoan shop helpers body
-        let g = { g with Definitions = g.Definitions @ Given.fromKoans koans body }
+        let g = { g with Definitions = Given.forRepo body @ g.Definitions @ Given.fromKoans koans body }
 
         dict
             [ "tables", box (Array.ofList g.Tables)
@@ -206,6 +206,7 @@ let course () : string =
                                 match d.Source with
                                 | "Shop.fs" -> "your app"
                                 | "Koans.fs" -> "test helper"
+                                | "every koan" -> "Plasm"
                                 | _ -> "this lesson"
                             )
                             "code", box (String.concat "\n" d.Code)

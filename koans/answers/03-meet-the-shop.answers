@@ -1,9 +1,3 @@
-# Every koan is given a repo
-3L
-# ok opens a Result
-4L
-# In your app, you make the repo
-3L
 # The shop has three customers
 [ "Ada"; "Bob"; "Cy" ]
 # Counting rows

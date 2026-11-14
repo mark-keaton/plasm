@@ -23,7 +23,9 @@ for dll in FSharp.Core Plasm Plasm.Koans.Core; do
   file=$(ls "$site/_framework" | grep -E "^${dll//./\\.}\.[a-z0-9]+\.dll$")
   cp "$site/_framework/$file" "$site/refs/$dll.dll"
 done
-(cd "$site/refs" && ls *.dll > list.txt)
+# Their doc comments, for the editor's hover (the compiler reads <name>.xml).
+cp "$root/src/Plasm/bin/Release/net11.0/Plasm.xml" "$root/koans/Plasm.Koans.Core/bin/Release/net11.0/Plasm.Koans.Core.xml" "$site/refs/"
+(cd "$site/refs" && ls *.dll *.xml > list.txt)
 dotnet run --project "$root/koans/Plasm.Koans" -- --course "$site/course.json" > /dev/null
 # Plasm's acceptance specification, which each koan links to.
 mkdir -p "$site/spec" && cp "$root"/features/*.feature "$site/spec/"

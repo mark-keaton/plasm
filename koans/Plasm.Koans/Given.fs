@@ -196,3 +196,24 @@ let forKoan (shop: Definition list) (helpers: Definition list) (body: string) : 
 /// ok, err and commands.
 let fromKoans (koans: Definition list) (body: string) =
     koans |> List.filter (fun d -> mentions body d.Name) |> List.map (fun d -> d, marks body d)
+
+/// `repo`, which every koan is given: not defined in any file the learner sees
+/// (it is the koan's parameter), so its Given says what it is and how an app
+/// makes one.
+let repo: Definition =
+    { Name = "repo"
+      Source = "every koan"
+      Code =
+        [ "/// Every koan is given repo: a Plasm Repo over the koans database,"
+          "/// inside a sandbox, so whatever the koan changes is undone when it ends."
+          "/// In your app you make one yourself, from your model and a provider:"
+          "let repo = Repo(Db.model, Postgres.connect connectionString)" ]
+      Fields = []
+      Cases = []
+      Table = None
+      Assocs = [] }
+
+/// The Given entry for repo, when a koan uses it.
+let forRepo (body: string) =
+    if mentions body "repo" then [ repo, [] ] else []
+

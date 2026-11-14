@@ -1,6 +1,12 @@
+# Every koan is given a repo
+3L
+# ok opens a Result
+4L
 # A repo pairs a model with a database
 9
 []
+# In your app, you make the repo
+3L
 # A query is a description
 0
 # The repo shows its SQL

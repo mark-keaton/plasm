@@ -5,12 +5,12 @@
 
 let vimModule = null;
 const loadVim = async () => (vimModule ??= await import('@replit/codemirror-vim'));
-import { EditorState, Compartment, RangeSetBuilder, Annotation } from '@codemirror/state';
-import { EditorView, ViewPlugin, Decoration, keymap, lineNumbers, drawSelection, highlightActiveLine } from '@codemirror/view';
+import { EditorState, Compartment, RangeSetBuilder, Annotation, StateField, StateEffect } from '@codemirror/state';
+import { EditorView, ViewPlugin, Decoration, keymap, lineNumbers, drawSelection, highlightActiveLine, hoverTooltip, showTooltip } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { autocompletion, completionKeymap, startCompletion } from '@codemirror/autocomplete';
 import { indentUnit, indentService } from '@codemirror/language';
-import { tokens } from '../Koans.Browser.Host/wwwroot/fsharp.js';
+import { tokens, colour } from '../Koans.Browser.Host/wwwroot/fsharp.js';
 
 const marks = {};
 const markFor = (cls) => (marks[cls] ??= cls === 'blank'
@@ -66,13 +66,41 @@ const fsharpIndent = indentService.of((context, pos) => {
   return Math.max(above === null ? 0 : depth(above), below === null ? 0 : depth(below));
 });
 
+/// A type tip: what the compiler says a name is, its signature and its doc.
+const tipDom = (info) => {
+  const dom = document.createElement('div');
+  dom.className = 'type-tip';
+  const sig = document.createElement('pre');
+  sig.className = 'signature';
+  sig.innerHTML = colour(info.signature);
+  dom.append(sig);
+  if (info.doc) {
+    const doc = document.createElement('p');
+    doc.className = 'doc';
+    doc.textContent = info.doc;
+    dom.append(doc);
+  }
+  return dom;
+};
+
+/// The type tip shown at the cursor by Vim's K (cleared by any change or move).
+const setTip = StateEffect.define();
+const cursorTip = StateField.define({
+  create: () => null,
+  update(tip, tr) {
+    for (const e of tr.effects) if (e.is(setTip)) return e.value;
+    return tr.docChanged || tr.selection ? null : tip;
+  },
+  provide: (f) => showTooltip.from(f),
+});
+
 /// Marks a change made by the page (a koan being shown), not by the learner.
 const fromPage = Annotation.define();
 
 /// Creates the editor in `parent`. `complete(code, offset)` answers what can
 /// follow the cursor; `onEdit(code)` hears the learner's changes; `onRun()`
 /// runs the koan; `onVimMode(mode)` hears 'normal', 'insert', 'visual' or null.
-export function createEditor(parent, { complete, onEdit, onRun, onVimMode }) {
+export function createEditor(parent, { complete, hover, onEdit, onRun, onVimMode }) {
   const vimSlot = new Compartment();
   let vimOn = false;
 
@@ -87,6 +115,25 @@ export function createEditor(parent, { complete, onEdit, onRun, onVimMode }) {
       options: items.map((i) => ({ label: i.name, type: typeOf(i.kind), detail: i.detail })),
       validFor: /^[A-Za-z_][\w']*$/,
     };
+  };
+
+  // What the name under the pointer is.
+  const hoverTip = hoverTooltip(async (view, pos) => {
+    const word = view.state.wordAt(pos);
+    if (!word) return null;
+    const info = await hover(view.state.doc.toString(), word.to);
+    if (!info?.signature) return null;
+    return { pos: word.from, end: word.to, above: true, create: () => ({ dom: tipDom(info) }) };
+  }, { hoverTime: 350 });
+
+  /// Shows what the name at the cursor is (Vim's K).
+  const showTipAtCursor = async () => {
+    const head = view.state.selection.main.head;
+    const word = view.state.wordAt(head) ?? view.state.wordAt(Math.max(0, head - 1));
+    if (!word) return;
+    const info = await hover(view.state.doc.toString(), word.to);
+    if (!info?.signature) return;
+    view.dispatch({ effects: setTip.of({ pos: word.from, above: true, create: () => ({ dom: tipDom(info) }) }) });
   };
 
   // Ctrl/Cmd+[ and ] move between koans (the page handles them), so the
@@ -107,6 +154,8 @@ export function createEditor(parent, { complete, onEdit, onRun, onVimMode }) {
         fsharpIndent,
         EditorState.tabSize.of(4),
         colouring,
+        hoverTip,
+        cursorTip,
         autocompletion({ override: [source], activateOnTyping: true, icons: true }),
         keymap.of([
           { key: 'Mod-Enter', run: () => { onRun(); return true; } },
@@ -126,6 +175,9 @@ export function createEditor(parent, { complete, onEdit, onRun, onVimMode }) {
   });
 
   const watchVim = () => {
+    // K shows what the name at the cursor is, as in Vim with a language server.
+    vimModule.Vim.defineAction('showType', () => { showTipAtCursor(); });
+    vimModule.Vim.mapCommand('K', 'action', 'showType', {}, { context: 'normal' });
     const cm = vimModule.getCM(view);
     if (!cm) return;
     onVimMode('normal');
@@ -146,6 +198,12 @@ export function createEditor(parent, { complete, onEdit, onRun, onVimMode }) {
     select(from, to = from) { view.dispatch({ selection: { anchor: from, head: to }, scrollIntoView: true }); },
     selection() { const r = view.state.selection.main; return { from: r.from, to: r.to, head: r.head }; },
     focus() { view.focus(); },
+    /// Scrolls so that the character at `pos` is on screen.
+    reveal(pos) { view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: 'center' }) }); },
+    /// Where on screen the character at `pos` is (for tests that point at it).
+    coordsAt(pos) { const r = view.coordsAtPos(pos); return r && { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 }; },
+    /// Shows what the name at the cursor is.
+    showType: () => showTipAtCursor(),
     hasFocus() { return view.hasFocus; },
     get vimOn() { return vimOn; },
     async setVim(on) {

@@ -443,7 +443,11 @@ type CourseSteps(w: BrowserWorld) =
     member _.ChooseFromList(name: string) =
         task {
             let! koan = koanNamed w.Page name
-            do! w.Page.ClickAsync($"nav button[data-koan=\"{koan.Lesson}/{koan.Index}\"]")
+            let button = $"nav button[data-koan=\"{koan.Lesson}/{koan.Index}\"]"
+            // A folded lesson is opened first, as a person would.
+            let! visible = w.Page.IsVisibleAsync button
+            if not visible then do! w.Page.ClickAsync($"nav h2[data-lesson=\"{koan.Lesson}\"] .lesson-toggle")
+            do! w.Page.ClickAsync button
         }
         |> unit
 

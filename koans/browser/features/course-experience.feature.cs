@@ -115,7 +115,7 @@ namespace Plasm.Koans.Browser.Specs.Features
         
         private static global::Reqnroll.Formatters.RuntimeSupport.FeatureLevelCucumberMessages InitializeCucumberMessages()
         {
-            return new global::Reqnroll.Formatters.RuntimeSupport.FeatureLevelCucumberMessages("../features/course-experience.feature.ndjson", 83);
+            return new global::Reqnroll.Formatters.RuntimeSupport.FeatureLevelCucumberMessages("../features/course-experience.feature.ndjson", 89);
         }
         
         async System.Threading.Tasks.ValueTask Xunit.IAsyncLifetime.InitializeAsync()
@@ -1364,15 +1364,15 @@ namespace Plasm.Koans.Browser.Specs.Features
             await this.ScenarioCleanupAsync();
         }
         
-        [global::Xunit.FactAttribute(DisplayName="Completions come quickly once the compiler has warmed up")]
+        [global::Xunit.FactAttribute(DisplayName="The compiler says what a name is")]
         [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
-        [global::Xunit.TraitAttribute("Description", "Completions come quickly once the compiler has warmed up")]
-        public async global::System.Threading.Tasks.Task CompletionsComeQuicklyOnceTheCompilerHasWarmedUp()
+        [global::Xunit.TraitAttribute("Description", "The compiler says what a name is")]
+        public async global::System.Threading.Tasks.Task TheCompilerSaysWhatANameIs()
         {
             string[] tagsOfScenario = ((string[])(null));
             global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
             string pickleIndex = "65";
-            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Completions come quickly once the compiler has warmed up", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("The compiler says what a name is", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("The editor knows F#", null, tagsOfRule);
 #line 217
@@ -1389,12 +1389,202 @@ namespace Plasm.Koans.Browser.Specs.Features
   await this.FeatureBackgroundAsync();
 #line hidden
 #line 218
-      await testRunner.GivenAsync("the learner has asked for completions once", ((string)(null)), ((global::Reqnroll.Table)(null)), "Given ");
+      await testRunner.WhenAsync("the learner asks what \"Count\" in \"repo.Count\" is, in the koan \"Every koan is give" +
+                        "n a repo\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 219
+      await testRunner.ThenAsync("the answer\'s signature mentions \"Count\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [global::Xunit.FactAttribute(DisplayName="The compiler explains a value by its type")]
+        [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
+        [global::Xunit.TraitAttribute("Description", "The compiler explains a value by its type")]
+        public async global::System.Threading.Tasks.Task TheCompilerExplainsAValueByItsType()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
+            string pickleIndex = "66";
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("The compiler explains a value by its type", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
+            string[] tagsOfRule = ((string[])(null));
+            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("The editor knows F#", null, tagsOfRule);
+#line 221
+    this.ScenarioInitialize(scenarioInfo, ruleInfo);
+#line hidden
+            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                await testRunner.SkipScenarioAsync();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 7
+  await this.FeatureBackgroundAsync();
+#line hidden
+#line 222
+      await testRunner.WhenAsync("the learner asks what \"repo\" in \"repo.Count\" is, in the koan \"Every koan is given" +
+                        " a repo\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 223
+      await testRunner.ThenAsync("the answer\'s signature mentions \"A repository: where Plasm meets the database\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [global::Xunit.FactAttribute(DisplayName="Pointing at a name shows what it is")]
+        [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
+        [global::Xunit.TraitAttribute("Description", "Pointing at a name shows what it is")]
+        public async global::System.Threading.Tasks.Task PointingAtANameShowsWhatItIs()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
+            string pickleIndex = "67";
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Pointing at a name shows what it is", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
+            string[] tagsOfRule = ((string[])(null));
+            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("The editor knows F#", null, tagsOfRule);
+#line 225
+    this.ScenarioInitialize(scenarioInfo, ruleInfo);
+#line hidden
+            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                await testRunner.SkipScenarioAsync();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 7
+  await this.FeatureBackgroundAsync();
+#line hidden
+#line 226
+      await testRunner.GivenAsync("the learner opens the koan \"Every koan is given a repo\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "Given ");
+#line hidden
+#line 227
+      await testRunner.WhenAsync("the learner points at \"repo\" in \"repo.Count\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 228
+      await testRunner.ThenAsync("a tip shows \"repo: Repo\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 229
+      await testRunner.AndAsync("the tip says \"A repository: where Plasm meets the database\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [global::Xunit.FactAttribute(DisplayName="Pointing at a member shows its signature and its documentation")]
+        [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
+        [global::Xunit.TraitAttribute("Description", "Pointing at a member shows its signature and its documentation")]
+        public async global::System.Threading.Tasks.Task PointingAtAMemberShowsItsSignatureAndItsDocumentation()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
+            string pickleIndex = "68";
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Pointing at a member shows its signature and its documentation", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
+            string[] tagsOfRule = ((string[])(null));
+            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("The editor knows F#", null, tagsOfRule);
+#line 231
+    this.ScenarioInitialize(scenarioInfo, ruleInfo);
+#line hidden
+            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                await testRunner.SkipScenarioAsync();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 7
+  await this.FeatureBackgroundAsync();
+#line hidden
+#line 232
+      await testRunner.GivenAsync("the learner opens the koan \"Every koan is given a repo\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "Given ");
+#line hidden
+#line 233
+      await testRunner.WhenAsync("the learner points at \"Count\" in \"repo.Count\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 234
+      await testRunner.ThenAsync("a tip shows \"Count\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 235
+      await testRunner.AndAsync("the tip says something about it", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [global::Xunit.FactAttribute(DisplayName="In Vim mode, K shows what the name at the cursor is")]
+        [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
+        [global::Xunit.TraitAttribute("Description", "In Vim mode, K shows what the name at the cursor is")]
+        public async global::System.Threading.Tasks.Task InVimModeKShowsWhatTheNameAtTheCursorIs()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
+            string pickleIndex = "69";
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("In Vim mode, K shows what the name at the cursor is", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
+            string[] tagsOfRule = ((string[])(null));
+            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("The editor knows F#", null, tagsOfRule);
+#line 237
+    this.ScenarioInitialize(scenarioInfo, ruleInfo);
+#line hidden
+            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                await testRunner.SkipScenarioAsync();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 7
+  await this.FeatureBackgroundAsync();
+#line hidden
+#line 238
+      await testRunner.GivenAsync("the learner has turned Vim mode on", ((string)(null)), ((global::Reqnroll.Table)(null)), "Given ");
+#line hidden
+#line 239
+      await testRunner.AndAsync("the learner chooses the koan \"Every koan is given a repo\" from the list", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
+#line hidden
+#line 240
+      await testRunner.WhenAsync("the learner puts the cursor on \"repo\" in \"repo.Count\" and types \"K\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 241
+      await testRunner.ThenAsync("a tip shows \"repo: Repo\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [global::Xunit.FactAttribute(DisplayName="Completions come quickly once the compiler has warmed up")]
+        [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
+        [global::Xunit.TraitAttribute("Description", "Completions come quickly once the compiler has warmed up")]
+        public async global::System.Threading.Tasks.Task CompletionsComeQuicklyOnceTheCompilerHasWarmedUp()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
+            string pickleIndex = "70";
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Completions come quickly once the compiler has warmed up", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
+            string[] tagsOfRule = ((string[])(null));
+            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("The editor knows F#", null, tagsOfRule);
+#line 243
+    this.ScenarioInitialize(scenarioInfo, ruleInfo);
+#line hidden
+            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                await testRunner.SkipScenarioAsync();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 7
+  await this.FeatureBackgroundAsync();
+#line hidden
+#line 244
+      await testRunner.GivenAsync("the learner has asked for completions once", ((string)(null)), ((global::Reqnroll.Table)(null)), "Given ");
+#line hidden
+#line 245
       await testRunner.WhenAsync("the learner asks what can follow \"repo.\" in the koan \"ok opens a Result\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 220
+#line 246
       await testRunner.ThenAsync("the completions arrive within 1500 milliseconds", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
             }
@@ -1408,11 +1598,11 @@ namespace Plasm.Koans.Browser.Specs.Features
         {
             string[] tagsOfScenario = ((string[])(null));
             global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
-            string pickleIndex = "66";
+            string pickleIndex = "71";
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Opening a koan puts it in the address", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan has its own address", null, tagsOfRule);
-#line 224
+#line 250
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -1425,10 +1615,10 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 7
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 225
+#line 251
       await testRunner.WhenAsync("the learner chooses the koan \"A record groups named fields\" from the list", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 226
+#line 252
       await testRunner.ThenAsync("the address names the koan \"a-record-groups-named-fields\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
             }
@@ -1442,11 +1632,11 @@ namespace Plasm.Koans.Browser.Specs.Features
         {
             string[] tagsOfScenario = ((string[])(null));
             global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
-            string pickleIndex = "67";
+            string pickleIndex = "72";
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("An address opens its koan, ready to type", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan has its own address", null, tagsOfRule);
-#line 228
+#line 254
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -1459,13 +1649,13 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 7
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 229
+#line 255
       await testRunner.WhenAsync("the learner goes to the address of the koan \"values-do-not-change\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 230
+#line 256
       await testRunner.ThenAsync("the koan \"Values do not change\" is shown", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 231
+#line 257
       await testRunner.AndAsync("the editor has the focus, with its first blank selected", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
@@ -1479,11 +1669,11 @@ namespace Plasm.Koans.Browser.Specs.Features
         {
             string[] tagsOfScenario = ((string[])(null));
             global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
-            string pickleIndex = "68";
+            string pickleIndex = "73";
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A reload stays on the same koan", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan has its own address", null, tagsOfRule);
-#line 233
+#line 259
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -1496,13 +1686,13 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 7
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 234
+#line 260
       await testRunner.GivenAsync("the learner opens the koan \"An option may be absent\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "Given ");
 #line hidden
-#line 235
+#line 261
       await testRunner.WhenAsync("the learner reloads the page", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 236
+#line 262
       await testRunner.ThenAsync("the koan \"An option may be absent\" is shown", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
             }
@@ -1516,192 +1706,10 @@ namespace Plasm.Koans.Browser.Specs.Features
         {
             string[] tagsOfScenario = ((string[])(null));
             global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
-            string pickleIndex = "69";
+            string pickleIndex = "74";
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Back returns to the koan before", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan has its own address", null, tagsOfRule);
-#line 238
-    this.ScenarioInitialize(scenarioInfo, ruleInfo);
-#line hidden
-            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
-            {
-                await testRunner.SkipScenarioAsync();
-            }
-            else
-            {
-                await this.ScenarioStartAsync();
-#line 7
-  await this.FeatureBackgroundAsync();
-#line hidden
-#line 239
-      await testRunner.GivenAsync("the learner chooses the koan \"Values do not change\" from the list", ((string)(null)), ((global::Reqnroll.Table)(null)), "Given ");
-#line hidden
-#line 240
-      await testRunner.AndAsync("the learner presses Ctrl+] in the editor", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
-#line hidden
-#line 241
-      await testRunner.WhenAsync("the learner goes back in the browser", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
-#line hidden
-#line 242
-      await testRunner.ThenAsync("the koan \"Values do not change\" is shown", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
-#line hidden
-            }
-            await this.ScenarioCleanupAsync();
-        }
-        
-        [global::Xunit.FactAttribute(DisplayName="An address naming no koan opens the first koan")]
-        [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
-        [global::Xunit.TraitAttribute("Description", "An address naming no koan opens the first koan")]
-        public async global::System.Threading.Tasks.Task AnAddressNamingNoKoanOpensTheFirstKoan()
-        {
-            string[] tagsOfScenario = ((string[])(null));
-            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
-            string pickleIndex = "70";
-            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("An address naming no koan opens the first koan", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
-            string[] tagsOfRule = ((string[])(null));
-            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan has its own address", null, tagsOfRule);
-#line 244
-    this.ScenarioInitialize(scenarioInfo, ruleInfo);
-#line hidden
-            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
-            {
-                await testRunner.SkipScenarioAsync();
-            }
-            else
-            {
-                await this.ScenarioStartAsync();
-#line 7
-  await this.FeatureBackgroundAsync();
-#line hidden
-#line 245
-      await testRunner.WhenAsync("the learner goes to the address of the koan \"no-such-koan\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
-#line hidden
-#line 246
-      await testRunner.ThenAsync("the koan \"Fill in the blank\" is shown", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
-#line hidden
-#line 247
-      await testRunner.AndAsync("the address names the koan \"fill-in-the-blank\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
-#line hidden
-            }
-            await this.ScenarioCleanupAsync();
-        }
-        
-        [global::Xunit.FactAttribute(DisplayName="Every koan has an address of its own")]
-        [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
-        [global::Xunit.TraitAttribute("Description", "Every koan has an address of its own")]
-        public async global::System.Threading.Tasks.Task EveryKoanHasAnAddressOfItsOwn()
-        {
-            string[] tagsOfScenario = ((string[])(null));
-            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
-            string pickleIndex = "71";
-            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Every koan has an address of its own", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
-            string[] tagsOfRule = ((string[])(null));
-            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan has its own address", null, tagsOfRule);
-#line 249
-    this.ScenarioInitialize(scenarioInfo, ruleInfo);
-#line hidden
-            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
-            {
-                await testRunner.SkipScenarioAsync();
-            }
-            else
-            {
-                await this.ScenarioStartAsync();
-#line 7
-  await this.FeatureBackgroundAsync();
-#line hidden
-#line 250
-      await testRunner.WhenAsync("the address of every koan is worked out from its name", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
-#line hidden
-#line 251
-      await testRunner.ThenAsync("no two koans share an address", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
-#line hidden
-            }
-            await this.ScenarioCleanupAsync();
-        }
-        
-        [global::Xunit.FactAttribute(DisplayName="A koan shows the tables it uses, with their starting rows")]
-        [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
-        [global::Xunit.TraitAttribute("Description", "A koan shows the tables it uses, with their starting rows")]
-        public async global::System.Threading.Tasks.Task AKoanShowsTheTablesItUsesWithTheirStartingRows()
-        {
-            string[] tagsOfScenario = ((string[])(null));
-            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
-            string pickleIndex = "72";
-            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A koan shows the tables it uses, with their starting rows", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
-            string[] tagsOfRule = ((string[])(null));
-            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan opens with what it is given", null, tagsOfRule);
-#line 255
-    this.ScenarioInitialize(scenarioInfo, ruleInfo);
-#line hidden
-            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
-            {
-                await testRunner.SkipScenarioAsync();
-            }
-            else
-            {
-                await this.ScenarioStartAsync();
-#line 7
-  await this.FeatureBackgroundAsync();
-#line hidden
-#line 256
-      await testRunner.WhenAsync("the learner opens the koan \"Wrapped keys keep their meaning\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
-#line hidden
-#line 257
-      await testRunner.ThenAsync("under Given the customers table shows its 3 starting rows", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
-#line hidden
-#line 258
-      await testRunner.AndAsync("Ada\'s row shows the id 1", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
-#line hidden
-            }
-            await this.ScenarioCleanupAsync();
-        }
-        
-        [global::Xunit.FactAttribute(DisplayName="A NULL is shown as NULL")]
-        [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
-        [global::Xunit.TraitAttribute("Description", "A NULL is shown as NULL")]
-        public async global::System.Threading.Tasks.Task ANULLIsShownAsNULL()
-        {
-            string[] tagsOfScenario = ((string[])(null));
-            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
-            string pickleIndex = "73";
-            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A NULL is shown as NULL", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
-            string[] tagsOfRule = ((string[])(null));
-            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan opens with what it is given", null, tagsOfRule);
-#line 260
-    this.ScenarioInitialize(scenarioInfo, ruleInfo);
-#line hidden
-            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
-            {
-                await testRunner.SkipScenarioAsync();
-            }
-            else
-            {
-                await this.ScenarioStartAsync();
-#line 7
-  await this.FeatureBackgroundAsync();
-#line hidden
-#line 261
-      await testRunner.WhenAsync("the learner opens the koan \"Absent values are options\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
-#line hidden
-#line 262
-      await testRunner.ThenAsync("under Given the orders table shows NULL as the customer of order 4", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
-#line hidden
-            }
-            await this.ScenarioCleanupAsync();
-        }
-        
-        [global::Xunit.FactAttribute(DisplayName="A koan shows the definitions it uses, from the shop\'s source")]
-        [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
-        [global::Xunit.TraitAttribute("Description", "A koan shows the definitions it uses, from the shop\'s source")]
-        public async global::System.Threading.Tasks.Task AKoanShowsTheDefinitionsItUsesFromTheShopsSource()
-        {
-            string[] tagsOfScenario = ((string[])(null));
-            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
-            string pickleIndex = "74";
-            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A koan shows the definitions it uses, from the shop\'s source", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
-            string[] tagsOfRule = ((string[])(null));
-            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan opens with what it is given", null, tagsOfRule);
 #line 264
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
@@ -1716,30 +1724,33 @@ namespace Plasm.Koans.Browser.Specs.Features
   await this.FeatureBackgroundAsync();
 #line hidden
 #line 265
-      await testRunner.WhenAsync("the learner opens the koan \"Stored values can be rejected\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
+      await testRunner.GivenAsync("the learner chooses the koan \"Values do not change\" from the list", ((string)(null)), ((global::Reqnroll.Table)(null)), "Given ");
 #line hidden
 #line 266
-      await testRunner.ThenAsync("under Given the definition of Quantity includes \"if v > 0 then Ok(Quantity v)\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+      await testRunner.AndAsync("the learner presses Ctrl+] in the editor", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
 #line 267
-      await testRunner.AndAsync("the definition says it comes from Shop.fs", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
+      await testRunner.WhenAsync("the learner goes back in the browser", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 268
+      await testRunner.ThenAsync("the koan \"Values do not change\" is shown", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
         }
         
-        [global::Xunit.FactAttribute(DisplayName="The fields a koan reads are marked in their record")]
+        [global::Xunit.FactAttribute(DisplayName="An address naming no koan opens the first koan")]
         [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
-        [global::Xunit.TraitAttribute("Description", "The fields a koan reads are marked in their record")]
-        public async global::System.Threading.Tasks.Task TheFieldsAKoanReadsAreMarkedInTheirRecord()
+        [global::Xunit.TraitAttribute("Description", "An address naming no koan opens the first koan")]
+        public async global::System.Threading.Tasks.Task AnAddressNamingNoKoanOpensTheFirstKoan()
         {
             string[] tagsOfScenario = ((string[])(null));
             global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
             string pickleIndex = "75";
-            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("The fields a koan reads are marked in their record", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("An address naming no koan opens the first koan", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
-            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan opens with what it is given", null, tagsOfRule);
-#line 269
+            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan has its own address", null, tagsOfRule);
+#line 270
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -1752,10 +1763,189 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 7
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 270
+#line 271
+      await testRunner.WhenAsync("the learner goes to the address of the koan \"no-such-koan\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 272
+      await testRunner.ThenAsync("the koan \"Fill in the blank\" is shown", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 273
+      await testRunner.AndAsync("the address names the koan \"fill-in-the-blank\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [global::Xunit.FactAttribute(DisplayName="Every koan has an address of its own")]
+        [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
+        [global::Xunit.TraitAttribute("Description", "Every koan has an address of its own")]
+        public async global::System.Threading.Tasks.Task EveryKoanHasAnAddressOfItsOwn()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
+            string pickleIndex = "76";
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Every koan has an address of its own", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
+            string[] tagsOfRule = ((string[])(null));
+            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan has its own address", null, tagsOfRule);
+#line 275
+    this.ScenarioInitialize(scenarioInfo, ruleInfo);
+#line hidden
+            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                await testRunner.SkipScenarioAsync();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 7
+  await this.FeatureBackgroundAsync();
+#line hidden
+#line 276
+      await testRunner.WhenAsync("the address of every koan is worked out from its name", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 277
+      await testRunner.ThenAsync("no two koans share an address", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [global::Xunit.FactAttribute(DisplayName="A koan shows the tables it uses, with their starting rows")]
+        [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
+        [global::Xunit.TraitAttribute("Description", "A koan shows the tables it uses, with their starting rows")]
+        public async global::System.Threading.Tasks.Task AKoanShowsTheTablesItUsesWithTheirStartingRows()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
+            string pickleIndex = "77";
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A koan shows the tables it uses, with their starting rows", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
+            string[] tagsOfRule = ((string[])(null));
+            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan opens with what it is given", null, tagsOfRule);
+#line 281
+    this.ScenarioInitialize(scenarioInfo, ruleInfo);
+#line hidden
+            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                await testRunner.SkipScenarioAsync();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 7
+  await this.FeatureBackgroundAsync();
+#line hidden
+#line 282
+      await testRunner.WhenAsync("the learner opens the koan \"Wrapped keys keep their meaning\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 283
+      await testRunner.ThenAsync("under Given the customers table shows its 3 starting rows", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 284
+      await testRunner.AndAsync("Ada\'s row shows the id 1", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [global::Xunit.FactAttribute(DisplayName="A NULL is shown as NULL")]
+        [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
+        [global::Xunit.TraitAttribute("Description", "A NULL is shown as NULL")]
+        public async global::System.Threading.Tasks.Task ANULLIsShownAsNULL()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
+            string pickleIndex = "78";
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A NULL is shown as NULL", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
+            string[] tagsOfRule = ((string[])(null));
+            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan opens with what it is given", null, tagsOfRule);
+#line 286
+    this.ScenarioInitialize(scenarioInfo, ruleInfo);
+#line hidden
+            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                await testRunner.SkipScenarioAsync();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 7
+  await this.FeatureBackgroundAsync();
+#line hidden
+#line 287
       await testRunner.WhenAsync("the learner opens the koan \"Absent values are options\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 271
+#line 288
+      await testRunner.ThenAsync("under Given the orders table shows NULL as the customer of order 4", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [global::Xunit.FactAttribute(DisplayName="A koan shows the definitions it uses, from the shop\'s source")]
+        [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
+        [global::Xunit.TraitAttribute("Description", "A koan shows the definitions it uses, from the shop\'s source")]
+        public async global::System.Threading.Tasks.Task AKoanShowsTheDefinitionsItUsesFromTheShopsSource()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
+            string pickleIndex = "79";
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A koan shows the definitions it uses, from the shop\'s source", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
+            string[] tagsOfRule = ((string[])(null));
+            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan opens with what it is given", null, tagsOfRule);
+#line 290
+    this.ScenarioInitialize(scenarioInfo, ruleInfo);
+#line hidden
+            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                await testRunner.SkipScenarioAsync();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 7
+  await this.FeatureBackgroundAsync();
+#line hidden
+#line 291
+      await testRunner.WhenAsync("the learner opens the koan \"Stored values can be rejected\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 292
+      await testRunner.ThenAsync("under Given the definition of Quantity includes \"if v > 0 then Ok(Quantity v)\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 293
+      await testRunner.AndAsync("the definition of Quantity says it comes from Shop.fs", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [global::Xunit.FactAttribute(DisplayName="The fields a koan reads are marked in their record")]
+        [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
+        [global::Xunit.TraitAttribute("Description", "The fields a koan reads are marked in their record")]
+        public async global::System.Threading.Tasks.Task TheFieldsAKoanReadsAreMarkedInTheirRecord()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
+            string pickleIndex = "80";
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("The fields a koan reads are marked in their record", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
+            string[] tagsOfRule = ((string[])(null));
+            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan opens with what it is given", null, tagsOfRule);
+#line 295
+    this.ScenarioInitialize(scenarioInfo, ruleInfo);
+#line hidden
+            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                await testRunner.SkipScenarioAsync();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 7
+  await this.FeatureBackgroundAsync();
+#line hidden
+#line 296
+      await testRunner.WhenAsync("the learner opens the koan \"Absent values are options\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 297
       await testRunner.ThenAsync("under Given the definition of Order marks the fields Id, CustomerId and Cancellat" +
                         "ionReason", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
@@ -1770,11 +1960,11 @@ namespace Plasm.Koans.Browser.Specs.Features
         {
             string[] tagsOfScenario = ((string[])(null));
             global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
-            string pickleIndex = "76";
+            string pickleIndex = "81";
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A table changed with SQL is given too", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan opens with what it is given", null, tagsOfRule);
-#line 273
+#line 299
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -1787,10 +1977,10 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 7
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 274
+#line 300
       await testRunner.WhenAsync("the learner opens the koan \"Stored values can be rejected\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 275
+#line 301
       await testRunner.ThenAsync("under Given the order_lines table shows its 4 starting rows", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
             }
@@ -1804,11 +1994,11 @@ namespace Plasm.Koans.Browser.Specs.Features
         {
             string[] tagsOfScenario = ((string[])(null));
             global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
-            string pickleIndex = "77";
+            string pickleIndex = "82";
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Every table is a click away", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan opens with what it is given", null, tagsOfRule);
-#line 277
+#line 303
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -1821,13 +2011,13 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 7
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 278
+#line 304
       await testRunner.WhenAsync("the learner opens the koan \"Wrapped keys keep their meaning\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 279
+#line 305
       await testRunner.AndAsync("asks for all tables", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
-#line 280
+#line 306
       await testRunner.ThenAsync("under Given every table of the koans database is shown", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
             }
@@ -1841,11 +2031,11 @@ namespace Plasm.Koans.Browser.Specs.Features
         {
             string[] tagsOfScenario = ((string[])(null));
             global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
-            string pickleIndex = "78";
+            string pickleIndex = "83";
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A koan shows only its own code", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan opens with what it is given", null, tagsOfRule);
-#line 282
+#line 308
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -1858,14 +2048,52 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 7
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 283
+#line 309
       await testRunner.WhenAsync("the learner opens the koan \"The shop has three customers\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 284
+#line 310
       await testRunner.ThenAsync("its code starts with its first comment, not with fun repo -> or task {", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 285
+#line 311
       await testRunner.AndAsync("it uses the repo it is given as repo", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [global::Xunit.FactAttribute(DisplayName="A koan says what repo is and where it comes from")]
+        [global::Xunit.TraitAttribute("FeatureTitle", "Walking the path in the browser")]
+        [global::Xunit.TraitAttribute("Description", "A koan says what repo is and where it comes from")]
+        public async global::System.Threading.Tasks.Task AKoanSaysWhatRepoIsAndWhereItComesFrom()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
+            string pickleIndex = "84";
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A koan says what repo is and where it comes from", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
+            string[] tagsOfRule = ((string[])(null));
+            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan opens with what it is given", null, tagsOfRule);
+#line 313
+    this.ScenarioInitialize(scenarioInfo, ruleInfo);
+#line hidden
+            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                await testRunner.SkipScenarioAsync();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 7
+  await this.FeatureBackgroundAsync();
+#line hidden
+#line 314
+      await testRunner.WhenAsync("the learner opens the koan \"The shop has three customers\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 315
+      await testRunner.ThenAsync("under Given the definition of repo is labelled \"Plasm\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 316
+      await testRunner.AndAsync("under Given the definition of repo includes \"let repo = Repo(Db.model, Postgres.c" +
+                        "onnect connectionString)\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
@@ -1878,11 +2106,11 @@ namespace Plasm.Koans.Browser.Specs.Features
         {
             string[] tagsOfScenario = ((string[])(null));
             global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
-            string pickleIndex = "79";
+            string pickleIndex = "85";
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Definitions say whether they are your app\'s code or test helpers", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan opens with what it is given", null, tagsOfRule);
-#line 287
+#line 318
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -1895,16 +2123,16 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 7
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 288
+#line 319
       await testRunner.WhenAsync("the learner opens the koan \"The shop has three customers\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 289
+#line 320
       await testRunner.ThenAsync("under Given the definition of Customer is labelled \"your app\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 290
+#line 321
       await testRunner.AndAsync("under Given the definition of ok is labelled \"test helper\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
-#line 291
+#line 322
       await testRunner.AndAsync("under Given the definition of ok includes \"let ok (r: Result<\'T, \'E>) : \'T =\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
@@ -1918,11 +2146,11 @@ namespace Plasm.Koans.Browser.Specs.Features
         {
             string[] tagsOfScenario = ((string[])(null));
             global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
-            string pickleIndex = "80";
+            string pickleIndex = "86";
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A koan that needs nothing has no Given", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Each koan opens with what it is given", null, tagsOfRule);
-#line 293
+#line 324
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -1935,10 +2163,10 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 7
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 294
+#line 325
       await testRunner.WhenAsync("the learner opens the first koan", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 295
+#line 326
       await testRunner.ThenAsync("no Given is shown", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
             }

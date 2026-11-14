@@ -214,6 +214,32 @@ Feature: Walking the path in the browser
       Then a list of completions opens, offering Count
       And choosing Count puts "repo.Count" in the code
 
+    Scenario: The compiler says what a name is
+      When the learner asks what "Count" in "repo.Count" is, in the koan "Every koan is given a repo"
+      Then the answer's signature mentions "Count"
+
+    Scenario: The compiler explains a value by its type
+      When the learner asks what "repo" in "repo.Count" is, in the koan "Every koan is given a repo"
+      Then the answer's signature mentions "A repository: where Plasm meets the database"
+
+    Scenario: Pointing at a name shows what it is
+      Given the learner opens the koan "Every koan is given a repo"
+      When the learner points at "repo" in "repo.Count"
+      Then a tip shows "repo: Repo"
+      And the tip says "A repository: where Plasm meets the database"
+
+    Scenario: Pointing at a member shows its signature and its documentation
+      Given the learner opens the koan "Every koan is given a repo"
+      When the learner points at "Count" in "repo.Count"
+      Then a tip shows "Count"
+      And the tip says something about it
+
+    Scenario: In Vim mode, K shows what the name at the cursor is
+      Given the learner has turned Vim mode on
+      And the learner chooses the koan "Every koan is given a repo" from the list
+      When the learner puts the cursor on "repo" in "repo.Count" and types "K"
+      Then a tip shows "repo: Repo"
+
     Scenario: Completions come quickly once the compiler has warmed up
       Given the learner has asked for completions once
       When the learner asks what can follow "repo." in the koan "ok opens a Result"
@@ -264,7 +290,7 @@ Feature: Walking the path in the browser
     Scenario: A koan shows the definitions it uses, from the shop's source
       When the learner opens the koan "Stored values can be rejected"
       Then under Given the definition of Quantity includes "if v > 0 then Ok(Quantity v)"
-      And the definition says it comes from Shop.fs
+      And the definition of Quantity says it comes from Shop.fs
 
     Scenario: The fields a koan reads are marked in their record
       When the learner opens the koan "Absent values are options"
@@ -283,6 +309,11 @@ Feature: Walking the path in the browser
       When the learner opens the koan "The shop has three customers"
       Then its code starts with its first comment, not with fun repo -> or task {
       And it uses the repo it is given as repo
+
+    Scenario: A koan says what repo is and where it comes from
+      When the learner opens the koan "The shop has three customers"
+      Then under Given the definition of repo is labelled "Plasm"
+      And under Given the definition of repo includes "let repo = Repo(Db.model, Postgres.connect connectionString)"
 
     Scenario: Definitions say whether they are your app's code or test helpers
       When the learner opens the koan "The shop has three customers"

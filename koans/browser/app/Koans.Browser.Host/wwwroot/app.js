@@ -216,7 +216,7 @@ function renderGiven(koan) {
   g.definitions.forEach((d, i) => {
     const pre = el('pre');
     pre.innerHTML = d.code.split('\n').map((line, n) => (d.marked.includes(n) ? `<span class="marked">${colour(line)}</span>` : colour(line))).join('\n');
-    const panel = el('div', { class: 'definition', 'data-name': d.name }, el('div', { class: 'definition-head' }, el('span', { class: 'source' }, `${d.name}, from ${d.source}`),
+    const panel = el('div', { class: 'definition', 'data-name': d.name }, el('div', { class: 'definition-head' }, el('span', { class: 'source' }, d.source === 'every koan' ? `${d.name}, given to every koan` : `${d.name}, from ${d.source}`),
       el('span', { class: 'kind', 'data-kind': d.kind }, d.kind)), pre);
     panel.hidden = i !== 0;
     const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(i === 0) }, d.name);
@@ -324,6 +324,7 @@ $('shortcut').textContent = keys.run;
 // cursor comes from the F# compiler in the engine.
 const editor = createEditor($('code'), {
   complete: (code, offset) => (shown ? complete(shown.lessonIndex, shown.koanIndex, code, offset) : []),
+  hover: (code, offset) => (shown ? askEngine('hover', shown.lessonIndex, shown.koanIndex, code, offset) : {}),
   onEdit: (code) => keep(shown.lessonIndex, shown.koanIndex, (s) => { s.edit = code; }),
   onRun: () => runShown(),
   onVimMode: (mode) => {
@@ -383,20 +384,24 @@ async function evaluate(code, sandboxed = true) {
   });
 }
 
-/// What can follow the cursor at `offset` in a koan's code: [{name, kind, detail}].
-async function complete(lessonIndex, koanIndex, body, offset) {
+/// Asks the engine's F# checker about a koan's code at `offset`: 'complete'
+/// (what can follow: [{name, kind, detail}]) or 'hover' (what is there:
+/// {name, signature, doc}).
+async function askEngine(type, lessonIndex, koanIndex, body, offset) {
   const lesson = course.lessons[lessonIndex];
   const koan = lesson.koans[koanIndex];
   const current = await engine.ready;
   const id = ++ids;
   return new Promise((resolve) => {
     current.pending.set(id, resolve);
-    current.worker.postMessage({ type: 'complete', id, helpers: lesson.helpers, isTask: koan.isTask, framed: koan.framed, body, offset });
+    current.worker.postMessage({ type, id, helpers: lesson.helpers, isTask: koan.isTask, framed: koan.framed, body, offset });
   });
 }
+const complete = (lessonIndex, koanIndex, body, offset) => askEngine('complete', lessonIndex, koanIndex, body, offset);
+const hover = (lessonIndex, koanIndex, body, offset) => askEngine('hover', lessonIndex, koanIndex, body, offset);
 
 // For tests: the course and a way to reach any koan.
-window.koans = { course, runKoan, show, stop, evaluate, addressOf, complete, editor };
+window.koans = { course, runKoan, show, stop, evaluate, addressOf, complete, hover, editor };
 updateProgress();
 go(addressed(), 'replace');
 window.addEventListener('popstate', () => go(addressed(), 'none'));

@@ -182,19 +182,21 @@ let evaluate (refsDir: string) (code: string) (sandboxed: bool) : Task<string> =
                 return json [ "error", box (string ex) ]
     }
 
-/// What can follow the cursor at `offset` in a koan's code, from the F#
-/// compiler's own checker: JSON [{name, kind, detail}].
-let complete (refsDir: string) (helpers: string) (isTask: bool) (framed: bool) (body: string) (offset: int) : Task<string> =
+open FSharp.Compiler.CodeAnalysis
+open FSharp.Compiler.EditorServices
+
+/// Type-checks a koan's code with the F# compiler's checker, for the editor:
+/// the results, with the cursor at `offset` as a line (1-based), that line's
+/// text and a column (0-based) in the compiled source.
+let private checkAt (refsDir: string) (helpers: string) (isTask: bool) (framed: bool) (body: string) (offset: int) =
     task {
         let src, prefix, indent = source helpers isTask framed body
         let before = body.Substring(0, min offset body.Length)
-        let lineInBody = before.Split('\n').Length
-        let columnInBody = before.Length - (before.LastIndexOf '\n' + 1)
-        let line = prefix + lineInBody
+        let line = prefix + before.Split('\n').Length
         let lineText = src.Split('\n').[line - 1]
-        let column = columnInBody + indent
+        let column = before.Length - (before.LastIndexOf '\n' + 1) + indent
 
-        let file = IO.Path.Combine(IO.Path.GetTempPath(), "koan", "complete.fs")
+        let file = IO.Path.Combine(IO.Path.GetTempPath(), "koan", "editor.fs")
         IO.Directory.CreateDirectory(IO.Path.GetDirectoryName file) |> ignore
         let refs = IO.Directory.GetFiles(refsDir, "*.dll") |> Array.map (fun r -> "-r:" + r)
         let checker = Compiler.checker.Value
@@ -203,20 +205,53 @@ let complete (refsDir: string) (helpers: string) (isTask: bool) (framed: bool) (
             { checker.GetProjectOptionsFromCommandLineArgs("koan.fsproj", Array.append [| "--noframework"; "--target:library"; "--parallelcompilation-" |] refs) with
                 SourceFiles = [| file |] }
 
-        let! parsed, answer =
-            checker.ParseAndCheckFileInProject(file, 0, FSharp.Compiler.Text.SourceText.ofString src, options)
-            |> Async.StartAsTask
+        let! parsed, answer = checker.ParseAndCheckFileInProject(file, 0, FSharp.Compiler.Text.SourceText.ofString src, options) |> Async.StartAsTask
 
-        match answer with
-        | FSharp.Compiler.CodeAnalysis.FSharpCheckFileAnswer.Succeeded check ->
-            let partial = FSharp.Compiler.EditorServices.QuickParse.GetPartialLongNameEx(lineText, column - 1)
+        return
+            match answer with
+            | FSharpCheckFileAnswer.Succeeded check -> Some(parsed, check, line, lineText, column)
+            | _ -> None
+    }
+
+/// The text of an XML doc comment's summary.
+let private summaryOf (xml: string) =
+    let m = Text.RegularExpressions.Regex.Match(xml, "<summary>(.*?)</summary>", Text.RegularExpressions.RegexOptions.Singleline)
+    let text = if m.Success then m.Groups.[1].Value else xml
+    let text = Text.RegularExpressions.Regex.Replace(text, "<see cref=\"\\w:([^\"]*)\"\\s*/>", "$1")
+    let text = Text.RegularExpressions.Regex.Replace(text, "<[^>]+>", "")
+    Net.WebUtility.HtmlDecode(Text.RegularExpressions.Regex.Replace(text, "\\s+", " ").Trim())
+
+/// A doc comment's summary from a reference assembly's XML file in `refsDir`.
+let private docIn (refsDir: string) (assembly: string) (signature: string) =
+    let file = IO.Path.Combine(refsDir, assembly + ".xml")
+
+    if IO.File.Exists file then
+        let m = Text.RegularExpressions.Regex.Match(IO.File.ReadAllText file, "<member name=\"" + Text.RegularExpressions.Regex.Escape signature + "\">(.*?)</member>", Text.RegularExpressions.RegexOptions.Singleline)
+        if m.Success then summaryOf m.Groups.[1].Value else ""
+    else
+        ""
+
+/// The documentation of something the compiler describes: its own XML text,
+/// or its entry in the reference assembly's XML file in `refsDir`.
+let private docOf (refsDir: string) (doc: FSharp.Compiler.Symbols.FSharpXmlDoc) =
+    match doc with
+    | FSharp.Compiler.Symbols.FSharpXmlDoc.FromXmlText x -> summaryOf (String.concat "\n" x.UnprocessedLines)
+    | FSharp.Compiler.Symbols.FSharpXmlDoc.FromXmlFile(dll, signature) -> docIn refsDir (IO.Path.GetFileNameWithoutExtension dll) signature
+    | _ -> ""
+
+/// What can follow the cursor at `offset` in a koan's code, from the F#
+/// compiler's own checker: JSON [{name, kind, detail}].
+let complete (refsDir: string) (helpers: string) (isTask: bool) (framed: bool) (body: string) (offset: int) : Task<string> =
+    task {
+        match! checkAt refsDir helpers isTask framed body offset with
+        | Some(parsed, check, line, lineText, column) ->
+            let partial = QuickParse.GetPartialLongNameEx(lineText, column - 1)
             let list = check.GetDeclarationListInfo(Some parsed, line, lineText, partial)
 
-            let detail (FSharp.Compiler.EditorServices.ToolTipText elements) =
+            let detail (ToolTipText elements) =
                 elements
                 |> List.tryPick (function
-                    | FSharp.Compiler.EditorServices.ToolTipElement.Group(first :: _) ->
-                        Some first.MainDescription.Text
+                    | ToolTipElement.Group(first :: _) -> Some first.MainDescription.Text
                     | _ -> None)
                 |> Option.defaultValue ""
 
@@ -225,5 +260,43 @@ let complete (refsDir: string) (helpers: string) (isTask: bool) (framed: bool) (
                 |> Array.map (fun i -> dict [ "name", box i.NameInList; "kind", box (string i.Glyph); "detail", box (detail i.Description) ])
 
             return JsonSerializer.Serialize items
-        | _ -> return "[]"
+        | None -> return "[]"
+    }
+
+/// What the name at `offset` in a koan's code is: JSON {name, signature, doc},
+/// or {} when there is nothing there.
+let hover (refsDir: string) (helpers: string) (isTask: bool) (framed: bool) (body: string) (offset: int) : Task<string> =
+    task {
+        match! checkAt refsDir helpers isTask framed body offset with
+        | Some(_, check, line, lineText, column) ->
+            match QuickParse.GetCompleteIdentifierIsland true lineText column with
+            | Some(ident, endColumn, _) ->
+                let names = ident.Split('.') |> List.ofArray
+                let (ToolTipText elements) = check.GetToolTip(line, endColumn, lineText, names, FSharp.Compiler.Tokenization.FSharpTokenTag.Identifier)
+
+                // A value with no doc of its own (such as repo) is explained by its type's doc.
+                let typeDoc () =
+                    match check.GetSymbolUseAtLocation(line, endColumn, lineText, names) with
+                    | Some u ->
+                        match u.Symbol with
+                        | :? FSharp.Compiler.Symbols.FSharpMemberOrFunctionOrValue as v when v.FullType.HasTypeDefinition ->
+                            let t = v.FullType.TypeDefinition
+
+                            match docOf refsDir t.XmlDoc with
+                            | "" -> docIn refsDir t.Assembly.SimpleName t.XmlDocSig
+                            | d -> d
+                        | _ -> ""
+                    | None -> ""
+
+                match elements |> List.tryPick (function ToolTipElement.Group(first :: _) -> Some first | _ -> None) with
+                | Some item ->
+                    let doc = match docOf refsDir item.XmlDoc with "" -> typeDoc () | d -> d
+
+                    return
+                        JsonSerializer.Serialize(
+                            dict [ "name", box (List.last names); "signature", box item.MainDescription.Text; "doc", box doc ]
+                        )
+                | None -> return "{}"
+            | None -> return "{}"
+        | None -> return "{}"
     }

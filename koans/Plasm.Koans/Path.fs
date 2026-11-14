@@ -5,8 +5,8 @@ open Plasm.Koans.Lessons
 
 let lessons: Lesson list =
     [ L01_GettingStarted.lesson
-      L02_MeetTheShop.lesson
-      L03_WhatARepoIs.lesson
+      L02_WhatARepoIs.lesson
+      L03_MeetTheShop.lesson
       L04_PlasmsPromises.lesson
       L05_RecordsAndSchemas.lesson
       L06_QueryValues.lesson
