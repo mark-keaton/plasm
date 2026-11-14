@@ -287,6 +287,10 @@ function show(lessonIndex, koanIndex) {
   if (feature === 'F#') { $('teaches').textContent = koan.teaches; $('teaches').removeAttribute('href'); }
   else { $('teaches').textContent = `${feature}.feature: ${scenario}`; $('teaches').href = `spec/${feature}.feature`; }
   renderGiven(koan);
+  // The address always names the koan shown (go() adds the history entry first).
+  const url = new URL(location.href);
+  url.searchParams.set('koan', addressOf(koan));
+  if (url.href !== location.href) window.history.replaceState(null, '', url);
   $('code').value = savedFor(lessonIndex, koanIndex)?.edit ?? koan.body;
   highlight();
   render(results.get(`${lessonIndex}/${koanIndex}`), lessonIndex, koanIndex);
@@ -306,9 +310,26 @@ function preceding({ lessonIndex, koanIndex }) {
   return null;
 }
 
+/// A koan's address (?koan=...) is its name in lower case, words joined by '-'.
+const addressOf = (koan) => koan.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+/// The koan the address names, or the first koan.
+function addressed() {
+  const wanted = new URLSearchParams(location.search).get('koan');
+  for (const [l, lesson] of course.lessons.entries()) {
+    const k = lesson.koans.findIndex((koan) => addressOf(koan) === wanted);
+    if (k >= 0) return { lessonIndex: l, koanIndex: k };
+  }
+  return { lessonIndex: 0, koanIndex: 0 };
+}
+
 /// Opens a koan ready to type: the editor has the focus, with its first blank selected.
-function go(to) {
+/// With 'push' the koan gets a history entry of its own, so Back returns to the one before.
+function go(to, history = 'push') {
   if (!to) return;
+  const url = new URL(location.href);
+  url.searchParams.set('koan', addressOf(course.lessons[to.lessonIndex].koans[to.koanIndex]));
+  if (history === 'push' && url.href !== location.href) window.history.pushState(null, '', url);
   show(to.lessonIndex, to.koanIndex);
   const code = $('code');
   code.focus();
@@ -392,9 +413,10 @@ async function evaluate(code, sandboxed = true) {
 }
 
 // For tests: the course and a way to reach any koan.
-window.koans = { course, runKoan, show, stop, evaluate };
+window.koans = { course, runKoan, show, stop, evaluate, addressOf };
 updateProgress();
-go({ lessonIndex: 0, koanIndex: 0 });
+go(addressed(), 'replace');
+window.addEventListener('popstate', () => go(addressed(), 'none'));
 const ready = await engine.ready;
 window.koansReady = true;
 

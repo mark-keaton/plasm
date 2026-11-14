@@ -47,6 +47,7 @@ type CourseSteps(w: BrowserWorld) =
 
     let mutable runs: (string * string * string) list = [] // koan, status, text
     let mutable edit = ""
+    let mutable addresses: string list = []
 
     /// Runs every koan through the page's engine (answered or as shipped).
     let runAll (answered: bool) =
@@ -442,6 +443,45 @@ type CourseSteps(w: BrowserWorld) =
             do! w.Page.ClickAsync($"nav button[data-koan=\"{koan.Lesson}/{koan.Index}\"]")
         }
         |> unit
+
+    [<StepDefinition("^the address names the koan \"(.*)\"$")>]
+    member _.AddressNames(slug: string) =
+        task {
+            let! _ = w.Page.WaitForFunctionAsync("s => new URL(location.href).searchParams.get('koan') === s", slug, PageWaitForFunctionOptions(Timeout = Nullable 5000.f))
+            ()
+        }
+        |> unit
+
+    [<StepDefinition("^the learner goes to the address of the koan \"(.*)\"$")>]
+    member _.GoTo(slug: string) =
+        task {
+            let! _ = w.Page.GotoAsync(baseUrl () + "index.html?koan=" + slug)
+            let! _ = w.Page.WaitForFunctionAsync("() => window.koansReady === true", null, PageWaitForFunctionOptions(Timeout = Nullable 180000.f))
+            ()
+        }
+        |> unit
+
+    [<StepDefinition("^the learner goes back in the browser$")>]
+    member _.Back() =
+        task {
+            let! _ = w.Page.GoBackAsync()
+            ()
+        }
+        |> unit
+
+    [<StepDefinition("^the address of every koan is worked out from its name$")>]
+    member _.Addresses() =
+        task {
+            let! slugs = w.Page.EvaluateAsync<string[]>("() => window.koans.course.lessons.flatMap(l => l.koans.map(k => window.koans.addressOf(k)))")
+            addresses <- List.ofArray slugs
+        }
+        |> unit
+
+    [<StepDefinition("^no two koans share an address$")>]
+    member _.UniqueAddresses() =
+        let shared = addresses |> List.countBy id |> List.filter (fun (_, n) -> n > 1) |> List.map fst
+        check (addresses.Length = Specs.koans.Value.Length) $"{addresses.Length} addresses for {Specs.koans.Value.Length} koans"
+        check shared.IsEmpty $"koans share the addresses %A{shared}"
 
     [<StepDefinition("^the Next koan button shows the key that opens the next koan$")>]
     member _.NextNamesKey() =

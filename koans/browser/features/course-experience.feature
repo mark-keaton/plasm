@@ -129,6 +129,37 @@ Feature: Walking the path in the browser
 
   # A koan's blanks must be answerable from the page: its code, the data it
   # starts from and the definitions it uses. Each koan opens with them.
+  Rule: Each koan has its own address
+
+    Scenario: Opening a koan puts it in the address
+      When the learner chooses the koan "A record groups named fields" from the list
+      Then the address names the koan "a-record-groups-named-fields"
+
+    Scenario: An address opens its koan, ready to type
+      When the learner goes to the address of the koan "values-do-not-change"
+      Then the koan "Values do not change" is shown
+      And the editor has the focus, with its first blank selected
+
+    Scenario: A reload stays on the same koan
+      Given the learner opens the koan "An option may be absent"
+      When the learner reloads the page
+      Then the koan "An option may be absent" is shown
+
+    Scenario: Back returns to the koan before
+      Given the learner chooses the koan "Values do not change" from the list
+      And the learner presses Ctrl+] in the editor
+      When the learner goes back in the browser
+      Then the koan "Values do not change" is shown
+
+    Scenario: An address naming no koan opens the first koan
+      When the learner goes to the address of the koan "no-such-koan"
+      Then the koan "Fill in the blank" is shown
+      And the address names the koan "fill-in-the-blank"
+
+    Scenario: Every koan has an address of its own
+      When the address of every koan is worked out from its name
+      Then no two koans share an address
+
   Rule: Each koan opens with what it is given
 
     Scenario: A koan shows the tables it uses, with their starting rows
