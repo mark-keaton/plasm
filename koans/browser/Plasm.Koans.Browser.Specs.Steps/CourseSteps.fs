@@ -385,6 +385,61 @@ type CourseSteps(w: BrowserWorld) =
         }
         |> unit
 
+    [<StepDefinition("^the learner presses Ctrl\\+(\\]|\\[) in the editor$")>]
+    member _.PressBracket(key: string) =
+        w.Page.PressAsync("#code", (if key = "]" then "Control+BracketRight" else "Control+BracketLeft"))
+
+    /// The koan the page shows, by name.
+    member private _.ShownName() =
+        task {
+            let! name = w.Page.TextContentAsync "#name"
+            return name.Trim()
+        }
+
+    [<StepDefinition("^the koan \"(.*)\" is shown$")>]
+    member this.KoanShown(name: string) =
+        task {
+            let! shown = this.ShownName()
+            check (shown = name) $"the page shows the koan \"{shown}\""
+        }
+        |> unit
+
+    [<StepDefinition("^the editor has the focus, with its first blank selected$")>]
+    member _.FocusOnBlank() =
+        task {
+            let! state = w.Page.EvaluateAsync<string[]>("() => { const c = document.getElementById('code'); return [String(document.activeElement === c), c.value.slice(c.selectionStart, c.selectionEnd), String(c.selectionStart === c.value.indexOf('__'))]; }")
+            check (state.[0] = "true") "the editor does not have the focus"
+            check (state.[1] = "__" && state.[2] = "true") $"the selection is %A{state.[1]}, not the first blank"
+        }
+        |> unit
+
+    [<StepDefinition("^the learner opens the last koan of lesson (\\d+)$")>]
+    member _.OpenLast(lesson: int) =
+        task {
+            let! count = w.Page.EvaluateAsync<int>($"() => window.koans.course.lessons[{lesson - 1}].koans.length")
+            let! koan = koanAt w.Page (lesson - 1) (count - 1)
+            do! show w.Page koan
+            w.Koan <- Some koan
+        }
+        |> unit
+
+    [<StepDefinition("^the first koan of lesson (\\d+) is shown$")>]
+    member this.FirstOfLesson(lesson: int) =
+        task {
+            let! koan = koanAt w.Page (lesson - 1) 0
+            let! shown = this.ShownName()
+            check (shown = koan.Name) $"the page shows \"{shown}\", not \"{koan.Name}\""
+        }
+        |> unit
+
+    [<StepDefinition("^the Next koan button shows the key that opens the next koan$")>]
+    member _.NextNamesKey() =
+        task {
+            let! text = w.Page.TextContentAsync "#next .kbd"
+            check (text = "Ctrl+]" || text = "⌘]") $"the Next koan button shows the key %A{text}"
+        }
+        |> unit
+
     [<StepDefinition("^its code is set in a font that joins operators such as \|> and ->$")>]
     member _.LigatureFont() =
         task {

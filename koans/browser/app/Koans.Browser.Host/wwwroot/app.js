@@ -46,6 +46,8 @@ const store = {
 try { localStorage.removeItem('plasm-koans:passed'); localStorage.removeItem('plasm-koans:edits'); } catch { /* private mode */ }
 const saved = store.load('koans', {});
 const keyOf = (l, k) => `${l}/${k}`;
+const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+const keys = { run: mac ? '⌘↵' : 'Ctrl+↵', next: mac ? '⌘]' : 'Ctrl+]', previous: mac ? '⌘[' : 'Ctrl+[' };
 const koanAt = (l, k) => course.lessons[l].koans[k];
 const savedFor = (l, k) => { const s = saved[koanAt(l, k).name]; return s && s.base === koanAt(l, k).body ? s : null; };
 const isPassed = (l, k) => !!savedFor(l, k)?.passed;
@@ -152,8 +154,9 @@ function render(r, lessonIndex, koanIndex) {
   const headline = el('div', { class: 'headline' }, el('span', { class: 'badge', 'aria-hidden': 'true' }), (headlines[r.status] ?? (() => r.text))(r));
   const next = following({ lessonIndex, koanIndex });
   if (r.status === 'passed' && next) {
-    const button = el('button', { class: 'btn primary', id: 'next' }, `Next koan: ${course.lessons[next.lessonIndex].koans[next.koanIndex].name} →`);
-    button.onclick = () => show(next.lessonIndex, next.koanIndex);
+    const button = el('button', { class: 'btn primary', id: 'next' }, `Next koan: ${course.lessons[next.lessonIndex].koans[next.koanIndex].name} →`,
+      el('span', { class: 'kbd' }, keys.next));
+    button.onclick = () => go(next);
     headline.append(button);
   }
   box.append(headline);
@@ -297,6 +300,22 @@ function show(lessonIndex, koanIndex) {
   });
 }
 
+function preceding({ lessonIndex, koanIndex }) {
+  if (koanIndex > 0) return { lessonIndex, koanIndex: koanIndex - 1 };
+  if (lessonIndex > 0) return { lessonIndex: lessonIndex - 1, koanIndex: course.lessons[lessonIndex - 1].koans.length - 1 };
+  return null;
+}
+
+/// Opens a koan ready to type: the editor has the focus, with its first blank selected.
+function go(to) {
+  if (!to) return;
+  show(to.lessonIndex, to.koanIndex);
+  const code = $('code');
+  code.focus();
+  const blank = code.value.indexOf('__');
+  if (blank >= 0) code.setSelectionRange(blank, blank + 2); else code.setSelectionRange(0, 0);
+}
+
 function following({ lessonIndex, koanIndex }) {
   if (koanIndex + 1 < course.lessons[lessonIndex].koans.length) return { lessonIndex, koanIndex: koanIndex + 1 };
   if (lessonIndex + 1 < course.lessons.length) return { lessonIndex: lessonIndex + 1, koanIndex: 0 };
@@ -322,7 +341,13 @@ $('run').onclick = runShown;
 $('code').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runShown(); }
 });
-$('shortcut').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘↵' : 'Ctrl+↵';
+$('shortcut').textContent = keys.run;
+// Ctrl+] (or Cmd+]) opens the next koan and Ctrl+[ (or Cmd+[) the previous one, from anywhere on the page.
+document.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || !shown) return;
+  if (e.code === 'BracketRight') { e.preventDefault(); go(following(shown)); }
+  else if (e.code === 'BracketLeft') { e.preventDefault(); go(preceding(shown)); }
+});
 $('stop').onclick = () => stop();
 $('code').addEventListener('input', () => {
   highlight();

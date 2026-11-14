@@ -88,6 +88,26 @@ Feature: Walking the path in the browser
       When the learner fills in the first koan's blanks and presses Ctrl+Enter
       Then the koan shows that it passed
 
+    Scenario: The next koan can be opened from the keyboard
+      When the learner fills in the first koan's blanks and presses Ctrl+Enter
+      And the learner presses Ctrl+] in the editor
+      Then the koan "Values do not change" is shown
+      And the editor has the focus, with its first blank selected
+
+    Scenario: The previous koan can be opened from the keyboard
+      Given the learner opens the koan "Values do not change"
+      When the learner presses Ctrl+[ in the editor
+      Then the koan "Fill in the blank" is shown
+
+    Scenario: The last koan of a lesson leads on to the next lesson
+      Given the learner opens the last koan of lesson 1
+      When the learner presses Ctrl+] in the editor
+      Then the first koan of lesson 2 is shown
+
+    Scenario: The Next koan button names its key
+      When the learner fills in the first koan's blanks and presses Ctrl+Enter
+      Then the Next koan button shows the key that opens the next koan
+
     Scenario: F# operators are drawn as single symbols
       When a koan is shown
       Then its code is set in a font that joins operators such as |> and ->
