@@ -1,6 +1,6 @@
 # Acceptance specification: classification and traceability
 
-The supplied Gherkin specifications are the acceptance contract. `features/joins.feature`, and then `aggregates.feature`, `bulk-writes.feature`, `raw-sql.feature` and `prepared-queries.feature` (batch 2a) and `many-to-many.feature`, `schema-check.feature` and `sandbox.feature` (batch 2b), were added afterwards, each written and run red before its implementation. `fsi.feature` (F# Interactive) followed the same way; its steps run each scenario in a real F# Interactive session hosted by the test. After an architecture audit, `query-semantics.feature`, `tx-steps.feature`, `query-pipeline.feature`, `error-model.feature`, `has-one.feature` and `providers.feature` were added, with new rules in `prepared-queries.feature`, `sandbox.feature` and `fsi.feature`, each run red first. A second audit added `reading.feature` and new scenarios in `query-semantics`, `query-pipeline`, `fsi`, `prepared-queries`, `tx-steps`, `error-model` and `providers`. The comparison with the F# data-access libraries (`docs/comparison.md`) added a rule to `query-semantics.feature` (union ordering) and `pg-enums.feature`. The supplied ones are kept verbatim in `docs/specs/original/`, and the executable copies in `features/` differ only
+The supplied Gherkin specifications are the acceptance contract. `features/joins.feature`, and then `aggregates.feature`, `bulk-writes.feature`, `raw-sql.feature` and `prepared-queries.feature` (batch 2a) and `many-to-many.feature`, `schema-check.feature` and `sandbox.feature` (batch 2b), were added afterwards, each written and run red before its implementation. `fsi.feature` (F# Interactive) followed the same way; its steps run each scenario in a real F# Interactive session hosted by the test. After an architecture audit, `query-semantics.feature`, `tx-steps.feature`, `query-pipeline.feature`, `error-model.feature`, `has-one.feature` and `providers.feature` were added, with new rules in `prepared-queries.feature`, `sandbox.feature` and `fsi.feature`, each run red first. A second audit added `reading.feature` and new scenarios in `query-semantics`, `query-pipeline`, `fsi`, `prepared-queries`, `tx-steps`, `error-model` and `providers`. The comparison with the F# data-access libraries (`docs/comparison.md`) added a rule to `query-semantics.feature` (union ordering) and `pg-enums.feature`. The strict design (one fact stated once) began with `scalar-conventions.feature`. The supplied ones are kept verbatim in `docs/specs/original/`, and the executable copies in `features/` differ only
 where Gherkin validity requires it (see each file's header). Every scenario runs
 as a test through Reqnroll: `tests/Plasm.Specs` (the C# host that generates the tests) binds to F# step
 definitions in `tests/Plasm.Specs.Steps`, against a real PostgreSQL 18 database
@@ -497,6 +497,30 @@ the same guarantee more exhaustively.
 |---|---|---|---|---|
 | A stored label the model does not list fails to load, naming it | Implemented and verified | `PgEnumSteps.fs` |  |  |
 | An invalid type name is rejected when the mapping is made | Implemented and verified | `PgEnumSteps.fs` |  | Names are identifiers, optionally schema-qualified; they are always quoted in SQL. |
+
+### scalar-conventions.feature: Wrapper types need no mapping
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A single-case union is stored as the type it wraps | Implemented and verified | `ConventionSteps.fs` |  | The strict design's step 1: `Model.build`'s scalar list is now overrides; any other field type gets a mapping by convention (`Conventions` in `Model.fs`), or a ConfigError naming the field. |
+| An optional wrapper is stored as NULL or its value | Implemented and verified | `ConventionSteps.fs` |  |  |
+| A query compares a wrapper with a captured value | Implemented and verified | `ConventionSteps.fs` |  | A type met only in a query gets its mapping by convention on first use. |
+| A type with a create function is read through it | Implemented and verified | `ConventionSteps.fs` |  | `create: 'P -> Result<'T, string>` as a static member or in the type's module; a refused stored value is a materialization error with the domain's reason. |
+| A private representation without a create function is refused | Implemented and verified | `ConventionSteps.fs` |  | Plasm never constructs a private representation behind the domain's back. |
+| Two create functions for one type are refused | Implemented and verified | `ConventionSteps.fs` |  |  |
+
+### scalar-conventions.feature: Fieldless unions need no mapping
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A fieldless union is stored as its case name in snake case | Implemented and verified | `ConventionSteps.fs` |  |  |
+| Ordering by a fieldless union follows its declaration | Implemented and verified | `ConventionSteps.fs` |  | As `Scalar.enum`: ordered by position. |
+
+### scalar-conventions.feature: A mapping given to the model overrides the convention
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| An explicit mapping is used instead of the convention | Implemented and verified | `ConventionSteps.fs` |  |  |
 
 ### sandbox.feature: Sandboxes nest
 

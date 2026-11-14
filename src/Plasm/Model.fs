@@ -4,12 +4,120 @@ open System
 open System.Collections.Generic
 open Microsoft.FSharp.Reflection
 
+/// The mappings domain scalars get without being registered
+/// (scalar-conventions.feature). A mapping given to `Model.build` overrides them.
+module internal Conventions =
+    open System.Reflection
+
+    /// The `create: 'P -> Result<'T, string>` functions of `t`: a static member,
+    /// or a function in the type's module (compiled as `<T>Module`). Named as
+    /// the domain writes them.
+    let private creates (t: Type) (p: Type) =
+        let result = typedefof<Result<_, _>>.MakeGenericType(t, typeof<string>)
+
+        let wanted (m: MethodInfo) =
+            m.Name = "create"
+            && m.ReturnType = result
+            && (let ps = m.GetParameters() in ps.Length = 1 && ps.[0].ParameterType = p)
+
+        let onType = t.GetMethods(BindingFlags.Public ||| BindingFlags.Static) |> Array.filter wanted |> Array.map (fun m -> $"{t.Name}.create (a member)", m)
+
+        let inModule =
+            match t.Assembly.GetType(t.FullName + "Module") with
+            | null -> [||]
+            | m -> m.GetMethods(BindingFlags.Public ||| BindingFlags.Static) |> Array.filter wanted |> Array.map (fun f -> $"{t.Name}.create (in module {t.Name})", f)
+
+        Array.append onType inModule
+
+    /// Reads `create`'s Result: the value, or the domain's reason.
+    let private outcome (r: obj) : Result<obj, string> =
+        let case, fields = FSharpValue.GetUnionFields(r, r.GetType())
+        if case.Name = "Ok" then Ok fields.[0] else Error(string fields.[0])
+
+    /// A fieldless union, stored as its case names in snake case, ordered as
+    /// it is declared.
+    let private fieldless (t: Type) (cases: UnionCaseInfo[]) =
+        let tag = FSharpValue.PreComputeUnionTagReader(t, true)
+        let values = cases |> Array.map (fun c -> FSharpValue.MakeUnion(c, [||], true))
+        let stored = cases |> Array.map (fun c -> Paths.snakeCase c.Name)
+        let byName = Array.zip stored values |> dict
+
+        { DomainType = t
+          ProviderType = typeof<string>
+          ToProvider = fun v -> box stored.[tag v]
+          FromProvider =
+            fun v ->
+                match byName.TryGetValue(unbox<string> v) with
+                | true, c -> Ok c
+                | _ -> Error $"'{v}' is not a known {t.Name}"
+          Ordered = Some(List.ofArray stored)
+          Cases = Array.zip cases stored |> Array.map (fun (c, n) -> c.Name, n) |> List.ofArray
+          StoreType = None
+          Description = $"{t.Name} as text, by convention" }
+
+    /// A single-case union over a built-in type, stored as that type and read
+    /// through its create function when it has one.
+    let private wrapper (t: Type) (case: UnionCaseInfo) (p: Type) : Result<ScalarMapping, string> =
+        let read = FSharpValue.PreComputeUnionReader(case, true)
+        let toProvider (v: obj) = (read v).[0]
+
+        let mapping fromProvider description =
+            { DomainType = t
+              ProviderType = p
+              ToProvider = toProvider
+              FromProvider = fromProvider
+              Ordered = None
+              Cases = []
+              StoreType = None
+              Description = description }
+
+        match creates t p with
+        | [| _, create |] -> Ok(mapping (fun v -> outcome (create.Invoke(null, [| v |]))) $"{t.Name} as {p.Name}, read through {t.Name}.create")
+        | [||] when not (FSharpType.IsUnion(t, false)) ->
+            Error
+                $"type {t.Name} has a private representation and no create function, so Plasm cannot read it without bypassing the domain; give it `static member create: {p.Name} -> Result<{t.Name}, string>`, or register Scalar.tryWrap"
+        | [||] ->
+            let make = FSharpValue.PreComputeUnionConstructor(case, true)
+            Ok(mapping (fun v -> Ok(make [| v |])) $"{t.Name} as {p.Name}, by convention")
+        | several ->
+            let names = several |> Array.map fst |> String.concat " and "
+            Error $"type {t.Name} has more than one create function ({names}); keep one, or register a mapping"
+
+    /// The mapping `t` gets by convention: Some(Ok) for a single-case union over
+    /// a built-in type or a fieldless union, Some(Error) for one Plasm must not
+    /// read, None for any other type.
+    let tryFor (t: Type) : Result<ScalarMapping, string> option =
+        if not (FSharpType.IsUnion(t, true)) || Reflection.isOption t || Reflection.isList t || Reflection.isAssoc t then
+            None
+        else
+            let cases = FSharpType.GetUnionCases(t, true)
+
+            if cases |> Array.forall (fun c -> c.GetFields().Length = 0) then
+                Some(Ok(fieldless t cases))
+            elif cases.Length = 1 && cases.[0].GetFields().Length = 1 && Scalar.isBuiltIn (cases.[0].GetFields().[0].PropertyType) then
+                Some(wrapper t cases.[0] (cases.[0].GetFields().[0].PropertyType))
+            else
+                None
+
 /// A validated set of schemas and scalar mappings. Construct with `Model.build`;
 /// all configuration errors are reported together, before any query runs.
-type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, scalars: IReadOnlyDictionary<Type, ScalarMapping>) =
+type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, registered: IReadOnlyDictionary<Type, ScalarMapping>) =
+
+    // The registered mappings, then those found by convention (a type met
+    // only in a query, never in a field, gets its mapping on first use).
+    let found = Collections.Concurrent.ConcurrentDictionary<Type, ScalarMapping option>()
+
+    /// A type's mapping: registered, else by convention; (false, _) when none.
+    let tryScalar (t: Type) =
+        match registered.TryGetValue t with
+        | true, m -> true, m
+        | _ ->
+            match found.GetOrAdd(t, fun t -> match Conventions.tryFor t with Some(Ok m) -> Some m | _ -> None) with
+            | Some m -> true, m
+            | None -> false, Unchecked.defaultof<ScalarMapping>
 
     member internal _.Schemas = schemas
-    member internal _.Scalars = scalars
+    member internal _.Scalars = registered
 
     member internal _.TrySchema(t: Type) =
         match schemas.TryGetValue t with
@@ -44,7 +152,7 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, scalars: IR
         elif Scalar.isBuiltIn t then
             Ok value
         else
-            match scalars.TryGetValue t with
+            match tryScalar t with
             | true, m -> Ok(m.ToProvider value)
             | _ -> Error $"type {Reflection.typeName t} has no scalar mapping"
 
@@ -75,7 +183,7 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, scalars: IR
             if Scalar.isBuiltIn t then
                 convert t value
             else
-                match scalars.TryGetValue t with
+                match tryScalar t with
                 | true, m -> convert m.ProviderType value |> Result.bind m.FromProvider
                 | _ -> Error $"type {Reflection.typeName t} has no scalar mapping"
 
@@ -84,7 +192,7 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, scalars: IR
     member internal _.OrderedNames(t: Type) =
         let t = if Reflection.isOption t then Reflection.elementType t else t
 
-        match scalars.TryGetValue t with
+        match tryScalar t with
         | true, m -> m.Ordered
         | _ -> None
 
@@ -93,7 +201,7 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, scalars: IR
     member internal _.StoreTypeOf(t: Type) =
         let t = if Reflection.isOption t then Reflection.elementType t else t
 
-        match scalars.TryGetValue t with
+        match tryScalar t with
         | true, m -> m.StoreType
         | _ -> None
 
@@ -101,7 +209,7 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, scalars: IR
         if Scalar.isBuiltIn t then
             Some t
         else
-            match scalars.TryGetValue t with
+            match tryScalar t with
             | true, m -> Some m.ProviderType
             | _ -> None
 
@@ -244,13 +352,16 @@ module Model =
                             else
                                 match scalars.TryGetValue scalarType with
                                 | true, m -> Ok(Some m)
-                                | _ -> Error()
+                                | _ ->
+                                    match Conventions.tryFor scalarType with
+                                    | Some(Ok m) -> Ok(Some m)
+                                    | Some(Error reason) -> Error reason
+                                    | None ->
+                                        Error
+                                            $"type {Reflection.typeName scalarType} has no persistence mapping; it is not a single-case union over a built-in type or a fieldless union, so register Scalar.wrap, Scalar.tryWrap or Scalar.enum"
 
                         match mapping with
-                        | Error() ->
-                            err
-                                (Some prop.Name)
-                                $"type {Reflection.typeName scalarType} has no persistence mapping; register Scalar.wrap, Scalar.tryWrap or Scalar.enum"
+                        | Error reason -> err (Some prop.Name) reason
                         | Ok mapping ->
                             fields.Add
                                 { Name = prop.Name

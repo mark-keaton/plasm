@@ -31,6 +31,7 @@
     <Compile Include="ProviderSteps.fs" />
     <Compile Include="ReadingSteps.fs" />
     <Compile Include="PgEnumSteps.fs" />
+    <Compile Include="ConventionSteps.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Plasm.TestDomain/Plasm.TestDomain.fsproj" />
