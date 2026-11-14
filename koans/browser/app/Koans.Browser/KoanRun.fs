@@ -111,7 +111,28 @@ let run (refsDir: string) (title: string) (name: string) (helpers: string) (isTa
                 |> Option.map ((+) 1)
                 |> Option.defaultValue 0
 
-            return json [ "status", box status; "text", box text; "blankLine", box blankLine; "sql", box (Array.ofList r.Sql) ]
+            // The parts of the result, for the page to lay out.
+            let expected, actual, threw =
+                match r.Outcome with
+                | Failed(e, a) -> Runner.formatSql e, Runner.formatSql a, null
+                | Threw(t, m) -> null, null, $"{t}: {m}"
+                | _ -> null, null, null
+
+            let shownSql =
+                match r.Outcome with
+                | Failed _ | Threw _ -> r.Sql |> List.map (fun s -> (Runner.formatSql s).Replace("\n", "\n    ")) |> Array.ofList
+                | _ -> [||]
+
+            return
+                json
+                    [ "status", box status
+                      "text", box text
+                      "blankLine", box blankLine
+                      "sql", box (Array.ofList r.Sql)
+                      "expected", box expected
+                      "actual", box actual
+                      "threw", box threw
+                      "shownSql", box shownSql ]
     }
 
 /// For checks: compiles `code` (the body of `fun (repo: Repo) -> Task<string>`,

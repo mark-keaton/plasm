@@ -58,7 +58,7 @@ type LoadingSteps(w: BrowserWorld) =
     [<StepDefinition("the page shows the lessons and the first koan with its blank")>]
     member _.ShowsFirst() =
         task {
-            let! buttons = w.Page.Locator("nav button").CountAsync()
+            let! buttons = w.Page.Locator("nav button[data-koan]").CountAsync()
             let! first = koanAt w.Page 0 0
             let! name = w.Page.TextContentAsync "#name"
             let! blanks = w.Page.Locator("#highlight mark.blank").CountAsync()

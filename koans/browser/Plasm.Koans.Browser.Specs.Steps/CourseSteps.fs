@@ -200,6 +200,44 @@ type CourseSteps(w: BrowserWorld) =
         }
         |> unit
 
+    [<StepDefinition("the page shows how many of all the koans are passed")>]
+    member _.OverallProgress() =
+        task {
+            let! text = w.Page.TextContentAsync "#overall"
+            check (text.Trim() = $"1 of {Specs.koans.Value.Length} passed") $"the page shows '{text}'"
+        }
+        |> unit
+
+    [<StepDefinition("a koan in a later lesson is shown")>]
+    member _.LaterLesson() =
+        task {
+            let! koan = koanAt w.Page 2 1
+            do! show w.Page koan
+            w.Koan <- Some koan
+        }
+        |> unit
+
+    [<StepDefinition("that lesson's koans are listed")>]
+    member _.LessonOpen() =
+        task {
+            let! visible = w.Page.Locator("nav button[data-koan^=\"2/\"]:visible").CountAsync()
+            let! all = w.Page.EvaluateAsync<int>("() => window.koans.course.lessons[2].koans.length")
+            check (visible = all) $"{visible} of the lesson's {all} koans are listed"
+        }
+        |> unit
+
+    [<StepDefinition("the other lessons show only their titles and progress")>]
+    member _.OthersFolded() =
+        task {
+            let! visible = w.Page.Locator("nav button[data-koan]:visible").CountAsync()
+            let! all = w.Page.EvaluateAsync<int>("() => window.koans.course.lessons[2].koans.length")
+            let! lessons = w.Page.EvaluateAsync<int>("() => window.koans.course.lessons.length")
+            let! titles = w.Page.Locator("nav h2[data-lesson]:visible .progress").CountAsync()
+            check (visible = all) $"{visible} koans are listed; only the open lesson's {all} should be"
+            check (titles = lessons) $"{titles} of {lessons} lessons show their title and progress"
+        }
+        |> unit
+
     // The editor helps
 
     [<StepDefinition("a koan is shown")>]
@@ -229,5 +267,68 @@ type CourseSteps(w: BrowserWorld) =
             check (href = $"spec/{feature}.feature") $"the koan links to {href}"
             let! text = w.Page.EvaluateAsync<string>("async href => (await fetch(href)).text()", href)
             check (text.Contains $"Scenario: {scenario}" || text.Contains $"Scenario Outline: {scenario}") $"{href} does not contain the scenario '{scenario}'"
+        }
+        |> unit
+
+    /// The highlighted tokens of the editor, as (class, text).
+    member private _.Tokens() =
+        task {
+            let! json = w.Page.EvaluateAsync<string>("() => JSON.stringify([...document.querySelectorAll('#highlight span')].map(s => [s.className, s.textContent]))")
+            return JsonSerializer.Deserialize<string[][]>(json) |> Array.map (fun a -> a.[0], a.[1]) |> Set.ofArray
+        }
+
+    [<StepDefinition("its keywords, type names, strings, numbers and comments are coloured")>]
+    member this.Coloured() =
+        task {
+            let! tokens = this.Tokens()
+            let comment = tokens |> Set.exists (fun (c, t) -> c = "c" && t.StartsWith "// Product is a plain F# record")
+
+            for expected in [ "k", "let"; "k", "with"; "t", "ProductId"; "s", "\"WIDGET\""; "n", "1L" ] do
+                check (tokens.Contains expected) $"%A{expected} is not coloured; the editor shows %A{tokens}"
+
+            check comment $"the comment is not coloured; the editor shows %A{tokens}"
+        }
+        |> unit
+
+    [<StepDefinition("the learner types code into a koan")>]
+    member _.Types() =
+        task {
+            let! koan = koanAt w.Page 0 0
+            do! show w.Page koan
+            do! w.Page.FocusAsync "#code"
+            do! w.Page.EvaluateAsync("() => { const c = document.getElementById('code'); c.selectionStart = c.selectionEnd = c.value.length; }") :> Task
+            do! w.Page.Keyboard.TypeAsync "\n    let answer = Some \"forty-two\""
+        }
+        |> unit
+
+    [<StepDefinition("the code they typed is coloured too")>]
+    member this.TypedColoured() =
+        task {
+            let! tokens = this.Tokens()
+
+            for expected in [ "k", "let"; "t", "Some"; "s", "\"forty-two\"" ] do
+                check (tokens.Contains expected) $"%A{expected} is not coloured after typing; the editor shows %A{tokens}"
+        }
+        |> unit
+
+    [<StepDefinition("each line of its code is numbered, starting from 1")>]
+    member _.Numbered() =
+        task {
+            let! gutter = w.Page.TextContentAsync "#gutter"
+            let lines = w.Koan.Value.Body.Split('\n').Length
+            let expected = String.Join("\n", [ 1..lines ])
+            check (gutter.Trim() = expected) $"the editor numbers its lines:\n{gutter}\nfor {lines} lines"
+        }
+        |> unit
+
+    [<StepDefinition("^the learner fills in the first koan's blanks and presses Ctrl\\+Enter$")>]
+    member _.CtrlEnter() =
+        task {
+            let! koan = koanAt w.Page 0 0
+            do! show w.Page koan
+            do! w.Page.FillAsync("#code", fill koan.Body answers.Value.[koan.Name])
+            do! w.Page.PressAsync("#code", "Control+Enter")
+            let! _ = w.Page.WaitForFunctionAsync("() => document.getElementById('result').dataset.status", null, PageWaitForFunctionOptions(Timeout = Nullable 120000.f))
+            w.Koan <- Some koan
         }
         |> unit

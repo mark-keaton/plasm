@@ -38,6 +38,15 @@ Feature: Walking the path in the browser
       Given the learner has passed some koans
       Then every lesson shows how many of its koans are passed
 
+    Scenario: Progress through the whole course is shown
+      Given the learner has passed some koans
+      Then the page shows how many of all the koans are passed
+
+    Scenario: Only the lesson being studied is unfolded
+      When a koan in a later lesson is shown
+      Then that lesson's koans are listed
+      And the other lessons show only their titles and progress
+
   Rule: The editor helps
 
     Scenario: Blanks are easy to find
@@ -47,3 +56,19 @@ Feature: Walking the path in the browser
     Scenario: The course links back to Plasm's specification
       When a koan is shown
       Then it links to the acceptance scenario it teaches
+
+    Scenario: Code is coloured as F#
+      When a koan is shown
+      Then its keywords, type names, strings, numbers and comments are coloured
+
+    Scenario: Colouring follows the learner's edits
+      When the learner types code into a koan
+      Then the code they typed is coloured too
+
+    Scenario: Lines are numbered as compile errors number them
+      When a koan is shown
+      Then each line of its code is numbered, starting from 1
+
+    Scenario: A koan can be run from the keyboard
+      When the learner fills in the first koan's blanks and presses Ctrl+Enter
+      Then the koan shows that it passed

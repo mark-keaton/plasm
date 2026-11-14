@@ -174,16 +174,17 @@ type RunningSteps(w: BrowserWorld) =
     member _.ExpectedActual() =
         task {
             let! _, text = result w.Page
-            contains "Expected:\n    \"Gadget\"" text
-            contains "Actual:\n    \"Widget\"" text
+            let! expected = w.Page.TextContentAsync "#result .expected pre"
+            let! actual = w.Page.TextContentAsync "#result .actual pre"
+            check (expected = "\"Gadget\"" && actual = "\"Widget\"") $"the koan shows expected {expected} and actual {actual}:\n{text}"
         }
         |> unit
 
     [<StepDefinition("it shows what the koan teaches")>]
     member _.Teaches() =
         task {
-            let! _, text = result w.Page
-            contains $"Meditate on this: {w.Koan.Value.Discovers}" text
+            let! text = w.Page.TextContentAsync "#result .meditate"
+            contains w.Koan.Value.Discovers text
         }
         |> unit
 
@@ -201,8 +202,8 @@ type RunningSteps(w: BrowserWorld) =
     member _.ShowsSql() =
         task {
             let! _, text = result w.Page
-            contains "Plasm generated:" text
-            contains "\n    FROM \"orders\" AS \"t0\"" text
+            let! sql = w.Page.TextContentAsync "#result .sql pre"
+            contains "\n    FROM \"orders\" AS \"t0\"" sql
         }
         |> unit
 
