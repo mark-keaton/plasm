@@ -321,3 +321,110 @@ module internal SchemaCheck =
 
             return List.ofSeq issues
         }
+
+/// The DDL a model expects (ddl.feature): what a migration should reach. It
+/// is printed, never run; Plasm does not write or apply migrations.
+module internal Ddl =
+
+    let print (model: Model) (dialect: ISqlDialect) : string =
+        let plain = Text.RegularExpressions.Regex "^[a-z_][a-z0-9_]*$"
+        let name (n: string) = if plain.IsMatch n then n else dialect.QuoteIdentifier n
+        let schemas = model.Schemas.Values |> Seq.sortBy (fun s -> s.Table) |> List.ofSeq
+        let byType = model.Schemas
+
+        let columnType (p: ColumnPart) =
+            match p.Mapping |> Option.bind (fun m -> m.StoreType) with
+            | Some parts -> parts |> List.map name |> String.concat "."
+            | None ->
+                match dialect.ColumnTypes p.ProviderType with
+                | t :: _ -> t
+                | [] -> failwith $"{dialect.Name} has no column type for {p.ProviderType.Name}"
+
+        let out = Text.StringBuilder()
+        let line (s: string) = out.AppendLine s |> ignore
+
+        // Enum types (Scalar.asPgEnum), each once, with its labels in the cases' order.
+        let enums =
+            schemas
+            |> List.collect (fun s -> s.Fields |> Array.toList |> List.collect (fun f -> f.Parts))
+            |> List.choose (fun p -> p.Mapping |> Option.bind (fun m -> m.StoreType |> Option.map (fun t -> t, m)))
+            |> List.distinctBy fst
+
+        for t, m in enums do
+            let labels = m.Cases |> List.map (fun (_, l) -> $"'{l}'") |> String.concat ", "
+            let typeName = t |> List.map name |> String.concat "."
+            line $"create type {typeName} as enum ({labels});"
+
+        // References: (table, column, referenced schema), each once.
+        let references =
+            [ for s in schemas do
+                  for f in s.Fields do
+                      match f.References |> Option.bind (fun t -> match byType.TryGetValue t with | true, r -> Some r | _ -> None) with
+                      | Some r -> yield s.Table, f.Column, r
+                      | None -> ()
+
+                  for a in s.Assocs do
+                      match a.Kind with
+                      | AssocKind.HasMany
+                      | AssocKind.HasOne ->
+                          let child = byType.[a.Target]
+                          yield child.Table, (child.Field a.ForeignKey).Column, s
+                      | AssocKind.BelongsTo -> yield s.Table, (s.Field a.ForeignKey).Column, byType.[a.Target]
+                      | AssocKind.ManyToMany -> () ]
+            |> List.distinctBy (fun (t, c, _) -> t, c)
+
+        for s in schemas do
+            let columns =
+                [ for f in s.Fields do
+                      for p in f.Parts do
+                          let isTag = f.Union.IsSome && p.Name = f.Column
+                          let required = if f.Union.IsSome then isTag else not f.IsOption
+
+                          let key =
+                              if f.Name = s.Key.Name then
+                                  if s.KeyGenerated then " generated always as identity primary key" else " primary key"
+                              else
+                                  ""
+
+                          let version = if s.Version |> Option.exists (fun v -> v.Name = f.Name) then " default 1" else ""
+                          let notNull = if required then " not null" else ""
+                          yield $"  {name p.Name} {columnType p}{notNull}{version}{key}"
+
+                  for f in s.Fields do
+                      if f.Unique then
+                          let constraintName = name (s.Table + "_" + f.Column + "_key")
+                          yield $"  constraint {constraintName} unique ({name f.Column})" ]
+
+            line $"create table {name s.Table} ("
+            line (String.concat ",\n" columns)
+            line ");"
+
+        // Join tables of manyToMany and links, each once.
+        let joins =
+            [ for s in schemas do
+                  for a in s.Assocs do
+                      match a.Through with
+                      | Some j -> yield j, s, byType.[a.Target]
+                      | None -> () ]
+            |> List.distinctBy (fun (j, _, _) -> j.Table)
+
+        for j, owner, target in joins do
+            let keyType (s: SchemaInfo) = columnType s.Key.Parts.Head
+            line $"create table {name j.Table} ("
+            line $"  {name j.OwnerColumn} {keyType owner} not null,"
+            line $"  {name j.TargetColumn} {keyType target} not null,"
+            line $"  primary key ({name j.OwnerColumn}, {name j.TargetColumn})"
+            line ");"
+
+        let joinReferences =
+            [ for j, owner, target in joins do
+                  yield j.Table, j.OwnerColumn, owner
+                  yield j.Table, j.TargetColumn, target ]
+
+        for table, column, r in references @ joinReferences do
+            let constraintName = name (table + "_" + column + "_fkey")
+
+            line
+                $"alter table {name table} add constraint {constraintName} foreign key ({name column}) references {name r.Table} ({name r.Key.Column});"
+
+        out.ToString()

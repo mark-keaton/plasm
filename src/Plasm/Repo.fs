@@ -451,6 +451,11 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                           // A function that builds a query each call is not a value Plasm can check.
                           | _ -> () ]
 
+    /// The DDL this repository's model expects (ddl.feature): every table,
+    /// its columns, key and constraints, with the names Plasm maps violations
+    /// by. It is printed, never run: write the migration that reaches it.
+    member _.Ddl() : string = Ddl.print model provider.Dialect
+
     member _.CheckSchema(?cancellationToken: CancellationToken) : Task<Result<SchemaIssue list, DbError>> =
         let ct = defaultArg cancellationToken CancellationToken.None
 

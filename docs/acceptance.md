@@ -522,6 +522,14 @@ the same guarantee more exhaustively.
 |---|---|---|---|---|
 | An explicit mapping is used instead of the convention | Implemented and verified | `ConventionSteps.fs` |  |  |
 
+### ddl.feature
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| The DDL for <model> builds a matching database | Implemented and verified | `DdlSteps.fs` |  | Strict design, step 9: `repo.Ddl()` (`Ddl.print` in `SchemaCheck.fs`) prints enum types, tables (columns, NOT NULL, identity keys, unique constraints), join tables, then every reference as `alter table ... add constraint <table>_<column>_fkey`. Run on an empty database, the schema check reports nothing, for the test domain, Tickets, Cards with a Stage, Invoices and linked Cards. |
+| Uniqueness and references carry their names | Implemented and verified | `DdlSteps.fs` |  | The names Plasm maps violations by. |
+| Printing the DDL runs nothing | Implemented and verified | `DdlSteps.fs` |  | Plasm does not write or apply migrations. |
+
 ### linked-collections.feature
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
