@@ -129,6 +129,78 @@ Feature: Walking the path in the browser
 
   # A koan's blanks must be answerable from the page: its code, the data it
   # starts from and the definitions it uses. Each koan opens with them.
+  Rule: The editor has a simple Vim mode
+    Off until the learner turns it on. In the examples, ‸ marks the cursor, ⏎ a
+    new line and · a space at the edge of a line; keys are typed as written, with
+    <Esc>, <C-[> and <C-r> for Escape, Ctrl+[ and Ctrl+R.
+
+    Scenario: Vim mode is off until the learner turns it on
+      When a koan is shown
+      Then Vim mode is off
+      And typing in the editor inserts text
+
+    Scenario: With Vim mode on, a koan opens in Normal mode on its first blank
+      Given the learner has turned Vim mode on
+      When the learner chooses the koan "Values do not change" from the list
+      Then the editor is in Normal mode
+      And the cursor is on the first blank
+
+    Scenario: A koan can be answered without leaving the keyboard
+      Given the learner has turned Vim mode on
+      When the learner chooses the koan "Fill in the blank" from the list
+      And types "cw"Widget"<Esc>" in the editor
+      And presses Ctrl+Enter
+      Then the koan shows that it passed
+
+    Scenario: Vim mode is remembered
+      Given the learner has turned Vim mode on
+      When the learner reloads the page
+      Then the editor is in Normal mode
+
+    Scenario Outline: In Normal mode <keys> <does>
+      Given the learner has turned Vim mode on
+      And the editor holds "<before>"
+      When the learner types "<keys>" in the editor
+      Then the editor holds "<after>"
+      And the editor is in <mode> mode
+
+      Examples:
+        | keys          | does                                      | before                | after                  | mode   |
+        | l             | moves right                               | ‸abc                  | a‸bc                   | Normal |
+        | h             | moves left                                | ab‸c                  | a‸bc                   | Normal |
+        | j             | moves down, keeping the column            | a‸bc⏎def              | abc⏎d‸ef               | Normal |
+        | k             | moves up, keeping the column              | abc⏎de‸f              | ab‸c⏎def               | Normal |
+        | w             | moves to the next word                    | ‸let x = 1            | let ‸x = 1             | Normal |
+        | b             | moves back a word                         | let x ‸= 1            | let ‸x = 1             | Normal |
+        | e             | moves to the end of the word              | ‸shouldBe x           | shouldB‸e x            | Normal |
+        | 0             | moves to the start of the line            | let ‸x                | ‸let x                 | Normal |
+        | ^             | moves to the first character of the line  | ····let ‸x            | ····‸let x             | Normal |
+        | $             | moves to the end of the line              | ‸let x⏎y              | let ‸x⏎y               | Normal |
+        | G             | moves to the last line                    | ‸a⏎b⏎··c              | a⏎b⏎··‸c               | Normal |
+        | gg            | moves to the first line                   | ··a⏎b⏎‸c              | ··‸a⏎b⏎c               | Normal |
+        | 2w            | counts                                    | ‸a b c                | a b ‸c                 | Normal |
+        | x             | deletes a character                       | a‸bc                  | a‸c                    | Normal |
+        | dw            | deletes a word                            | ‸let x = 1            | ‸x = 1                 | Normal |
+        | dd            | deletes a line                            | a⏎‸b⏎c                | a⏎‸c                   | Normal |
+        | D             | deletes to the end of the line            | let ‸x = 1            | let‸·                  | Normal |
+        | cw            | changes a word                            | shouldBe ‸__          | shouldBe ‸             | Insert |
+        | cw42<Esc>     | fills in a blank                          | shouldBe ‸__          | shouldBe 4‸2           | Normal |
+        | cc            | changes a line                            | a⏎··‸bc⏎d             | a⏎··‸⏎d                | Insert |
+        | C             | changes to the end of the line            | let ‸x = 1            | let ‸                  | Insert |
+        | rz            | replaces a character                      | a‸bc                  | a‸zc                   | Normal |
+        | i             | inserts before the cursor                 | a‸bc                  | a‸bc                   | Insert |
+        | a             | appends after the cursor                  | a‸bc                  | ab‸c                   | Insert |
+        | I             | inserts at the start of the line          | ··a‸bc                | ··‸abc                 | Insert |
+        | A             | appends at the end of the line            | a‸bc⏎d                | abc‸⏎d                 | Insert |
+        | o             | opens a line below, keeping the indent    | ··a‸b⏎c               | ··ab⏎··‸⏎c             | Insert |
+        | O             | opens a line above, keeping the indent    | a⏎··b‸c               | a⏎··‸⏎··bc             | Insert |
+        | ix<Esc>       | leaves Insert mode with Escape            | a‸b                   | a‸xb                   | Normal |
+        | ix<C-[>       | leaves Insert mode with Ctrl+[            | a‸b                   | a‸xb                   | Normal |
+        | yyp           | copies a line below                       | ‸a⏎b                  | a⏎‸a⏎b                 | Normal |
+        | ddP           | moves a line up                           | a⏎‸b                  | ‸b⏎a                   | Normal |
+        | xu            | undoes                                    | a‸bc                  | a‸bc                   | Normal |
+        | xu<C-r>       | redoes                                    | a‸bc                  | a‸c                    | Normal |
+
   Rule: Each koan has its own address
 
     Scenario: Opening a koan puts it in the address

@@ -408,7 +408,8 @@ type CourseSteps(w: BrowserWorld) =
     [<StepDefinition("^the editor has the focus, with its first blank selected$")>]
     member _.FocusOnBlank() =
         task {
-            let! state = w.Page.EvaluateAsync<string[]>("() => { const c = document.getElementById('code'); return [String(document.activeElement === c), c.value.slice(c.selectionStart, c.selectionEnd), String(c.selectionStart === c.value.indexOf('__'))]; }")
+            let! state = w.Page.EvaluateAsync<string[]>("() => { const c = document.getElementById('code'); return [String(document.activeElement === c), c.value.slice(c.selectionStart, c.selectionEnd), String(c.selectionStart), c.value]; }")
+            let state = [| state.[0]; state.[1]; (if int state.[2] = firstBlankAt state.[3] then "true" else "false") |]
             check (state.[0] = "true") "the editor does not have the focus"
             check (state.[1] = "__" && state.[2] = "true") $"the selection is %A{state.[1]}, not the first blank"
         }

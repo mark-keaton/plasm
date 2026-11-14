@@ -208,6 +208,13 @@ let fill (body: string) (values: string list) =
         code + line.Substring cut)
     |> String.concat "\n"
 
+/// Where the first blank to fill in is in some code: the first __ outside
+/// comments and strings (a comment may mention __), or -1.
+let firstBlankAt (code: string) =
+    let hidden = Regex.Replace(code, "//[^\n]*|\"(?:\\\\.|[^\"\\\\\n])*\"", (fun (m: Match) -> String(' ', m.Length)))
+    let m = blank.Match hidden
+    if m.Success then m.Index else -1
+
 /// The 1-based line of the first blank in a koan's code.
 let firstBlankLine (body: string) =
     body.Split('\n')

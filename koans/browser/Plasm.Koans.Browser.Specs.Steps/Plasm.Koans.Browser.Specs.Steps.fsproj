@@ -7,6 +7,7 @@
     <Compile Include="RunningSteps.fs" />
     <Compile Include="CourseSteps.fs" />
     <Compile Include="GivenSteps.fs" />
+    <Compile Include="VimSteps.fs" />
     <Compile Include="ServerSide.fs" />
     <Compile Include="DatabaseSteps.fs" />
     <Compile Include="LoadingSteps.fs" />

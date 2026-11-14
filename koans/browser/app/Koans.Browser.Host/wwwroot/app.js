@@ -1,6 +1,8 @@
 // The koans page. The engine (PGlite and .NET with the F# compiler) runs in a
 // Web Worker, so the page stays responsive while a koan compiles and runs; a
 // koan that does not finish is stopped by replacing the worker.
+import { vim as makeVim } from './vim.js';
+
 const $ = (id) => document.getElementById(id);
 const status = (text) => { $('status').textContent = text; };
 
@@ -323,6 +325,13 @@ function addressed() {
   return { lessonIndex: 0, koanIndex: 0 };
 }
 
+/// Where the first blank to fill in is: the first __ outside comments and strings, or -1.
+function firstBlank(code) {
+  const found = /\/\/[^\n]*|\(\*[\s\S]*?\*\)|"(?:[^"\\]|\\.)*"|\b__\b/g;
+  for (let m; (m = found.exec(code));) if (m[0] === '__') return m.index;
+  return -1;
+}
+
 /// Opens a koan ready to type: the editor has the focus, with its first blank selected.
 /// With 'push' the koan gets a history entry of its own, so Back returns to the one before.
 function go(to, history = 'push') {
@@ -333,8 +342,10 @@ function go(to, history = 'push') {
   show(to.lessonIndex, to.koanIndex);
   const code = $('code');
   code.focus();
-  const blank = code.value.indexOf('__');
-  if (blank >= 0) code.setSelectionRange(blank, blank + 2); else code.setSelectionRange(0, 0);
+  const blank = firstBlank(code.value);
+  if (vimMode.on) vimMode.normalAt(Math.max(0, blank));
+  else if (blank >= 0) code.setSelectionRange(blank, blank + 2);
+  else code.setSelectionRange(0, 0);
 }
 
 function following({ lessonIndex, koanIndex }) {
@@ -363,6 +374,18 @@ $('code').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runShown(); }
 });
 $('shortcut').textContent = keys.run;
+// Vim keys in the editor, for those who want them; the choice is kept in this browser.
+const vimMode = makeVim($('code'), (mode) => {
+  $('vim-mode').hidden = !mode;
+  if (mode) { $('vim-mode').dataset.mode = mode; $('vim-mode').textContent = mode.toUpperCase(); }
+});
+const setVim = (on) => {
+  vimMode.enable(on);
+  $('vim').setAttribute('aria-pressed', String(on));
+  store.save('vim', on);
+};
+$('vim').onclick = () => { setVim(!vimMode.on); $('code').focus(); if (vimMode.on) vimMode.normalAt($('code').selectionStart); };
+setVim(store.load('vim', false) === true);
 // Ctrl+] (or Cmd+]) opens the next koan and Ctrl+[ (or Cmd+[) the previous one, from anywhere on the page.
 document.addEventListener('keydown', (e) => {
   if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || !shown) return;
