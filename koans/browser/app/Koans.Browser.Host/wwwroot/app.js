@@ -436,8 +436,20 @@ async function evaluate(code, sandboxed = true) {
   });
 }
 
+/// What can follow the cursor at `offset` in a koan's code: [{name, kind, detail}].
+async function complete(lessonIndex, koanIndex, body, offset) {
+  const lesson = course.lessons[lessonIndex];
+  const koan = lesson.koans[koanIndex];
+  const current = await engine.ready;
+  const id = ++ids;
+  return new Promise((resolve) => {
+    current.pending.set(id, resolve);
+    current.worker.postMessage({ type: 'complete', id, helpers: lesson.helpers, isTask: koan.isTask, framed: koan.framed, body, offset });
+  });
+}
+
 // For tests: the course and a way to reach any koan.
-window.koans = { course, runKoan, show, stop, evaluate, addressOf };
+window.koans = { course, runKoan, show, stop, evaluate, addressOf, complete };
 updateProgress();
 go(addressed(), 'replace');
 window.addEventListener('popstate', () => go(addressed(), 'none'));

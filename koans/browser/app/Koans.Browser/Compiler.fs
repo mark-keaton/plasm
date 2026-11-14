@@ -15,7 +15,7 @@ type CompileError =
       Code: string
       Message: string }
 
-let private checker = lazy (FSharpChecker.Create(keepAssemblyContents = false))
+let checker = lazy (FSharpChecker.Create(keepAssemblyContents = false))
 let mutable private counter = 0
 
 /// Compiles `source` (an F# module) against the reference assemblies in `refsDir`.

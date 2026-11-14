@@ -128,6 +128,15 @@ self.onmessage = async (e) => {
     post({ type: 'result', id: m.id, result: tables });
     return;
   }
+  if (m.type === 'complete') {
+    try {
+      const result = JSON.parse(await exports.Complete(m.helpers, m.isTask, m.framed, m.body, m.offset));
+      post({ type: 'result', id: m.id, result });
+    } catch (err) {
+      post({ type: 'result', id: m.id, result: [] });
+    }
+    return;
+  }
   if (m.type !== 'run') return;
   try {
     const result = await exports.RunKoan(m.title, m.name, m.helpers, m.isTask, m.framed, m.body);

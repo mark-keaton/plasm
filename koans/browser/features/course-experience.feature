@@ -201,6 +201,18 @@ Feature: Walking the path in the browser
         | xu            | undoes                                    | a‸bc                  | a‸bc                   | Normal |
         | xu<C-r>       | redoes                                    | a‸bc                  | a‸c                    | Normal |
 
+  Rule: The editor knows F#
+
+    Scenario: The compiler lists what can follow repo.
+      When the learner asks what can follow "repo." in the koan "Every koan is given a repo"
+      Then the completions include All, One, Count, Insert and Explain
+      And each completion says what it is
+
+    Scenario: Completions come quickly once the compiler has warmed up
+      Given the learner has asked for completions once
+      When the learner asks what can follow "repo." in the koan "ok opens a Result"
+      Then the completions arrive within 1500 milliseconds
+
   Rule: Each koan has its own address
 
     Scenario: Opening a koan puts it in the address

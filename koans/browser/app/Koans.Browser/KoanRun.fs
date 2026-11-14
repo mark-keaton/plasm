@@ -181,3 +181,49 @@ let evaluate (refsDir: string) (code: string) (sandboxed: bool) : Task<string> =
             with ex ->
                 return json [ "error", box (string ex) ]
     }
+
+/// What can follow the cursor at `offset` in a koan's code, from the F#
+/// compiler's own checker: JSON [{name, kind, detail}].
+let complete (refsDir: string) (helpers: string) (isTask: bool) (framed: bool) (body: string) (offset: int) : Task<string> =
+    task {
+        let src, prefix, indent = source helpers isTask framed body
+        let before = body.Substring(0, min offset body.Length)
+        let lineInBody = before.Split('\n').Length
+        let columnInBody = before.Length - (before.LastIndexOf '\n' + 1)
+        let line = prefix + lineInBody
+        let lineText = src.Split('\n').[line - 1]
+        let column = columnInBody + indent
+
+        let file = IO.Path.Combine(IO.Path.GetTempPath(), "koan", "complete.fs")
+        IO.Directory.CreateDirectory(IO.Path.GetDirectoryName file) |> ignore
+        let refs = IO.Directory.GetFiles(refsDir, "*.dll") |> Array.map (fun r -> "-r:" + r)
+        let checker = Compiler.checker.Value
+
+        let options =
+            { checker.GetProjectOptionsFromCommandLineArgs("koan.fsproj", Array.append [| "--noframework"; "--target:library"; "--parallelcompilation-" |] refs) with
+                SourceFiles = [| file |] }
+
+        let! parsed, answer =
+            checker.ParseAndCheckFileInProject(file, 0, FSharp.Compiler.Text.SourceText.ofString src, options)
+            |> Async.StartAsTask
+
+        match answer with
+        | FSharp.Compiler.CodeAnalysis.FSharpCheckFileAnswer.Succeeded check ->
+            let partial = FSharp.Compiler.EditorServices.QuickParse.GetPartialLongNameEx(lineText, column - 1)
+            let list = check.GetDeclarationListInfo(Some parsed, line, lineText, partial)
+
+            let detail (FSharp.Compiler.EditorServices.ToolTipText elements) =
+                elements
+                |> List.tryPick (function
+                    | FSharp.Compiler.EditorServices.ToolTipElement.Group(first :: _) ->
+                        Some first.MainDescription.Text
+                    | _ -> None)
+                |> Option.defaultValue ""
+
+            let items =
+                list.Items
+                |> Array.map (fun i -> dict [ "name", box i.NameInList; "kind", box (string i.Glyph); "detail", box (detail i.Description) ])
+
+            return JsonSerializer.Serialize items
+        | _ -> return "[]"
+    }
