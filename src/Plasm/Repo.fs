@@ -462,7 +462,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
     member this.One(query: Query<'T>, ?cancellationToken: CancellationToken) =
         task {
             // Remembered per query value, so repeated lookups reuse one plan.
-            let limited = Query<'T>(oneDefs.GetValue(query.Def, fun d -> Repo.LimitForOne(model, d)))
+            let limited = Query<'T>(oneDefs.GetValue(query.Def, fun d -> OneRow.limit model d))
 
             match! this.All(limited, cancellationToken = defaultArg cancellationToken CancellationToken.None) with
             | Ok [] -> return Ok None
@@ -470,26 +470,6 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
             | Ok _ -> return Error DbError.MoreThanOneRow
             | Error e -> return Error e
         }
-
-    /// The query `One` runs: at most two rows (enough to detect a second
-    /// match), never more than the query's own limit, ordered by key when the
-    /// query has no ordering.
-    static member private LimitForOne(model: Model, d: QueryDef) : QueryDef =
-        let limited =
-            match d.Limit, d.LimitArg with
-            | Some n, _ when n <= 2 -> d
-            | _, Some _ -> d // a prepared take: checked on the rows returned
-            | _ -> { d with Limit = Some 2; Template = None }
-
-        if not (obj.ReferenceEquals(limited, d)) && limited.Orders.IsEmpty then
-            match model.TrySchema limited.Root with
-            | Some s ->
-                let v = Quotations.Var("x", limited.Root)
-                let key = Quotations.Expr.Lambda(v, Quotations.Expr.PropertyGet(Quotations.Expr.Var v, s.Shape.Fields.[s.Key.Index]))
-                { limited with Orders = [ key, SortDirection.Ascending ] }
-            | None -> limited
-        else
-            limited
 
     /// Loads relationships onto values already in hand, returning new values.
     /// `loads` is a query whose preloads are applied; it must not filter, order
@@ -595,7 +575,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
 
     /// Runs a transaction description atomically. An empty description
     /// succeeds without opening a connection.
-    member _.Transact(tx: Tx<'T>, ?isolation: IsolationLevel, ?retry: RetryPolicy, ?cancellationToken: CancellationToken) =
+    member _.Transact(tx: Tx<'T, 'E>, ?isolation: IsolationLevel, ?retry: RetryPolicy, ?cancellationToken: CancellationToken) =
         let ct = defaultArg cancellationToken CancellationToken.None
         let isolation = defaultArg isolation IsolationLevel.ReadCommitted
         let retry = defaultArg retry RetryPolicy.None
@@ -609,8 +589,8 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
 
                 while outcome.IsNone do
                     attempt <- attempt + 1
-                    let completed = ResizeArray<string>()
-                    let mutable current = "begin"
+                    let completed = ResizeArray<TxStep>()
+                    let mutable current = { File = ""; Line = 0; Action = "begin" }
 
                     let! result =
                         task {
@@ -629,12 +609,12 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                                       Model = model
                                       Completed = completed }
 
-                                current <- "steps"
-                                let! r = Tx.run' rt tx
+                                current <- { current with Action = "steps" }
+                                let! r = TxCore.run' rt tx
 
                                 match r with
                                 | Ok v ->
-                                    current <- "commit"
+                                    current <- { current with Action = "commit" }
                                     do! dbTx.CommitAsync(ct)
                                     return Ok v
                                 | Error(step, failure) ->
@@ -642,13 +622,13 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                                     return Error(step, failure)
                             with
                             | :? OperationCanceledException as ex -> return Err.rethrow ex
-                            | Execution.MaterializationFailure m -> return Error(current, StepFailure.Failed(DbError.Materialization m))
-                            | Translate.TranslationFailure t -> return Error(current, StepFailure.Failed(DbError.Translation t))
+                            | Execution.MaterializationFailure m -> return Error(current, TxFailure.Failed(DbError.Materialization m))
+                            | Translate.TranslationFailure t -> return Error(current, TxFailure.Failed(DbError.Translation t))
                             | ex ->
                                 // Steps attribute their own failures; what reaches here
                                 // is from opening, beginning or committing.
                                 match provider.Classify ex with
-                                | Some f -> return Error(current, StepFailure.Failed(DbError.Database f))
+                                | Some f -> return Error(current, TxFailure.Failed(DbError.Database f))
                                 | None -> return Err.rethrow ex
                         }
 
@@ -657,7 +637,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                     | Error(step, failure) ->
                         let retryable =
                             match failure with
-                            | StepFailure.Failed(DbError.Database f) -> retry.ShouldRetry f
+                            | TxFailure.Failed(DbError.Database f) -> retry.ShouldRetry f
                             | _ -> false
 
                         if not (retryable && attempt < retry.MaxAttempts) then

@@ -73,7 +73,7 @@ Sources: [README](https://github.com/Dzoukr/Dapper.FSharp/blob/master/README.md)
 ## 6. Errors: exceptions or values
 
 **Dapper.FSharp:** exceptions throughout. Methods return `Task<seq<'T>>` / `Task<int>`, and database errors surface as provider exceptions (`PostgresException`). Unsupported expressions in a CE throw `NotImplementedException` at runtime. Examples: the README warns against using `|>` inside queries "unless you like exceptions", and after the F# 10 compiler changed expression shapes, joined queries threw `NotImplementedException` from `visitWhere` until 4.10.0 ([#111](https://github.com/Dzoukr/Dapper.FSharp/issues/111), fixed 2026-04-01). Materialisation mismatches are Dapper exceptions (#96). Nothing is a `Result`.
-**Plasm:** expected failures are values: `Result` with `WriteError.Invalid | Stale | Failed | Materialization | Translation`, `DbError` with a classified `DbFailureKind`, `DbError.MoreThanOneRow`, and typed `StepFailure`. Exceptions are reserved for programming errors and cancellation.
+**Plasm:** expected failures are values: `Result` with `WriteError.Invalid | Stale | Failed | Materialization | Translation`, `DbError` with a classified `DbFailureKind`, `DbError.MoreThanOneRow`, and typed `TxFailure<'E>`. Exceptions are reserved for programming errors and cancellation.
 **Verdict:** Plasm matches the F# Result idiom. Dapper.FSharp matches plain .NET style.
 
 ## 7. Database support

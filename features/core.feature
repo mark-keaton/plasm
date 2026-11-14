@@ -264,8 +264,8 @@ Feature: Predictable functional persistence for F#
 
   Rule: Transactions and concurrency are explicit
 
-    Scenario: Named transaction steps compose
-      Given a transaction description with named dependent operations
+    Scenario: Transaction steps compose
+      Given a transaction description with dependent operations
       When a later operation needs an earlier result
       Then it receives that result within the same transaction
 
@@ -273,7 +273,7 @@ Feature: Predictable functional persistence for F#
       Given a transaction with multiple write steps
       When one step fails
       Then all writes in that transaction are rolled back
-      And the returned error identifies the failed step
+      And the returned error identifies where the failed step is written
       And no earlier step is reported as committed
 
     Scenario: Stale updates do not overwrite newer state

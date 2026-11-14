@@ -53,14 +53,14 @@ Feature: Failures are values with qualified names
         | FieldChange    |
         | AssocKind      |
         | LoadStrategy   |
-        | StepFailure    |
+        | TxFailure      |
 
   Rule: Transaction failures are typed
 
     Scenario: A step's rejection reason comes back with its type
       When a transaction step fails with a domain error value
       Then the failure gives back the domain error with its type, without casting
-      And reading it as another type gives None
+      And reading it as another type does not compile
 
     Scenario: A step's invalid changes come back as the changeset's errors
       When a transaction step's changeset is invalid

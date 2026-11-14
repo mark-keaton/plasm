@@ -140,10 +140,11 @@ let lesson =
               "Rejections keep their type",
               fun repo ->
                   task {
-                      let! r = repo.Transact(transaction { return! Tx.fail "check stock" (OutOfStock "GIZMO") })
+                      let! r = repo.Transact(transaction { return! Tx.fail (OutOfStock "GIZMO") })
 
+                      // A transaction's own reasons to fail have its own type, here StockError.
                       match (err r).Failure with
-                      | StepFailure.Rejected rejection -> rejection.As<StockError>() |> shouldBe __
+                      | TxFailure.Rejected reason -> reason |> shouldBe __
                       | other -> failwithf "expected a rejection, got %A" other
                   }
           )

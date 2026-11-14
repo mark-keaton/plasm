@@ -101,7 +101,7 @@ the same guarantee more exhaustively.
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| Named transaction steps compose | Implemented and verified | `TransactionSteps.fs` | Behaviour.fs (snapshot, Tx naming); EctoCompat.fs (Multi, optimistic locking) |  |
+| Transaction steps compose | Implemented and verified | `TransactionSteps.fs` | Behaviour.fs (snapshot, Tx naming); EctoCompat.fs (Multi, optimistic locking) |  |
 | A failed transaction identifies its failed step | Implemented and verified | `TransactionSteps.fs` | Behaviour.fs (snapshot, Tx naming); EctoCompat.fs (Multi, optimistic locking) |  |
 | Stale updates do not overwrite newer state | Implemented and verified | `TransactionSteps.fs` | Behaviour.fs (snapshot, Tx naming); EctoCompat.fs (Multi, optimistic locking) |  |
 | Consistent multi-query reads can be requested | Implemented and verified | `TransactionSteps.fs` | Behaviour.fs (snapshot, Tx naming); EctoCompat.fs (Multi, optimistic locking) | A real concurrent commit is injected between the parent and child commands; the snapshot read does not see it and the independent read does. A provider without the capability rejects the request with no commands. |
@@ -522,6 +522,21 @@ the same guarantee more exhaustively.
 |---|---|---|---|---|
 | An explicit mapping is used instead of the convention | Implemented and verified | `ConventionSteps.fs` |  |  |
 
+### typed-transactions.feature
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A failed step is reported at its file and line | Implemented and verified | `TypedTxSteps.fs` |  | Strict design, step 2: steps are static members taking `[<CallerFilePath; CallerLineNumber>]`, so `Tx.insert cs` needs no name. |
+| A rejection has the transaction's error type | Implemented and verified | `TypedTxSteps.fs` |  | `Tx<'T, 'E>`; `TxFailure.Rejected of 'E`. |
+| A custom step's Error is a rejection of the same type | Implemented and verified | `TypedTxSteps.fs` |  |  |
+| A domain decision's Error becomes a rejection | Implemented and verified | `TypedTxSteps.fs` |  | `Tx.ofResult`. |
+| A rejection cannot be read as another type | Implemented and verified | `TypedTxSteps.fs` |  | Compiled in the test. |
+| Tx.one gives the only matching row | Implemented and verified | `TypedTxSteps.fs` |  | Shares `OneRow.limit` with `repo.One`. |
+| Tx.one gives None when nothing matches | Implemented and verified | `TypedTxSteps.fs` |  |  |
+| A missing row becomes a rejection with Tx.orReject | Implemented and verified | `TypedTxSteps.fs` |  |  |
+| Tx.count counts without reading the rows | Implemented and verified | `TypedTxSteps.fs` |  |  |
+| A transaction is written without naming its steps | Implemented and verified | `TypedTxSteps.fs` |  | Compiled in the test. |
+
 ### sandbox.feature: Sandboxes nest
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
@@ -547,14 +562,14 @@ the same guarantee more exhaustively.
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| A step's rejection reason comes back with its type | Implemented and verified | `ErrorModelSteps.fs` |  | `StepFailure.Rejected of Rejection`, read with `As<'R>()`. |
+| A step's rejection reason comes back with its type | Implemented and verified | `ErrorModelSteps.fs` |  | `TxFailure.Rejected of 'E`: the transaction's own error type. Reading it as another type does not compile (strict design, step 2). |
 | A step's invalid changes come back as the changeset's errors | Implemented and verified | `ErrorModelSteps.fs` |  |  |
 
 ### providers.feature: An unsupported operation is reported the same way by every call
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| <call> reports an unsupported operation as UnsupportedByProvider | Implemented and verified | `ProviderSteps.fs` |  | `WriteError.Translation`, `DbError.Translation`, `StepFailure.Failed(DbError.Translation ...)`. |
+| <call> reports an unsupported operation as UnsupportedByProvider | Implemented and verified | `ProviderSteps.fs` |  | `WriteError.Translation`, `DbError.Translation`, `TxFailure.Failed(DbError.Translation ...)`. |
 
 ### query-pipeline.feature: Pipelines chain like expressions
 

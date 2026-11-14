@@ -80,8 +80,8 @@ let ``accepts transactions with typed dependent steps`` () =
         """
 let place (o: Order) (l: OrderLine) =
     transaction {
-        let! saved = Tx.insert "order" (Changeset.insert o)
-        let! line = Tx.insert "line" (Changeset.insert { l with OrderId = saved.Id })
+        let! saved = Tx.insert (Changeset.insert o)
+        let! line = Tx.insert (Changeset.insert { l with OrderId = saved.Id })
         return saved.Id, line.Id
     }
 """

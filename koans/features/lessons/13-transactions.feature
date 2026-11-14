@@ -1,7 +1,7 @@
 # Lesson 13 of the Plasm Koans. Each row is one koan: what the learner discovers,
 # and the acceptance scenario of Plasm it teaches (feature: scenario).
 Feature: About transactions
-  A transaction is a value made of named steps. Running it is explicit; a failure names its step; retries are opt-in.
+  A transaction is a value made of steps. Running it is explicit; a failure says where its step is written; retries are opt-in.
 
   Prerequisites: lesson 11.
 
@@ -16,11 +16,11 @@ Feature: About transactions
     Examples:
       | koan                                             | the learner discovers                                                   | teaches                                                            |
       | A transaction does nothing until run             | transaction { } builds a value; no command is sent until repo.Transact  | core: Constructing a change performs no database operations        |
-      | Running a transaction commits it                 | repo.Transact runs the steps and returns Ok with the result             | core: Named transaction steps compose                              |
+      | Running a transaction commits it                 | repo.Transact runs the steps and returns Ok with the result             | core: Transaction steps compose                              |
       | An Error rolls it back                           | when a step fails, the steps before it are undone                       | core: A failed transaction identifies its failed step              |
-      | A step's result flows to the next                | let! gives the next step the record an earlier step stored              | core: Named transaction steps compose                              |
-      | Steps compose with let!                          | transaction { } chains named steps whose results feed later ones        | core: Named transaction steps compose                              |
-      | A failure names its step                         | the error says which step failed and everything is rolled back          | core: A failed transaction identifies its failed step              |
+      | A step's result flows to the next                | let! gives the next step the record an earlier step stored              | core: Transaction steps compose                              |
+      | Steps compose with let!                          | transaction { } chains steps whose results feed later ones        | core: Transaction steps compose                              |
+      | A failure says where its step is written         | the error gives the failed step's action and place, and everything is rolled back | core: A failed transaction identifies its failed step              |
       | An empty transaction is fine                     | transaction { return () } runs and does nothing                         | elegance: Empty transaction descriptions are valid                 |
       | Retries are opt-in                               | without a RetryPolicy, a serialisation failure is returned, not retried | elegance: Retry behavior is explicit                               |
       | Custom steps use the transaction                 | Tx.run gets commands enlisted in the transaction, and cannot end it     | tx-steps: A custom step's commands run in the transaction          |

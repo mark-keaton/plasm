@@ -37,8 +37,8 @@ module Snippets =
         """    task {
         let failing =
             transaction {
-                let! dan = Tx.insert "customer" (Changeset.insert (New.customer "Dan" "dan@example.com"))
-                let! _ = Tx.insert "order" (Changeset.insert (New.order (Some dan.Id) Draft -1m))
+                let! dan = Tx.insert (Changeset.insert (New.customer "Dan" "dan@example.com"))
+                let! _ = Tx.insert (Changeset.insert (New.order (Some dan.Id) Draft -1m))
                 return ()
             }
         let! t = repo.Transact failing
@@ -50,7 +50,7 @@ module Snippets =
                     return n
                 })
         let! after = repo.Count(Query.from Db.customers)
-        let step = match t with Error e -> sprintf "failed at %s, rolled back %A" e.Step e.RolledBack | Ok _ -> "committed"
+        let step = match t with Error e -> sprintf "failed at %s, rolled back %A" e.Step.Action (e.RolledBack |> List.map (fun s -> s.Action)) | Ok _ -> "committed"
         return sprintf "%s; inside the sandbox %A; afterwards %A" step inside after
     }"""
 
@@ -92,9 +92,9 @@ module Snippets =
         let tx =
             repo.Transact(
                 transaction {
-                    let! _ = Tx.insert "customer" (Changeset.insert (New.customer "Pia" "pia@example.com"))
+                    let! _ = Tx.insert (Changeset.insert (New.customer "Pia" "pia@example.com"))
                     let! _ =
-                        Tx.run "pause" (fun _ ->
+                        Tx.run (fun _ ->
                             task {
                                 do! Task.Delay 500
                                 return (Ok() : Result<unit, string>)
@@ -220,7 +220,7 @@ type DatabaseSteps(w: BrowserWorld) =
     [<StepDefinition("the failing step's changes are rolled back and the sandbox's changes are undone")>]
     member _.RolledBack() =
         sameResult ()
-        check (fst page = "failed at order, rolled back [\"customer\"]; inside the sandbox Ok 4L; afterwards Ok 3L") (fst page)
+        check (fst page = "failed at insert Order, rolled back [\"insert Customer\"]; inside the sandbox Ok 4L; afterwards Ok 3L") (fst page)
 
     [<StepDefinition("several reads start at once in the page")>]
     member _.Overlapping() = both Snippets.overlapping |> unit

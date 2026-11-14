@@ -525,7 +525,7 @@ type JoinSteps(w: World) =
     [<StepDefinition("a transaction step reads a joined query")>]
     member _.TxReadsJoin() =
         task {
-            let! r = w.Repo.Transact(Tx.all "orders with customers" Joins.withCustomers)
+            let! r = w.Repo.Transact(Tx.all Joins.withCustomers)
             w.Set("pairs", ok r)
         }
         |> unit

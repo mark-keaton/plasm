@@ -327,31 +327,13 @@ let ``inserting a child through an optional foreign key sets Some parent key`` (
 // -- Transactions ------------------------------------------------------------
 
 [<Fact>]
-let ``repeated step names are rejected`` () =
-    task {
-        let! db = freshDefault ()
-
-        let tx =
-            transaction {
-                let! _ = Tx.insert "o" (Changeset.insert (New.order None Draft 1m))
-                let! _ = Tx.insert "o" (Changeset.insert (New.order None Draft 1m))
-                return ()
-            }
-
-        let! r = db.Repo.Transact tx
-        Assert.True(match r with Error e -> e.Step = "o" | Ok _ -> false)
-        let! n = db.Scalar<int64>("select count(*) from orders")
-        Assert.Equal(0L, n)
-    }
-
-[<Fact>]
-let ``Tx.traverse names each step by index`` () =
+let ``Tx.traverse reports the failing step and rolls back the earlier ones`` () =
     task {
         let! db = freshDefault ()
         let totals = [ 1m; -1m; 3m ]
-        let tx = totals |> Tx.traverse "order" (fun name t -> Tx.insert name (Changeset.insert (New.order None Draft t)))
+        let tx = totals |> Tx.traverse (fun t -> Tx.insert (Changeset.insert (New.order None Draft t)))
         let! r = db.Repo.Transact tx
-        Assert.True(match r with Error e -> e.Step = "order[1]" && e.RolledBack = [ "order[0]" ] | Ok _ -> false)
+        Assert.True(match r with Error e -> e.Step.Action = "insert Order" && e.RolledBack.Length = 1 | Ok _ -> false)
     }
 
 [<Fact>]

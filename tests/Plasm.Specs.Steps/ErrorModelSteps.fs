@@ -64,7 +64,7 @@ type ErrorModelSteps(w: World) =
                     match c with
                     | Choice2Of2 ex -> failwithf "an exception was thrown: %s" ex.Message
                     | _ -> ()
-                | :? Choice<Result<unit, TransactionError>, exn> as c ->
+                | :? Choice<Result<unit, TransactionError<string>>, exn> as c ->
                     match c with
                     | Choice2Of2 ex -> failwithf "an exception was thrown: %s" ex.Message
                     | _ -> ()
@@ -164,10 +164,10 @@ type QualifiedUnionSteps(w: World) =
               "FieldChange", ("Cleared | Assigned of int", "FieldChange.Cleared", "let unqualified: FieldChange = Cleared")
               "AssocKind", ("HasMany | HasOne | BelongsTo | ManyToMany", "AssocKind.HasMany", "let unqualified: AssocKind = HasMany")
               "LoadStrategy", ("BatchedByKeys | PerParentWindow", "LoadStrategy.BatchedByKeys 1", "let unqualified: LoadStrategy = BatchedByKeys 1")
-              "StepFailure",
-              ("InvalidChanges | ConcurrencyConflict | Failed | Rejected",
-               "StepFailure.ConcurrencyConflict \"Order\"",
-               "let unqualified: StepFailure = ConcurrencyConflict \"Order\"") ]
+              "TxFailure",
+              ("InvalidChanges | Conflict | Failed | Rejected | Misused",
+               "(TxFailure.Conflict \"Order\": TxFailure<string>)",
+               "let unqualified: TxFailure<string> = Conflict \"Order\"") ]
 
     [<StepDefinition("^I compile a domain union reusing the case names of (\\w+) alongside Plasm$")>]
     member _.Compile(union: string) =
@@ -184,7 +184,7 @@ type QualifiedUnionSteps(w: World) =
         }
         |> unit
 
-    [<StepDefinition("^Plasm's (ChangeAction|SortDirection|FieldChange|AssocKind|LoadStrategy|StepFailure) cases must be written with their type name$")>]
+    [<StepDefinition("^Plasm's (ChangeAction|SortDirection|FieldChange|AssocKind|LoadStrategy|TxFailure) cases must be written with their type name$")>]
     member _.MustQualify(_union: string) =
         let r = w.Get<CompileCheck.CompileResult> "unqualifiedCompile"
         check (not r.Compiles) "an unqualified case should not compile"
@@ -192,36 +192,47 @@ type QualifiedUnionSteps(w: World) =
     [<StepDefinition("a transaction step fails with a domain error value")>]
     member _.TypedRejection() =
         task {
-            let! r = w.Repo.Transact(transaction { return! Tx.fail "check stock" (OutOfStock "SKU-1") })
+            let! r = w.Repo.Transact(transaction { return! Tx.fail (OutOfStock "SKU-1") })
             w.Set("rejected", (err r).Failure)
         }
         |> unit
 
     [<StepDefinition("the failure gives back the domain error with its type, without casting")>]
     member _.ReasonTyped() =
-        match w.Get<StepFailure> "rejected" with
-        | StepFailure.Rejected r -> equal (Some(OutOfStock "SKU-1")) (r.As<StockError>()) "reason"
+        match w.Get<TxFailure<StockError>> "rejected" with
+        | TxFailure.Rejected r -> equal (OutOfStock "SKU-1") r "reason"
         | other -> failwithf "expected a rejection, got %A" other
 
-    [<StepDefinition("reading it as another type gives None")>]
-    member _.OtherTypeNone() =
-        match w.Get<StepFailure> "rejected" with
-        | StepFailure.Rejected r -> equal None (r.As<string>()) "reason as string"
-        | other -> failwithf "expected a rejection, got %A" other
+    [<StepDefinition("reading it as another type does not compile")>]
+    member _.OtherTypeDoesNotCompile() =
+        task {
+            let! r =
+                CompileCheck.check
+                    """
+type StockError = OutOfStock of string
+let read (f: TxFailure<StockError>) =
+    match f with
+    | TxFailure.Rejected (r: string) -> r
+    | _ -> ""
+"""
+
+            check (not r.Compiles) "reading a StockError rejection as a string compiled"
+        }
+        |> unit
 
     [<StepDefinition("a transaction step's changeset is invalid")>]
     member _.InvalidStep() =
         task {
             let bad = Changeset.insert (New.order None Draft 10m) |> Changeset.validateRange ((fun o -> o.Total), max = 1m)
-            let! r = w.Repo.Transact(Tx.insert "order" bad)
+            let! r = w.Repo.Transact(Tx.insert bad: Tx<Order, string>)
             w.Set("invalidStep", (err r).Failure)
         }
         |> unit
 
     [<StepDefinition("the failure names the entity and lists the field errors")>]
     member _.InvalidNamed() =
-        match w.Get<StepFailure> "invalidStep" with
-        | StepFailure.InvalidChanges(entity, errors) ->
+        match w.Get<TxFailure<string>> "invalidStep" with
+        | TxFailure.InvalidChanges(entity, errors) ->
             equal "Order" entity "entity"
             equal [ "Total" ] (errors |> List.map (fun e -> e.Field)) "fields"
         | other -> failwithf "expected invalid changes, got %A" other

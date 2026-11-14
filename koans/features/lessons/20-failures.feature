@@ -24,5 +24,5 @@ Feature: About failures
       | Unreadable rows are named                | a stored value the model rejects names its model and field                    | error-model: A written row that cannot be read back                       |
       | SQL mismatches name the column           | a hand-written query whose column does not fit names that column              | raw-sql: Mismatched results fail with the column identified               |
       | Too many rows is about the data          | One over several rows returns DbError.MoreThanOneRow, not a translation error | reading: More than one matching row is reported as a property of the data |
-      | Rejections keep their type               | Tx.fail with a domain error gives it back with rejection.As<'R>()             | error-model: A step's rejection reason comes back with its type           |
+      | Rejections keep their type               | Tx.fail with a domain error gives it back as itself: the transaction's own error type | error-model: A step's rejection reason comes back with its type           |
       | Every union is qualified                 | Plasm's union cases never take your domain's case names                       | error-model: <union> cases must be qualified                              |

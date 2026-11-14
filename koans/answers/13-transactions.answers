@@ -12,9 +12,9 @@ true
 # Steps compose with let!
 true
 4L
-# A failure names its step
-"order"
-[ "customer" ]
+# A failure says where its step is written
+"insert Order"
+[ "insert Customer" ]
 3L
 # An empty transaction is fine
 Ok 42
@@ -22,7 +22,7 @@ Ok 42
 1
 3
 # Custom steps use the transaction
-"stop"
+"fail"
 0L
 # Effects outside the database are not rolled back
 1

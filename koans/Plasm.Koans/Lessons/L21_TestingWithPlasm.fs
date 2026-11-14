@@ -85,8 +85,8 @@ let lesson =
                   task {
                       let failing =
                           transaction {
-                              let! _ = Tx.insert "customer" (Changeset.insert (New.customer "Dan" "dan@example.com"))
-                              return! Tx.fail "stop" "changed my mind"
+                              let! _ = Tx.insert (Changeset.insert (New.customer "Dan" "dan@example.com"))
+                              return! Tx.fail "changed my mind"
                           }
 
                       let! _ = repo.Transact failing

@@ -373,13 +373,13 @@ type EleganceSteps(w: World) =
     member _.EmptyTransaction() =
         task {
             w.MarkCommands()
-            let! r = w.Repo.Transact(transaction { return () })
+            let! r = w.Repo.Transact(transaction { return () }: Tx<unit, string>)
             w.Set("result", r)
         }
         |> unit
 
     [<StepDefinition("it succeeds with an empty result")>]
-    member _.EmptySucceeds() = equal (Ok()) (w.Get<Result<unit, TransactionError>> "result") "result"
+    member _.EmptySucceeds() = equal (Ok()) (w.Get<Result<unit, TransactionError<string>>> "result") "result"
 
     [<StepDefinition("it performs no writes")>]
     member _.NoWrites() = equal 0 w.CommandsSinceMark.Length "commands"
@@ -680,13 +680,13 @@ type EleganceSteps(w: World) =
 
             let tx =
                 transaction {
-                    let! os = Tx.all "read order" (plasm { for o in Schemas.orders do where (o.Id = id) })
+                    let! os = Tx.all (plasm { for o in Schemas.orders do where (o.Id = id) })
                     reads.Value <- reads.Value + 1
                     let order = List.exactlyOne os
 
                     // A concurrent writer commits a change to the row we read (first attempt only).
                     do!
-                        Tx.run "application callback" (fun _ ->
+                        Tx.run (fun _ ->
                             task {
                                 callbacks.Value <- callbacks.Value + 1
 
@@ -702,10 +702,10 @@ type EleganceSteps(w: World) =
                                 return Ok()
                             })
 
-                    return! Tx.update "increment total" (order |> Changeset.edit (fun o -> { o with Total = o.Total + 1m }))
+                    return! Tx.update (order |> Changeset.edit (fun o -> { o with Total = o.Total + 1m }))
                 }
 
-            w.Set("tx", tx)
+            w.Set("tx", (tx: Tx<Order, string>))
             w.Set("reads", reads)
             w.Set("callbacks", callbacks)
         }
@@ -714,17 +714,17 @@ type EleganceSteps(w: World) =
     [<StepDefinition("no retry policy is configured")>]
     member _.NoRetryPolicy() =
         task {
-            let! r = w.Repo.Transact(w.Get<Tx<Order>> "tx", Data.IsolationLevel.RepeatableRead)
+            let! r = w.Repo.Transact(w.Get<Tx<Order, string>> "tx", Data.IsolationLevel.RepeatableRead)
             w.Set("result", r)
         }
         |> unit
 
     [<StepDefinition("the library does not silently rerun application callbacks")>]
     member _.NoRerun() =
-        let e = err (w.Get<Result<Order, TransactionError>> "result")
+        let e = err (w.Get<Result<Order, TransactionError<string>>> "result")
         equal 1 e.Attempts "attempts"
-        equal "increment total" e.Step "failed step"
-        check (match e.Failure with StepFailure.Failed(DbError.Database f) -> f.Kind = DbFailureKind.SerializationFailure | _ -> false) $"%A{e.Failure}"
+        check (e.Step.Line > 0 && e.Step.File.EndsWith "EleganceSteps.fs") $"failed step {e.Step}"
+        check (match e.Failure with TxFailure.Failed(DbError.Database f) -> f.Kind = DbFailureKind.SerializationFailure | _ -> false) $"%A{e.Failure}"
         equal 1 (w.Get<int ref> "callbacks").Value "callback invocations"
 
     [<StepDefinition("a configured transaction retry policy")>]
@@ -734,7 +734,7 @@ type EleganceSteps(w: World) =
     member _.Retried() =
         task {
             do! (EleganceSteps(w)).RetryableFailure()
-            let! r = w.Repo.Transact(w.Get<Tx<Order>> "tx", Data.IsolationLevel.RepeatableRead, w.Get<RetryPolicy> "retry")
+            let! r = w.Repo.Transact(w.Get<Tx<Order, string>> "tx", Data.IsolationLevel.RepeatableRead, w.Get<RetryPolicy> "retry")
             w.Set("result", r)
         }
         |> unit
@@ -744,7 +744,7 @@ type EleganceSteps(w: World) =
         equal 2 (w.Get<int ref> "reads").Value "reads (one per attempt)"
         equal 2 (w.Get<int ref> "callbacks").Value "callbacks (one per attempt, explicitly opted in)"
         // The successful attempt worked from the fresh read: 100 + 1, not 10 + 1.
-        equal 101m (ok (w.Get<Result<Order, TransactionError>> "result")).Total "result of the committed attempt"
+        equal 101m (ok (w.Get<Result<Order, TransactionError<string>>> "result")).Total "result of the committed attempt"
 
     [<StepDefinition("results from the failed attempt are not presented as committed")>]
     member _.FailedAttemptNotCommitted() =

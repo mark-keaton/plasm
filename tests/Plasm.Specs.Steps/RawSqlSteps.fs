@@ -194,15 +194,15 @@ type RawSqlSteps(w: World) =
             let! r =
                 w.Repo.Transact(
                     transaction {
-                        let! n = Tx.executeSql "bump totals" $"UPDATE orders SET total = total + 100"
-                        let! rows = Tx.sql<decimal> "read totals" $"SELECT total FROM orders ORDER BY id"
+                        let! n = Tx.executeSql $"UPDATE orders SET total = total + 100"
+                        let! rows = Tx.sql<decimal, _> $"SELECT total FROM orders ORDER BY id"
                         equal 4 n "updated inside the transaction"
                         equal [ 110m; 120m; 130m; 140m ] rows "visible inside the transaction"
-                        return! Tx.fail "stop" (box "stop")
+                        return! Tx.fail "stop"
                     }
                 )
 
-            equal "stop" (err r).Step "failed step"
+            equal "fail" (err r).Step.Action "failed step"
         }
         |> unit
 

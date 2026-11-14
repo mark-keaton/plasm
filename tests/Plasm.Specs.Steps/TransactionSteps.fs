@@ -11,7 +11,7 @@ open Plasm.TestDomain.Database
 module TxSteps =
     /// Reads the current transaction id through the escape hatch.
     let txid name =
-        Tx.run name (fun ctx ->
+        Tx.run (fun ctx ->
             task {
                 use cmd = ctx.CreateCommand()
                 cmd.CommandText <- "select txid_current()"
@@ -25,7 +25,7 @@ type TransactionSteps(w: World) =
 
     // Scenario: Named transaction steps compose
 
-    [<StepDefinition("a transaction description with named dependent operations")>]
+    [<StepDefinition("a transaction description with dependent operations")>]
     member _.Dependent() =
         task {
             let! p = Seed.product w.Db "SKU"
@@ -33,21 +33,21 @@ type TransactionSteps(w: World) =
             let tx =
                 transaction {
                     let! before = TxSteps.txid "txid before"
-                    let! customer = Tx.insert "customer" (Changeset.insert (New.customer "Ada" "ada@example.com"))
-                    let! order = Tx.insert "order" (Changeset.insert (New.order (Some customer.Id) Draft 10m))
-                    let! line = Tx.insert "line" (Changeset.insert { New.line p 1 10m with OrderId = order.Id })
+                    let! customer = Tx.insert (Changeset.insert (New.customer "Ada" "ada@example.com"))
+                    let! order = Tx.insert (Changeset.insert (New.order (Some customer.Id) Draft 10m))
+                    let! line = Tx.insert (Changeset.insert { New.line p 1 10m with OrderId = order.Id })
                     let! after = TxSteps.txid "txid after"
                     return customer, order, line, before, after
                 }
 
-            w.Set("tx", tx)
+            w.Set("tx", (tx: Tx<Customer * Order * OrderLine * int64 * int64, string>))
         }
         |> unit
 
     [<StepDefinition("a later operation needs an earlier result")>]
     member _.LaterNeedsEarlier() =
         task {
-            let! r = w.Repo.Transact(w.Get<Tx<Customer * Order * OrderLine * int64 * int64>> "tx")
+            let! r = w.Repo.Transact(w.Get<Tx<Customer * Order * OrderLine * int64 * int64, string>> "tx")
             w.Set("result", ok r)
         }
         |> unit
@@ -70,19 +70,19 @@ type TransactionSteps(w: World) =
     member _.MultipleWrites() =
         w.Set(
             "tx",
-            transaction {
-                let! customer = Tx.insert "customer" (Changeset.insert (New.customer "Ada" "ada@example.com"))
-                let! first = Tx.insert "first order" (Changeset.insert (New.order (Some customer.Id) Draft 10m))
+            (transaction {
+                let! customer = Tx.insert (Changeset.insert (New.customer "Ada" "ada@example.com"))
+                let! first = Tx.insert (Changeset.insert (New.order (Some customer.Id) Draft 10m))
                 // Violates orders_total_check in the database.
-                let! second = Tx.insert "second order" (Changeset.insert (New.order (Some customer.Id) Draft -10m))
+                let! second = Tx.insert (Changeset.insert (New.order (Some customer.Id) Draft -10m))
                 return first, second
-            }
+            }: Tx<Order * Order, string>)
         )
 
     [<StepDefinition("one step fails")>]
     member _.OneFails() =
         task {
-            let! r = w.Repo.Transact(w.Get<Tx<Order * Order>> "tx")
+            let! r = w.Repo.Transact(w.Get<Tx<Order * Order, string>> "tx")
             w.Set("error", err r)
         }
         |> unit
@@ -96,20 +96,22 @@ type TransactionSteps(w: World) =
         }
         |> unit
 
-    [<StepDefinition("the returned error identifies the failed step")>]
+    [<StepDefinition("the returned error identifies where the failed step is written")>]
     member _.IdentifiesStep() =
-        let e: TransactionError = w.Get "error"
-        equal "second order" e.Step "failed step"
+        let e: TransactionError<string> = w.Get "error"
+        equal "insert Order" e.Step.Action "failed step"
+        check (IO.Path.GetFileName e.Step.File = "TransactionSteps.fs") $"failed step written in {e.Step.File}"
+        check (e.RolledBack |> List.forall (fun s -> s.Line < e.Step.Line)) $"the failing step {e.Step} is after the steps before it: %A{e.RolledBack}"
 
         match e.Failure with
-        | StepFailure.Failed(DbError.Database f) -> equal DbFailureKind.CheckViolation f.Kind "failure kind"
+        | TxFailure.Failed(DbError.Database f) -> equal DbFailureKind.CheckViolation f.Kind "failure kind"
         | other -> failwithf "expected a database failure, got %A" other
 
     [<StepDefinition("no earlier step is reported as committed")>]
     member _.NothingCommitted() =
-        let e: TransactionError = w.Get "error"
+        let e: TransactionError<string> = w.Get "error"
         // Earlier steps are reported only as rolled back; no values are returned.
-        equal [ "customer"; "first order" ] e.RolledBack "rolled back steps"
+        equal [ "insert Customer"; "insert Order" ] (e.RolledBack |> List.map (fun s -> s.Action)) "rolled back steps"
 
     // Scenario: Stale updates do not overwrite newer state
 
@@ -241,7 +243,7 @@ type TransactionSteps(w: World) =
         // The only effects a Tx can describe are database steps, so the message is
         // recorded in a durable outbox table inside the transaction...
         let outbox topic payload =
-            Tx.run $"outbox {topic}" (fun ctx ->
+            Tx.run (fun ctx ->
                 task {
                     use cmd = ctx.CreateCommand()
                     cmd.CommandText <- "insert into outbox(topic, payload) values (@t, @p)"
@@ -251,11 +253,11 @@ type TransactionSteps(w: World) =
                     return Ok()
                 })
 
-        let plan (total: decimal) =
+        let plan (total: decimal) : Tx<Order, string> =
             transaction {
-                let! order = Tx.insert "order" (Changeset.insert (New.order None Draft 10m))
+                let! order = Tx.insert (Changeset.insert (New.order None Draft 10m))
                 do! outbox "order-placed" (string order.Id)
-                let! _ = Tx.insert "second order" (Changeset.insert (New.order None Draft total))
+                let! _ = Tx.insert (Changeset.insert (New.order None Draft total))
                 return order
             }
 
@@ -276,7 +278,7 @@ type TransactionSteps(w: World) =
     [<StepDefinition("that effect cannot participate in the database transaction")>]
     member _.CannotParticipate() =
         task {
-            let run: decimal -> Task<Result<Order, TransactionError>> = w.Get "run"
+            let run: decimal -> Task<Result<Order, TransactionError<string>>> = w.Get "run"
             let! failed = run -1m
             w.Set("failed", failed)
         }
@@ -285,8 +287,8 @@ type TransactionSteps(w: World) =
     [<StepDefinition("the API does not represent it as atomically committed with database writes")>]
     member _.NotAtomic() =
         task {
-            match w.Get<Result<Order, TransactionError>> "failed" with
-            | Error e -> check (List.contains "outbox order-placed" e.RolledBack) "the outbox step is reported as rolled back"
+            match w.Get<Result<Order, TransactionError<string>>> "failed" with
+            | Error e -> check (e.RolledBack |> List.exists (fun s -> s.Action = "run")) $"the outbox step is reported as rolled back: %A{e.RolledBack}"
             | Ok _ -> failwith "expected the transaction to fail"
 
             let! pending = w.Db.Scalar<int64>("select count(*) from outbox")
@@ -298,7 +300,7 @@ type TransactionSteps(w: World) =
     [<StepDefinition("it requires an explicit post-commit or durable-outbox strategy")>]
     member _.PostCommit() =
         task {
-            let run: decimal -> Task<Result<Order, TransactionError>> = w.Get "run"
+            let run: decimal -> Task<Result<Order, TransactionError<string>>> = w.Get "run"
             let! committed = run 5m
             let order = ok committed
             let! pending = w.Db.Scalar<string>("select payload from outbox")

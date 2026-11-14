@@ -218,6 +218,11 @@ baseline.
     the attempt count.
   - An empty description succeeds without opening a connection.
   - Duplicate step names are rejected.
+- Amended by the strict design (step 2): `Tx<'T, 'E>` carries the
+  transaction's own rejection type, steps have no names (each is located by
+  its caller's file and line, `TxStep`), and `Tx.one`, `Tx.count`,
+  `Tx.orReject` and `Tx.ofResult` were added. `StepFailure` and `Rejection`
+  were replaced by `TxFailure<'E>`; duplicate names no longer exist to reject.
 - Only database work can be described. `Tx.run` exposes the transaction's
   connection as an explicit escape hatch. External effects use an outbox
   (an insert step) or run after `Transact` returns `Ok`.
@@ -226,7 +231,7 @@ baseline.
   repeated. By default nothing is re-run.
 - Optimistic concurrency: a schema's `version` field is required to match on
   update and delete, and is incremented. A mismatch is
-  `WriteError.Stale` / `StepFailure.ConcurrencyConflict`.
+  `WriteError.Stale` / `TxFailure.Conflict`.
 - Cancellation tokens reach Npgsql, which cancels the statement on the server.
 - Failures are classified (`DbFailureKind`), so callers never parse messages.
 

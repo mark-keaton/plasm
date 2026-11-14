@@ -598,3 +598,26 @@ type Query =
 module QueryBuilderInstance =
     /// The query computation expression.
     let plasm = QueryBuilder()
+
+/// The query a read of one row runs (Repo.One, Tx.one).
+module internal OneRow =
+
+    /// At most two rows (enough to detect a second match), never more than the
+    /// query's own limit, ordered by key when the query has no ordering.
+    let limit (model: Model) (d: QueryDef) : QueryDef =
+        let limited =
+            match d.Limit, d.LimitArg with
+            | Some n, _ when n <= 2 -> d
+            | _, Some _ -> d // a prepared take: checked on the rows returned
+            | _ -> { d with Limit = Some 2; Template = None }
+
+        if not (obj.ReferenceEquals(limited, d)) && limited.Orders.IsEmpty then
+            match model.TrySchema limited.Root with
+            | Some s ->
+                let v = Quotations.Var("x", limited.Root)
+                let key = Quotations.Expr.Lambda(v, Quotations.Expr.PropertyGet(Quotations.Expr.Var v, s.Shape.Fields.[s.Key.Index]))
+                { limited with Orders = [ key, SortDirection.Ascending ] }
+            | None -> limited
+        else
+            limited
+

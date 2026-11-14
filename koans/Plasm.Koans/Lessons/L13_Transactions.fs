@@ -11,10 +11,11 @@ let private customers (repo: Repo) =
         return ok n
     }
 
-/// A transaction of one step, named "customer", that inserts Dan.
-let private addDan =
+/// A transaction of one step that inserts Dan. Tx<string, unit>: it gives a
+/// string, and has no reasons of its own to fail (unit).
+let private addDan: Tx<string, unit> =
     transaction {
-        let! dan = Tx.insert "customer" (Changeset.insert (New.customer "Dan" "dan@example.com"))
+        let! dan = Tx.insert (Changeset.insert (New.customer "Dan" "dan@example.com"))
         return dan.Name
     }
 
@@ -26,7 +27,7 @@ let lesson =
               fun repo ->
                   task {
                       // A transaction is a value describing database steps that succeed or fail together.
-                      // transaction { } builds it; Tx.insert is a step that inserts a changeset.
+                      // transaction { } builds it; Tx.insert a step that inserts a changeset.
                       let tx = addDan
                       (commands ()).Length |> shouldBe __
                       let! n = customers repo
@@ -52,9 +53,9 @@ let lesson =
                   task {
                       let tx =
                           transaction {
-                              let! _ = Tx.insert "customer" (Changeset.insert (New.customer "Dan" "dan@example.com"))
-                              // Tx.fail is a step that always fails, with a reason.
-                              return! Tx.fail "stop" "changed my mind"
+                              let! _ = Tx.insert (Changeset.insert (New.customer "Dan" "dan@example.com"))
+                              // Tx.fail a step that always fails, with a reason.
+                              return! Tx.fail "changed my mind"
                           }
 
                       let! r = repo.Transact tx
@@ -71,9 +72,9 @@ let lesson =
                   task {
                       let rename =
                           transaction {
-                              let! dan = Tx.insert "customer" (Changeset.insert (New.customer "Dan" "dan@example.com"))
+                              let! dan = Tx.insert (Changeset.insert (New.customer "Dan" "dan@example.com"))
                               // let! gives the next step what this one stored: Dan, with his new key.
-                              let! daniel = Tx.update "rename" (dan |> Changeset.edit (fun c -> { c with Name = "Daniel" }))
+                              let! daniel = Tx.update (dan |> Changeset.edit (fun c -> { c with Name = "Daniel" }))
                               return daniel.Name
                           }
 
@@ -88,8 +89,8 @@ let lesson =
                   task {
                       let signUp =
                           transaction {
-                              let! dan = Tx.insert "customer" (Changeset.insert (New.customer "Dan" "dan@example.com"))
-                              let! order = Tx.insert "order" (Changeset.insert (New.order (Some dan.Id) Draft 1m))
+                              let! dan = Tx.insert (Changeset.insert (New.customer "Dan" "dan@example.com"))
+                              let! order = Tx.insert (Changeset.insert (New.order (Some dan.Id) Draft 1m))
                               return order.CustomerId = Some dan.Id
                           }
 
@@ -101,21 +102,23 @@ let lesson =
           )
 
           Koan.Task(
-              "A failure names its step",
+              "A failure says where its step is written",
               fun repo ->
                   task {
                       let signUp =
                           transaction {
-                              let! dan = Tx.insert "customer" (Changeset.insert (New.customer "Dan" "dan@example.com"))
+                              let! dan = Tx.insert (Changeset.insert (New.customer "Dan" "dan@example.com"))
                               // A negative total breaks orders_total_check.
-                              let! _ = Tx.insert "order" (Changeset.insert (New.order (Some dan.Id) Draft -1m))
+                              let! _ = Tx.insert (Changeset.insert (New.order (Some dan.Id) Draft -1m))
                               return ()
                           }
 
                       let! r = repo.Transact signUp
                       let e = err r
-                      e.Step |> shouldBe __
-                      e.RolledBack |> shouldBe __
+                      // A failure gives the step that failed: what it did (Action), and
+                      // where it is written (File and Line), so steps need no names.
+                      e.Step.Action |> shouldBe __
+                      e.RolledBack |> List.map (fun s -> s.Action) |> shouldBe __
                       let! n = customers repo
                       n |> shouldBe __
                   }
@@ -144,7 +147,7 @@ let lesson =
                       let audit =
                           transaction {
                               let! _ =
-                                  Tx.run "audit" (fun ctx ->
+                                  Tx.run (fun ctx ->
                                       task {
                                           use cmd = ctx.CreateCommand()
                                           cmd.CommandText <- "insert into products(sku, name) values ('AUDIT', 'Audit')"
@@ -152,11 +155,11 @@ let lesson =
                                           return (Ok(): Result<unit, string>)
                                       })
 
-                              return! Tx.fail "stop" "changed my mind"
+                              return! Tx.fail "changed my mind"
                           }
 
                       let! r = repo.Transact audit
-                      (err r).Step |> shouldBe __
+                      (err r).Step.Action |> shouldBe __
                       let! audited = repo.Count(plasm { for p in Db.products do where (p.Sku = "AUDIT") })
                       ok audited |> shouldBe __
                   }
@@ -171,13 +174,13 @@ let lesson =
                       let tx =
                           transaction {
                               let! _ =
-                                  Tx.run "email" (fun _ ->
+                                  Tx.run (fun _ ->
                                       task {
                                           emailsSent.Value <- emailsSent.Value + 1
                                           return (Ok(): Result<unit, string>)
                                       })
 
-                              return! Tx.fail "stop" "changed my mind"
+                              return! Tx.fail "changed my mind"
                           }
 
                       let! _ = repo.Transact tx

@@ -270,13 +270,18 @@ query value.
 - An operation the provider cannot perform is always
   `TranslationError.UnsupportedByProvider`, naming every missing capability:
   inside `WriteError.Translation`, `DbError.Translation` or
-  `StepFailure.Failed (DbError.Translation ...)`.
+  `TxFailure.Failed (DbError.Translation ...)`.
 - Every public union is qualified (`ChangeAction.Insert`, `SortDirection`,
-  `FieldChange`, `AssocKind`, `LoadStrategy`, `StepFailure`, `WriteError`,
+  `FieldChange`, `AssocKind`, `LoadStrategy`, `TxFailure`, `WriteError`,
   `DbError`, `TranslationError`).
-- Transaction failures are typed: `StepFailure.InvalidChanges (entity,
-  errors)`, `ConcurrencyConflict`, `Failed of DbError`, and `Rejected of
-  Rejection`, whose reason is read back with `rejection.As<'R>()`.
+- Transactions are typed: a `Tx<'T, 'E>` gives a `'T` or fails with
+  `TxFailure<'E>`: `Rejected of 'E` (the transaction's own reason, from
+  `Tx.fail`, `Tx.orReject`, `Tx.ofResult` or a `Tx.run` Error),
+  `InvalidChanges (entity, errors)`, `Conflict`, `Failed of DbError`, or
+  `Misused` (a `Tx.run` command tried to control the transaction).
+- Steps have no names: each is found by the file and line it is written on
+  (caller information), and a failure reports that `TxStep` and the steps
+  rolled back before it (typed-transactions.feature).
 
 **Providers:**
 
@@ -384,9 +389,10 @@ payments, EF Core 11 (rc.3 provider) with `AsNoTracking`.
 - The schema check and scaffolding read `information_schema` with
   `current_schema()`, and many-to-many link writes use `unnest`; a second
   provider would need these behind the provider too.
-- A transaction has no typed error channel (`Tx<'T, 'E>` would hit F#'s value
-  restriction on every transaction value); `Tx.fail` reasons are read back by
-  type with `Rejection.As<'R>()`.
+- A transaction value that never rejects leaves `'E` open: as a top-level
+  value it needs its type written (`let addDan: Tx<string, unit> = ...`), and
+  stored untyped it becomes `obj`. Transactions written as functions need
+  nothing.
 - `Tx.run` commands refuse statements that start with COMMIT, ROLLBACK, END,
   BEGIN, START, ABORT, SAVEPOINT or RELEASE (after comments are removed). A
   semicolon inside a string literal can make the check refuse a harmless
@@ -426,6 +432,7 @@ payments, EF Core 11 (rc.3 provider) with `AsNoTracking`.
 | 2026-11-13 | Architecture audit follow-up: extended prepared queries plan their own description; `not` is two-valued (`IS NOT TRUE`); only immutable captured values allow plan caching; sandboxes nest; qualified error cases and closed/unreadable/unsupported failures as values; `TxContext` without the transaction; complete pipeline module; `hasOne` tested with `Rel.exists`; dialect hooks and capability checks | the six audit features, ADR 0001 |
 | 2026-11-13 | Plasm built against FSharp.Core 8.0 (not the SDK's 11.0): a notebook kernel with FSharp.Core 10 could not load it; the koans notebook now runs in a real kernel in CI | `koans/features/notebook.feature` |
 | 2026-11-13 | Second audit follow-up: only immutable module values and captures allow plan reuse; `not` is two-valued only over nullable operands; pipeline joins nest and translate; `repo.One` keeps `take` and reports `MoreThanOneRow`; displays hide values unless enabled; prepared load queries bind their own arguments; all public unions qualified; typed `StepFailure`/`Rejection`; one shape for unsupported operations; `Tx.run` commands refuse transaction control | `reading.feature` and new rules in six features, ADR 0001 |
+| 2026-11-14 | Strict design, steps 1 and 2: domain scalars are stored by convention (single-case unions over built-in types, `create` functions, fieldless unions), with registered mappings as overrides; transactions are `Tx<'T, 'E>` with a typed rejection, steps found by file and line instead of names, and `Tx.one`, `Tx.count`, `Tx.orReject`, `Tx.ofResult` | `scalar-conventions.feature`, `typed-transactions.feature`, ADR 0001 amended |
 
 ## Suggested next steps
 

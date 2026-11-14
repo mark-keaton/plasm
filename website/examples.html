@@ -298,8 +298,8 @@ let! trimmed = repo.Update(keepOnly placed (Assoc.get placed.Lines |&gt; List.ta
       <div class="view-fs">
 <pre class="code fsharp">let checkout name email (product: ProductId) =
     transaction {
-        let! customer = Tx.insert "customer" (registerCustomer name email)
-        let! order = Tx.insert "order" (placeOrder customer.Id [ line product ])
+        let! customer = Tx.insert (registerCustomer name email)
+        let! order = Tx.insert (placeOrder customer.Id [ line product ])
         return customer, order
     }
 

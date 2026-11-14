@@ -15,7 +15,7 @@ Feature: Transaction steps do what they say
 
     Scenario Outline: A step whose changeset is for a different action is rejected
       When I build a transaction whose Tx.<step> step is given a changeset for <action>
-      Then building the transaction fails, naming the step and both actions
+      Then building the transaction fails, naming where the step is written and both actions
       And no database command is executed
 
       Examples:

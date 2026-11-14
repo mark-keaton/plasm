@@ -40,19 +40,19 @@ type TxStepSteps(w: World) =
         attempt (fun () ->
             let tx =
                 match step with
-                | "insert" -> Tx.insert "rename" cs
-                | "update" -> Tx.update "rename" cs
-                | _ -> Tx.delete "rename" cs
+                | "insert" -> Tx.insert cs
+                | "update" -> Tx.update cs
+                | _ -> Tx.delete cs
 
             w.Repo.Transact(tx).Wait())
 
         w.Set("expected", (step, action))
 
-    [<StepDefinition("building the transaction fails, naming the step and both actions")>]
+    [<StepDefinition("building the transaction fails, naming where the step is written and both actions")>]
     member _.NamesStepAndActions() =
         let m = rejection ()
         let step, action = w.Get<string * string> "expected"
-        check (m.Contains "'rename'") $"step name missing: {m}"
+        check (m.Contains "TxStepSteps.fs:") $"where the step is written is missing: {m}"
         check (m.Contains $"Tx.{step}") $"step kind missing: {m}"
         check (m.Contains $"for {action}") $"changeset action missing: {m}"
 
@@ -82,7 +82,7 @@ type TxStepSteps(w: World) =
                 w.Repo.Transact(
                     transaction {
                         let! _ =
-                            Tx.run "audit" (fun ctx ->
+                            Tx.run (fun ctx ->
                                 task {
                                     use cmd = ctx.CreateCommand()
                                     cmd.CommandText <- "insert into products(sku, name) values ('AUDIT', 'audit')"
@@ -90,11 +90,11 @@ type TxStepSteps(w: World) =
                                     return Ok()
                                 })
 
-                        return! Tx.fail "stop" (box "stop")
+                        return! Tx.fail "stop"
                     }
                 )
 
-            equal "stop" (err r).Step "failed step"
+            equal "fail" (err r).Step.Action "failed step"
         }
         |> unit
 
@@ -113,7 +113,7 @@ type TxStepSteps(w: World) =
                 String.concat
                     "\n"
                     [ "let step ="
-                      "    Tx.run \"commit\" (fun ctx ->"
+                      "    Tx.run (fun ctx ->"
                       "        task {"
                       "            ctx.Transaction.Commit()"
                       "            return Ok()"
@@ -137,10 +137,10 @@ type TxStepSteps(w: World) =
                 let! r =
                     w.Repo.Transact(
                         transaction {
-                            let! _ = Tx.insert "customer" (Changeset.insert (New.customer "Ada" "ada@example.com"))
+                            let! _ = Tx.insert (Changeset.insert (New.customer "Ada" "ada@example.com"))
 
                             let! _ =
-                                Tx.run "custom" (fun ctx ->
+                                Tx.run (fun ctx ->
                                     task {
                                         use cmd = ctx.CreateCommand()
                                         cmd.CommandText <- sql
@@ -152,23 +152,21 @@ type TxStepSteps(w: World) =
                         }
                     )
 
-                w.Set("controlled", (Choice1Of2 r: Choice<Result<unit, TransactionError>, exn>))
+                w.Set("controlled", (Choice1Of2 r: Choice<Result<unit, TransactionError<string>>, exn>))
             with ex ->
-                w.Set("controlled", (Choice2Of2 ex: Choice<Result<unit, TransactionError>, exn>))
+                w.Set("controlled", (Choice2Of2 ex: Choice<Result<unit, TransactionError<string>>, exn>))
         }
         |> unit
 
     [<StepDefinition("the transaction fails at the custom step, saying a step cannot control the transaction")>]
     member _.FailsAtCustom() =
-        match w.Get<Choice<Result<unit, TransactionError>, exn>> "controlled" with
+        match w.Get<Choice<Result<unit, TransactionError<string>>, exn>> "controlled" with
         | Choice1Of2(Error e) ->
-            equal "custom" e.Step "failed step"
+            equal "run" e.Step.Action "failed step"
 
             match e.Failure with
-            | StepFailure.Rejected r ->
-                let m = r.As<string>() |> Option.defaultValue ""
-                check (m.Contains "cannot control the transaction") m
-            | other -> failwithf "expected a rejection, got %A" other
+            | TxFailure.Misused m -> check (m.Contains "cannot control the transaction") m
+            | other -> failwithf "expected a misused step, got %A" other
         | other -> failwithf "expected the transaction to fail, got %A" other
 
     [<StepDefinition("the Customer was rolled back")>]

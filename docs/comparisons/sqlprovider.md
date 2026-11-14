@@ -76,7 +76,7 @@ SQLProvider (https://github.com/fsprojects/SQLProvider) is an *erasing F# type p
 
 **Plasm**
 
-- Immutable records; `Changeset` values with pure validation, constraint mapping (unique/FK/check → field errors), an integer `version` for optimistic concurrency (`WriteError.Stale`), child writes with `putChildren`/`replaceChildren`. Also `Tx` steps with typed `StepFailure`, `Bulk.update/delete/insert/upsert` (multi-row, split above 65,000 parameters in one transaction), and an explicit repo with no ambient tracked state.
+- Immutable records; `Changeset` values with pure validation, constraint mapping (unique/FK/check → field errors), an integer `version` for optimistic concurrency (`WriteError.Stale`), child writes with `putChildren`/`replaceChildren`. Also `Tx` steps with typed `TxFailure<'E>`, `Bulk.update/delete/insert/upsert` (multi-row, split above 65,000 parameters in one transaction), and an explicit repo with no ambient tracked state.
 
 **Verdict:** SQLProvider's model is EF-style unit-of-work on mutable proxies, with ambient `TransactionScope`. Plasm's is explicit values and results. SQLProvider's typed ``Create(...)`` (compile-time required columns) is something Plasm checks only at run time (`Changeset.check`/`CheckSchema`).
 
@@ -109,7 +109,7 @@ SQLProvider (https://github.com/fsprojects/SQLProvider) is an *erasing F# type p
 
 **SQLProvider:** exceptions throughout. Query translation problems are run-time exceptions (the query compiles because it is a LINQ expression, e.g. "IN / NOT IN sub-queries with a projection computed in .NET ... fail with an error", 1.5.30). DB errors come back as driver exceptions from `SubmitUpdates`, read-only misuse is `failwith "Context is readonly"`, and type mismatches show up as `InvalidCastException` (#838, #869) **[src, release notes]**. There are no Result-returning APIs. `Seq.tryHeadAsync` returns an option for "no row" (docs `async.fsx`). Design-time errors are compiler errors (FS3033 etc.) with the provider's message.
 
-**Plasm:** `Result` values with typed unions (`WriteError.Invalid/Stale/Failed`, `DbError`, `TranslationError.UnsupportedExpression/UnsupportedByProvider`, `StepFailure`), classified `DbFailureKind`. Exceptions only for programming errors found before database work, and cancellation (status.md "Failures").
+**Plasm:** `Result` values with typed unions (`WriteError.Invalid/Stale/Failed`, `DbError`, `TranslationError.UnsupportedExpression/UnsupportedByProvider`, `TxFailure<'E>`), classified `DbFailureKind`. Exceptions only for programming errors found before database work, and cancellation (status.md "Failures").
 
 ## 7. Database support (evidence of state per provider)
 

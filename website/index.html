@@ -111,11 +111,11 @@ match! repo.Update cs with
     </div>
     <div>
       <h2>So are transactions</h2>
-      <p class="muted">Named steps pass typed results with <code>let!</code>. A failure names the step and what was rolled back. Retries are opt-in.</p>
+      <p class="muted">Steps pass typed results with <code>let!</code>. A failure says where its step is written and what was rolled back, and carries your own error type. Retries are opt-in.</p>
 <pre class="code fsharp">let checkout name email product =
     transaction {
-        let! customer = Tx.insert "customer" (registerCustomer name email)
-        let! order = Tx.insert "order" (placeOrder customer.Id [ line ])
+        let! customer = Tx.insert (registerCustomer name email)
+        let! order = Tx.insert (placeOrder customer.Id [ line ])
         return customer, order
     }
 

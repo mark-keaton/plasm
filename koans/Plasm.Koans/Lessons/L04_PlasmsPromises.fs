@@ -5,6 +5,12 @@ open Plasm
 open Plasm.Koans
 open Plasm.Koans.Shop
 
+/// A record with a field Plasm cannot store: a Uri has no column type, and it
+/// is not a wrapper Plasm knows how to store by convention.
+type Bookmark = { Id: int64; Address: System.Uri }
+
+let bookmarks = schema<Bookmark> "bookmarks" { identityKey (fun b -> b.Id) }
+
 let lesson =
     Lesson.make
         "Plasm's promises"
@@ -95,10 +101,10 @@ let lesson =
               "The model is checked before any query",
               fun repo ->
                   // Model.build checks every schema once, when the model is made.
-                  // Without scalar mappings (Db.scalars), it cannot store a ProductId.
+                  // It cannot store a Bookmark's Address (above, under Given).
                   // Each error names the record and the field (Property) at fault.
                   // (Lesson 05 goes deeper.)
-                  match Model.build [] [ Db.products ] with
+                  match Model.build [] [ bookmarks ] with
                   | Ok _ -> failwith "expected a configuration error"
                   | Error errors ->
                       (errors |> List.map (fun e -> e.Property) |> List.distinct) |> shouldBe __

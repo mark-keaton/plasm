@@ -15,7 +15,7 @@ Some "customers_email_key"
 true
 false
 # The model is checked before any query
-[ Some "Id" ]
+[ Some "Address" ]
 0
 # Queries mean what F# means
 true

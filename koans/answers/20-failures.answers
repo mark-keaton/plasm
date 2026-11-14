@@ -17,6 +17,6 @@ true
 # Too many rows is about the data
 Error DbError.MoreThanOneRow
 # Rejections keep their type
-Some(OutOfStock "GIZMO")
+OutOfStock "GIZMO"
 # Every union is qualified
 ChangeAction.Insert

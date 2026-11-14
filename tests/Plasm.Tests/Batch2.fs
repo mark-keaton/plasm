@@ -296,7 +296,7 @@ let ``prepared queries run in transactions and with three arguments`` () =
                         where (o.Total >= lo.Value && o.Total <= hi.Value && o.Status = status.Value)
                 })
 
-        let! r = db.Repo.Transact(Tx.all "cheap drafts" (between 0m 10m Draft))
+        let! r = db.Repo.Transact(Tx.all (between 0m 10m Draft))
         Assert.Equal<OrderId list>([ a ], ok r |> List.map (fun o -> o.Id))
         let! one = db.Repo.One(between 0m 10m Draft)
         Assert.Equal(Some a, ok one |> Option.map (fun o -> o.Id))
@@ -397,7 +397,7 @@ let ``nested loads below a many-to-many relationship and Tx link writes`` () =
         let! r =
             db.Repo.Transact(
                 transaction {
-                    let! written = Tx.update "link" (Changeset.update article |> Changeset.putLinks ((fun x -> x.Tags), [ tag; tag ]))
+                    let! written = Tx.update (Changeset.update article |> Changeset.putLinks ((fun x -> x.Tags), [ tag; tag ]))
                     return written
                 }
             )
@@ -439,7 +439,7 @@ let ``a failed write inside a sandbox transaction step leaves the sandbox usable
                     let! failed =
                         repo.Transact(
                             transaction {
-                                let! _ = Tx.insert "dup" (Changeset.insert (New.customer "Dup" "a@x"))
+                                let! _ = Tx.insert (Changeset.insert (New.customer "Dup" "a@x"))
                                 return ()
                             }
                         )

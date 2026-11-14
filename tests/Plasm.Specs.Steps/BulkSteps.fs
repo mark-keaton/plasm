@@ -339,9 +339,9 @@ type BulkSteps(w: World) =
             let! r =
                 w.Repo.Transact(
                     transaction {
-                        let! n = Tx.execute "cancel drafts" cancelDrafts
+                        let! n = Tx.execute cancelDrafts
                         equal 3 n "rows cancelled inside the transaction"
-                        return! Tx.fail "notify" (box "notification service unavailable")
+                        return! Tx.fail "notification service unavailable"
                     }
                 )
 
@@ -351,9 +351,9 @@ type BulkSteps(w: World) =
 
     [<StepDefinition("the transaction reports the failing step")>]
     member _.TxStep() =
-        let e: TransactionError = w.Get "txError"
-        equal "notify" e.Step "failed step"
-        equal [ "cancel drafts" ] e.RolledBack "rolled back"
+        let e: TransactionError<string> = w.Get "txError"
+        equal "fail" e.Step.Action "failed step"
+        equal [ "execute" ] (e.RolledBack |> List.map (fun s -> s.Action)) "rolled back"
 
     [<StepDefinition("the draft Orders are unchanged")>]
     member _.DraftsUnchanged() =

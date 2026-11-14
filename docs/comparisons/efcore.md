@@ -359,7 +359,7 @@ The gap list for an EF Core replacement. Plasm status is from `docs/status.md` (
 7. **Changesets.** Pure validation, `cast` with permitted fields from external input, constraint-to-field error mapping, "unmentioned fields are never written". EF `Update` on a detached record writes every column **[probe]**, and EF has no validation.
 8. **Immutable updates as values.** `Changeset.edit (fun o -> { o with ... })` versus EF's identity-map conflict on `{ o with }` **[probe]** (#11457).
 9. **Results, not exceptions.** `WriteError.Invalid | Stale | Failed` with a classified `DbFailureKind`, plus `DbError.MoreThanOneRow` and `RepositoryClosed`. EF throws `DbUpdateException` wrapping `PostgresException` **[probe]**.
-10. **Transactions as values.** `transaction { }` with named, typed steps, failures that name the step (`StepFailure`), and explicit retry policy. `Tx.run` cannot commit or roll back.
+10. **Transactions as values.** `transaction { }` with typed steps, failures that say where the step is written and carry the transaction's own error type (`TxFailure<'E>`), and explicit retry policy. `Tx.run` cannot commit or roll back.
 11. **Explicit child-replacement policy** (`ReplaceScope`, `OnReplace.Reject` by default) instead of tracking-dependent orphan handling.
 12. **Typed aggregates with F# semantics.** `Agg.sum` of nothing is 0, `min`/`max`/`avg` return options, `avg` requires `DivideByInt`. EF's `Max` over an empty set of non-nullable values throws [unverified for EF 11].
 13. **`repo.CheckSchema()`** against the live catalogue. EF compares against its migration snapshot only [unverified].

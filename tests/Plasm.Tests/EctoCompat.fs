@@ -569,9 +569,9 @@ let ``ecto: insert and update changesets with dependent steps`` () =
 
         let tx =
             transaction {
-                let! o = Tx.insert "order" (Changeset.insert order0)
-                let! l = Tx.insert "line" (Changeset.insert { New.line p 1 1m with OrderId = o.Id })
-                let! o2 = Tx.update "publish" (o |> Changeset.edit (fun o -> { o with Status = Published }))
+                let! o = Tx.insert (Changeset.insert order0)
+                let! l = Tx.insert (Changeset.insert { New.line p 1 1m with OrderId = o.Id })
+                let! o2 = Tx.update (o |> Changeset.edit (fun o -> { o with Status = Published }))
                 return o2, l
             }
 
@@ -589,8 +589,8 @@ let ``ecto: error`` () =
 
         let tx =
             transaction {
-                let! _ = Tx.insert "order" (Changeset.insert order0)
-                let! (_: unit) = Tx.fail "stop" (box "nope")
+                let! _ = Tx.insert (Changeset.insert order0)
+                let! (_: unit) = Tx.fail "nope"
                 return ()
             }
 
@@ -598,12 +598,12 @@ let ``ecto: error`` () =
 
         match r with
         | Error e ->
-            Assert.Equal("stop", e.Step)
+            Assert.Equal("fail", e.Step.Action)
             match e.Failure with
-            | StepFailure.Rejected r -> Assert.Equal(Some "nope", r.As<string>())
+            | TxFailure.Rejected r -> Assert.Equal("nope", r)
             | other -> failwithf "expected a rejection, got %A" other
 
-            Assert.Equal<string list>([ "order" ], e.RolledBack)
+            Assert.Equal<string list>([ "insert Order" ], e.RolledBack |> List.map (fun s -> s.Action))
         | Ok _ -> failwith "expected failure"
 
         let! n = db.Scalar<int64>("select count(*) from orders")
@@ -619,15 +619,15 @@ let ``ecto: multi with invalid changeset returns the failed operation and its er
 
         let tx =
             transaction {
-                let! _ = Tx.insert "first" (Changeset.insert order0)
-                let! _ = Tx.insert "second" bad
+                let! _ = Tx.insert (Changeset.insert order0)
+                let! _ = Tx.insert bad
                 return ()
             }
 
         let! r = db.Repo.Transact tx
 
         match r with
-        | Error { Step = "second"; Failure = StepFailure.InvalidChanges("Order", errors) } ->
+        | Error { Step = step; Failure = TxFailure.InvalidChanges("Order", errors) } when step.Action = "insert Order" && step.Line > 0 ->
             Assert.Equal("Total", errors.Head.Field)
         | other -> failwithf "unexpected %A" other
 
@@ -643,10 +643,10 @@ let ``ecto: run with fun`` () =
 
         let tx =
             transaction {
-                let! _ = Tx.insert "order" (Changeset.insert order0)
+                let! _ = Tx.insert (Changeset.insert order0)
 
                 let! count =
-                    Tx.run "count" (fun ctx ->
+                    Tx.run (fun ctx ->
                         task {
                             use cmd = ctx.CreateCommand()
                             cmd.CommandText <- "select count(*) from orders"
@@ -669,8 +669,8 @@ let ``ecto: all queryable`` () =
 
         let tx =
             transaction {
-                let! _ = Tx.insert "order" (Changeset.insert order0)
-                let! seen = Tx.all "orders" (Query.from orders)
+                let! _ = Tx.insert (Changeset.insert order0)
+                let! seen = Tx.all (Query.from orders)
                 return seen.Length
             }
 
