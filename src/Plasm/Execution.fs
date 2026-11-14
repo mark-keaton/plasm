@@ -585,6 +585,9 @@ let rawReader (model: Model) (t: Type) (label: string) : DbDataReader -> obj =
         | Error m -> fail property (if isNull raw then "NULL" else string raw) m
 
     match model.TrySchema t with
+    | Some schema when schema.Assocs |> Array.exists (fun a -> a.Owned) ->
+        let owned = (schema.Assocs |> Array.find (fun a -> a.Owned)).Name
+        fun _ -> fail owned "(owned list)" $"hand-written SQL cannot read a whole {schema.Name}: its owned list {owned} is loaded with its owner. Query {schema.Name} itself, or read its columns into a record of your own"
     | Some schema ->
         let mutable ordinals: int[] = null
 

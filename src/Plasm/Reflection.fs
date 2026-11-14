@@ -76,6 +76,14 @@ let assocCtors: Type -> AssocCtors =
           Loaded = fun v -> loadedCtor [| v |]
           Read = fun v -> if tagReader v = loaded.Tag then Some((fieldReader v).[0]) else None })
 
+/// An owned list (a plain list, always loaded): its "constructors" are the
+/// list itself.
+let listCtors: Type -> AssocCtors =
+    cache (fun listType ->
+        { NotLoaded = makeList (elementType listType) Seq.empty
+          Loaded = id
+          Read = Some })
+
 type RecordShape =
     { Fields: PropertyInfo[]
       Construct: obj[] -> obj

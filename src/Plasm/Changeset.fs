@@ -27,7 +27,10 @@ type internal ReplaceScopeDef =
 type internal ChildWrite =
     { Assoc: string
       Replace: ReplaceScopeDef option
-      Children: CsState list }
+      Children: CsState list
+      /// For an owned list: the owner's whole new list, each item marked
+      /// written (its stored value replaces it, in Children's order) or kept.
+      Final: (obj * bool) list option }
 
 and internal LinkMode =
     | PutLinks
@@ -484,7 +487,8 @@ type Changeset =
                         s.Children
                         @ [ { Assoc = name
                               Replace = None
-                              Children = children |> List.map (fun c -> c.State) } ] })
+                              Children = children |> List.map (fun c -> c.State)
+                              Final = None } ] })
 
     static member private Link(name, mode, targets: 'C list) =
         fun (cs: Changeset<'T>) ->
@@ -529,4 +533,5 @@ type Changeset =
                         s.Children
                         @ [ { Assoc = name
                               Replace = Some scope.Def
-                              Children = children |> List.map (fun c -> c.State) } ] })
+                              Children = children |> List.map (fun c -> c.State)
+                              Final = None } ] })

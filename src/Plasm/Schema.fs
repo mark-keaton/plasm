@@ -67,7 +67,12 @@ type internal AssocDef =
       /// Null for ManyToMany.
       ForeignKey: PropertyInfo
       OnReplace: OnReplace
-      Through: JoinTable option }
+      Through: JoinTable option
+      /// An owned list (`owns`): a plain list, always loaded and written with
+      /// its owner (owned-collections.feature).
+      Owned: bool
+      /// For an owned list: the order its items are read in (default: by key).
+      Order: Expr option }
 
 /// Schema definition state (opaque).
 type SchemaDef =
@@ -143,6 +148,36 @@ type SchemaBuilder<'T> internal (table: string) =
         let p = Paths.property "generated" field
         add s (fun s -> { s with Generated = s.Generated.Add p.Name })
 
+    /// Records this one owns, as a plain list (`Lines: Line list`): always
+    /// loaded with it, in the order of their key, and written with it.
+    /// `owner` selects the owned record's field holding this record's key.
+    [<CustomOperation("owns")>]
+    member _.Owns(s: SchemaDef, [<ReflectedDefinition>] list: Expr<'T -> 'C list>, [<ReflectedDefinition>] owner: Expr<'C -> 'K>) =
+        add s (fun s -> SchemaBuilder<'T>.AddOwned(s, list, owner, None))
+
+    /// Like `owns`, with the order the owned records are read in.
+    [<CustomOperation("ownsOrderedBy")>]
+    member _.OwnsOrderedBy
+        (
+            s: SchemaDef,
+            [<ReflectedDefinition>] list: Expr<'T -> 'C list>,
+            [<ReflectedDefinition>] owner: Expr<'C -> 'K>,
+            [<ReflectedDefinition>] order: Expr<'C -> 'O>
+        ) =
+        add s (fun s -> SchemaBuilder<'T>.AddOwned(s, list, owner, Some(order :> Expr)))
+
+    static member private AddOwned(s: SchemaDef, list: Expr, owner: Expr, order: Expr option) =
+        { s with
+            Assocs =
+                s.Assocs
+                @ [ { Property = Paths.property "owns" list
+                      Kind = AssocKind.HasMany
+                      ForeignKey = Paths.property "owns owner" owner
+                      OnReplace = OnReplace.Delete
+                      Through = None
+                      Owned = true
+                      Order = order } ] }
+
     /// A field whose values are unique in the table. The database holds it
     /// with a unique constraint named <table>_<column>_key (PostgreSQL's
     /// default), which the schema check verifies; a duplicate comes back as
@@ -160,7 +195,9 @@ type SchemaBuilder<'T> internal (table: string) =
                       Kind = AssocKind.HasMany
                       ForeignKey = Paths.property "hasMany foreign key" foreignKey
                       OnReplace = onReplace
-                      Through = None } ] }
+                      Through = None
+                      Owned = false
+                      Order = None } ] }
 
     /// One-to-many: `foreignKey` selects the child's column that references this
     /// record's primary key. Replacing children that omit existing ones is
@@ -201,7 +238,9 @@ type SchemaBuilder<'T> internal (table: string) =
                           Kind = AssocKind.HasOne
                           ForeignKey = Paths.property "hasOne foreign key" foreignKey
                           OnReplace = OnReplace.Reject
-                          Through = None } ] })
+                          Through = None
+                          Owned = false
+                          Order = None } ] })
 
     /// Many-to-one: `foreignKey` selects this record's column referencing the
     /// target's primary key. Use `Assoc<'C>` for a required key and
@@ -221,7 +260,9 @@ type SchemaBuilder<'T> internal (table: string) =
                           Kind = AssocKind.BelongsTo
                           ForeignKey = Paths.property "belongsTo foreign key" foreignKey
                           OnReplace = OnReplace.Reject
-                          Through = None } ] })
+                          Through = None
+                          Owned = false
+                          Order = None } ] })
 
     /// Many-to-many through `joinTable`, whose `ownerColumn` references this
     /// record's primary key and `targetColumn` the target's:
@@ -249,7 +290,9 @@ type SchemaBuilder<'T> internal (table: string) =
                             Some
                                 { Table = joinTable
                                   OwnerColumn = ownerColumn
-                                  TargetColumn = targetColumn } } ] })
+                                  TargetColumn = targetColumn }
+                          Owned = false
+                          Order = None } ] })
 
 [<AutoOpen>]
 module SchemaBuilderExtensions =
@@ -459,7 +502,11 @@ type internal AssocMap =
       /// Builds the loaded payload's list (Many) from boxed targets.
       MakeList: obj seq -> obj
       /// Wraps a target in Some (OptionalOne).
-      WrapSome: obj -> obj }
+      WrapSome: obj -> obj
+      /// An owned list: a plain list, always loaded and written with its owner.
+      Owned: bool
+      /// For an owned list: the order its items are read in (None: by key).
+      Order: Expr option }
 
 type internal SchemaInfo =
     { Type: Type

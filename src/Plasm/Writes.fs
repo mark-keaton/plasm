@@ -47,8 +47,92 @@ let private originalWhere (schema: SchemaInfo) (s: CsState) =
             |> List.map (fun (column, value) -> Sql.Binary("IS NOT DISTINCT FROM", Sql.Column(schema.Table, column), value)))
     | _ -> []
 
+/// Owned lists (owned-collections.feature) as child writes. An insert writes
+/// every item; a change made from a record read compares the old list with the
+/// new by key (inserting new items, updating changed ones, deleting missing
+/// ones); a delete deletes what the owner owns first.
+let rec private owned (model: Model) (s: CsState) : CsState =
+    let schema = schemaOf model s.Type
+    let declared = s.Children |> List.map (fun w -> w.Assoc) |> set
+
+    let items (a: AssocMap) (list: obj) =
+        match a.Ctors.Read list with
+        | Some l -> Reflection.listItems a.Target l |> List.ofSeq
+        | None -> []
+
+    let state t action (v: obj) = Cs.emptyState t (Some v) action
+
+    schema.Assocs
+    |> Array.filter (fun a -> a.Owned && not (declared.Contains a.Name))
+    |> Array.fold
+        (fun (st: CsState) a ->
+            let target = schemaOf model a.Target
+            let keyOf (c: obj) = (target.Shape.Deconstruct c).[target.Key.Index]
+            let child children final = { Assoc = a.Name; Replace = None; Children = children; Final = Some final }
+
+            match st.Action with
+            | ChangeAction.Insert ->
+                match st.Proposed with
+                | Some p ->
+                    let after = items a (schema.Shape.Deconstruct p).[a.Index]
+                    { st with Children = st.Children @ [ child (after |> List.map (state a.Target ChangeAction.Insert)) (after |> List.map (fun c -> c, true)) ] }
+                | None -> st
+            | ChangeAction.Update ->
+                match st.Changes.TryFind a.Name, st.Data with
+                | None, _ -> st
+                | Some _, None -> Cs.addError st a.Name (FieldErrorKind.Custom "owned") $"{a.Name} is owned: change it from a {schema.Name} you read, not from its key alone"
+                | Some newList, Some old ->
+                    let before = items a (schema.Shape.Deconstruct old).[a.Index]
+                    let after = items a newList
+                    let byKey = Collections.Generic.Dictionary<obj, obj>(HashIdentity.Structural)
+
+                    for c in before do
+                        byKey.[keyOf c] <- c
+
+                    let shape = target.Shape
+
+                    // Each item of the new list: kept as it is, updated, or inserted.
+                    let plan =
+                        after
+                        |> List.map (fun c ->
+                            match byKey.TryGetValue(keyOf c) with
+                            | true, o when Cs.fieldEquals o c -> c, None
+                            | true, o ->
+                                let was, now = shape.Deconstruct o, shape.Deconstruct c
+
+                                let changes =
+                                    shape.Fields
+                                    |> Array.indexed
+                                    |> Array.filter (fun (i, _) -> i <> target.Key.Index && not (Cs.fieldEquals was.[i] now.[i]))
+                                    |> Array.fold (fun (m: Map<string, obj>) (i, p) -> m.Add(p.Name, now.[i])) Map.empty
+
+                                c, Some { state a.Target ChangeAction.Update o with Changes = changes }
+                            | _ -> c, Some(state a.Target ChangeAction.Insert c))
+
+                    let kept = Collections.Generic.HashSet<obj>(after |> List.map keyOf, HashIdentity.Structural)
+                    let removed = before |> List.filter (fun o -> not (kept.Contains(keyOf o))) |> List.map (state a.Target ChangeAction.Delete)
+
+                    { st with
+                        Changes = st.Changes.Remove a.Name
+                        Children = st.Children @ [ child ((plan |> List.choose snd) @ removed) (plan |> List.map (fun (c, w) -> c, w.IsSome)) ] }
+            | ChangeAction.Delete ->
+                let ownsMore = target.Assocs |> Array.exists (fun t -> t.Owned)
+
+                match st.Data with
+                | Some d when ownsMore ->
+                    // Each item deletes what it owns in turn.
+                    let doomed = items a (schema.Shape.Deconstruct d).[a.Index] |> List.map (state a.Target ChangeAction.Delete)
+                    { st with Children = st.Children @ [ child doomed [] ] }
+                | None when ownsMore ->
+                    Cs.addError st a.Name (FieldErrorKind.Custom "owned") $"{a.Name} owns lists of its own: delete the {schema.Name} you read, not its key alone"
+                | _ ->
+                    // Every item the owner has, whatever the record held.
+                    { st with Children = st.Children @ [ { Assoc = a.Name; Replace = Some AllChildren; Children = []; Final = Some [] } ] })
+        s
+
 /// Model-aware structural validation, run before any command is sent.
 let rec check (model: Model) (s: CsState) : CsState =
+    let s = owned model s
     let schema = schemaOf model s.Type
     let err (st: CsState) field kind msg = Cs.addError st field kind msg
     let mutable st = s
@@ -344,9 +428,17 @@ and private update model sess schema s =
             | Ok written -> return Ok(finish schema s (Array.copy row) written)
     }
 
-and private delete _model sess schema s =
+and private delete model sess schema s =
     task {
         let key = (keyValue schema s).Value
+
+        // What the record owns goes first (owned-collections.feature).
+        let! children =
+            if s.Children.IsEmpty then Task.FromResult(Ok Map.empty) else writeChildren model sess schema s key false
+
+        match children with
+        | Error e -> return Error e
+        | Ok _ ->
 
         let versionWhere =
             match schema.Version, versionValue schema s with
@@ -587,10 +679,13 @@ and private writeChildList model sess (schema: SchemaInfo) (s: CsState) (parentK
                                 | _ -> false)
 
                         let value =
-                            if complete then
-                                a.Ctors.Loaded(a.MakeList produced)
-                            else
-                                a.Ctors.NotLoaded
+                            match w.Final with
+                            // An owned list: the new list, with each written item as stored.
+                            | Some final ->
+                                let stored = Collections.Generic.Queue<obj>(produced)
+                                final |> List.map (fun (c, written) -> if written then stored.Dequeue() else c) |> Seq.ofList |> a.MakeList |> a.Ctors.Loaded
+                            | None when complete -> a.Ctors.Loaded(a.MakeList produced)
+                            | None -> a.Ctors.NotLoaded
 
                         result <- Ok(written.Add(w.Assoc, value))
 

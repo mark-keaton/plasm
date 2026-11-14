@@ -522,6 +522,19 @@ the same guarantee more exhaustively.
 |---|---|---|---|---|
 | An explicit mapping is used instead of the convention | Implemented and verified | `ConventionSteps.fs` |  |  |
 
+### owned-collections.feature
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Reading an invoice reads its lines | Implemented and verified | `OwnedSteps.fs` |  | Strict design, step 7: `owns (fun i -> i.Lines) (fun l -> l.Invoice)` (or `ownsOrderedBy`, with an order); the planner adds a load for every owned list a query does not request, at every level. |
+| An invoice without lines reads with an empty list | Implemented and verified | `OwnedSteps.fs` |  | A plain list; there is no unloaded state. |
+| Every invoice's lines are read in one more command | Implemented and verified | `OwnedSteps.fs` |  | Batched by key, as preloads are. |
+| A whole Invoice cannot be selected from a join | Implemented and verified | `OwnedSteps.fs` |  | Neither can hand-written SQL read one; both say why. |
+| Inserting an Invoice inserts its lines | Implemented and verified | `OwnedSteps.fs` |  | `Writes.owned` turns the list into child writes. |
+| Changing the lines of an Invoice read writes the difference | Implemented and verified | `OwnedSteps.fs` |  | By key: new items inserted, changed ones updated (only their changed columns), missing ones deleted; the returned record holds the new list as stored. |
+| Deleting an Invoice deletes its lines | Implemented and verified | `OwnedSteps.fs` |  | Items that own lists of their own delete them in turn. |
+| A list field the schema does not own is refused at build | Implemented and verified | `OwnedSteps.fs` |  |  |
+
 ### union-fields.feature
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |

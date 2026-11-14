@@ -380,12 +380,15 @@ module Model =
             for i, prop in Array.indexed shape.Fields do
                 let t = prop.PropertyType
 
-                if Reflection.isAssoc t then
+                let owned = assocDefs.TryFind prop.Name |> Option.exists (fun a -> a.Owned)
+
+                if Reflection.isAssoc t || owned then
                     match assocDefs.TryFind prop.Name with
                     | None ->
                         err (Some prop.Name) "relationship field has no hasMany, hasOne, belongsTo or manyToMany declaration"
                     | Some a ->
-                        let payload = Reflection.elementType t
+                        // An owned list is its own payload: a plain list.
+                        let payload = if a.Owned then t else Reflection.elementType t
 
                         let cardinality, target =
                             if Reflection.isList payload then
@@ -468,15 +471,21 @@ module Model =
                                   ForeignKey = (if isNull a.ForeignKey then "" else a.ForeignKey.Name)
                                   Through = a.Through
                                   OnReplace = a.OnReplace
-                                  Ctors = Reflection.assocCtors t
+                                  Ctors = if a.Owned then Reflection.listCtors t else Reflection.assocCtors t
                                   MakeList = Reflection.makeList target
-                                  WrapSome = Reflection.makeSome (typedefof<option<_>>.MakeGenericType target) }
+                                  WrapSome = Reflection.makeSome (typedefof<option<_>>.MakeGenericType target)
+                                  Owned = a.Owned
+                                  Order = a.Order }
                 else
                     let isOpt = Reflection.isOption t
                     let scalarType = if isOpt then Reflection.elementType t else t
 
                     if Reflection.isOption scalarType then
                         err (Some prop.Name) "nested options cannot be stored unambiguously"
+                    elif Reflection.isList t then
+                        err
+                            (Some prop.Name)
+                            $"{prop.Name} is a list, and a list must be owned to be stored: declare `owns (fun x -> x.{prop.Name}) (fun item -> item.Owner)`, or make it Assoc<_ list> for a relationship loaded on request"
                     else
                         let column = def.Columns.TryFind prop.Name |> Option.defaultValue (Paths.snakeCase prop.Name)
 

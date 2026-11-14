@@ -99,6 +99,30 @@ module internal Planner =
         : LoadNode list =
         let caps = dialect.Capabilities
 
+        // An owned list is always loaded (owned-collections.feature): in its
+        // declared order, else by its key.
+        let owned =
+            [ for a in parent.Assocs do
+                  if a.Owned && not (loads |> List.exists (fun l -> l.Assoc.Name = a.Name)) then
+                      let target =
+                          match model.Schema a.Target with
+                          | Ok t -> t
+                          | Error e -> raiseT e
+
+                      let order =
+                          match a.Order with
+                          | Some o -> o
+                          | None ->
+                              let v = Quotations.Var("x", target.Type)
+                              Quotations.Expr.Lambda(v, Quotations.Expr.PropertyGet(Quotations.Expr.Var v, target.Shape.Fields.[target.Key.Index]))
+
+                      yield
+                          { Assoc = parent.Shape.Fields.[a.Index]
+                            Child = Some { QueryDef.Empty target.Type with Orders = [ order, SortDirection.Ascending ] }
+                            Replace = false } ]
+
+        let loads = loads @ owned
+
         // Group by relationship, keeping first-request order.
         let groups =
             loads
