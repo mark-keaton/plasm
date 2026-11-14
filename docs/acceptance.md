@@ -556,6 +556,8 @@ the same guarantee more exhaustively.
 | A query that cannot be translated is reported by its name | Implemented and verified | `QueryCheckSteps.fs` |  | `QueryProblem = { Query: "Module.value"; Error }`. |
 | A prepared query that cannot be translated is reported without being called | Implemented and verified | `QueryCheckSteps.fs` |  | `Query.prepare` returns a function value that is also checkable (`PreparedQuery` inherits `FSharpFunc`); its template is translated with its arguments as parameters. |
 | A checked prepared query reads with its argument | Implemented and verified | `QueryCheckSteps.fs` |  | Callers still apply it like a function. |
+| A prepared projection reads with its argument | Implemented and verified | `QueryCheckSteps.fs` |  | Step 3b, asked for by the Kanban example: `Query.prepare`/`prepare2` overloads for a builder that ends in `select` return `'A -> Projection<'R>`. |
+| A prepared projection that cannot be translated is reported without being called | Implemented and verified | `QueryCheckSteps.fs` |  |  |
 
 ### typed-transactions.feature
 

@@ -36,3 +36,15 @@ Feature: Every query is checked before it is used
       Given Customers named "Ada" and "Bob"
       When I read with the checked prepared query for the name "Bob"
       Then only the Customer named "Bob" is returned
+
+  Rule: A prepared query can end in a projection
+
+    Scenario: A prepared projection reads with its argument
+      Given Customers named "Ada" and "Bob"
+      When I read the names with the checked prepared projection for the name "Bob"
+      Then only the name "Bob" is returned
+
+    Scenario: A prepared projection that cannot be translated is reported without being called
+      When I check the queries of a module with a prepared projection Plasm cannot translate
+      Then one problem is reported, for the query "BadProjection.normalizedNames", saying why it cannot be translated
+

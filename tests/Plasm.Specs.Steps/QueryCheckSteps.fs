@@ -17,6 +17,13 @@ module Bad =
     // String.Normalize has no SQL translation.
     let normalized = plasm { for c in customers do where (c.Name.Normalize() = "ada") }
 
+module GoodProjection =
+    let namesOf = Query.prepare (fun (name: Arg<string>) -> plasm { for c in customers do where (c.Name = name.Value); select c.Name })
+
+module BadProjection =
+    let normalizedNames =
+        Query.prepare (fun (name: Arg<string>) -> plasm { for c in customers do where (c.Name.Normalize() = name.Value); select c.Name })
+
 module BadPrepared =
     let normalizedNamed =
         Query.prepare (fun (name: Arg<string>) -> plasm { for c in customers do where (c.Name.Normalize() = name.Value) })
@@ -47,6 +54,20 @@ type QueryCheckSteps(w: World) =
 
     [<StepDefinition("I check the queries of a module with a prepared query Plasm cannot translate")>]
     member _.CheckBadPrepared() = check' "BadPrepared"
+
+    [<StepDefinition("I check the queries of a module with a prepared projection Plasm cannot translate")>]
+    member _.CheckBadProjection() = check' "BadProjection"
+
+    [<StepDefinition("I read the names with the checked prepared projection for the name \"(.*)\"")>]
+    member _.ReadProjection(name: string) =
+        task {
+            let! r = w.Repo.All(CheckedQueries.GoodProjection.namesOf name)
+            w.Set("names", ok r)
+        }
+        |> unit
+
+    [<StepDefinition("only the name \"(.*)\" is returned")>]
+    member _.OnlyName(name: string) = equal [ name ] (w.Get<string list> "names") "names"
 
     [<StepDefinition("no problem is reported")>]
     member _.NoProblem() = equal [] (problems ()) "problems"

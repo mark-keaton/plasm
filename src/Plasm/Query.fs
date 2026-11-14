@@ -536,6 +536,24 @@ type internal PreparedQuery3<'A, 'B, 'C, 'T>(template: QueryDef) =
         member _.Def = { template with Args = Array.zeroCreate 3 }
         member _.Select = None
 
+/// A prepared projection: like PreparedQuery, for a query that ends in `select`.
+type internal PreparedProjection<'A, 'R>(template: QueryDef, select: Expr) =
+    inherit FSharpFunc<'A, Projection<'R>>()
+    override _.Invoke(a: 'A) = Projection<'R>(Prepared.bind template [| box a |], select)
+
+    interface ICheckable with
+        member _.Def = { template with Args = Array.zeroCreate 1 }
+        member _.Select = Some select
+
+type internal PreparedProjection2<'A, 'B, 'R>(template: QueryDef, select: Expr) =
+    inherit OptimizedClosures.FSharpFunc<'A, 'B, Projection<'R>>()
+    override _.Invoke(a: 'A, b: 'B) = Projection<'R>(Prepared.bind template [| box a; box b |], select)
+    override this.Invoke(a: 'A) = fun (b: 'B) -> this.Invoke(a, b)
+
+    interface ICheckable with
+        member _.Def = { template with Args = Array.zeroCreate 2 }
+        member _.Select = Some select
+
 /// Pipeline-style query functions, equivalent to the computation expression.
 type Query =
     /// Prepares a query with one argument. The description is built and
@@ -549,6 +567,19 @@ type Query =
     static member prepare(build: Arg<'A> -> Query<'T>) : 'A -> Query<'T> =
         let t = Prepared.template (fun () -> (build (Arg<'A>(0))).Def)
         PreparedQuery<'A, 'T>(t) :> obj :?> ('A -> Query<'T>)
+
+    /// Prepares a query that ends in `select`, with one argument: called like a
+    /// function, and checked by repo.CheckQueries like any prepared query.
+    static member prepare(build: Arg<'A> -> Projection<'R>) : 'A -> Projection<'R> =
+        let p = build (Arg<'A>(0))
+        let t = Prepared.template (fun () -> p.Def)
+        PreparedProjection<'A, 'R>(t, p.Select) :> obj :?> ('A -> Projection<'R>)
+
+    /// Prepares a query that ends in `select`, with two arguments.
+    static member prepare2(build: Arg<'A> -> Arg<'B> -> Projection<'R>) : 'A -> 'B -> Projection<'R> =
+        let p = build (Arg<'A>(0)) (Arg<'B>(1))
+        let t = Prepared.template (fun () -> p.Def)
+        PreparedProjection2<'A, 'B, 'R>(t, p.Select) :> obj :?> ('A -> 'B -> Projection<'R>)
 
     /// Prepares a query with two arguments.
     static member prepare2(build: Arg<'A> -> Arg<'B> -> Query<'T>) : 'A -> 'B -> Query<'T> =
