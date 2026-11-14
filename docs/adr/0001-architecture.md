@@ -232,6 +232,11 @@ baseline.
 - Optimistic concurrency: a schema's `version` field is required to match on
   update and delete, and is incremented. A mismatch is
   `WriteError.Stale` / `TxFailure.Conflict`.
+- Amended by the strict design (step 5): a record without a version field is
+  checked against the record its change was made from. The UPDATE or DELETE
+  carries `column IS NOT DISTINCT FROM @original` for every column, so a row
+  another writer changed affects nothing and the change is `Stale`. A version
+  field remains the opt-in alternative for records that cross a wire.
 - Cancellation tokens reach Npgsql, which cancels the statement on the server.
 - Failures are classified (`DbFailureKind`), so callers never parse messages.
 

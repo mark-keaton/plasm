@@ -31,6 +31,20 @@ let private versionValue (schema: SchemaInfo) (s: CsState) : int option =
         | Some e -> Some e
         | None -> s.Data |> Option.map (fun d -> unbox<int> (schema.Shape.Deconstruct d).[v.Index])
 
+/// For a record without a version field, the update or delete applies only if
+/// every column still holds what the change was made from (concurrency.feature).
+/// A change made from a key alone has nothing to compare.
+let private originalWhere (schema: SchemaInfo) (s: CsState) =
+    match schema.Version, s.Data with
+    | None, Some d ->
+        let values = schema.Shape.Deconstruct d
+
+        schema.Fields
+        |> Array.filter (fun f -> f.Index <> schema.Key.Index)
+        |> Array.map (fun f -> Sql.Binary("IS NOT DISTINCT FROM", Sql.Column(schema.Table, f.Column), Sql.fieldValue f values.[f.Index]))
+        |> List.ofArray
+    | _ -> []
+
 /// Model-aware structural validation, run before any command is sent.
 let rec check (model: Model) (s: CsState) : CsState =
     let schema = schemaOf model s.Type
@@ -278,7 +292,7 @@ and private update model sess schema s =
                 [ Sql.Binary("=", Sql.Column(schema.Table, vf.Column), Sql.Param(box v)) ]
             | _ -> [], []
 
-        let where = keyFilter schema key :: versionWhere
+        let where = keyFilter schema key :: versionWhere @ originalWhere schema s
 
         let! row =
             // Nothing to write on the row itself (relationship-only changes without
@@ -342,7 +356,7 @@ and private delete _model sess schema s =
             Sql.renderDelete
                 sess.Provider.Dialect
                 { Table = schema.Table
-                  Where = keyFilter schema key :: versionWhere
+                  Where = keyFilter schema key :: versionWhere @ originalWhere schema s
                   Returning = [] }
 
         let! n = guarded sess schema s (fun () -> execute sess cmd)

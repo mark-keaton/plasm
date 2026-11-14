@@ -29,6 +29,7 @@
     <Compile Include="TypedTxSteps.fs" />
     <Compile Include="QueryCheckSteps.fs" />
     <Compile Include="ConstraintSteps.fs" />
+    <Compile Include="ConcurrencySteps.fs" />
     <Compile Include="PipelineSteps.fs" />
     <Compile Include="HasOneSteps.fs" />
     <Compile Include="ProviderSteps.fs" />

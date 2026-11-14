@@ -522,6 +522,19 @@ the same guarantee more exhaustively.
 |---|---|---|---|---|
 | An explicit mapping is used instead of the convention | Implemented and verified | `ConventionSteps.fs` |  |  |
 
+### concurrency.feature
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A change to a row nobody else changed is saved | Implemented and verified | `ConcurrencySteps.fs` |  | Strict design, step 5: for a record without a version field, `Writes.originalWhere` adds `column IS NOT DISTINCT FROM @original` for every column to the UPDATE or DELETE. |
+| A change after another writer changed the row is a conflict | Implemented and verified | `ConcurrencySteps.fs` |  | 0 rows is `WriteError.Stale` (`TxFailure.Conflict` in a transaction), as for versions. |
+| A delete after another writer changed the row is a conflict | Implemented and verified | `ConcurrencySteps.fs` |  |  |
+| A NULL that is still NULL matches | Implemented and verified | `ConcurrencySteps.fs` |  | `IS NOT DISTINCT FROM`, not `=`. |
+| A NULL another writer filled in is a conflict | Implemented and verified | `ConcurrencySteps.fs` |  |  |
+| The check is part of the change's own command | Implemented and verified | `ConcurrencySteps.fs` |  | No read before the write. |
+| A change made from a key alone is not checked | Implemented and verified | `ConcurrencySteps.fs` |  | Nothing to compare; a versioned record still needs `expectVersion`. |
+| A versioned record is checked by its version alone | Implemented and verified | `ConcurrencySteps.fs` |  | Both mechanisms are supported: a `version` field opts in (for records that cross a wire). |
+
 ### constraints.feature
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
