@@ -76,3 +76,38 @@ Feature: Walking the path in the browser
     Scenario: F# operators are drawn as single symbols
       When a koan is shown
       Then its code is set in a font that joins operators such as |> and ->
+
+  # A koan's blanks must be answerable from the page: its code, the data it
+  # starts from and the definitions it uses. Each koan opens with them.
+  Rule: Each koan opens with what it is given
+
+    Scenario: A koan shows the tables it uses, with their starting rows
+      When the learner opens the koan "Wrapped keys keep their meaning"
+      Then under Given the customers table shows its 3 starting rows
+      And Ada's row shows the id 1
+
+    Scenario: A NULL is shown as NULL
+      When the learner opens the koan "Absent values are options"
+      Then under Given the orders table shows NULL as the customer of order 4
+
+    Scenario: A koan shows the definitions it uses, from the shop's source
+      When the learner opens the koan "Stored values can be rejected"
+      Then under Given the definition of Quantity includes "if v > 0 then Ok(Quantity v)"
+      And the definition says it comes from Shop.fs
+
+    Scenario: The fields a koan reads are marked in their record
+      When the learner opens the koan "Absent values are options"
+      Then under Given the definition of Order marks the fields Id, CustomerId and CancellationReason
+
+    Scenario: A table changed with SQL is given too
+      When the learner opens the koan "Stored values can be rejected"
+      Then under Given the order_lines table shows its 4 starting rows
+
+    Scenario: Every table is a click away
+      When the learner opens the koan "Wrapped keys keep their meaning"
+      And asks for all tables
+      Then under Given every table of the koans database is shown
+
+    Scenario: A koan that needs nothing has no Given
+      When the learner opens the first koan
+      Then no Given is shown

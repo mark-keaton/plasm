@@ -30,6 +30,7 @@
     <Compile Include="Lessons/L21_TestingWithPlasm.fs" />
     <Compile Include="Lessons/L22_QueryPipelines.fs" />
     <Compile Include="Path.fs" />
+    <Compile Include="Given.fs" />
     <Compile Include="Notebook.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

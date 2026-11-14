@@ -173,11 +173,35 @@ let private lessonCells (file: string) : Cell list =
 let course () : string =
     let byTitle = guidance.Value |> List.map (fun g -> g.Title, g) |> Map.ofList
 
+    // The shop's source, next to the lessons' sources (koans/Plasm.Koans.Core/Shop.fs).
+    let shop =
+        let lessonsDir = IO.Path.GetDirectoryName Path.lessons.Head.Koans.Head.File
+        let file = IO.Path.Combine(lessonsDir, "..", "..", "Plasm.Koans.Core", "Shop.fs")
+        Given.parse "Shop.fs" (IO.File.ReadAllLines file)
+
+    let given (helpers: Given.Definition list) (body: string) =
+        let g = Given.forKoan shop helpers body
+
+        dict
+            [ "tables", box (Array.ofList g.Tables)
+              "definitions",
+              box (
+                  g.Definitions
+                  |> List.map (fun (d, marked) ->
+                      dict
+                          [ "name", box d.Name
+                            "source", box d.Source
+                            "code", box (String.concat "\n" d.Code)
+                            "marked", box (Array.ofList marked) ])
+                  |> Array.ofList
+              ) ]
+
     let lessons =
         Path.lessons
         |> List.map (fun lesson ->
             let g = byTitle.TryFind lesson.Title
             let helpers, koans = parseLesson lesson.Koans.Head.File
+            let helperDefinitions = Given.parse "this lesson" (Array.ofList helpers)
 
             dict
                 [ "title", box lesson.Title
@@ -195,12 +219,13 @@ let course () : string =
                                 "lambda", box k.Lambda
                                 "body", box (String.concat "\n" k.Body)
                                 "discovers", box (kg |> Option.map (fun x -> x.Discovers) |> Option.defaultValue "")
-                                "teaches", box (kg |> Option.map (fun x -> x.Teaches) |> Option.defaultValue "") ])
+                                "teaches", box (kg |> Option.map (fun x -> x.Teaches) |> Option.defaultValue "")
+                                "given", box (given helperDefinitions (String.concat "\n" k.Body)) ])
                       |> Array.ofList
                   ) ])
         |> Array.ofList
 
-    JsonSerializer.Serialize(dict [ "lessons", box lessons ], JsonSerializerOptions(WriteIndented = true)) + "\n"
+    JsonSerializer.Serialize(dict [ "tables", box (Array.ofList Given.tables); "lessons", box lessons ], JsonSerializerOptions(WriteIndented = true)) + "\n"
 
 /// The notebook (.ipynb JSON) for the lessons, referencing the built koans in `bin`.
 let generate (bin: string) : string =

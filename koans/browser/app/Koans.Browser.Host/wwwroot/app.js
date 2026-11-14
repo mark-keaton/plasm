@@ -184,6 +184,80 @@ function unfold(lessonIndex) {
   });
 }
 
+// The data every koan starts from, read from the engine's database once, before
+// any koan runs (every koan's changes are rolled back, so it never changes).
+let startingData = null; // table -> { columns: [{ name, type, nullable }], rows: [[text|null]] }
+(async () => {
+  const current = await engine.ready;
+  const id = ++ids;
+  startingData = await new Promise((resolve) => {
+    current.pending.set(id, resolve);
+    current.worker.postMessage({ type: 'tables', id, names: course.tables });
+  });
+  $('given').dataset.state = 'ready';
+  if (shown) renderGiven(course.lessons[shown.lessonIndex].koans[shown.koanIndex]);
+})();
+
+/// A table of starting rows; NULL is shown as NULL, never as an empty cell.
+function tableOf(name, t) {
+  const head = el('tr', {}, ...t.columns.map((c) =>
+    el('th', { scope: 'col', 'data-column': c.name, title: c.type }, c.name, c.nullable ? el('small', {}, 'may be NULL') : null)));
+  const rows = t.rows.map((r) => el('tr', {}, ...r.map((v) => (v === null ? el('td', { class: 'null' }, el('span', {}, 'NULL')) : el('td', {}, v)))));
+  return el('div', { class: 'table', 'data-table': name },
+    el('div', { class: 'table-name' }, `${name} · ${t.rows.length} row${t.rows.length === 1 ? '' : 's'}`),
+    el('div', { class: 'table-scroll' }, el('table', {}, el('thead', {}, head), el('tbody', {}, ...rows))));
+}
+
+/// Given: the tables a koan reads, with their starting rows, and the
+/// definitions it uses, with the fields it reads marked. Hidden when it needs neither.
+function renderGiven(koan) {
+  const g = koan.given ?? { tables: [], definitions: [] };
+  const any = g.tables.length + g.definitions.length > 0;
+  $('given').hidden = !any;
+  $('koan').classList.toggle('has-given', any);
+  if (!any) return;
+
+  const all = $('all-tables').getAttribute('aria-pressed') === 'true';
+  const box = $('given-tables');
+  box.replaceChildren();
+  if (!startingData) box.append(el('p', { class: 'table-name' }, 'Reading the data…'));
+  else {
+    for (const name of course.tables) {
+      if (!startingData[name]) continue;
+      const t = tableOf(name, startingData[name]);
+      t.hidden = !all && !g.tables.includes(name);
+      box.append(t);
+    }
+    if (!all && g.tables.length === 0) box.append(el('p', { class: 'table-name' }, 'This koan reads no tables.'));
+  }
+
+  const chips = $('given-chips');
+  const defs = $('given-definitions');
+  chips.replaceChildren();
+  defs.replaceChildren();
+  $('given-definitions-card').hidden = g.definitions.length === 0;
+  g.definitions.forEach((d, i) => {
+    const pre = el('pre');
+    pre.innerHTML = d.code.split('\n').map((line, n) => (d.marked.includes(n) ? `<span class="marked">${colour(line)}</span>` : colour(line))).join('\n');
+    const panel = el('div', { class: 'definition', 'data-name': d.name }, el('span', { class: 'source' }, `${d.name}, from ${d.source}`), pre);
+    panel.hidden = i !== 0;
+    const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(i === 0) }, d.name);
+    chip.addEventListener('click', () => {
+      defs.querySelectorAll('.definition').forEach((p) => { p.hidden = p !== panel; });
+      chips.querySelectorAll('.chip').forEach((c) => c.setAttribute('aria-pressed', String(c === chip)));
+    });
+    chips.append(chip);
+    defs.append(panel);
+  });
+}
+
+$('all-tables').addEventListener('click', () => {
+  const b = $('all-tables');
+  b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
+  b.textContent = b.getAttribute('aria-pressed') === 'true' ? 'Only this koan\'s tables' : 'All tables';
+  if (shown) renderGiven(course.lessons[shown.lessonIndex].koans[shown.koanIndex]);
+});
+
 let shown = null;
 function show(lessonIndex, koanIndex) {
   const lesson = course.lessons[lessonIndex];
@@ -193,8 +267,10 @@ function show(lessonIndex, koanIndex) {
   $('goal').textContent = lesson.goal;
   $('name').textContent = koan.name;
   const [feature, scenario] = [koan.teaches.slice(0, koan.teaches.indexOf(': ')), koan.teaches.slice(koan.teaches.indexOf(': ') + 2)];
-  $('teaches').textContent = `${feature}.feature: ${scenario}`;
-  $('teaches').href = `spec/${feature}.feature`;
+  // The orientation lesson teaches F# itself, not a scenario of Plasm.
+  if (feature === 'F#') { $('teaches').textContent = koan.teaches; $('teaches').removeAttribute('href'); }
+  else { $('teaches').textContent = `${feature}.feature: ${scenario}`; $('teaches').href = `spec/${feature}.feature`; }
+  renderGiven(koan);
   $('code').value = edits[keyOf(lessonIndex, koanIndex)] ?? koan.body;
   highlight();
   render(results.get(`${lessonIndex}/${koanIndex}`), lessonIndex, koanIndex);

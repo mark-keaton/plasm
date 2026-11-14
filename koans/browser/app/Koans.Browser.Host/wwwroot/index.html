@@ -140,7 +140,37 @@
   .meditate { margin-top: 16px; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--paper); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; color: var(--ink-2); }
   .meditate strong { font-family: var(--display); color: var(--accent-ink); white-space: nowrap; }
 
+  /* Given, then the koan: the data and definitions a koan starts from, above its code. */
+  .step { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 0 16px; }
+  .step-label { margin: 6px 0 0; font: 600 18px/1.4 var(--display); color: var(--accent-ink); }
+  #koan:not(.has-given) .step { display: block; }
+  #koan:not(.has-given) .step-label { display: none; }
+  .step-body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  #given[hidden] { display: none; }
+  .given-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .given-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .given-head .what { font-weight: 600; }
+  .given-head .note { font-size: 13px; color: var(--ink-3); }
+  .given-head .btn { margin-left: auto; min-height: 32px; font-size: 13px; color: var(--accent-ink); }
+  .table[hidden] { display: none; }
+  .table + .table { border-top: 1px solid var(--line); }
+  .table-name { padding: 8px 16px 0; font: 500 13px/1.6 var(--mono); }
+  .table-scroll { overflow-x: auto; padding: 4px 16px 12px; }
+  .table table { border-collapse: collapse; font: 13px/1.6 var(--mono); }
+  .table th { text-align: left; font-weight: 500; padding: 5px 14px 5px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .table th small { font: 400 11.5px var(--body); color: var(--ink-3); margin-left: 6px; }
+  .table td { padding: 4px 14px 4px 0; border-bottom: 1px solid var(--sunk); white-space: nowrap; }
+  .table td.null span { font-size: 11.5px; letter-spacing: .04em; color: var(--ink-3); background: var(--sunk); border: 1px dashed var(--line-2); border-radius: 4px; padding: 0 5px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font: 12.5px/1 var(--mono); padding: 0 10px; min-height: 30px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); cursor: pointer; }
+  .chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+  .definition[hidden] { display: none; }
+  .definition .source { display: block; padding: 8px 16px 0; font-size: 12.5px; color: var(--ink-3); }
+  .definition pre { margin: 0; padding: 8px 16px 12px; font: 13px/1.65 var(--mono); white-space: pre; overflow-x: auto; }
+  .definition .marked { display: inline-block; min-width: 100%; background: var(--accent-soft); border-radius: 3px; }
+
   @media (max-width: 720px) {
+    .step { grid-template-columns: minmax(0, 1fr); }
     .top { padding: 12px 16px; }
     #lessons { max-width: none; max-height: 40vh; position: static; border-right: 0; border-bottom: 1px solid var(--line); }
     main { padding: 24px 16px 40px; }
@@ -172,6 +202,29 @@
         <p id="goal"></p>
         <p class="teaches">Teaches <a id="teaches" target="_blank" rel="noopener"></a></p>
       </div>
+      <div class="step" id="given" hidden data-state="loading">
+        <h2 class="step-label">Given</h2>
+        <div class="step-body">
+          <section class="given-card" aria-label="Tables">
+            <div class="given-head">
+              <span class="what">The data it starts from</span>
+              <span class="note">the same for every koan; changes are rolled back</span>
+              <button class="btn" id="all-tables" aria-pressed="false">All tables</button>
+            </div>
+            <div id="given-tables"></div>
+          </section>
+          <section class="given-card" id="given-definitions-card" aria-label="Definitions">
+            <div class="given-head">
+              <span class="what">and these definitions</span>
+              <div class="chips" id="given-chips"></div>
+            </div>
+            <div id="given-definitions"></div>
+          </section>
+        </div>
+      </div>
+      <div class="step">
+        <h2 class="step-label">Then</h2>
+        <div class="step-body">
       <section class="card" aria-label="Koan code">
         <div class="toolbar">
           <span class="hint">Fill in each <mark class="blank">__</mark> so the koan holds.</span>
@@ -193,6 +246,8 @@
         </div>
       </section>
       <section id="result" aria-live="polite" aria-label="Result"></section>
+        </div>
+      </div>
     </section>
   </main>
 </div>

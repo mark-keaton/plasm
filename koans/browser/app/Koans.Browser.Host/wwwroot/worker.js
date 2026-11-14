@@ -112,6 +112,22 @@ self.onmessage = async (e) => {
     post({ type: 'result', id: m.id, result });
     return;
   }
+  if (m.type === 'tables') {
+    // The starting data of the given tables, read before any koan runs.
+    const tables = {};
+    for (const name of m.names) {
+      const cols = await db.query(
+        'select column_name, data_type, is_nullable from information_schema.columns ' +
+        'where table_schema = current_schema() and table_name = $1 order by ordinal_position', [name]);
+      const rows = await db.query(`select * from "${name.replace(/"/g, '""')}" order by 1, 2`, [], { rowMode: 'array', parsers: textParsers });
+      tables[name] = {
+        columns: cols.rows.map((c) => ({ name: c.column_name, type: c.data_type, nullable: c.is_nullable === 'YES' })),
+        rows: rows.rows,
+      };
+    }
+    post({ type: 'result', id: m.id, result: tables });
+    return;
+  }
   if (m.type !== 'run') return;
   try {
     const result = await exports.RunKoan(m.title, m.name, m.helpers, m.isTask, m.lambda, m.body);
