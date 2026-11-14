@@ -26,20 +26,20 @@ let lesson =
         "About prepared queries"
         [ Koan.Task(
               "A prepared query takes an argument",
-              fun k ->
+              fun repo ->
                   task {
                       // productsWithSku (top of this file) is a function: give it a SKU, get a query.
-                      let! gizmos = k.Repo.All(productsWithSku "GIZMO")
+                      let! gizmos = repo.All(productsWithSku "GIZMO")
                       names gizmos |> shouldBe __
                   }
           )
 
           Koan.Task(
               "One prepared query, two values",
-              fun k ->
+              fun repo ->
                   task {
-                      let! widgets = k.Repo.All(productsWithSku "WIDGET")
-                      let! gadgets = k.Repo.All(productsWithSku "GADGET")
+                      let! widgets = repo.All(productsWithSku "WIDGET")
+                      let! gadgets = repo.All(productsWithSku "GADGET")
                       names widgets |> shouldBe __
                       names gadgets |> shouldBe __
                   }
@@ -47,36 +47,36 @@ let lesson =
 
           Koan.Task(
               "A prepared query can be counted",
-              fun k ->
+              fun repo ->
                   task {
                       // ordersOf (top of this file) is prepared with a CustomerId. Customer 3 is Cy.
-                      let! cys = k.Repo.Count(ordersOf (CustomerId 3L))
+                      let! cys = repo.Count(ordersOf (CustomerId 3L))
                       ok cys |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Built once, run many times",
-              fun k ->
+              fun repo ->
                   task {
-                      let! adas = k.Repo.Count(ordersOf (CustomerId 1L))
-                      let! bobs = k.Repo.Count(ordersOf (CustomerId 2L))
+                      let! adas = repo.Count(ordersOf (CustomerId 1L))
+                      let! bobs = repo.Count(ordersOf (CustomerId 2L))
                       (ok adas, ok bobs) |> shouldBe __
                       // Did the two counts send the same SQL text?
-                      (k.Commands.[0] = k.Commands.[1]) |> shouldBe __
+                      ((commands ()).[0] = (commands ()).[1]) |> shouldBe __
                   }
           )
 
           Koan.Sync(
               "Arguments are parameters",
-              fun k ->
-                  let sql = k.Sql(ordersOf (CustomerId 42L))
+              fun repo ->
+                  let sql = (ok (repo.Explain(ordersOf (CustomerId 42L)))).Sql
                   sql.Contains "42" |> shouldBe __
           )
 
           Koan.Task(
               "Paging by arguments",
-              fun k ->
+              fun repo ->
                   task {
                       let page =
                           Query.prepare2 (fun (size: Arg<int>) (offset: Arg<int>) ->
@@ -87,17 +87,17 @@ let lesson =
                                       take size.Value
                               })
 
-                      let! second = k.Repo.All(page 2 2)
+                      let! second = repo.All(page 2 2)
                       ok second |> List.map (fun o -> o.Id) |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Prepared queries still compose",
-              fun k ->
+              fun repo ->
                   task {
                       let publishedOf c = plasm { for o in ordersOf c do where (o.Status = Published) }
-                      let! n = k.Repo.Count(publishedOf (CustomerId 1L))
+                      let! n = repo.Count(publishedOf (CustomerId 1L))
                       ok n |> shouldBe __
                   }
           )
@@ -121,12 +121,12 @@ let lesson =
 
           Koan.Task(
               "Prepared load queries",
-              fun k ->
+              fun repo ->
                   task {
                       let paymentsWith =
                           Query.prepare (fun (status: Arg<PaymentStatus>) -> plasm { for p in Db.payments do where (p.Status = status.Value) })
 
-                      let! orders = k.Repo.All(plasm { for o in Db.orders do where (o.Id = OrderId 3L); preload o.Payments (paymentsWith Failed) })
+                      let! orders = repo.All(plasm { for o in Db.orders do where (o.Id = OrderId 3L); preload o.Payments (paymentsWith Failed) })
                       (ok orders).Head.Payments |> Assoc.get |> List.map (fun p -> p.Status) |> shouldBe __
                   }
           ) ]

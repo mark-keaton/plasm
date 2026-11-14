@@ -19,20 +19,20 @@ let lesson =
         "About failures"
         [ Koan.Task(
               "Nothing found is not a failure",
-              fun k ->
+              fun repo ->
                   task {
                       // Every repository call returns a Result: Ok with the value, or Error with what went wrong.
-                      let! r = k.Repo.One(plasm { for c in Db.customers do where (c.Name = "Zed") })
+                      let! r = repo.One(plasm { for c in Db.customers do where (c.Name = "Zed") })
                       r |> shouldBe __
                   }
           )
 
           Koan.Task(
               "A failure is an Error you can match on",
-              fun k ->
+              fun repo ->
                   task {
                       // customers.email is unique (see the schema), and Ada already has this email.
-                      let! r = k.Repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
+                      let! r = repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
 
                       let outcome =
                           match r with
@@ -45,11 +45,11 @@ let lesson =
 
           Koan.Task(
               "A failed write says what kind of failure",
-              fun k ->
+              fun repo ->
                   task {
                       // WriteError.Failed is a failure reported by the database. Its Kind is a DbFailureKind:
                       // UniqueViolation, ForeignKeyViolation, CheckViolation, NotNullViolation, and others.
-                      let! r = k.Repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
+                      let! r = repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
 
                       match r with
                       | Error(WriteError.Failed f) -> f.Kind |> shouldBe __
@@ -59,9 +59,9 @@ let lesson =
 
           Koan.Task(
               "A unique violation names its constraint",
-              fun k ->
+              fun repo ->
                   task {
-                      let! r = k.Repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
+                      let! r = repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
 
                       match r with
                       // Constraint is the name of the database constraint that refused the row, if any.
@@ -72,12 +72,12 @@ let lesson =
 
           Koan.Task(
               "Failures are values",
-              fun k ->
+              fun repo ->
                   task {
                       let kept = ref Unchecked.defaultof<Repo>
 
                       do!
-                          k.Repo.Sandbox(fun inner ->
+                          repo.Sandbox(fun inner ->
                               kept.Value <- inner
                               Task.FromResult())
 
@@ -103,10 +103,10 @@ let lesson =
 
           Koan.Task(
               "Unreadable rows are named",
-              fun k ->
+              fun repo ->
                   task {
-                      let! _ = k.Repo.ExecuteSql $"update orders set status = 'lost' where id = 1"
-                      let! r = k.Repo.All(Query.from Db.orders)
+                      let! _ = repo.ExecuteSql $"update orders set status = 'lost' where id = 1"
+                      let! r = repo.All(Query.from Db.orders)
 
                       match r with
                       | Error(DbError.Materialization m) -> (m.Model, m.Property) |> shouldBe __
@@ -116,10 +116,10 @@ let lesson =
 
           Koan.Task(
               "SQL mismatches name the column",
-              fun k ->
+              fun repo ->
                   task {
                       // Customer needs an email column, and this query does not return one.
-                      let! r = k.Repo.Sql<Customer>($"SELECT id, name FROM customers")
+                      let! r = repo.Sql<Customer>($"SELECT id, name FROM customers")
 
                       match r with
                       | Error e -> (string e).Contains "Email" |> shouldBe __
@@ -129,18 +129,18 @@ let lesson =
 
           Koan.Task(
               "Too many rows is about the data",
-              fun k ->
+              fun repo ->
                   task {
-                      let! r = k.Repo.One(plasm { for o in Db.orders do where (o.Status = Published) })
+                      let! r = repo.One(plasm { for o in Db.orders do where (o.Status = Published) })
                       r |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Rejections keep their type",
-              fun k ->
+              fun repo ->
                   task {
-                      let! r = k.Repo.Transact(transaction { return! Tx.fail "check stock" (OutOfStock "GIZMO") })
+                      let! r = repo.Transact(transaction { return! Tx.fail "check stock" (OutOfStock "GIZMO") })
 
                       match (err r).Failure with
                       | StepFailure.Rejected rejection -> rejection.As<StockError>() |> shouldBe __

@@ -10,7 +10,7 @@ let lesson =
         "About joins"
         [ Koan.Task(
               "The simplest inner join",
-              fun k ->
+              fun repo ->
                   task {
                       // join pairs each row with the rows of another table whose key matches (an inner join).
                       // Every OrderLine has a ProductId, so every line finds its Product.
@@ -21,14 +21,14 @@ let lesson =
                                   orderBy l.Id
                           }
 
-                      let! rows = k.Repo.All linesWithProducts
+                      let! rows = repo.All linesWithProducts
                       ok rows |> List.map (fun (_, p) -> p.Name) |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Selecting a pair's fields",
-              fun k ->
+              fun repo ->
                   task {
                       // select can name fields from either side of the join.
                       let orderOne =
@@ -40,14 +40,14 @@ let lesson =
                                   select (p.Name, l.UnitPrice)
                           }
 
-                      let! rows = k.Repo.All orderOne
+                      let! rows = repo.All orderOne
                       ok rows |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Counting joined rows",
-              fun k ->
+              fun repo ->
                   task {
                       // A join gives one row for each matching pair, so an Order appears once per Payment.
                       let paid =
@@ -57,14 +57,14 @@ let lesson =
                                   orderBy p.Id
                           }
 
-                      let! n = k.Repo.Count paid
+                      let! n = repo.Count paid
                       ok n |> shouldBe __
                   }
           )
 
           Koan.Task(
               "A left join's missing side is None",
-              fun k ->
+              fun repo ->
                   task {
                       // leftJoin keeps rows with no match; the other side is an option, None when missing.
                       let fourth =
@@ -74,7 +74,7 @@ let lesson =
                                   where (o.Id = OrderId 4L)
                           }
 
-                      let! row = k.Repo.One fourth
+                      let! row = repo.One fourth
                       let (_, customer) = (ok row).Value
                       customer |> shouldBe __
                   }
@@ -82,7 +82,7 @@ let lesson =
 
           Koan.Task(
               "An inner join gives pairs",
-              fun k ->
+              fun repo ->
                   task {
                       let pairs =
                           plasm {
@@ -91,14 +91,14 @@ let lesson =
                                   orderBy o.Id
                           }
 
-                      let! rows = k.Repo.All pairs
+                      let! rows = repo.All pairs
                       ok rows |> List.map (fun (o, c) -> o.Id, c.Name) |> shouldBe __
                   }
           )
 
           Koan.Task(
               "A left join keeps every row",
-              fun k ->
+              fun repo ->
                   task {
                       let all =
                           plasm {
@@ -107,14 +107,14 @@ let lesson =
                                   orderBy o.Id
                           }
 
-                      let! rows = k.Repo.All all
+                      let! rows = repo.All all
                       ok rows |> List.map (fun (o, c) -> o.Id, c |> Option.map (fun c -> c.Name)) |> List.last |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Join keys are typed",
-              fun k ->
+              fun repo ->
                   task {
                       // The keys must have the same type: an optional CustomerId on the Order side.
                       let pairs =
@@ -124,14 +124,14 @@ let lesson =
                                   orderBy o.Id
                           }
 
-                      let! rows = k.Repo.Count pairs
+                      let! rows = repo.Count pairs
                       ok rows |> shouldBe 3L
                   }
           )
 
           Koan.Task(
               "Filters on joined columns run in SQL",
-              fun k ->
+              fun repo ->
                   task {
                       let adas =
                           plasm {
@@ -140,19 +140,19 @@ let lesson =
                                   where (c.Name = "Ada")
                           }
 
-                      (k.Sql adas).Contains "WHERE" |> shouldBe __
-                      let! n = k.Repo.Count adas
+                      (ok (repo.Explain adas)).Sql.Contains "WHERE" |> shouldBe __
+                      let! n = repo.Count adas
                       ok n |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Joined queries compose",
-              fun k ->
+              fun repo ->
                   task {
                       let withCustomers = plasm { for o in Db.orders do join c in Db.customers on (o.CustomerId = Some c.Id); orderBy o.Id }
                       let large (q: Query<Order * Customer>) = plasm { for (o, c) in q do where (o.Total > 20m) }
-                      let! rows = k.Repo.All(large withCustomers)
+                      let! rows = repo.All(large withCustomers)
                       ok rows |> List.map (fun (_, c) -> c.Name) |> shouldBe __
                   }
           ) ]

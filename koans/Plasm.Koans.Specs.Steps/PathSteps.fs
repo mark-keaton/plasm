@@ -109,12 +109,13 @@ type PathSteps(w: KoansWorld) =
     member _.StillNext() = contains $"The koan \"{(firstLessonKoans ()).Head.Koan}\"" w.Last.Output
 
     [<StepDefinition("the learner has reached a koan that asserts on generated SQL")>]
-    member _.SqlKoan() = w.Koan <- "A query can explain itself"
+    member _.SqlKoan() = w.Koan <- "Counting transfers no rows"
 
     [<StepDefinition("has filled it in with a wrong value")>]
     member _.SqlWrong() =
         let koan = w.Koan
-        let own = (answers ()).[koan] |> List.mapi (fun i a -> if i = 0 then "false" else a)
+        // Its last blank is the assertion on the SQL sent.
+        let own = (answers ()).[koan] |> fun xs -> List.mapi (fun i a -> if i = xs.Length - 1 then "false" else a) xs
         w.Program <- fun () -> variant "sql-wrong" (answeredUpTo koan own)
 
     [<StepDefinition("the report shows the SQL Plasm generated, formatted by clause")>]

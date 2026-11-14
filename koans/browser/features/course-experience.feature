@@ -261,20 +261,16 @@ Feature: Walking the path in the browser
       And asks for all tables
       Then under Given every table of the koans database is shown
 
-    Scenario: A koan shows where k comes from
+    Scenario: A koan shows only its own code
       When the learner opens the koan "The shop has three customers"
-      Then above its code the koan shows "fun k ->"
-      And under Given the definition of KoanContext includes "member _.Repo = repo"
-      And the definition of KoanContext says it comes from Koans.fs
-      And under Given the definition of KoanContext marks the members Repo
+      Then its code starts with its first comment, not with fun repo -> or task {
+      And it uses the repo it is given as repo
 
-    Scenario: A koan shows the helpers it uses from the koans
+    Scenario: Definitions say whether they are your app's code or test helpers
       When the learner opens the koan "The shop has three customers"
-      Then under Given the definition of ok includes "let ok (r: Result<'T, 'E>) : 'T ="
-
-    Scenario: A koan that is given nothing does not show fun _ ->
-      When the learner opens the first koan
-      Then no line is shown above its code
+      Then under Given the definition of Customer is labelled "your app"
+      And under Given the definition of ok is labelled "test helper"
+      And under Given the definition of ok includes "let ok (r: Result<'T, 'E>) : 'T ="
 
     Scenario: A koan that needs nothing has no Given
       When the learner opens the first koan

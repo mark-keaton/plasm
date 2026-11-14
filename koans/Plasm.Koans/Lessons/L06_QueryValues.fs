@@ -10,12 +10,12 @@ let lesson =
         "About query values"
         [ Koan.Task(
               "Query.from reads every row",
-              fun k ->
+              fun repo ->
                   task {
                       // A query describes which rows to read. Query.from is the plainest
                       // query there is: every row of a schema's table, as it is.
-                      // k.Repo.All runs a query and returns all the rows it matches.
-                      let! customers = k.Repo.All(Query.from Db.customers)
+                      // repo.All runs a query and returns all the rows it matches.
+                      let! customers = repo.All(Query.from Db.customers)
                       // How many customers does the koans database start with?
                       (ok customers).Length |> shouldBe __
                   }
@@ -23,12 +23,12 @@ let lesson =
 
           Koan.Task(
               "A where keeps the matching rows",
-              fun k ->
+              fun repo ->
                   task {
                       // plasm { } writes a query step by step. `for o in Db.orders do` names
                       // each Order o; `where` keeps the rows for which its condition is true.
                       let drafts = plasm { for o in Db.orders do where (o.Status = Draft) }
-                      let! orders = k.Repo.All drafts
+                      let! orders = repo.All drafts
                       // How many Orders are drafts?
                       (ok orders).Length |> shouldBe __
                   }
@@ -36,44 +36,44 @@ let lesson =
 
           Koan.Task(
               "An orderBy sorts the rows",
-              fun k ->
+              fun repo ->
                   task {
                       // orderBy sorts the rows by a field, smallest first (for text: A to Z).
                       // The database does the sorting.
                       let byName = plasm { for p in Db.products do orderBy p.Name }
-                      let! products = k.Repo.All byName
+                      let! products = repo.All byName
                       ok products |> List.map (fun p -> p.Name) |> shouldBe __
                   }
           )
 
           Koan.Task(
               "take keeps the first rows",
-              fun k ->
+              fun repo ->
                   task {
                       // take n keeps the first n rows. "First" needs an order, so the
                       // query sorts the Customers by name before taking two.
                       let firstTwo = plasm { for c in Db.customers do orderBy c.Name; take 2 }
-                      let! customers = k.Repo.All firstTwo
+                      let! customers = repo.All firstTwo
                       ok customers |> List.map (fun c -> c.Name) |> shouldBe __
                   }
           )
 
           Koan.Sync(
               "Building a query runs nothing",
-              fun k ->
+              fun repo ->
                   let _published = plasm { for o in Db.orders do where (o.Status = Published) }
                   // How many commands has this koan sent?
-                  k.Commands.Length |> shouldBe __
+                  (commands ()).Length |> shouldBe __
           )
 
           Koan.Task(
               "Extending makes a new query",
-              fun k ->
+              fun repo ->
                   task {
                       let all = Query.from Db.orders
                       let published = plasm { for o in all do where (o.Status = Published) }
-                      let! everyOrder = k.Repo.Count all
-                      let! publishedOrders = k.Repo.Count published
+                      let! everyOrder = repo.Count all
+                      let! publishedOrders = repo.Count published
                       ok everyOrder |> shouldBe __
                       ok publishedOrders |> shouldBe __
                   }
@@ -81,11 +81,11 @@ let lesson =
 
           Koan.Task(
               "Running does not change a query",
-              fun k ->
+              fun repo ->
                   task {
                       let drafts = plasm { for o in Db.orders do where (o.Status = Draft) }
-                      let! first = k.Repo.All drafts
-                      let! second = k.Repo.All drafts
+                      let! first = repo.All drafts
+                      let! second = repo.All drafts
                       (ok first = ok second) |> shouldBe __
                       (ok first).Length |> shouldBe __
                   }
@@ -93,34 +93,34 @@ let lesson =
 
           Koan.Sync(
               "A query can explain itself",
-              fun k ->
+              fun repo ->
                   let published = plasm { for o in Db.orders do where (o.Status = Published) }
-                  let sql = k.Sql published
+                  let sql = (ok (repo.Explain published)).Sql
                   // Is the status sent as a parameter?
                   sql.Contains "\"status\" = @p0" |> shouldBe __
-                  k.Commands.Length |> shouldBe __
+                  (commands ()).Length |> shouldBe __
           )
 
           Koan.Task(
               "Reusable filters are functions",
-              fun k ->
+              fun repo ->
                   task {
                       let published (q: Query<Order>) = plasm { for o in q do where (o.Status = Published) }
                       let over (amount: decimal) (q: Query<Order>) = plasm { for o in q do where (o.Total > amount) }
-                      let! n = k.Repo.Count(Query.from Db.orders |> published |> over 50m)
+                      let! n = repo.Count(Query.from Db.orders |> published |> over 50m)
                       ok n |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Captured values become parameters",
-              fun k ->
+              fun repo ->
                   task {
                       let email = "bob@example.com"
                       let byEmail = plasm { for c in Db.customers do where (c.Email = email) }
                       // Is the email written into the SQL text?
-                      (k.Sql byEmail).Contains "bob@example.com" |> shouldBe __
-                      let! bob = k.Repo.One byEmail
+                      (ok (repo.Explain byEmail)).Sql.Contains "bob@example.com" |> shouldBe __
+                      let! bob = repo.One byEmail
                       (ok bob).Value.Name |> shouldBe __
                   }
           ) ]

@@ -10,38 +10,38 @@ let lesson =
         "About aggregates and grouping"
         [ Koan.Task(
               "Counting rows with Agg.count",
-              fun k ->
+              fun repo ->
                   task {
                       // An aggregate summarises many rows as one value, computed by the database.
                       // Agg.count () is the number of rows; One reads the single row it gives.
-                      let! n = k.Repo.One(plasm { for o in Db.orders do where (o.Status = Published); select (Agg.count ()) })
+                      let! n = repo.One(plasm { for o in Db.orders do where (o.Status = Published); select (Agg.count ()) })
                       (ok n).Value |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Adding up with Agg.sum",
-              fun k ->
+              fun repo ->
                   task {
                       // Agg.sum adds up a column over the rows the query matches.
-                      let! total = k.Repo.One(plasm { for o in Db.orders do where (o.Status = Published); select (Agg.sum o.Total) })
+                      let! total = repo.One(plasm { for o in Db.orders do where (o.Status = Published); select (Agg.sum o.Total) })
                       (ok total).Value |> shouldBe __
                   }
           )
 
           Koan.Task(
               "The largest with Agg.max",
-              fun k ->
+              fun repo ->
                   task {
                       // Agg.max is the largest value: an option, because there might be no rows.
-                      let! largest = k.Repo.One(plasm { for o in Db.orders do select (Agg.max o.Total) })
+                      let! largest = repo.One(plasm { for o in Db.orders do select (Agg.max o.Total) })
                       (ok largest).Value |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Grouping by one key",
-              fun k ->
+              fun repo ->
                   task {
                       // groupBy puts rows with the same key in one group; select gives one row per group.
                       let linesPerOrder =
@@ -52,25 +52,25 @@ let lesson =
                                   select (l.OrderId, Agg.count ())
                           }
 
-                      let! rows = k.Repo.All linesPerOrder
+                      let! rows = repo.All linesPerOrder
                       ok rows |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Counting a page counts the page",
-              fun k ->
+              fun repo ->
                   task {
-                      let! n = k.Repo.Count(plasm { for o in Db.orders do orderBy o.Id; take 2 })
+                      let! n = repo.Count(plasm { for o in Db.orders do orderBy o.Id; take 2 })
                       ok n |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Sum and average are typed",
-              fun k ->
+              fun repo ->
                   task {
-                      let! totals = k.Repo.One(plasm { for o in Db.orders do select (Agg.sum o.Total, Agg.avg o.Total) })
+                      let! totals = repo.One(plasm { for o in Db.orders do select (Agg.sum o.Total, Agg.avg o.Total) })
                       // The four totals are 30.00, 12.50, 99.00 and 5.00.
                       (ok totals).Value |> shouldBe __
                   }
@@ -78,16 +78,16 @@ let lesson =
 
           Koan.Task(
               "No rows is explicit",
-              fun k ->
+              fun repo ->
                   task {
-                      let! r = k.Repo.One(plasm { for o in Db.orders do where (o.Total > 1000m); select (Agg.sum o.Total, Agg.max o.Total) })
+                      let! r = repo.One(plasm { for o in Db.orders do where (o.Total > 1000m); select (Agg.sum o.Total, Agg.max o.Total) })
                       (ok r).Value |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Grouping by a key",
-              fun k ->
+              fun repo ->
                   task {
                       let perCustomer =
                           plasm {
@@ -97,14 +97,14 @@ let lesson =
                                   select (o.CustomerId, Agg.count ())
                           }
 
-                      let! rows = k.Repo.All perCustomer
+                      let! rows = repo.All perCustomer
                       ok rows |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Filtering groups",
-              fun k ->
+              fun repo ->
                   task {
                       let repeat =
                           plasm {
@@ -114,19 +114,19 @@ let lesson =
                                   select (o.CustomerId, Agg.count ())
                           }
 
-                      let! rows = k.Repo.All repeat
+                      let! rows = repo.All repeat
                       ok rows |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Grouping mistakes are refused",
-              fun k ->
+              fun repo ->
                   task {
                       // Status is neither grouped nor aggregated.
                       let wrong = plasm { for o in Db.orders do groupBy o.CustomerId; select (o.Status, Agg.count ()) }
-                      let! r = k.Repo.All wrong
+                      let! r = repo.All wrong
                       Result.isError r |> shouldBe __
-                      k.Commands.Length |> shouldBe __
+                      (commands ()).Length |> shouldBe __
                   }
           ) ]

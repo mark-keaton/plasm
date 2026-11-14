@@ -114,21 +114,28 @@ type GivenSteps(w: BrowserWorld) =
         }
         |> unit
 
-    [<StepDefinition("above its code the koan shows \"(.*)\"")>]
-    member _.Lambda(text: string) =
+    [<StepDefinition("its code starts with its first comment, not with fun repo -> or task \\{")>]
+    member _.OwnCode() =
         task {
-            let! visible = w.Page.IsVisibleAsync "#lambda"
-            check visible "no line is shown above the koan's code"
-            let! shown = w.Page.TextContentAsync "#lambda"
-            check (shown.Trim() = text) $"above its code the koan shows '{shown}'"
+            let! code = w.Page.InputValueAsync "#code"
+            check (code.StartsWith "//") $"the koan's code starts:\n{code}"
+            check (not (code.Contains "fun repo ->") && not (code.Contains "task {")) $"the koan's code shows its frame:\n{code}"
         }
         |> unit
 
-    [<StepDefinition("no line is shown above its code")>]
-    member _.NoLambda() =
+    [<StepDefinition("it uses the repo it is given as repo")>]
+    member _.UsesRepo() =
         task {
-            let! visible = w.Page.IsVisibleAsync "#lambda"
-            check (not visible) "a line is shown above the koan's code"
+            let! code = w.Page.InputValueAsync "#code"
+            check (code.Contains "repo.All(") $"the koan's code does not use repo:\n{code}"
+        }
+        |> unit
+
+    [<StepDefinition("under Given the definition of (\\w+) is labelled \"(.*)\"")>]
+    member _.Kind(name: string, kind: string) =
+        task {
+            let! text = w.Page.TextContentAsync($"#given .definition[data-name=\"{name}\"] .kind")
+            check (text.Trim() = kind) $"the definition of {name} is labelled '{text}'"
         }
         |> unit
 

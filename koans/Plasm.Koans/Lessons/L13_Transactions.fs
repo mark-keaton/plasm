@@ -5,9 +5,9 @@ open Plasm
 open Plasm.Koans
 open Plasm.Koans.Shop
 
-let private customers (k: KoanContext) =
+let private customers (repo: Repo) =
     task {
-        let! n = k.Repo.Count(Query.from Db.customers)
+        let! n = repo.Count(Query.from Db.customers)
         return ok n
     }
 
@@ -23,32 +23,32 @@ let lesson =
         "About transactions"
         [ Koan.Task(
               "A transaction does nothing until run",
-              fun k ->
+              fun repo ->
                   task {
                       // A transaction is a value describing database steps that succeed or fail together.
                       // transaction { } builds it; Tx.insert is a step that inserts a changeset.
                       let tx = addDan
-                      k.Commands.Length |> shouldBe __
-                      let! n = customers k
+                      (commands ()).Length |> shouldBe __
+                      let! n = customers repo
                       n |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Running a transaction commits it",
-              fun k ->
+              fun repo ->
                   task {
                       // repo.Transact runs the steps and commits them: Ok carries what the transaction returns.
-                      let! r = k.Repo.Transact addDan
+                      let! r = repo.Transact addDan
                       ok r |> shouldBe __
-                      let! n = customers k
+                      let! n = customers repo
                       n |> shouldBe __
                   }
           )
 
           Koan.Task(
               "An Error rolls it back",
-              fun k ->
+              fun repo ->
                   task {
                       let tx =
                           transaction {
@@ -57,17 +57,17 @@ let lesson =
                               return! Tx.fail "stop" "changed my mind"
                           }
 
-                      let! r = k.Repo.Transact tx
+                      let! r = repo.Transact tx
                       Result.isError r |> shouldBe __
                       // A failed step rolls back (undoes) the steps before it.
-                      let! n = customers k
+                      let! n = customers repo
                       n |> shouldBe __
                   }
           )
 
           Koan.Task(
               "A step's result flows to the next",
-              fun k ->
+              fun repo ->
                   task {
                       let rename =
                           transaction {
@@ -77,14 +77,14 @@ let lesson =
                               return daniel.Name
                           }
 
-                      let! r = k.Repo.Transact rename
+                      let! r = repo.Transact rename
                       ok r |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Steps compose with let!",
-              fun k ->
+              fun repo ->
                   task {
                       let signUp =
                           transaction {
@@ -93,16 +93,16 @@ let lesson =
                               return order.CustomerId = Some dan.Id
                           }
 
-                      let! r = k.Repo.Transact signUp
+                      let! r = repo.Transact signUp
                       ok r |> shouldBe __
-                      let! n = customers k
+                      let! n = customers repo
                       n |> shouldBe __
                   }
           )
 
           Koan.Task(
               "A failure names its step",
-              fun k ->
+              fun repo ->
                   task {
                       let signUp =
                           transaction {
@@ -112,20 +112,20 @@ let lesson =
                               return ()
                           }
 
-                      let! r = k.Repo.Transact signUp
+                      let! r = repo.Transact signUp
                       let e = err r
                       e.Step |> shouldBe __
                       e.RolledBack |> shouldBe __
-                      let! n = customers k
+                      let! n = customers repo
                       n |> shouldBe __
                   }
           )
 
           Koan.Task(
               "An empty transaction is fine",
-              fun k ->
+              fun repo ->
                   task {
-                      let! r = k.Repo.Transact(transaction { return 42 })
+                      let! r = repo.Transact(transaction { return 42 })
                       r |> shouldBe __
                   }
           )
@@ -139,7 +139,7 @@ let lesson =
 
           Koan.Task(
               "Custom steps use the transaction",
-              fun k ->
+              fun repo ->
                   task {
                       let audit =
                           transaction {
@@ -155,16 +155,16 @@ let lesson =
                               return! Tx.fail "stop" "changed my mind"
                           }
 
-                      let! r = k.Repo.Transact audit
+                      let! r = repo.Transact audit
                       (err r).Step |> shouldBe __
-                      let! audited = k.Repo.Count(plasm { for p in Db.products do where (p.Sku = "AUDIT") })
+                      let! audited = repo.Count(plasm { for p in Db.products do where (p.Sku = "AUDIT") })
                       ok audited |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Effects outside the database are not rolled back",
-              fun k ->
+              fun repo ->
                   task {
                       let emailsSent = ref 0
 
@@ -180,7 +180,7 @@ let lesson =
                               return! Tx.fail "stop" "changed my mind"
                           }
 
-                      let! _ = k.Repo.Transact tx
+                      let! _ = repo.Transact tx
                       emailsSent.Value |> shouldBe __
                   }
           ) ]

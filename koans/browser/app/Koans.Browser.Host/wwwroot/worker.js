@@ -130,7 +130,7 @@ self.onmessage = async (e) => {
   }
   if (m.type !== 'run') return;
   try {
-    const result = await exports.RunKoan(m.title, m.name, m.helpers, m.isTask, m.lambda, m.body);
+    const result = await exports.RunKoan(m.title, m.name, m.helpers, m.isTask, m.framed, m.body);
     post({ type: 'result', id: m.id, result: JSON.parse(result) });
   } catch (err) {
     post({ type: 'result', id: m.id, result: { status: 'threw', text: String(err?.stack ?? err) } });

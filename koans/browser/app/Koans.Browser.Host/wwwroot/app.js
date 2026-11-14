@@ -69,7 +69,7 @@ async function runKoan(lessonIndex, koanIndex, body) {
   const result = await new Promise((resolve) => {
     current.pending.set(id, resolve);
     current.worker.postMessage({ type: 'run', id, title: lesson.title, name: koan.name, helpers: lesson.helpers,
-                                 isTask: koan.isTask, lambda: koan.lambda, body: body ?? koan.body });
+                                 isTask: koan.isTask, framed: koan.framed, body: body ?? koan.body });
   });
   results.set(keyOf(lessonIndex, koanIndex), result);
   keep(lessonIndex, koanIndex, (s) => { if (result.status === 'passed') s.passed = true; else delete s.passed; });
@@ -257,7 +257,8 @@ function renderGiven(koan) {
   g.definitions.forEach((d, i) => {
     const pre = el('pre');
     pre.innerHTML = d.code.split('\n').map((line, n) => (d.marked.includes(n) ? `<span class="marked">${colour(line)}</span>` : colour(line))).join('\n');
-    const panel = el('div', { class: 'definition', 'data-name': d.name }, el('span', { class: 'source' }, `${d.name}, from ${d.source}`), pre);
+    const panel = el('div', { class: 'definition', 'data-name': d.name }, el('div', { class: 'definition-head' }, el('span', { class: 'source' }, `${d.name}, from ${d.source}`),
+      el('span', { class: 'kind', 'data-kind': d.kind }, d.kind)), pre);
     panel.hidden = i !== 0;
     const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(i === 0) }, d.name);
     chip.addEventListener('click', () => {
@@ -289,10 +290,6 @@ function show(lessonIndex, koanIndex) {
   if (feature === 'F#') { $('teaches').textContent = koan.teaches; $('teaches').removeAttribute('href'); }
   else { $('teaches').textContent = `${feature}.feature: ${scenario}`; $('teaches').href = `spec/${feature}.feature`; }
   renderGiven(koan);
-  // Where k comes from: the line the koan's code is the body of (not shown for fun _ ->).
-  const takes = koan.lambda && koan.lambda !== 'fun _ ->';
-  $('lambda').hidden = !takes;
-  $('lambda').innerHTML = takes ? colour(koan.lambda) : '';
   // The address always names the koan shown (go() adds the history entry first).
   const url = new URL(location.href);
   url.searchParams.set('koan', addressOf(koan));

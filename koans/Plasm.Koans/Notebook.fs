@@ -46,7 +46,7 @@ let start () =
         AppDomain.CurrentDomain.ProcessExit.Add(fun _ -> db.Dispose().GetAwaiter().GetResult())
         printfn "Database: %s" db.Description
 
-let private check (name: string) (body: KoanContext -> Task<unit>) =
+let private check (name: string) (body: Repo -> Task<unit>) =
     if session.IsNone then start ()
     let s = session.Value
 
@@ -70,13 +70,13 @@ let private check (name: string) (body: KoanContext -> Task<unit>) =
     | _ -> printfn "✘ %s\n\n%s" name (describeNext guidance.Value r)
 
 /// Runs a koan whose body is ordinary code.
-let koan (name: string) (body: KoanContext -> unit) =
-    check name (fun k ->
-        body k
+let koan (name: string) (body: Repo -> unit) =
+    check name (fun repo ->
+        body repo
         Task.FromResult())
 
 /// Runs a koan whose body is a task.
-let koanTask (name: string) (body: KoanContext -> Task<unit>) = check name body
+let koanTask (name: string) (body: Repo -> Task<unit>) = check name body
 
 // ---------------------------------------------------------------------------
 // Generating the notebook from the lesson sources
@@ -179,12 +179,12 @@ let course () : string =
         let file = IO.Path.Combine(lessonsDir, "..", "..", "Plasm.Koans.Core", "Shop.fs")
         Given.parse "Shop.fs" (IO.File.ReadAllLines file)
 
-    // What koans are given from Koans.fs: their context k, and ok and err.
+    // The test helpers a koan may use from Koans.fs.
     let koans =
         let lessonsDir = IO.Path.GetDirectoryName Path.lessons.Head.Koans.Head.File
         let file = IO.Path.Combine(lessonsDir, "..", "..", "Plasm.Koans.Core", "Koans.fs")
         Given.parse "Koans.fs" (IO.File.ReadAllLines file)
-        |> List.filter (fun d -> List.contains d.Name [ "KoanContext"; "ok"; "err" ])
+        |> List.filter (fun d -> List.contains d.Name [ "ok"; "err"; "commands" ])
 
     let given (helpers: Given.Definition list) (body: string) =
         let g = Given.forKoan shop helpers body
@@ -199,10 +199,31 @@ let course () : string =
                       dict
                           [ "name", box d.Name
                             "source", box d.Source
+                            // Where it comes from: Plasm's koans are about Plasm and your
+                            // app; the rest only helps a koan check its answer.
+                            "kind",
+                            box (
+                                match d.Source with
+                                | "Shop.fs" -> "your app"
+                                | "Koans.fs" -> "test helper"
+                                | _ -> "this lesson"
+                            )
                             "code", box (String.concat "\n" d.Code)
                             "marked", box (Array.ofList marked) ])
                   |> Array.ofList
               ) ]
+
+    // What the page shows of a koan: its code, without the frame every koan
+    // shares (fun repo -> task { ... }), which the page puts back to run it.
+    // A koan whose task is its subject (lesson 01's let!) is shown whole.
+    let framed (k: KoanSource) =
+        k.IsTask
+        && (match k.Body with
+            | first :: rest -> first.Trim() = "task {" && rest <> [] && (List.last rest).Trim() = "}"
+            | [] -> false)
+
+    let shown (k: KoanSource) =
+        dedent (if framed k then k.Body.[1 .. k.Body.Length - 2] else k.Body)
 
     let lessons =
         Path.lessons
@@ -224,8 +245,9 @@ let course () : string =
                           dict
                               [ "name", box k.Name
                                 "isTask", box k.IsTask
-                                "lambda", box k.Lambda
-                                "body", box (String.concat "\n" k.Body)
+                                // Whether the page puts back task { ... } around the code.
+                                "framed", box (framed k)
+                                "body", box (String.concat "\n" (shown k))
                                 "discovers", box (kg |> Option.map (fun x -> x.Discovers) |> Option.defaultValue "")
                                 "teaches", box (kg |> Option.map (fun x -> x.Teaches) |> Option.defaultValue "")
                                 "given", box (given helperDefinitions (String.concat "\n" k.Body)) ])

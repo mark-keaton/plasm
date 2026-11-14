@@ -7,9 +7,9 @@ open Plasm.Koans.Shop
 
 let private names (tags: Assoc<Tag list>) = tags |> Assoc.get |> List.map (fun t -> t.Name) |> List.sort
 
-let private article (k: KoanContext) (id: int64) =
+let private article (repo: Repo) (id: int64) =
     task {
-        let! a = k.Repo.One(plasm { for a in Db.articles do where (a.Id = ArticleId id); preload a.Tags })
+        let! a = repo.One(plasm { for a in Db.articles do where (a.Id = ArticleId id); preload a.Tags })
         return (ok a).Value
     }
 
@@ -20,120 +20,120 @@ let lesson =
         "About many-to-many and has-one"
         [ Koan.Task(
               "Tags wait to be asked for",
-              fun k ->
+              fun repo ->
                   task {
                       // Articles and Tags are many-to-many: the article_tags table links them in pairs.
                       // Without a preload, the Tags are not read at all.
-                      let! intro = k.Repo.One(plasm { for a in Db.articles do where (a.Id = ArticleId 1L) })
+                      let! intro = repo.One(plasm { for a in Db.articles do where (a.Id = ArticleId 1L) })
                       (ok intro).Value.Tags |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Reading an article's tags",
-              fun k ->
+              fun repo ->
                   task {
                       // The helper `article` (top of this file) reads one Article with `preload a.Tags`.
                       // In the starting data, article 2 ('Deep dive') is linked to tags 1 and 3.
-                      let! deepDive = article k 2L
+                      let! deepDive = article repo 2L
                       deepDive.Tags |> names |> shouldBe __
                   }
           )
 
           Koan.Task(
               "An account's profile is an option",
-              fun k ->
+              fun repo ->
                   task {
                       // An Account has at most one Profile (has-one), so a loaded Profile is an option.
-                      let! ada = k.Repo.One(plasm { for a in Db.accounts do where (a.Name = "ada"); preload a.Profile })
+                      let! ada = repo.One(plasm { for a in Db.accounts do where (a.Name = "ada"); preload a.Profile })
                       (ok ada).Value.Profile |> Assoc.get |> Option.map (fun p -> p.Bio) |> shouldBe __
                   }
           )
 
           Koan.Task(
               "An account without a profile",
-              fun k ->
+              fun repo ->
                   task {
                       // In the starting data, only account 1 ('ada') has a profile.
-                      let! bob = k.Repo.One(plasm { for a in Db.accounts do where (a.Name = "bob"); preload a.Profile })
+                      let! bob = repo.One(plasm { for a in Db.accounts do where (a.Name = "bob"); preload a.Profile })
                       (ok bob).Value.Profile |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Tags load through the join table",
-              fun k ->
+              fun repo ->
                   task {
-                      let! articles = k.Repo.All(plasm { for a in Db.articles do orderBy a.Id; preload a.Tags })
+                      let! articles = repo.All(plasm { for a in Db.articles do orderBy a.Id; preload a.Tags })
                       (ok articles).Head.Tags |> names |> shouldBe __
-                      k.Commands.Length |> shouldBe __
+                      (commands ()).Length |> shouldBe __
                   }
           )
 
           Koan.Task(
               "No tags is an empty, loaded list",
-              fun k ->
+              fun repo ->
                   task {
-                      let! empty = article k 3L
+                      let! empty = article repo 3L
                       empty.Tags |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Filtering through links",
-              fun k ->
+              fun repo ->
                   task {
                       let fsharp = plasm { for a in Db.articles do where (Rel.any (fun (t: Tag) -> t.Name = "fsharp") a.Tags); orderBy a.Id }
-                      let! rows = k.Repo.All fsharp
+                      let! rows = repo.All fsharp
                       ok rows |> List.map (fun a -> a.Title) |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Replacing links",
-              fun k ->
+              fun repo ->
                   task {
-                      let! intro = article k 1L
-                      let! updated = k.Repo.Update(Changeset.update intro |> Changeset.putLinks ((fun a -> a.Tags), [ tag 4L "ops" ]))
+                      let! intro = article repo 1L
+                      let! updated = repo.Update(Changeset.update intro |> Changeset.putLinks ((fun a -> a.Tags), [ tag 4L "ops" ]))
                       (ok updated).Tags |> names |> shouldBe __
-                      let! tags = k.Repo.Count(Query.from Db.tags)
+                      let! tags = repo.Count(Query.from Db.tags)
                       ok tags |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Adding and removing one link",
-              fun k ->
+              fun repo ->
                   task {
-                      let! intro = article k 1L
+                      let! intro = article repo 1L
 
                       let change =
                           Changeset.update intro
                           |> Changeset.addLinks ((fun a -> a.Tags), [ tag 3L "draft" ])
                           |> Changeset.removeLinks ((fun a -> a.Tags), [ tag 2L "sql" ])
 
-                      let! updated = k.Repo.Update change
+                      let! updated = repo.Update change
                       (ok updated).Tags |> shouldBe __
-                      let! reloaded = article k 1L
+                      let! reloaded = article repo 1L
                       reloaded.Tags |> names |> shouldBe __
                   }
           )
 
           Koan.Task(
               "At most one related record",
-              fun k ->
+              fun repo ->
                   task {
-                      let! accounts = k.Repo.All(plasm { for a in Db.accounts do orderBy a.Id; preload a.Profile })
+                      let! accounts = repo.All(plasm { for a in Db.accounts do orderBy a.Id; preload a.Profile })
                       ok accounts |> List.map (fun a -> a.Profile |> Assoc.get |> Option.map (fun p -> p.Bio)) |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Filtering through has-one",
-              fun k ->
+              fun repo ->
                   task {
                       let writers = plasm { for a in Db.accounts do where (Rel.exists (fun p -> p.Bio.Contains "compiler") a.Profile) }
-                      let! rows = k.Repo.All writers
+                      let! rows = repo.All writers
                       ok rows |> List.map (fun a -> a.Name) |> shouldBe __
                   }
           ) ]

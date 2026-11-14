@@ -1,4 +1,5 @@
-/// What every lesson uses: blanks, assertions, and the koan context.
+/// What every lesson uses: blanks, test helpers (shouldBe, ok, err, commands)
+/// and the koan types.
 [<AutoOpen>]
 module Plasm.Koans.Koans
 
@@ -36,47 +37,35 @@ let err (r: Result<'T, 'E>) : 'E =
     | Error e -> e
     | Ok v -> raise (KoanFailure("Error _", show (Ok v: Result<'T, unit>)))
 
-/// k: what every koan is given (each koan is `fun k -> ...`). Its Repo is how
-/// the koan reads and writes the koans database; whatever the koan changes is
-/// undone when it ends.
-type KoanContext internal (repo: Repo, commands: unit -> CommandEvent list, explained: ResizeArray<string>) =
-    /// A repository: Plasm's way in to a database. It runs queries (All, One,
-    /// Count) and writes, and returns every answer as a Result (lesson 03).
-    member _.Repo = repo
+/// What Plasm has reported to RepoOptions.OnCommand since the koan began. Set
+/// by whatever runs the koans.
+let mutable internal reported: unit -> CommandEvent list = fun () -> []
 
-    /// A repository that knows only the record types of another model.
-    member _.RepoWith(model: Model) = Repo(model, repo.Provider)
-
-    /// The SQL of every command this koan has sent so far, in order.
-    member _.Commands = commands () |> List.map (fun c -> c.Sql)
-
-    /// The SQL the repository would send for a query, without sending it.
-    member _.Sql(query: Query<'T>) =
-        match repo.Explain query with
-        | Ok plan ->
-            explained.Add plan.Sql
-            plan.Sql
-        | Error e -> raise (KoanFailure("a query that translates", show e))
+/// The SQL of every command this koan has sent to the database, in order. In
+/// your app, Plasm reports each command to the function you give as
+/// RepoOptions.OnCommand; the koans give one that keeps them here.
+let commands () = reported () |> List.map (fun c -> c.Sql)
 
 /// One koan: a name (matching its row in the lesson's feature file) and a body.
 type Koan =
     { Name: string
       File: string
       Line: int
-      Body: KoanContext -> Task<unit> }
+      /// Given a repository whose changes are undone when the koan ends.
+      Body: Repo -> Task<unit> }
 
     /// A koan whose body is ordinary code.
-    static member Sync(name: string, body: KoanContext -> unit, [<CallerFilePath>] ?file: string, [<CallerLineNumber>] ?line: int) =
+    static member Sync(name: string, body: Repo -> unit, [<CallerFilePath>] ?file: string, [<CallerLineNumber>] ?line: int) =
         { Name = name
           File = defaultArg file ""
           Line = defaultArg line 0
           Body =
-            fun k ->
-                body k
+            fun repo ->
+                body repo
                 Task.FromResult() }
 
     /// A koan whose body is a task (it talks to the database).
-    static member Task(name: string, body: KoanContext -> Task<unit>, [<CallerFilePath>] ?file: string, [<CallerLineNumber>] ?line: int) =
+    static member Task(name: string, body: Repo -> Task<unit>, [<CallerFilePath>] ?file: string, [<CallerLineNumber>] ?line: int) =
         { Name = name
           File = defaultArg file ""
           Line = defaultArg line 0

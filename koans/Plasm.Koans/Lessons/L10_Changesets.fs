@@ -70,7 +70,7 @@ let lesson =
 
           Koan.Sync(
               "Errors can be inspected",
-              fun k ->
+              fun repo ->
                   let cs =
                       Changeset.insert (New.customer "" "not an email")
                       |> Changeset.validateLength ((fun c -> c.Name), min = 1)
@@ -78,7 +78,7 @@ let lesson =
 
                   cs.IsValid |> shouldBe __
                   cs.Errors |> List.map (fun e -> e.Field) |> shouldBe __
-                  k.Commands.Length |> shouldBe __
+                  (commands ()).Length |> shouldBe __
           )
 
           Koan.Sync(
@@ -91,10 +91,10 @@ let lesson =
 
           Koan.Task(
               "Invalid changes are never written",
-              fun k ->
+              fun repo ->
                   task {
                       let invalid = Changeset.insert (New.customer "" "dan@example.com") |> Changeset.validateLength ((fun c -> c.Name), min = 1)
-                      let! r = k.Repo.Insert invalid
+                      let! r = repo.Insert invalid
 
                       let isInvalid =
                           match r with
@@ -102,20 +102,20 @@ let lesson =
                           | _ -> false
 
                       isInvalid |> shouldBe __
-                      let! n = k.Repo.Count(Query.from Db.customers)
+                      let! n = repo.Count(Query.from Db.customers)
                       ok n |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Constraints become field errors",
-              fun k ->
+              fun repo ->
                   task {
                       let again =
                           Changeset.insert (New.customer "Ada again" "ada@example.com")
                           |> Changeset.uniqueConstraint ((fun c -> c.Email), "customers_email_key")
 
-                      let! r = k.Repo.Insert again
+                      let! r = repo.Insert again
 
                       match r with
                       | Error(WriteError.Invalid cs) -> cs.Errors |> List.map (fun e -> e.Field) |> shouldBe __

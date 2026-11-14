@@ -192,12 +192,7 @@ let forKoan (shop: Definition list) (helpers: Definition list) (body: string) : 
     { Tables = usedTables
       Definitions = chosen |> List.map (fun d -> d, marks body d) }
 
-/// What a koan uses from the koans' own code (Koans.fs): the context `k` it is
-/// given, when it reads `k.`, and helpers such as `ok` and `err` it names.
+/// The test helpers a koan names from the koans' own code (Koans.fs), such as
+/// ok, err and commands.
 let fromKoans (koans: Definition list) (body: string) =
-    koans
-    |> List.filter (fun d ->
-        match d.Name with
-        | "KoanContext" -> Regex.IsMatch(body, @"(?<![\w.])k\.")
-        | n -> mentions body n)
-    |> List.map (fun d -> d, marks body d)
+    koans |> List.filter (fun d -> mentions body d.Name) |> List.map (fun d -> d, marks body d)

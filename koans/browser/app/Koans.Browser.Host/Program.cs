@@ -45,6 +45,6 @@ public static partial class KoansHost
         Plasm.Koans.Browser.KoanRun.evaluate(RefsDir, code, sandboxed);
 
     [JSExport]
-    public static Task<string> RunKoan(string title, string name, string helpers, bool isTask, string lambda, string body) =>
-        Plasm.Koans.Browser.KoanRun.run(RefsDir, title, name, helpers, isTask, lambda, body);
+    public static Task<string> RunKoan(string title, string name, string helpers, bool isTask, bool framed, string body) =>
+        Plasm.Koans.Browser.KoanRun.run(RefsDir, title, name, helpers, isTask, framed, body);
 }

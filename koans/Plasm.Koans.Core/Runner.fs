@@ -54,12 +54,12 @@ let rec private innermost (ex: exn) =
 let run (repo: Repo) (commands: ResizeArray<CommandEvent>) (lesson: Lesson) (koan: Koan) : Task<KoanResult> =
     task {
         commands.Clear()
-        let explained = ResizeArray<string>()
+        Koans.reported <- fun () -> List.ofSeq commands
 
         let! outcome =
             task {
                 try
-                    do! repo.Sandbox(fun sandbox -> koan.Body(KoanContext(sandbox, (fun () -> List.ofSeq commands), explained)))
+                    do! repo.Sandbox(fun sandbox -> koan.Body sandbox)
                     return Passed
                 with ex ->
                     match innermost ex with
@@ -90,7 +90,7 @@ let run (repo: Repo) (commands: ResizeArray<CommandEvent>) (lesson: Lesson) (koa
             | other, None -> other
 
         let sql =
-            (commands |> Seq.map (fun c -> c.Sql) |> List.ofSeq) @ List.ofSeq explained
+            commands |> Seq.map (fun c -> c.Sql) |> List.ofSeq
             // The sandbox's own savepoint commands are not the koan's.
             |> List.filter (fun s -> not (s.StartsWith "SAVEPOINT" || s.StartsWith "RELEASE" || s.StartsWith "ROLLBACK"))
 

@@ -1,10 +1,9 @@
-# Every koan is given k
+# Every koan is given a repo
 3L
 # ok opens a Result
 4L
-# k.Commands shows what was sent
-0
-1
+# In your app, you make the repo
+3L
 # The shop has three customers
 [ "Ada"; "Bob"; "Cy" ]
 # Counting rows

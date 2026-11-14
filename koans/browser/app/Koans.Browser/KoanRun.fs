@@ -39,8 +39,12 @@ let init (bridge: IPGliteBridge) : Task<string> =
     }
 
 /// The source compiled for one koan: its lesson's helpers, then the koan's
-/// body as a function value. The koan's own lines start at `prefixLines` + 1.
-let source (helpers: string) (isTask: bool) (lambda: string) (body: string) =
+/// code inside the frame every koan shares, `fun repo -> task { ... }` (or
+/// `fun repo -> ...` when the koan is not framed). The page shows only the code;
+/// its lines start at `prefixLines` + 1, indented by `indent`.
+let source (helpers: string) (isTask: bool) (framed: bool) (body: string) =
+    let indent = if framed then 8 else 4
+
     let head =
         String.concat
             "\n"
@@ -51,38 +55,43 @@ let source (helpers: string) (isTask: bool) (lambda: string) (body: string) =
               helpers
               // Boxed, so it compiles to a property (a function-typed `let`
               // would compile to a method).
-              $"let koanBody : obj = box (({lambda}" ]
+              "let koanBody : obj = box ((fun (repo: Repo) ->"
+              if framed then "    task {" ]
 
-    let signature = if isTask then "KoanContext -> System.Threading.Tasks.Task<unit>" else "KoanContext -> unit"
-    head + "\n" + body + $") : {signature})", head.Split('\n').Length
+    let code =
+        body.Split('\n') |> Array.map (fun l -> if l = "" then l else String(' ', indent) + l) |> String.concat "\n"
+
+    let close = if framed then "\n    }" else ""
+    let signature = if isTask then "Repo -> System.Threading.Tasks.Task<unit>" else "Repo -> unit"
+    head + "\n" + code + close + $") : {signature})", head.Split('\n').Length, indent
 
 let private json (fields: (string * obj) list) = JsonSerializer.Serialize(dict fields)
 
 /// Compiles and runs a koan; returns JSON: {status, text, errors?, sql?}.
 /// Compile errors are reported with lines relative to the koan's body.
-let run (refsDir: string) (title: string) (name: string) (helpers: string) (isTask: bool) (lambda: string) (body: string) : Task<string> =
+let run (refsDir: string) (title: string) (name: string) (helpers: string) (isTask: bool) (framed: bool) (body: string) : Task<string> =
     task {
-        let src, prefix = source helpers isTask lambda body
+        let src, prefix, indent = source helpers isTask framed body
 
         match! Compiler.compile refsDir src with
         | Error errors ->
             let shown =
                 errors
-                |> List.map (fun e -> dict [ "line", box (e.Line - prefix); "column", box e.Column; "code", box e.Code; "message", box e.Message ])
+                |> List.map (fun e -> dict [ "line", box (e.Line - prefix); "column", box (max 1 (e.Column - indent)); "code", box e.Code; "message", box e.Message ])
                 |> Array.ofList
 
             return json [ "status", box "compile"; "errors", box shown ]
         | Ok assembly ->
             let value = assembly.GetType("Koan").GetProperty("koanBody").GetValue(null)
 
-            let compiledBody: KoanContext -> Task<unit> =
+            let compiledBody: Repo -> Task<unit> =
                 if isTask then
-                    value :?> (KoanContext -> Task<unit>)
+                    value :?> (Repo -> Task<unit>)
                 else
-                    let sync = value :?> (KoanContext -> unit)
+                    let sync = value :?> (Repo -> unit)
 
-                    fun k ->
-                        sync k
+                    fun repo ->
+                        sync repo
                         Task.FromResult()
 
             let koan =

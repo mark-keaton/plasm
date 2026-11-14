@@ -65,7 +65,7 @@ let private session =
                 | Choice2Of2 ex -> failwithf "F# Interactive failed:\n%s\n%A\n%A" code ex (diagnostics |> Array.map (fun d -> d.Message))
                 | _ -> ()
 
-            for t in [ typeof<Plasm.Repo>; typeof<Plasm.Postgres.PostgresProvider>; typeof<NpgsqlConnection>; typeof<Plasm.Koans.Koans.KoanContext> ] do
+            for t in [ typeof<Plasm.Repo>; typeof<Plasm.Postgres.PostgresProvider>; typeof<NpgsqlConnection>; typeof<Plasm.Koans.Koans.Koan> ] do
                 run $"#r @\"{t.Assembly.Location}\""
 
             run (

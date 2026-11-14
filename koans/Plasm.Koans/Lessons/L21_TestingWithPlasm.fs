@@ -16,22 +16,22 @@ let lesson =
         "About testing with Plasm"
         [ Koan.Task(
               "A sandbox gives back its body's result",
-              fun k ->
+              fun repo ->
                   task {
                       // A sandbox runs a function with its own repository and undoes all its changes when the
                       // function ends. The sandbox returns whatever the function returns.
                       // `customers` (top of this file) counts the Customers.
-                      let! counted = k.Repo.Sandbox(fun repo -> customers repo)
+                      let! counted = repo.Sandbox(fun repo -> customers repo)
                       counted |> shouldBe __
                   }
           )
 
           Koan.Task(
               "An insert is visible inside its sandbox",
-              fun k ->
+              fun repo ->
                   task {
                       let! inside =
-                          k.Repo.Sandbox(fun repo ->
+                          repo.Sandbox(fun repo ->
                               task {
                                   let! _ = repo.Insert(Changeset.insert (New.customer "Dan" "dan@example.com"))
                                   return! customers repo
@@ -43,45 +43,45 @@ let lesson =
 
           Koan.Task(
               "A sandbox's insert is gone afterwards",
-              fun k ->
+              fun repo ->
                   task {
-                      let! _ = k.Repo.Sandbox(fun repo -> repo.Insert(Changeset.insert (New.customer "Dan" "dan@example.com")))
+                      let! _ = repo.Sandbox(fun repo -> repo.Insert(Changeset.insert (New.customer "Dan" "dan@example.com")))
                       // The sandbox has ended: count with the outer repository.
-                      let! after = customers k.Repo
+                      let! after = customers repo
                       after |> shouldBe __
                   }
           )
 
           Koan.Task(
               "A matching model has no schema issues",
-              fun k ->
+              fun repo ->
                   task {
                       // CheckSchema compares the model (Db.model in Shop.fs) with the database's tables and
                       // columns, and lists every mismatch it finds.
-                      let! issues = k.Repo.CheckSchema()
+                      let! issues = repo.CheckSchema()
                       ok issues |> List.length |> shouldBe __
                   }
           )
 
           Koan.Task(
               "A sandbox rolls everything back",
-              fun k ->
+              fun repo ->
                   task {
                       let! inside =
-                          k.Repo.Sandbox(fun repo ->
+                          repo.Sandbox(fun repo ->
                               task {
                                   let! _ = repo.Insert(Changeset.insert (New.customer "Dan" "dan@example.com"))
                                   return! customers repo
                               })
 
-                      let! after = customers k.Repo
+                      let! after = customers repo
                       (inside, after) |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Transactions keep their meaning in a sandbox",
-              fun k ->
+              fun repo ->
                   task {
                       let failing =
                           transaction {
@@ -89,40 +89,40 @@ let lesson =
                               return! Tx.fail "stop" "changed my mind"
                           }
 
-                      let! _ = k.Repo.Transact failing
-                      let! n = customers k.Repo
+                      let! _ = repo.Transact failing
+                      let! n = customers repo
                       n |> shouldBe __
                   }
           )
 
           Koan.Task(
               "A database error does not end a sandbox",
-              fun k ->
+              fun repo ->
                   task {
-                      // Every koan already runs in a sandbox: k.Repo is one.
-                      let! duplicate = k.Repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
+                      // Every koan already runs in a sandbox: repo is one.
+                      let! duplicate = repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
                       Result.isError duplicate |> shouldBe __
-                      let! later = k.Repo.Insert(Changeset.insert (New.customer "Dan" "dan@example.com"))
+                      let! later = repo.Insert(Changeset.insert (New.customer "Dan" "dan@example.com"))
                       Result.isOk later |> shouldBe __
                   }
           )
 
           Koan.Task(
               "The model can be checked against the database",
-              fun k ->
+              fun repo ->
                   task {
-                      let! issues = k.Repo.CheckSchema()
+                      let! issues = repo.CheckSchema()
                       issues |> shouldBe __
                   }
           )
 
           Koan.Task(
               "Drift is reported precisely",
-              fun k ->
+              fun repo ->
                   task {
                       // DDL is transactional in PostgreSQL, so the sandbox undoes this too.
-                      let! _ = k.Repo.ExecuteSql $"alter table orders drop column cancellation_reason"
-                      let! issues = k.Repo.CheckSchema()
+                      let! _ = repo.ExecuteSql $"alter table orders drop column cancellation_reason"
+                      let! issues = repo.CheckSchema()
                       let issue = (ok issues).Head
                       (issue.Kind, issue.Model, issue.Field) |> shouldBe __
                   }
