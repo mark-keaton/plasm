@@ -35,6 +35,18 @@ Feature: A linked collection is a plain list of shared records, loaded with its 
       When I read the cards
       Then two commands are sent for the cards and their tags
 
+    Scenario: Cards are kept by their tags, as F# reads a list
+      Given a card linked to "urgent" and "bug"
+      And a card linked to "docs" and "urgent"
+      When I keep the cards where List.exists (fun t -> t.Name = "bug") over their tags
+      Then only the card linked to "bug" is returned
+
+    Scenario: Cards whose every tag passes, as F# reads a list
+      Given a card linked to "urgent" and "bug"
+      And a card linked to "docs" and "urgent"
+      When I keep the cards where List.forall (fun t -> t.Name <> "bug") over their tags
+      Then only the card linked to "docs" is returned
+
   Rule: Writing the owner writes only its links
 
     Scenario: Inserting a card links it to its tags

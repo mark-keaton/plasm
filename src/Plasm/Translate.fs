@@ -718,6 +718,12 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
             Sql.Like(scalar ctx s, Sql.Param pattern)
         | Call(None, mi, [ x; coll ]) when mi.Name = "Contains" && isCollectionModule mi -> membership ctx e x coll
         | Call(Some coll, mi, [ x ]) when mi.Name = "Contains" && not (isRowDependent ctx coll) -> membership ctx e x coll
+        // An owned or linked list is a plain list: F#'s own List.exists and
+        // List.forall over it read as Rel.any and Rel.all.
+        | Call(None, mi, [ Lambda(pv, body); RowAssoc ctx (_, a) as assoc ]) when
+            (a.Owned || a.Linked) && mi.DeclaringType.Name = "ListModule" && (mi.Name = "Exists" || mi.Name = "ForAll")
+            ->
+            relationship ctx e pv body assoc (mi.Name = "ForAll")
         | SpecificCall <@ Rel.any @> (_, _, [ Lambda(pv, body); assoc ]) -> relationship ctx e pv body assoc false
         | SpecificCall <@ Rel.all @> (_, _, [ Lambda(pv, body); assoc ]) -> relationship ctx e pv body assoc true
         | SpecificCall <@ Rel.exists @> (_, _, [ Lambda(pv, body); assoc ]) -> relationship ctx e pv body assoc false

@@ -125,6 +125,27 @@ type LinkedSteps(w: World) =
         let c = w.Get<Card list> "cards" |> List.exactlyOne
         equal [] c.Tags "tags"
 
+    [<StepDefinition("I keep the cards where List.exists \\(fun t -> t.Name = \"bug\"\\) over their tags")>]
+    member _.Exists() =
+        task {
+            let! r = repo().All(plasm { for c in cards do where (List.exists (fun t -> t.Name = "bug") c.Tags) })
+            w.Set("kept", ok r)
+        }
+        |> unit
+
+    [<StepDefinition("I keep the cards where List.forall \\(fun t -> t.Name <> \"bug\"\\) over their tags")>]
+    member _.ForAll() =
+        task {
+            let! r = repo().All(plasm { for c in cards do where (c.Tags |> List.forall (fun t -> t.Name <> "bug")) })
+            w.Set("kept", ok r)
+        }
+        |> unit
+
+    [<StepDefinition("^only the card linked to \"(\\w+)\" is returned$")>]
+    member _.OnlyLinked(name: string) =
+        let kept = w.Get<Card list> "kept"
+        check (kept.Length = 1 && kept.Head.Tags |> List.exists (fun t -> t.Name = name)) $"%A{kept}"
+
     [<StepDefinition("two commands are sent for the cards and their tags")>]
     member _.TwoCommands() = equal 2 w.CommandsSinceMark.Length "commands"
 
