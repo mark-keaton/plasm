@@ -1,3 +1,11 @@
+# Tags wait to be asked for
+NotLoaded
+# Reading an article's tags
+[ "draft"; "fsharp" ]
+# An account's profile is an option
+Some "Writes compilers"
+# An account without a profile
+Loaded None
 # Tags load through the join table
 [ "fsharp"; "sql" ]
 2

@@ -18,6 +18,59 @@ let lesson =
     Lesson.make
         "About failures"
         [ Koan.Task(
+              "Nothing found is not a failure",
+              fun k ->
+                  task {
+                      // Every repository call returns a Result: Ok with the value, or Error with what went wrong.
+                      let! r = k.Repo.One(plasm { for c in Db.customers do where (c.Name = "Zed") })
+                      r |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "A failure is an Error you can match on",
+              fun k ->
+                  task {
+                      // customers.email is unique (see the schema), and Ada already has this email.
+                      let! r = k.Repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
+
+                      let outcome =
+                          match r with
+                          | Ok _ -> "saved"
+                          | Error _ -> "refused"
+
+                      outcome |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "A failed write says what kind of failure",
+              fun k ->
+                  task {
+                      // WriteError.Failed is a failure reported by the database. Its Kind is a DbFailureKind:
+                      // UniqueViolation, ForeignKeyViolation, CheckViolation, NotNullViolation, and others.
+                      let! r = k.Repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
+
+                      match r with
+                      | Error(WriteError.Failed f) -> f.Kind |> shouldBe __
+                      | other -> failwithf "expected a database failure, got %A" other
+                  }
+          )
+
+          Koan.Task(
+              "A unique violation names its constraint",
+              fun k ->
+                  task {
+                      let! r = k.Repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
+
+                      match r with
+                      // Constraint is the name of the database constraint that refused the row, if any.
+                      | Error(WriteError.Failed f) -> f.Constraint |> shouldBe __
+                      | other -> failwithf "expected a database failure, got %A" other
+                  }
+          )
+
+          Koan.Task(
               "Failures are values",
               fun k ->
                   task {

@@ -1,3 +1,11 @@
+# A sandbox gives back its body's result
+3L
+# An insert is visible inside its sandbox
+4L
+# A sandbox's insert is gone afterwards
+3L
+# A matching model has no schema issues
+0
 # A sandbox rolls everything back
 (4L, 3L)
 # Transactions keep their meaning in a sandbox

@@ -1,3 +1,11 @@
+# A bulk update returns a count
+1
+# A bulk update can match nothing
+0
+# A bulk delete returns a count
+1
+# Deleting every payment
+3
 # Updating what a query matches
 1
 3L

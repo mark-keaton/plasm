@@ -9,6 +9,59 @@ let lesson =
     Lesson.make
         "About hand-written SQL"
         [ Koan.Task(
+              "A hand-written SELECT returns records",
+              fun k ->
+                  task {
+                      // repo.Sql<'R> runs SQL you write ($"..." is an interpolated string) and reads
+                      // each row into an 'R. Columns are matched to fields by name.
+                      let! products = k.Repo.Sql<Product>($"SELECT * FROM products ORDER BY id")
+                      ok products |> List.map (fun p -> p.Sku) |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "No matching rows is an empty list",
+              fun k ->
+                  task {
+                      let! products = k.Repo.Sql<Product>($"SELECT * FROM products WHERE sku = 'SPROCKET'")
+                      ok products |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "SQL can return a single number",
+              fun k ->
+                  task {
+                      // A row with one column can be read as that column's value.
+                      let! counts = k.Repo.Sql<int64>($"SELECT count(*) FROM products")
+                      ok counts |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "SQL can return pairs",
+              fun k ->
+                  task {
+                      // A row with two columns can be read as a tuple: the first column, then the second.
+                      let! pairs = k.Repo.Sql<string * string>($"SELECT sku, name FROM products ORDER BY id")
+                      ok pairs |> List.head |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "An interpolated value becomes a parameter",
+              fun k ->
+                  task {
+                      // A parameter is a value sent beside the SQL text, never pasted into it.
+                      let sku = "GADGET"
+                      let! found = k.Repo.Sql<Product>($"SELECT * FROM products WHERE sku = {sku}")
+                      ok found |> List.map (fun p -> p.Name) |> shouldBe __
+                      // k.Commands is the SQL text this koan has sent, in order.
+                      (List.last k.Commands).Contains "GADGET" |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
               "SQL can return mapped records",
               fun k ->
                   task {

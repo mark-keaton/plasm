@@ -1,3 +1,10 @@
+# A prepared query takes an argument
+[ "Gizmo" ]
+# One prepared query, two values
+[ "Widget" ]
+[ "Gadget" ]
+# A prepared query can be counted
+0L
 # Built once, run many times
 (2L, 1L)
 true

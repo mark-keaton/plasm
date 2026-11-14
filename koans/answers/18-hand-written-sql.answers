@@ -1,3 +1,14 @@
+# A hand-written SELECT returns records
+[ "WIDGET"; "GADGET"; "GIZMO" ]
+# No matching rows is an empty list
+[]
+# SQL can return a single number
+[ 3L ]
+# SQL can return pairs
+("WIDGET", "Widget")
+# An interpolated value becomes a parameter
+[ "Gadget" ]
+false
 # SQL can return mapped records
 [ OrderId 3L ]
 # SQL can return tuples and scalars

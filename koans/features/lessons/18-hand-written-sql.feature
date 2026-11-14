@@ -14,9 +14,14 @@ Feature: About hand-written SQL
     And it teaches the acceptance scenario "<teaches>"
 
     Examples:
-      | koan                              | the learner discovers                                            | teaches                                            |
-      | SQL can return mapped records     | repo.Sql<Order> reads rows into Orders by column name            | raw-sql: Reading mapped records from SQL           |
-      | SQL can return tuples and scalars | rows become tuples by position, or single values                 | raw-sql: Reading tuples and scalars from SQL       |
-      | Interpolation is parameters       | an interpolated value is a parameter, so injection is impossible | raw-sql: Interpolated values are always parameters |
-      | A fragment inside a typed query   | Raw.fragment adds literal SQL to a plasm { } query               | raw-sql: A fragment inside a typed query           |
-      | Commands return affected rows     | repo.ExecuteSql returns how many rows changed                    | raw-sql: Executing hand-written commands           |
+      | koan                                      | the learner discovers                                            | teaches                                            |
+      | A hand-written SELECT returns records     | repo.Sql<Product> reads each row into a Product                  | raw-sql: Reading mapped records from SQL           |
+      | No matching rows is an empty list         | a SELECT that matches nothing returns []                         | raw-sql: Reading mapped records from SQL           |
+      | SQL can return a single number            | repo.Sql<int64> reads a one-column row as a number               | raw-sql: Reading tuples and scalars from SQL       |
+      | SQL can return pairs                      | a two-column row becomes a tuple, by position                    | raw-sql: Reading tuples and scalars from SQL       |
+      | An interpolated value becomes a parameter | the value is sent beside the SQL, never inside it                | raw-sql: Interpolated values are always parameters |
+      | SQL can return mapped records             | repo.Sql<Order> reads rows into Orders by column name            | raw-sql: Reading mapped records from SQL           |
+      | SQL can return tuples and scalars         | rows become tuples by position, or single values                 | raw-sql: Reading tuples and scalars from SQL       |
+      | Interpolation is parameters               | an interpolated value is a parameter, so injection is impossible | raw-sql: Interpolated values are always parameters |
+      | A fragment inside a typed query           | Raw.fragment adds literal SQL to a plasm { } query               | raw-sql: A fragment inside a typed query           |
+      | Commands return affected rows             | repo.ExecuteSql returns how many rows changed                    | raw-sql: Executing hand-written commands           |

@@ -1,3 +1,11 @@
+# Nothing found is not a failure
+Ok None
+# A failure is an Error you can match on
+"refused"
+# A failed write says what kind of failure
+DbFailureKind.UniqueViolation
+# A unique violation names its constraint
+Some "customers_email_key"
 # Failures are values
 DbFailureKind.RepositoryClosed
 # Error cases are qualified

@@ -16,6 +16,9 @@ Feature: About prepared queries
 
     Examples:
       | koan                                     | the learner discovers                                                  | teaches                                                                            |
+      | A prepared query takes an argument       | Query.prepare turns a query with an Arg into a function of its value   | prepared-queries: A prepared query is built once and runs with different arguments |
+      | One prepared query, two values           | the same prepared query runs with a different value on each call       | prepared-queries: A prepared query is built once and runs with different arguments |
+      | A prepared query can be counted          | repo.Count takes a prepared query like any other query                 | prepared-queries: Prepared queries can be inspected and counted                    |
       | Built once, run many times               | Query.prepare builds the query once; each call only binds the argument | prepared-queries: A prepared query is built once and runs with different arguments |
       | Arguments are parameters                 | Arg values are always sent as parameters of their declared type        | prepared-queries: Arguments are typed and always parameters                        |
       | Paging by arguments                      | take size.Value and skip offset.Value bind per call                    | prepared-queries: Paging arguments                                                 |

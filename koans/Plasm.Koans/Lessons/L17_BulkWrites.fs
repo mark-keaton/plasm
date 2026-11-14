@@ -9,6 +9,50 @@ let lesson =
     Lesson.make
         "About bulk writes"
         [ Koan.Task(
+              "A bulk update returns a count",
+              fun k ->
+                  task {
+                      // A bulk update changes every row a query matches, in one SQL command.
+                      // The function says what each matching row becomes.
+                      let gizmos = plasm { for p in Db.products do where (p.Sku = "GIZMO") }
+                      let! changed = k.Repo.Execute(Bulk.update (gizmos, fun p -> { p with Name = "Gizmo Mark II" }))
+                      // The result is how many rows were changed.
+                      ok changed |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "A bulk update can match nothing",
+              fun k ->
+                  task {
+                      let sprockets = plasm { for p in Db.products do where (p.Sku = "SPROCKET") }
+                      let! changed = k.Repo.Execute(Bulk.update (sprockets, fun p -> { p with Name = "Sprocket" }))
+                      ok changed |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "A bulk delete returns a count",
+              fun k ->
+                  task {
+                      // A bulk delete removes every row a query matches, and returns how many.
+                      let ofOrder1 = plasm { for p in Db.payments do where (p.OrderId = OrderId 1L) }
+                      let! removed = k.Repo.Execute(Bulk.delete ofOrder1)
+                      ok removed |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Deleting every payment",
+              fun k ->
+                  task {
+                      // Query.from with no filter matches every row of the table.
+                      let! removed = k.Repo.Execute(Bulk.delete (Query.from Db.payments))
+                      ok removed |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
               "Updating what a query matches",
               fun k ->
                   task {
