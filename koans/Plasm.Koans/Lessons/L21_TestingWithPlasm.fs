@@ -15,6 +15,55 @@ let lesson =
     Lesson.make
         "About testing with Plasm"
         [ Koan.Task(
+              "A sandbox gives back its body's result",
+              fun k ->
+                  task {
+                      // A sandbox runs a function with its own repository and undoes all its changes when the
+                      // function ends. The sandbox returns whatever the function returns.
+                      // `customers` (top of this file) counts the Customers.
+                      let! counted = k.Repo.Sandbox(fun repo -> customers repo)
+                      counted |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "An insert is visible inside its sandbox",
+              fun k ->
+                  task {
+                      let! inside =
+                          k.Repo.Sandbox(fun repo ->
+                              task {
+                                  let! _ = repo.Insert(Changeset.insert (New.customer "Dan" "dan@example.com"))
+                                  return! customers repo
+                              })
+
+                      inside |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "A sandbox's insert is gone afterwards",
+              fun k ->
+                  task {
+                      let! _ = k.Repo.Sandbox(fun repo -> repo.Insert(Changeset.insert (New.customer "Dan" "dan@example.com")))
+                      // The sandbox has ended: count with the outer repository.
+                      let! after = customers k.Repo
+                      after |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "A matching model has no schema issues",
+              fun k ->
+                  task {
+                      // CheckSchema compares the model (Db.model in Shop.fs) with the database's tables and
+                      // columns, and lists every mismatch it finds.
+                      let! issues = k.Repo.CheckSchema()
+                      ok issues |> List.length |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
               "A sandbox rolls everything back",
               fun k ->
                   task {

@@ -19,6 +19,48 @@ let lesson =
     Lesson.make
         "About many-to-many and has-one"
         [ Koan.Task(
+              "Tags wait to be asked for",
+              fun k ->
+                  task {
+                      // Articles and Tags are many-to-many: the article_tags table links them in pairs.
+                      // Without a preload, the Tags are not read at all.
+                      let! intro = k.Repo.One(plasm { for a in Db.articles do where (a.Id = ArticleId 1L) })
+                      (ok intro).Value.Tags |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Reading an article's tags",
+              fun k ->
+                  task {
+                      // The helper `article` (top of this file) reads one Article with `preload a.Tags`.
+                      // In the starting data, article 2 ('Deep dive') is linked to tags 1 and 3.
+                      let! deepDive = article k 2L
+                      deepDive.Tags |> names |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "An account's profile is an option",
+              fun k ->
+                  task {
+                      // An Account has at most one Profile (has-one), so a loaded Profile is an option.
+                      let! ada = k.Repo.One(plasm { for a in Db.accounts do where (a.Name = "ada"); preload a.Profile })
+                      (ok ada).Value.Profile |> Assoc.get |> Option.map (fun p -> p.Bio) |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "An account without a profile",
+              fun k ->
+                  task {
+                      // In the starting data, only account 1 ('ada') has a profile.
+                      let! bob = k.Repo.One(plasm { for a in Db.accounts do where (a.Name = "bob"); preload a.Profile })
+                      (ok bob).Value.Profile |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
               "Tags load through the join table",
               fun k ->
                   task {

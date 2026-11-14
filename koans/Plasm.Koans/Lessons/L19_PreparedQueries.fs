@@ -14,10 +14,48 @@ let private ordersOf =
                 orderBy o.Id
         })
 
+/// A prepared query: built once, then called with a SKU to give the query for that SKU.
+/// An Arg<string> stands for the value given at each call; `.Value` reads it inside the query.
+let private productsWithSku =
+    Query.prepare (fun (sku: Arg<string>) -> plasm { for p in Db.products do where (p.Sku = sku.Value) })
+
+let private names (r: Result<Product list, DbError>) = ok r |> List.map (fun p -> p.Name)
+
 let lesson =
     Lesson.make
         "About prepared queries"
         [ Koan.Task(
+              "A prepared query takes an argument",
+              fun k ->
+                  task {
+                      // productsWithSku (top of this file) is a function: give it a SKU, get a query.
+                      let! gizmos = k.Repo.All(productsWithSku "GIZMO")
+                      names gizmos |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "One prepared query, two values",
+              fun k ->
+                  task {
+                      let! widgets = k.Repo.All(productsWithSku "WIDGET")
+                      let! gadgets = k.Repo.All(productsWithSku "GADGET")
+                      names widgets |> shouldBe __
+                      names gadgets |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "A prepared query can be counted",
+              fun k ->
+                  task {
+                      // ordersOf (top of this file) is prepared with a CustomerId. Customer 3 is Cy.
+                      let! cys = k.Repo.Count(ordersOf (CustomerId 3L))
+                      ok cys |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
               "Built once, run many times",
               fun k ->
                   task {
