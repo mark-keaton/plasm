@@ -1,3 +1,15 @@
+# A changeset starts from a record
+ChangeAction.Insert
+ChangeAction.Update
+# Changes are visible before saving
+"ada@new.example.com"
+"Ada"
+# A valid changeset has no errors
+true
+[]
+# A validation adds an error
+false
+"Name"
 # A changeset leaves its input alone
 "Ada"
 [ "Name" ]

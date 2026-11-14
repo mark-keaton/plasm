@@ -1,3 +1,11 @@
+# Counting rows with Agg.count
+2L
+# Adding up with Agg.sum
+129m
+# The largest with Agg.max
+Some 99m
+# Grouping by one key
+[ OrderId 1L, 2L; OrderId 2L, 1L; OrderId 3L, 1L ]
 # Counting a page counts the page
 2L
 # Sum and average are typed

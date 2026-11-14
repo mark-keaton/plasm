@@ -1,3 +1,14 @@
+# A transaction does nothing until run
+0
+3L
+# Running a transaction commits it
+"Dan"
+4L
+# An Error rolls it back
+true
+3L
+# A step's result flows to the next
+"Daniel"
 # Steps compose with let!
 true
 4L

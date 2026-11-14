@@ -11,10 +11,78 @@ let private customers (k: KoanContext) =
         return ok n
     }
 
+/// A transaction of one step, named "customer", that inserts Dan.
+let private addDan =
+    transaction {
+        let! dan = Tx.insert "customer" (Changeset.insert (New.customer "Dan" "dan@example.com"))
+        return dan.Name
+    }
+
 let lesson =
     Lesson.make
         "About transactions"
         [ Koan.Task(
+              "A transaction does nothing until run",
+              fun k ->
+                  task {
+                      // A transaction is a value describing database steps that succeed or fail together.
+                      // transaction { } builds it; Tx.insert is a step that inserts a changeset.
+                      let tx = addDan
+                      k.Commands.Length |> shouldBe __
+                      let! n = customers k
+                      n |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Running a transaction commits it",
+              fun k ->
+                  task {
+                      // repo.Transact runs the steps and commits them: Ok carries what the transaction returns.
+                      let! r = k.Repo.Transact addDan
+                      ok r |> shouldBe __
+                      let! n = customers k
+                      n |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "An Error rolls it back",
+              fun k ->
+                  task {
+                      let tx =
+                          transaction {
+                              let! _ = Tx.insert "customer" (Changeset.insert (New.customer "Dan" "dan@example.com"))
+                              // Tx.fail is a step that always fails, with a reason.
+                              return! Tx.fail "stop" "changed my mind"
+                          }
+
+                      let! r = k.Repo.Transact tx
+                      Result.isError r |> shouldBe __
+                      // A failed step rolls back (undoes) the steps before it.
+                      let! n = customers k
+                      n |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "A step's result flows to the next",
+              fun k ->
+                  task {
+                      let rename =
+                          transaction {
+                              let! dan = Tx.insert "customer" (Changeset.insert (New.customer "Dan" "dan@example.com"))
+                              // let! gives the next step what this one stored: Dan, with his new key.
+                              let! daniel = Tx.update "rename" (dan |> Changeset.edit (fun c -> { c with Name = "Daniel" }))
+                              return daniel.Name
+                          }
+
+                      let! r = k.Repo.Transact rename
+                      ok r |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
               "Steps compose with let!",
               fun k ->
                   task {

@@ -1,3 +1,14 @@
+# A parent can be saved with a child
+5L
+5L
+# The saved parent holds its children
+1
+true
+# Saved children can be read back
+2
+10m
+# Adding a child to an existing parent
+2L
 # Omitted children are untouched
 2L
 # Children are matched by identity

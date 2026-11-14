@@ -292,9 +292,9 @@ type NotebookSteps(w: KoansWorld) =
             let cells = Notebooks.cells json
             let setup = cells |> List.find (fun c -> c.Kind = "code")
             let index = cells |> List.findIndex (fun c -> Notebooks.koanName c = Some "Inserting returns the stored record")
-            // The lesson's helper cell comes right after its heading.
+            // The lesson's helper cell comes right after its heading; earlier koan cells are skipped.
             let heading = cells.[.. index] |> List.findIndexBack (fun c -> c.Kind = "markdown")
-            let helpers = cells.[heading + 1 .. index - 1]
+            let helpers = cells.[heading + 1 .. index - 1] |> List.filter (fun c -> (Notebooks.koanName c).IsNone)
             runs <- Notebooks.run ([ setup ] @ helpers @ [ cells.[index]; cells.[index] ])
         }
         |> unit
