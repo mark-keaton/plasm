@@ -83,6 +83,11 @@ Feature: A union with fields is stored across columns
       Then only the Card that Ada is doing is returned
       And the SQL compares the column stage_assignee, without a CASE
 
+    Scenario: Selecting case fields through the domain's members reads their types
+      Given a Card in each stage
+      When I select the title, Card.Assignee and Card.Since of the Cards that Ada is doing
+      Then the row holds the title, Some Ada and Some of the time she started
+
     Scenario: Comparing with a whole value
       Given a Card in each stage
       When I keep the Cards whose Stage equals the value Doing (Ada, since)

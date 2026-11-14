@@ -39,6 +39,13 @@ module UnionCards =
             | Doing(who, _) -> Some who
             | _ -> None
 
+        /// When work on the card started, if it is in progress.
+        [<ReflectedDefinition>]
+        member c.Since =
+            match c.Stage with
+            | Doing(_, since) -> Some since
+            | _ -> None
+
         /// The card's phase, also a reflected definition.
         [<ReflectedDefinition>]
         member c.Phase =
@@ -291,6 +298,18 @@ type UnionFieldSteps(w: World) =
     member _.Bare() =
         let sql = w.CommandsSinceMark.Head.Sql
         check (sql.Contains "\"stage_assignee\" =" && not (sql.Contains "CASE")) sql
+
+    [<StepDefinition("I select the title, Card.Assignee and Card.Since of the Cards that Ada is doing")>]
+    member _.SelectMembers() =
+        task {
+            let! r = repo().All(plasm { for c in cards do where c.Stage.IsDoing; select (c.Title, c.Assignee, c.Since) })
+            w.Set("selected", ok r)
+        }
+        |> unit
+
+    [<StepDefinition("the row holds the title, Some Ada and Some of the time she started")>]
+    member _.SelectedMembers() =
+        equal [ "a card", Some ada, Some since ] (w.Get<(string * Person option * DateTimeOffset option) list> "selected") "row"
 
     [<StepDefinition("I count the Cards grouped by the member Card.Phase, which names each case")>]
     member _.CountByPhase() =

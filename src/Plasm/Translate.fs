@@ -1459,6 +1459,26 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
                 Leaf(i, f.ProviderType, convert, $"{b.Schema.Name}.{f.Name}")
             | RowBinding ctx b -> addEntity b
             | RowAssoc ctx (_, a) -> fail e $"relationship '{a.Name}' cannot be projected; preload whole records instead"
+            // A union's case field (directly, or through a member such as
+            // `match c.Stage with Doing(_, since) -> Some since | _ -> None`):
+            // read with the field's own type, and named by it.
+            | UnionLeaf ctx (alias, f)
+            | UnionOptionalLeaf ctx (alias, f) ->
+                let part =
+                    { Name = f.Column
+                      ProviderType = f.ProviderType
+                      Mapping = f.Mapping }
+
+                let i = add (Sql.readPart part (Sql.Column(alias, f.Column))) $"{f.Name} ({f.Column})"
+
+                let convert =
+                    if Reflection.isOption e.Type && not f.IsOption then
+                        let some = Reflection.makeSome e.Type
+                        fun (v: obj) -> if isNull v || v = box DBNull.Value then Ok null else f.FromDb v |> Result.map some
+                    else
+                        f.FromDb
+
+                Leaf(i, f.ProviderType, convert, $"{f.Name} ({f.Column})")
             | _ ->
                 let t = e.Type
                 let scalarT = if Reflection.isOption t then Reflection.elementType t else t
