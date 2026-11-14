@@ -1,0 +1,22 @@
+# Fill in the blank
+"Widget"
+# Values do not change
+8m
+10m
+# The pipe passes a value along
+12.5m
+# A record groups named fields
+"WIDGET"
+# with makes a changed copy
+"Blue widget"
+"Widget"
+# A wrapper keeps a value's meaning
+1L
+# An option may be absent
+"duplicate"
+"no reason"
+# A result is Ok or Error
+3
+"quantity must be positive, got 0"
+# let! waits for a task
+4

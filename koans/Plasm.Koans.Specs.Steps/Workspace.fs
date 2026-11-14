@@ -285,6 +285,13 @@ let koanSpecs () =
                 None))
     |> List.ofArray
 
+/// The orientation lesson, which teaches the F# the course relies on: its
+/// koans name an F# topic ("F#: Records") instead of a Plasm scenario.
+let orientationLesson = 1
+
+/// Whether `teaches` names an F# topic: "F#: " and the topic.
+let isFSharpTopic (teaches: string) = Regex.IsMatch(teaches, @"^F#: \S.*$")
+
 /// Plasm's implemented acceptance scenarios, as "feature: scenario".
 let implementedScenarios () =
     Directory.GetFiles(Path.Combine(root, "features"), "*.feature")
