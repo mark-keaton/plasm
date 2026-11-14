@@ -36,19 +36,21 @@ let err (r: Result<'T, 'E>) : 'E =
     | Error e -> e
     | Ok v -> raise (KoanFailure("Error _", show (Ok v: Result<'T, unit>)))
 
-/// What a koan can use: a repository whose changes are rolled back when the
-/// koan ends, and the commands it has sent.
+/// k: what every koan is given (each koan is `fun k -> ...`). Its Repo is how
+/// the koan reads and writes the koans database; whatever the koan changes is
+/// undone when it ends.
 type KoanContext internal (repo: Repo, commands: unit -> CommandEvent list, explained: ResizeArray<string>) =
-    /// A repository inside this koan's sandbox.
+    /// A repository: Plasm's way in to a database. It runs queries (All, One,
+    /// Count) and writes, and returns every answer as a Result (lesson 03).
     member _.Repo = repo
 
-    /// A repository over another model, inside the same sandbox.
+    /// A repository that knows only the record types of another model.
     member _.RepoWith(model: Model) = Repo(model, repo.Provider)
 
     /// The SQL of every command this koan has sent so far, in order.
     member _.Commands = commands () |> List.map (fun c -> c.Sql)
 
-    /// The SQL the repository would send for a query (no database access).
+    /// The SQL the repository would send for a query, without sending it.
     member _.Sql(query: Query<'T>) =
         match repo.Explain query with
         | Ok plan ->

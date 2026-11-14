@@ -12,9 +12,11 @@ let lesson =
               "The shop has three customers",
               fun k ->
                   task {
-                      // k.Repo reads and writes the koans database (lesson 03 says
-                      // what a repo is). Query.from Db.customers means "every row of
-                      // the customers table"; All returns them as Customer records.
+                      // Every koan is given k (see KoanContext under Given). k.Repo
+                      // is a repository: it reads and writes the koans database.
+                      // Query.from Db.customers means "every row of the customers
+                      // table"; All returns them as Customer records, and ok takes
+                      // them out of the Result that All returns.
                       let! customers = k.Repo.All(Query.from Db.customers)
                       let names = ok customers |> List.map (fun c -> c.Name) |> List.sort
                       names |> shouldBe __

@@ -289,6 +289,10 @@ function show(lessonIndex, koanIndex) {
   if (feature === 'F#') { $('teaches').textContent = koan.teaches; $('teaches').removeAttribute('href'); }
   else { $('teaches').textContent = `${feature}.feature: ${scenario}`; $('teaches').href = `spec/${feature}.feature`; }
   renderGiven(koan);
+  // Where k comes from: the line the koan's code is the body of (not shown for fun _ ->).
+  const takes = koan.lambda && koan.lambda !== 'fun _ ->';
+  $('lambda').hidden = !takes;
+  $('lambda').innerHTML = takes ? colour(koan.lambda) : '';
   // The address always names the koan shown (go() adds the history entry first).
   const url = new URL(location.href);
   url.searchParams.set('koan', addressOf(koan));

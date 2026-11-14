@@ -179,8 +179,16 @@ let course () : string =
         let file = IO.Path.Combine(lessonsDir, "..", "..", "Plasm.Koans.Core", "Shop.fs")
         Given.parse "Shop.fs" (IO.File.ReadAllLines file)
 
+    // What koans are given from Koans.fs: their context k, and ok and err.
+    let koans =
+        let lessonsDir = IO.Path.GetDirectoryName Path.lessons.Head.Koans.Head.File
+        let file = IO.Path.Combine(lessonsDir, "..", "..", "Plasm.Koans.Core", "Koans.fs")
+        Given.parse "Koans.fs" (IO.File.ReadAllLines file)
+        |> List.filter (fun d -> List.contains d.Name [ "KoanContext"; "ok"; "err" ])
+
     let given (helpers: Given.Definition list) (body: string) =
         let g = Given.forKoan shop helpers body
+        let g = { g with Definitions = g.Definitions @ Given.fromKoans koans body }
 
         dict
             [ "tables", box (Array.ofList g.Tables)

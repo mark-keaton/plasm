@@ -110,6 +110,20 @@ let tables: string list =
 let private joinTables (d: Definition) =
     Regex.Matches(String.concat "\n" d.Code, "manyToMany \\([^)]*\\) \\([^)]*\\) \"(\\w+)\"") |> Seq.map (fun m -> m.Groups.[1].Value) |> List.ofSeq
 
+let private memberLine = Regex(@"^\s*member \w+\.(\w+)")
+
+/// The lines of a definition that a koan reads: a record's fields
+/// (o.CustomerId) and a type's members (k.Repo).
+let private marks (body: string) (d: Definition) =
+    let reads name = Regex.IsMatch(body, @"\." + name + @"\b")
+
+    d.Code
+    |> List.indexed
+    |> List.filter (fun (_, l) ->
+        (not d.Fields.IsEmpty && fieldsOf l |> List.exists reads)
+        || (let m = memberLine.Match l in m.Success && reads m.Groups.[1].Value))
+    |> List.map fst
+
 /// Works out a koan's Given from its code, the shop's definitions and its
 /// lesson's helpers.
 let forKoan (shop: Definition list) (helpers: Definition list) (body: string) : KoanGiven =
@@ -175,15 +189,15 @@ let forKoan (shop: Definition list) (helpers: Definition list) (body: string) : 
         types @ tableRecords @ dbs @ (dbs |> List.collect helpersOf) @ (helpers |> List.filter (fun h -> mentions body h.Name))
         |> List.distinctBy (fun d -> d.Source, d.Name)
 
-    // The fields of a record that the koan reads (o.CustomerId), by line.
-    let marks (d: Definition) =
-        if d.Fields.IsEmpty then
-            []
-        else
-            d.Code
-            |> List.indexed
-            |> List.filter (fun (_, l) -> fieldsOf l |> List.exists (fun f -> Regex.IsMatch(body, @"\." + f + @"\b")))
-            |> List.map fst
-
     { Tables = usedTables
-      Definitions = chosen |> List.map (fun d -> d, marks d) }
+      Definitions = chosen |> List.map (fun d -> d, marks body d) }
+
+/// What a koan uses from the koans' own code (Koans.fs): the context `k` it is
+/// given, when it reads `k.`, and helpers such as `ok` and `err` it names.
+let fromKoans (koans: Definition list) (body: string) =
+    koans
+    |> List.filter (fun d ->
+        match d.Name with
+        | "KoanContext" -> Regex.IsMatch(body, @"(?<![\w.])k\.")
+        | n -> mentions body n)
+    |> List.map (fun d -> d, marks body d)

@@ -114,6 +114,43 @@ type GivenSteps(w: BrowserWorld) =
         }
         |> unit
 
+    [<StepDefinition("above its code the koan shows \"(.*)\"")>]
+    member _.Lambda(text: string) =
+        task {
+            let! visible = w.Page.IsVisibleAsync "#lambda"
+            check visible "no line is shown above the koan's code"
+            let! shown = w.Page.TextContentAsync "#lambda"
+            check (shown.Trim() = text) $"above its code the koan shows '{shown}'"
+        }
+        |> unit
+
+    [<StepDefinition("no line is shown above its code")>]
+    member _.NoLambda() =
+        task {
+            let! visible = w.Page.IsVisibleAsync "#lambda"
+            check (not visible) "a line is shown above the koan's code"
+        }
+        |> unit
+
+    [<StepDefinition("the definition of (\\w+) says it comes from (.*)")>]
+    member _.NamedSource(name: string, source: string) =
+        task {
+            let! text = w.Page.TextContentAsync($"#given .definition[data-name=\"{name}\"] .source")
+            check (text.Contains source) $"the source of {name} is '{text}'"
+        }
+        |> unit
+
+    [<StepDefinition("under Given the definition of (\\w+) marks the members (.*)")>]
+    member _.MarkedMembers(name: string, list: string) =
+        let expected = list.Replace(" and ", ", ").Split(", ") |> Set.ofArray
+
+        task {
+            let! marked = w.Page.EvaluateAsync<string[]>($"() => [...document.querySelectorAll('#given .definition[data-name=\"{name}\"] .marked')].map(m => m.textContent.trim())")
+            let members = marked |> Array.map (fun m -> Regex.Match(m, @"member _\.(\w+)").Groups.[1].Value)
+            check (Set.ofArray members = expected) $"marked lines are %A{marked}"
+        }
+        |> unit
+
     [<StepDefinition("asks for all tables")>]
     member _.AllTables() = w.Page.ClickAsync "#all-tables"
 
