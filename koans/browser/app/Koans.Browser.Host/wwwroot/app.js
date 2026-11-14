@@ -375,7 +375,7 @@ course.lessons.forEach((lesson, l) => {
   };
   lesson.koans.forEach((koan, k) => {
     const b = el('button', { 'data-koan': `${l}/${k}` }, koan.name);
-    b.onclick = () => show(l, k);
+    b.onclick = () => go({ lessonIndex: l, koanIndex: k });
     koans.append(b);
   });
   $('lessons').append(section);
@@ -394,7 +394,7 @@ async function evaluate(code, sandboxed = true) {
 // For tests: the course and a way to reach any koan.
 window.koans = { course, runKoan, show, stop, evaluate };
 updateProgress();
-show(0, 0);
+go({ lessonIndex: 0, koanIndex: 0 });
 const ready = await engine.ready;
 window.koansReady = true;
 

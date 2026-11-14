@@ -104,6 +104,21 @@ Feature: Walking the path in the browser
       When the learner presses Ctrl+] in the editor
       Then the first koan of lesson 2 is shown
 
+    Scenario: The Next koan button opens the koan ready to type
+      When the learner fills in the first koan's blanks and presses Ctrl+Enter
+      And the learner chooses the Next koan button
+      Then the koan "Values do not change" is shown
+      And the editor has the focus, with its first blank selected
+
+    Scenario: A koan chosen from the list opens ready to type
+      When the learner chooses the koan "A record groups named fields" from the list
+      Then the koan "A record groups named fields" is shown
+      And the editor has the focus, with its first blank selected
+
+    Scenario: The page opens ready to type
+      When the learner reloads the page
+      Then the editor has the focus, with its first blank selected
+
     Scenario: The Next koan button names its key
       When the learner fills in the first koan's blanks and presses Ctrl+Enter
       Then the Next koan button shows the key that opens the next koan

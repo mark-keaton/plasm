@@ -432,6 +432,17 @@ type CourseSteps(w: BrowserWorld) =
         }
         |> unit
 
+    [<StepDefinition("^the learner chooses the Next koan button$")>]
+    member _.ChooseNext() = w.Page.ClickAsync "#next"
+
+    [<StepDefinition("^the learner chooses the koan \"(.*)\" from the list$")>]
+    member _.ChooseFromList(name: string) =
+        task {
+            let! koan = koanNamed w.Page name
+            do! w.Page.ClickAsync($"nav button[data-koan=\"{koan.Lesson}/{koan.Index}\"]")
+        }
+        |> unit
+
     [<StepDefinition("^the Next koan button shows the key that opens the next koan$")>]
     member _.NextNamesKey() =
         task {
