@@ -54,11 +54,15 @@ Feature: Walking the path in the browser
       Then each blank in its code is highlighted
 
     Scenario: The course links back to Plasm's specification
-      When a koan is shown
+      When the learner opens the koan "Wrapped keys keep their meaning"
       Then it links to the acceptance scenario it teaches
 
+    Scenario: The first lesson names the F# it teaches
+      When the learner opens the first koan
+      Then it names the F# topic it teaches, without a link
+
     Scenario: Code is coloured as F#
-      When a koan is shown
+      When the learner opens the koan "A record needs nothing from Plasm"
       Then its keywords, type names, strings, numbers and comments are coloured
 
     Scenario: Colouring follows the learner's edits

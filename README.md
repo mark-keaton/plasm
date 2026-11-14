@@ -127,10 +127,14 @@ failing with an unmapped type.
 
 ## Learn Plasm: the koans
 
-`koans/` is an interactive course in the style of Ruby Koans: 18 lessons and
-105 koans, each a small exercise with a blank (`__`) to fill in, run against a
+`koans/` is an interactive course in the style of Ruby Koans: 22 lessons and
+214 koans, each a small exercise with a blank (`__`) to fill in, run against a
 real PostgreSQL database inside a sandbox, so every koan starts from the same
-data.
+data. It starts with no Plasm at all (the F# the course uses), then the shop's
+data, what a repo is and the promises Plasm keeps, before the library itself;
+[`koans/CURRICULUM.md`](koans/CURRICULUM.md) has the plan. In the browser
+version, each koan opens with what it is given: the tables it reads, with their
+starting rows, and the definitions it uses.
 
 ```sh
 dotnet run --project koans/Plasm.Koans                 # walks the path; stops at the next koan to answer

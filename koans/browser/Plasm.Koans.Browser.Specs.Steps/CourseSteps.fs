@@ -253,7 +253,9 @@ type CourseSteps(w: BrowserWorld) =
     member _.Highlighted() =
         task {
             let! marks = w.Page.Locator("#highlight mark.blank").CountAsync()
-            let blanks = Regex.Matches(w.Koan.Value.Body, @"(?<![\w.])__(?!\w)").Count
+            // Blanks in code, not in comments or strings (a comment may mention __).
+            let code = Regex.Replace(w.Koan.Value.Body, "//[^\n]*|\"(?:\\\\.|[^\"\\\\\n])*\"", "")
+            let blanks = Regex.Matches(code, @"(?<![\w.])__(?!\w)").Count
             check (marks = blanks) $"{marks} highlighted blanks for {blanks} blanks"
         }
         |> unit
@@ -267,6 +269,18 @@ type CourseSteps(w: BrowserWorld) =
             check (href = $"spec/{feature}.feature") $"the koan links to {href}"
             let! text = w.Page.EvaluateAsync<string>("async href => (await fetch(href)).text()", href)
             check (text.Contains $"Scenario: {scenario}" || text.Contains $"Scenario Outline: {scenario}") $"{href} does not contain the scenario '{scenario}'"
+        }
+        |> unit
+
+    [<StepDefinition("it names the F# topic it teaches, without a link")>]
+    member _.NamesFSharp() =
+        task {
+            let spec = Specs.koans.Value |> List.find (fun s -> s.Koan = w.Koan.Value.Name)
+            check (spec.Teaches.StartsWith "F#: ") $"the first koan teaches {spec.Teaches}"
+            let! text = w.Page.TextContentAsync "#teaches"
+            let! href = w.Page.GetAttributeAsync("#teaches", "href")
+            check (text = spec.Teaches) $"the koan shows '{text}'"
+            check (isNull href) $"the koan links to {href}"
         }
         |> unit
 

@@ -62,7 +62,8 @@ type LoadingSteps(w: BrowserWorld) =
             let! first = koanAt w.Page 0 0
             let! name = w.Page.TextContentAsync "#name"
             let! blanks = w.Page.Locator("#highlight mark.blank").CountAsync()
-            check (buttons = 105) $"{buttons} koans listed"
+            let expected = Specs.koans.Value.Length
+            check (buttons = expected) $"{buttons} koans listed, not the {expected} the lessons specify"
             check (name = first.Name) $"the page shows {name}"
             check (blanks > 0) "the first koan shows no blank"
         }
