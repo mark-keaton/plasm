@@ -4,7 +4,11 @@ module Plasm.Koans.Path
 open Plasm.Koans.Lessons
 
 let lessons: Lesson list =
-    [ L05_RecordsAndSchemas.lesson
+    [ L01_GettingStarted.lesson
+      L02_MeetTheShop.lesson
+      L03_WhatARepoIs.lesson
+      L04_PlasmsPromises.lesson
+      L05_RecordsAndSchemas.lesson
       L06_QueryValues.lesson
       L07_FiltersAndOrdering.lesson
       L08_Reading.lesson

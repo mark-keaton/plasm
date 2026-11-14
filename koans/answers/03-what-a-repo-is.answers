@@ -1,0 +1,20 @@
+# A repo pairs a model with a database
+9
+[]
+# A query is a description
+0
+# The repo shows its SQL
+true
+0
+# Running sends that SQL
+1
+true
+# A query runs each time you ask
+2
+true
+# Every call returns a Result
+Ok 4L
+Ok None
+# A repo knows only its model
+"Customer"
+0

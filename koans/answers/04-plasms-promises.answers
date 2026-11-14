@@ -1,0 +1,27 @@
+# Records stay plain F#
+"Widget"
+1
+# Nothing runs until you ask
+0
+# No hidden queries
+NotLoaded
+1
+# Nothing is evaluated behind your back
+true
+0
+# A failure is a value
+Some "customers_email_key"
+# Only what you change is written
+true
+false
+# The model is checked before any query
+[ Some "Id" ]
+0
+# Queries mean what F# means
+true
+1L
+# Relationships load in batches
+2
+# Tests roll back
+4L
+3L

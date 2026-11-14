@@ -21,4 +21,4 @@ Feature: What a repo is
       | Running sends that SQL               | repo.All sends the query as one command, exactly the SQL k.Sql showed                             | core: Query execution exposes diagnostic information       |
       | A query runs each time you ask       | running the same query twice sends it twice; the query value itself does not change               | core: Executing a query does not mutate its description    |
       | Every call returns a Result          | a count comes back as Ok 4L, and finding no row is Ok None, not a failure                         | reading: A query matching no rows returns None             |
-      | A repo knows only its model          | a repo whose model has no Product returns an Error naming the type, and sends nothing             | core: Unsupported translation is explicit                  |
+      | A repo knows only its model          | a repo whose model knows only Product returns an Error naming Customer, and sends nothing          | core: Unsupported translation is explicit                  |

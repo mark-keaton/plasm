@@ -11,6 +11,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Database.fs" />
+    <Compile Include="Lessons/L01_GettingStarted.fs" />
+    <Compile Include="Lessons/L02_MeetTheShop.fs" />
+    <Compile Include="Lessons/L03_WhatARepoIs.fs" />
+    <Compile Include="Lessons/L04_PlasmsPromises.fs" />
     <Compile Include="Lessons/L05_RecordsAndSchemas.fs" />
     <Compile Include="Lessons/L06_QueryValues.fs" />
     <Compile Include="Lessons/L07_FiltersAndOrdering.fs" />

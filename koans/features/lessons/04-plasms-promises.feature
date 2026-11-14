@@ -19,7 +19,7 @@ Feature: Plasm's promises
       | Nothing runs until you ask            | describing a query and a new row sends no command                                             | core: Constructing a change performs no database operations         |
       | No hidden queries                     | a relationship that was not loaded is NotLoaded, and reading it never queries                 | core: Reading a relationship never triggers hidden database access  |
       | Nothing is evaluated behind your back | code Plasm cannot turn into SQL is an Error, and no rows are read to run it in memory         | core: Unsupported translation is explicit                           |
-      | Failures are values                   | a duplicate email comes back as an Error naming the constraint; nothing is thrown             | core: Database constraints produce structured errors                |
+      | A failure is a value                  | a duplicate email comes back as an Error naming the constraint; nothing is thrown             | core: Database constraints produce structured errors                |
       | Only what you change is written       | an update sets only the fields that changed                                                   | elegance: Projected values do not imply complete entity state       |
       | The model is checked before any query | building a model reports what it cannot store, before any query runs                          | core: Unsupported model representations fail during configuration   |
       | Queries mean what F# means            | = None in a query is IS NULL in SQL, and matches the rows = None matches in F#                | elegance: Null comparisons have explicit semantics                  |

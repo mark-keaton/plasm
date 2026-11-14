@@ -1,0 +1,14 @@
+# The shop has three customers
+[ "Ada"; "Bob"; "Cy" ]
+# Counting rows
+3L
+# The database numbers the rows
+CustomerId 2L
+# An order belongs to a customer
+2
+# An order may have no customer
+None
+# A koan's changes stay in the koan
+4L
+# The next koan starts afresh
+3L
