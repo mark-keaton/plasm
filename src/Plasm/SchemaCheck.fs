@@ -236,6 +236,24 @@ module internal SchemaCheck =
                 match byTable.TryFind sc.Table with
                 | None -> add SchemaIssueKind.MissingTable sc.Name None sc.Table None "table does not exist"
                 | Some columns ->
+                    // A union with fields: each case field's column must exist with
+                    // a fitting type, and allow NULL (other cases store NULL in it).
+                    for f in sc.Fields |> Array.filter (fun f -> f.Union.IsSome) do
+                        for p in f.Parts |> List.tail do
+                            match columns |> List.tryFind (fun c -> c.Name = p.Name) with
+                            | None -> add SchemaIssueKind.MissingColumn sc.Name (Some f.Name) sc.Table (Some p.Name) "column does not exist"
+                            | Some c ->
+                                typeCheck sc.Name (Some f.Name) sc.Table c p.ProviderType
+
+                                if not c.Nullable then
+                                    add
+                                        SchemaIssueKind.IncompatibleType
+                                        sc.Name
+                                        (Some f.Name)
+                                        sc.Table
+                                        (Some c.Name)
+                                        $"column is NOT NULL, but {Reflection.typeName f.ScalarType}'s other cases store NULL in it"
+
                     for f in sc.Fields do
                         match columns |> List.tryFind (fun c -> c.Name = f.Column) with
                         | None -> add SchemaIssueKind.MissingColumn sc.Name (Some f.Name) sc.Table (Some f.Column) "column does not exist"
@@ -253,7 +271,7 @@ module internal SchemaCheck =
                                     (Some c.Name)
                                     $"column is nullable but {sc.Name}.{f.Name} is not optional; a NULL would fail to load. Make the field an option, or the column NOT NULL"
 
-                    unwritable sc.Name sc.Table columns (sc.Fields |> Array.toList |> List.map (fun f -> f.Column))
+                    unwritable sc.Name sc.Table columns (sc.Fields |> Array.toList |> List.collect (fun f -> f.Parts |> List.map (fun p -> p.Name)))
 
                     for f in sc.Fields do
                         if columns |> List.exists (fun c -> c.Name = f.Column) then

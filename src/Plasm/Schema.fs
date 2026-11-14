@@ -279,7 +279,10 @@ type internal FieldMap =
       /// Some(x) for option fields (precomputed; identity otherwise).
       WrapSome: obj -> obj
       /// Payload of an option field value (precomputed).
-      ReadOption: obj -> obj option }
+      ReadOption: obj -> obj option
+      /// For a union with fields: how it is stored across columns (Column is
+      /// then its case-name column). None for every other field.
+      Union: UnionLayout option }
 
     /// Field value (possibly an option) to a provider value or DBNull.
     member f.ToDb(value: obj) : obj =
@@ -318,6 +321,121 @@ type internal FieldMap =
                 | e -> e
             else
                 scalar
+
+    /// The columns the field is stored in: one, or a union's several.
+    member f.Parts: ColumnPart list =
+        match f.Union with
+        | None ->
+            [ { Name = f.Column
+                ProviderType = f.ProviderType
+                Mapping = f.Mapping } ]
+        | Some u -> u.Columns
+
+    /// The field's value as one provider value (or DBNull) per column of Parts.
+    member f.ToColumns(value: obj) : obj list =
+        match f.Union with
+        | None -> [ f.ToDb value ]
+        | Some u -> u.ToColumns value
+
+    /// The field's value from one provider value (or NULL) per column of Parts.
+    member f.FromColumns(values: obj list) : Result<obj, string> =
+        match f.Union with
+        | None -> f.FromDb values.Head
+        | Some u -> u.FromColumns values
+
+/// One stored column of a field.
+and internal ColumnPart =
+    { Name: string
+      ProviderType: Type
+      /// The scalar mapping of the values stored in it (for casts).
+      Mapping: ScalarMapping option }
+
+/// How a union with fields is stored (union-fields.feature): its case's
+/// name in the field's own column (snake case), and each case field in a column
+/// `<field column>_<case field>` (a nested union likewise, from its own column).
+/// A column belongs to the cases that have a field of that name; every other
+/// case stores NULL in it.
+and internal UnionLayout =
+    { Type: Type
+      TagColumn: string
+      Cases: UnionCaseLayout[]
+      /// Every column: the case-name column first, then the case fields'.
+      Columns: ColumnPart list
+      Tag: obj -> int }
+
+    member u.Write(value: obj, into: Collections.Generic.Dictionary<string, obj>) =
+        let c = u.Cases.[u.Tag value]
+        into.[u.TagColumn] <- box c.Stored
+        let fields = c.Read value
+
+        c.Parts
+        |> List.iteri (fun i p ->
+            match p with
+            | Leaf f -> into.[f.Column] <- f.ToDb fields.[i]
+            | Nested(_, n) -> n.Write(fields.[i], into))
+
+    member u.ToColumns(value: obj) : obj list =
+        let values = Collections.Generic.Dictionary<string, obj>()
+        u.Write(value, values)
+
+        u.Columns
+        |> List.map (fun c ->
+            match values.TryGetValue c.Name with
+            | true, v -> v
+            | _ -> box DBNull.Value)
+
+    /// The columns a case stores values in (its case-name column excluded).
+    member u.ColumnsOf(c: UnionCaseLayout) : string list =
+        c.Parts
+        |> List.collect (function
+            | Leaf f -> [ f.Column ]
+            | Nested(_, n) -> n.Columns |> List.map (fun p -> p.Name))
+
+    member u.Read(values: Collections.Generic.IDictionary<string, obj>) : Result<obj, string> =
+        let isNull' (v: obj) = isNull v || v = box DBNull.Value
+
+        match values.[u.TagColumn] with
+        | raw when isNull' raw -> Error $"NULL stored in {u.TagColumn}, which holds the case of {u.Type.Name}"
+        | raw ->
+            match u.Cases |> Array.tryFind (fun c -> c.Stored = string raw) with
+            | None -> Error $"'{raw}' is not a case of {u.Type.Name}"
+            | Some c ->
+                let own = set (u.ColumnsOf c)
+
+                let stray =
+                    u.Columns
+                    |> List.tail
+                    |> List.filter (fun p -> not (own.Contains p.Name) && not (isNull' values.[p.Name]))
+
+                match stray with
+                | p :: _ -> Error $"{p.Name} holds a value, but the case {c.Case.Name} of {u.Type.Name} has no such field"
+                | [] ->
+                    let fields =
+                        c.Parts
+                        |> List.map (function
+                            | Leaf f -> f.FromDb values.[f.Column] |> Result.mapError (fun m -> $"{c.Case.Name}.{f.Name} ({f.Column}): {m}")
+                            | Nested(_, n) -> n.Read values)
+
+                    match fields |> List.tryPick (function Error m -> Some m | _ -> None) with
+                    | Some m -> Error m
+                    | None -> Ok(c.Make(fields |> List.map (function Ok v -> v | Error _ -> null) |> Array.ofList))
+
+    member u.FromColumns(values: obj list) : Result<obj, string> =
+        u.Read(dict (List.zip (u.Columns |> List.map (fun p -> p.Name)) values))
+
+and internal UnionCaseLayout =
+    { Case: Microsoft.FSharp.Reflection.UnionCaseInfo
+      /// The case's name as stored: snake case.
+      Stored: string
+      Parts: UnionPart list
+      Make: obj[] -> obj
+      Read: obj -> obj[] }
+
+/// A case field: a scalar (a FieldMap whose Column is its column), or a
+/// nested union with fields.
+and internal UnionPart =
+    | Leaf of FieldMap
+    | Nested of PropertyInfo * UnionLayout
 
 type internal Cardinality =
     | Many

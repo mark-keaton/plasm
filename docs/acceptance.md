@@ -522,6 +522,25 @@ the same guarantee more exhaustively.
 |---|---|---|---|---|
 | An explicit mapping is used instead of the convention | Implemented and verified | `ConventionSteps.fs` |  |  |
 
+### union-fields.feature
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A Card <stage> is written and read back | Implemented and verified | `UnionFieldSteps.fs` |  | Strict design, step 6: a union with fields (no scalar mapping or convention) gets a `UnionLayout`: the case's name in the field's column, each case field in `<column>_<case field>`, nested unions likewise. Every field now has `Parts`, `ToColumns` and `FromColumns`; reads, writes, RETURNING, bulk writes and the original-values check go through them. |
+| Changing the case clears the old case's columns | Implemented and verified | `UnionFieldSteps.fs` |  |  |
+| A row that is no case is refused when read, naming the field | Implemented and verified | `UnionFieldSteps.fs` |  | A materialization error naming the field and the column. |
+| A row with a value in another case's column is refused when read | Implemented and verified | `UnionFieldSteps.fs` |  |  |
+| A union whose case holds a list cannot be stored in columns | Implemented and verified | `UnionFieldSteps.fs` |  | A ConfigError at Model.build. |
+| A case test | Implemented and verified | `UnionFieldSteps.fs` |  | `UnionCaseTest` and the `Is<Case>` properties become `stage = 'doing'`. |
+| Comparing with a case without fields | Implemented and verified | `UnionFieldSteps.fs` |  |  |
+| Matching on a case's field | Implemented and verified | `UnionFieldSteps.fs` |  | A `match` normalises to `if case then field = x else false`, translated as AND. |
+| Matching on a nested case's field | Implemented and verified | `UnionFieldSteps.fs` |  |  |
+| The domain's own member reads as its column | Implemented and verified | `UnionFieldSteps.fs` |  | `[<ReflectedDefinition>]` members and functions are inlined; `if case then Some field else None` is the field's column itself. |
+| Comparing with a whole value | Implemented and verified | `UnionFieldSteps.fs` |  | The case and each of its fields. |
+| Counting by case, through the domain's own member | Implemented and verified | `UnionFieldSteps.fs` |  | A `match` that produces values is a SQL CASE; stored case names are written as literals so GROUP BY and SELECT match. F# hides the compiled `Tag` property, so a member naming each case is the way to group by case. |
+| A bulk update sets every column of the union | Implemented and verified | `UnionFieldSteps.fs` |  | The assigned value must not depend on the row. |
+| A missing case column is reported | Implemented and verified | `UnionFieldSteps.fs` |  | Also: a case column must allow NULL. |
+
 ### concurrency.feature
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |

@@ -109,7 +109,7 @@ module internal BulkExec =
                             Sql.DoUpdate(ok (Translate.conflictTarget model t on), ok (Translate.conflictUpdate model vol t change)))
 
                 let returning = Sql.returningFields schema.Table schema.Fields
-                let perCommand = max 1 (maxParameters / max 1 cols.Length)
+                let perCommand = max 1 (maxParameters / max 1 (cols |> List.sumBy (fun f -> f.Parts.Length)))
 
                 rows
                 |> List.chunkBySize perCommand
@@ -118,13 +118,13 @@ module internal BulkExec =
                         chunk
                         |> List.map (fun r ->
                             let vs = schema.Shape.Deconstruct r
-                            cols |> List.map (fun f -> Sql.fieldValue f vs.[f.Index]))
+                            cols |> List.collect (fun f -> Sql.fieldColumns f vs.[f.Index] |> List.map snd))
 
                     Rows(
                         Sql.renderInsertMany
                             dialect
                             { Table = schema.Table
-                              Columns = cols |> List.map (fun f -> f.Column)
+                              Columns = cols |> List.collect (fun f -> f.Parts |> List.map (fun p -> p.Name))
                               Rows = values
                               OnConflict = onConflict
                               Returning = returning },

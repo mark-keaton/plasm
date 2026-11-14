@@ -41,8 +41,10 @@ let private originalWhere (schema: SchemaInfo) (s: CsState) =
 
         schema.Fields
         |> Array.filter (fun f -> f.Index <> schema.Key.Index)
-        |> Array.map (fun f -> Sql.Binary("IS NOT DISTINCT FROM", Sql.Column(schema.Table, f.Column), Sql.fieldValue f values.[f.Index]))
-        |> List.ofArray
+        |> Array.toList
+        |> List.collect (fun f ->
+            Sql.fieldColumns f values.[f.Index]
+            |> List.map (fun (column, value) -> Sql.Binary("IS NOT DISTINCT FROM", Sql.Column(schema.Table, column), value)))
     | _ -> []
 
 /// Model-aware structural validation, run before any command is sent.
@@ -238,17 +240,18 @@ and private insert model sess schema s =
         let proposed = s.Proposed.Value
         let values = schema.Shape.Deconstruct proposed
 
-        let cols =
+        let columns =
             schema.Fields
             |> Array.filter (fun f -> not f.Generated)
             |> Array.toList
+            |> List.collect (fun f -> Sql.fieldColumns f values.[f.Index])
 
         let cmd =
             Sql.renderInsert
                 sess.Provider.Dialect
                 { Table = schema.Table
-                  Columns = cols |> List.map (fun f -> f.Column)
-                  Values = cols |> List.map (fun f -> Sql.fieldValue f values.[f.Index])
+                  Columns = columns |> List.map fst
+                  Values = columns |> List.map snd
                   Returning = returning schema }
 
         let! inserted = guarded sess schema s (fun () -> query sess cmd (readEntity schema))
@@ -281,9 +284,7 @@ and private update model sess schema s =
         let sets =
             s.Changes
             |> Map.toList
-            |> List.map (fun (name, v) ->
-                let f = schema.Field name
-                f.Column, Sql.fieldValue f v)
+            |> List.collect (fun (name, v) -> Sql.fieldColumns (schema.Field name) v)
 
         let versionSet, versionWhere =
             match schema.Version, version with

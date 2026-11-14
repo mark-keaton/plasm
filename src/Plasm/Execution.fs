@@ -48,7 +48,7 @@ let private schemaReaders = ConditionalWeakTable<SchemaInfo, Func<DbDataReader, 
 
 /// Column readers for a schema's fields, computed once per schema.
 let readersFor (schema: SchemaInfo) =
-    schemaReaders.GetValue(schema, fun s -> s.Fields |> Array.map (fun f -> columnReader f.ProviderType))
+    schemaReaders.GetValue(schema, fun s -> s.Fields |> Array.collect (fun f -> f.Parts |> List.map (fun p -> columnReader p.ProviderType) |> Array.ofList))
 
 let private describe (v: obj) =
     if isNull v then "NULL" else $"{v} ({v.GetType().Name})"
@@ -160,23 +160,30 @@ let readEntity (schema: SchemaInfo) : DbDataReader -> obj[] =
 
     fun r ->
         let values = Array.zeroCreate<obj> schema.FieldCount
+        let mutable j = 0
 
-        for j in 0 .. schema.Fields.Length - 1 do
-            let f = schema.Fields.[j]
+        for f in schema.Fields do
+            // A field reads one column, or a union with fields its several.
+            let raws =
+                f.Parts
+                |> List.map (fun p ->
+                    let at = j
+                    j <- j + 1
 
-            let raw =
-                try
-                    readers.[j].Invoke(r, j)
-                with :? InvalidCastException as ex ->
-                    raise (
-                        MaterializationFailure
-                            { Model = schema.Name
-                              Property = f.Name
-                              Value = string (r.GetFieldType j)
-                              Message = $"column type does not match {f.ProviderType.Name}: {ex.Message}" }
-                    )
+                    try
+                        readers.[at].Invoke(r, at)
+                    with :? InvalidCastException as ex ->
+                        raise (
+                            MaterializationFailure
+                                { Model = schema.Name
+                                  Property = f.Name
+                                  Value = string (r.GetFieldType at)
+                                  Message = $"column {p.Name} does not match {p.ProviderType.Name}: {ex.Message}" }
+                        ))
 
-            match f.FromDb raw with
+            let raw = match raws with [ one ] -> one | many -> box (String.Join(", ", many |> List.map describe))
+
+            match f.FromColumns raws with
             | Ok v -> values.[f.Index] <- v
             | Error msg ->
                 raise (
@@ -238,7 +245,7 @@ let rec loadInto (s: Session) (rows: IReadOnlyList<obj[]>) (nodes: Planner.LoadN
                     | None -> ()
             | Some _ ->
                 let read = readEntity node.Target
-                let ownerAt = node.Target.Fields.Length
+                let ownerAt = node.Target.Fields |> Array.sumBy (fun f -> f.Parts.Length)
                 let ownerReader = columnReader node.KeyField.ProviderType
                 let canonical = Dictionary<obj, obj[]>()
 
@@ -377,14 +384,29 @@ let rec private build (shape: Translate.Shape) (row: obj[]) : obj =
     | Translate.Leaf(i, _, _, _) -> row.[i]
     | Translate.Build(ctor, parts) -> ctor (parts |> List.map (fun p -> build p row) |> Array.ofList)
     | Translate.EntityLeaf(start, schema, optional) ->
-        let keyAt = schema.Fields |> Array.findIndex (fun f -> f.Name = schema.Key.Name)
+        // Each field's columns start where the fields before it end.
+        let offsets = schema.Fields |> Array.scan (fun at f -> at + f.Parts.Length) start
+        let keyAt = offsets.[schema.Fields |> Array.findIndex (fun f -> f.Name = schema.Key.Name)]
 
-        if optional && isNull row.[start + keyAt] then
+        if optional && isNull row.[keyAt] then
             null // None: the left-joined source had no match
         else
             let values = Array.zeroCreate<obj> schema.FieldCount
 
-            schema.Fields |> Array.iteri (fun j f -> values.[f.Index] <- row.[start + j])
+            schema.Fields
+            |> Array.iteri (fun j f ->
+                let raws = [ for i in offsets.[j] .. offsets.[j + 1] - 1 -> row.[i] ]
+
+                match f.FromColumns raws with
+                | Ok v -> values.[f.Index] <- v
+                | Error m ->
+                    raise (
+                        MaterializationFailure
+                            { Model = schema.Name
+                              Property = f.Name
+                              Value = String.Join(", ", raws |> List.map describe)
+                              Message = m }
+                    ))
 
             for a in schema.Assocs do
                 values.[a.Index] <- a.Ctors.NotLoaded
@@ -402,17 +424,14 @@ let readProjection (s: Session) (select: Sql.Select) (shape: Translate.Shape) (m
     let rec collect sh =
         match sh with
         | Translate.Leaf(i, t, c, l) -> leaves.Add(i, t, c, l)
-        | Translate.EntityLeaf(start, schema, optional) ->
-            schema.Fields
-            |> Array.iteri (fun j f ->
-                // A left-joined source with no match reads NULL in every column.
-                let convert =
-                    if optional then
-                        fun (v: obj) -> if isNull v then Ok null else f.FromDb v
-                    else
-                        f.FromDb
+        | Translate.EntityLeaf(start, schema, _) ->
+            // Raw provider values; the entity is built from them (build, below).
+            let mutable j = start
 
-                leaves.Add(start + j, f.ProviderType, convert, $"{schema.Name}.{f.Name}"))
+            for f in schema.Fields do
+                for p in f.Parts do
+                    leaves.Add(j, p.ProviderType, (fun (v: obj) -> Ok v), $"{schema.Name}.{f.Name}")
+                    j <- j + 1
         | Translate.Build(_, ps) -> ps |> List.iter collect
         | Translate.Const _ -> ()
 
@@ -571,21 +590,24 @@ let rawReader (model: Model) (t: Type) (label: string) : DbDataReader -> obj =
 
         fun r ->
             if isNull ordinals then
-                ordinals <- schema.Fields |> Array.map (fun f -> ordinal r [ f.Column ] f.Name)
+                ordinals <- schema.Fields |> Array.collect (fun f -> f.Parts |> List.map (fun p -> ordinal r [ p.Name ] f.Name) |> Array.ofList)
 
             let values = Array.zeroCreate<obj> schema.FieldCount
+            let mutable j = 0
 
-            schema.Fields
-            |> Array.iteri (fun j f ->
-                let raw = value r ordinals.[j]
+            for f in schema.Fields do
+                let raws =
+                    f.Parts
+                    |> List.map (fun p ->
+                        let raw = value r ordinals.[j]
+                        j <- j + 1
 
-                let provider =
-                    if isNull raw || f.ProviderType.IsInstanceOfType raw then raw
-                    else Convert.ChangeType(raw, f.ProviderType, Globalization.CultureInfo.InvariantCulture)
+                        if isNull raw || p.ProviderType.IsInstanceOfType raw then raw
+                        else Convert.ChangeType(raw, p.ProviderType, Globalization.CultureInfo.InvariantCulture))
 
-                match f.FromDb provider with
+                match f.FromColumns raws with
                 | Ok v -> values.[f.Index] <- v
-                | Error m -> fail f.Name (if isNull raw then "NULL" else string raw) m)
+                | Error m -> fail f.Name (String.Join(", ", raws |> List.map (fun v -> if isNull v then "NULL" else string v))) m
 
             for a in schema.Assocs do
                 values.[a.Index] <- a.Ctors.NotLoaded

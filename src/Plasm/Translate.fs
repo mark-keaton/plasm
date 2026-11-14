@@ -107,15 +107,32 @@ let private invalid msg = raise (TranslationFailure(TranslationError.InvalidQuer
 // Normalisation: inline pipes, applications and let-bindings.
 // ---------------------------------------------------------------------------
 
+/// The body of a member or function marked [<ReflectedDefinition>]: the
+/// domain's own vocabulary (`c.Assignee`), inlined so a query can use it
+/// (union-fields.feature). Cached per method.
+let private reflectedBodies = Collections.Concurrent.ConcurrentDictionary<Reflection.MethodBase, Expr option>()
+
+let private reflectedBody (m: Reflection.MethodBase) =
+    if isNull m then None else reflectedBodies.GetOrAdd(m, fun m -> Expr.TryGetReflectedDefinition m)
+
 /// True when `normalize` would change something (avoids rebuilding trees).
 let rec private needsNormalize (e: Expr) =
     match e with
     | Call(None, mi, [ _; _ ]) when mi.Name = "op_PipeRight" || mi.Name = "op_PipeLeft" -> true
+    | PropertyGet(_, p, []) when (reflectedBody p.GetMethod).IsSome -> true
+    | Call(_, mi, _) when (reflectedBody mi).IsSome -> true
     | Application _
     | Let _ -> true
     | ExprShape.ShapeVar _ -> false
     | ExprShape.ShapeLambda(_, b) -> needsNormalize b
     | ExprShape.ShapeCombination(_, args) -> List.exists needsNormalize args
+
+/// Applies a reflected definition (a chain of lambdas) to its arguments.
+let rec private applyReflected (body: Expr) (args: Expr list) =
+    match body, args with
+    | Lambda(v, b), a :: rest -> applyReflected (b.Substitute(fun v2 -> if v2 = v then Some a else None)) rest
+    | Lambda(v, b), [] when v.Type = typeof<unit> -> b
+    | b, _ -> b
 
 let rec normalize (e: Expr) : Expr =
     if not (needsNormalize e) then e else
@@ -127,6 +144,11 @@ let rec normalize (e: Expr) : Expr =
         | Lambda(v, body) -> normalize (body.Substitute(fun v2 -> if v2 = v then Some x else None))
         | f' -> Expr.Application(f', normalize x)
     | Let(v, value, body) -> normalize (body.Substitute(fun v2 -> if v2 = v then Some value else None))
+    // A reflected member or function: its body, applied to the target and arguments.
+    | PropertyGet(target, p, []) when (reflectedBody p.GetMethod).IsSome ->
+        normalize (applyReflected (reflectedBody p.GetMethod).Value (Option.toList target))
+    | Call(target, mi, args) when (reflectedBody mi).IsSome ->
+        normalize (applyReflected (reflectedBody mi).Value (Option.toList target @ args))
     | ExprShape.ShapeVar _ -> e
     | ExprShape.ShapeLambda(v, b) -> Expr.Lambda(v, normalize b)
     | ExprShape.ShapeCombination(o, args) -> ExprShape.RebuildShapeCombination(o, List.map normalize args)
@@ -390,6 +412,78 @@ let (|RowAssoc|_|) (ctx: Ctx) (e: Expr) =
         b.Schema.TryAssoc prop.Name |> Option.map (fun a -> b, a)
     | _ -> None
 
+// Unions with fields (union-fields.feature): the union in a row, its case
+// fields' columns, and its case tests.
+
+/// The part of a union a case field's property reads. A case's fields are
+/// properties of the case's own class, named after the case; a single-case
+/// union's are properties of the union.
+let private casePart (u: UnionLayout) (p: Reflection.PropertyInfo) =
+    if not (u.Type.IsAssignableFrom p.DeclaringType) then
+        None
+    else
+        u.Cases
+        |> Array.filter (fun c -> p.DeclaringType = u.Type || c.Case.Name = p.DeclaringType.Name)
+        |> Array.tryPick (fun c ->
+            c.Parts
+            |> List.tryFind (function
+                | Leaf f -> f.Name = p.Name
+                | Nested(q, _) -> q.Name = p.Name))
+
+/// A union with fields in the row: a field's own, or a nested case field of one.
+let rec (|UnionPath|_|) (ctx: Ctx) (e: Expr) : (string * UnionLayout) option =
+    match e with
+    | RowField ctx (b, f) when f.Union.IsSome -> Some(b.Alias, f.Union.Value)
+    | PropertyGet(Some(UnionPath ctx (alias, u)), p, []) ->
+        match casePart u p with
+        | Some(Nested(_, n)) -> Some(alias, n)
+        | _ -> None
+    | _ -> None
+
+/// A case field of a union in the row, stored in a column.
+let (|UnionLeaf|_|) (ctx: Ctx) (e: Expr) : (string * FieldMap) option =
+    match e with
+    | PropertyGet(Some(UnionPath ctx (alias, u)), p, []) ->
+        match casePart u p with
+        | Some(Leaf f) -> Some(alias, f)
+        | _ -> None
+    | _ -> None
+
+/// `if case then Some field else None` over a union in the row (what
+/// `match c.Stage with Doing(who, _) -> Some who | _ -> None` becomes): its
+/// column, which holds NULL in every other case.
+let (|UnionOptionalLeaf|_|) (ctx: Ctx) (e: Expr) : (string * FieldMap) option =
+    match e with
+    | IfThenElse(UnionCaseTest(UnionPath ctx (alias, u), case), NewUnionCase(some, [ UnionLeaf ctx (alias2, f) ]), NewUnionCase(none, [])) when
+        some.Name = "Some" && none.Name = "None" && alias = alias2 && not f.IsOption
+        && (u.Cases |> Array.exists (fun c -> c.Case.Tag = case.Tag && u.ColumnsOf c |> List.contains f.Column))
+        ->
+        Some(alias, f)
+    | _ -> None
+
+/// A case's stored name, written into the SQL: it is an identifier made from an
+/// F# case name, and a literal keeps the expression the same wherever it
+/// appears (GROUP BY and SELECT must match).
+let private storedLiteral (stored: string) = Sql.Literal("'" + stored + "'")
+
+let private caseIs (alias: string) (u: UnionLayout) (case: Microsoft.FSharp.Reflection.UnionCaseInfo) =
+    let c = u.Cases |> Array.find (fun c -> c.Case.Tag = case.Tag)
+    Sql.Binary("=", Sql.Column(alias, u.TagColumn), storedLiteral c.Stored)
+
+/// A union in the row equals a value: its case, and each of that case's fields.
+let rec private unionEquals (alias: string) (u: UnionLayout) (value: obj) : Sql.Expr list =
+    let c = u.Cases.[u.Tag value]
+    let fields = c.Read value
+
+    Sql.Binary("=", Sql.Column(alias, u.TagColumn), Sql.Param(box c.Stored))
+    :: (c.Parts
+        |> List.mapi (fun i p ->
+            match p with
+            | Leaf f when f.IsOption -> [ Sql.NotDistinctFrom(Sql.Column(alias, f.Column), Sql.fieldValue f fields.[i]) ]
+            | Leaf f -> [ Sql.Binary("=", Sql.Column(alias, f.Column), Sql.fieldValue f fields.[i]) ]
+            | Nested(_, n) -> unionEquals alias n fields.[i])
+        |> List.concat)
+
 let private isOptionModule (mi: Reflection.MethodInfo) (name: string) =
     mi.DeclaringType.Name = "OptionModule" && mi.Name = name
 
@@ -454,8 +548,14 @@ let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
         | Some inner -> toParam ctx e (scalarType e.Type) inner
     else
         match e with
+        | UnionPath ctx _ ->
+            fail e "a union with fields is stored in several columns; test its case (c.Stage.IsDoing, match) or compare it with a value"
         | RowField ctx (b, f) -> Sql.Column(b.Alias, f.Column)
         | OptionalField ctx (b, f) -> Sql.Column(b.Alias, f.Column)
+        | UnionLeaf ctx (alias, f) -> Sql.Column(alias, f.Column)
+        | UnionOptionalLeaf ctx (alias, f) -> Sql.Column(alias, f.Column)
+        // A value chosen by a test (an `if`, or a `match` on a union's case).
+        | IfThenElse(cond, a, b) when e.Type <> typeof<bool> -> Sql.Case([ predicate ctx cond, branch ctx a ], branch ctx b)
         // `Some c.Id` in a comparison or join key: the inner value.
         | NewUnionCase(c, [ x ]) when c.Name = "Some" && Reflection.isOption e.Type -> scalar ctx x
         | RowAssoc ctx (_, a) ->
@@ -497,10 +597,26 @@ let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
         | _ when e.Type = typeof<bool> -> predicate ctx e
         | _ -> fail e "expression cannot be translated to SQL and will not be evaluated in application memory"
 
+/// A value a CASE chooses. A constant that is an identifier (a fieldless
+/// union's stored name) or a number is written into the SQL, so the same
+/// CASE in GROUP BY and SELECT is the same expression; anything else is a
+/// parameter or a column, as in any expression.
+and branch (ctx: Ctx) (e: Expr) : Sql.Expr =
+    if isRowDependent ctx e || mentionsArg e then
+        scalar ctx e
+    else
+        match scalar ctx e with
+        | Sql.Param(:? string as text) when Text.RegularExpressions.Regex.IsMatch(text, "^[A-Za-z0-9_]+$") -> storedLiteral text
+        | Sql.Param(:? int as n) -> Sql.Literal(string n)
+        | Sql.Param(:? int64 as n) -> Sql.Literal(string n)
+        | other -> other
+
 /// True when the translated expression can be NULL: it reads an option field,
 /// a left-joined source, an aggregate or a raw fragment.
 and mayBeNull (ctx: Ctx) (e: Expr) : bool =
     match e with
+    | UnionLeaf ctx _
+    | UnionOptionalLeaf ctx _ -> true
     | RowField ctx (_, f) -> f.IsOption
     | RowBinding ctx b -> b.Optional
     | PropertyGet(Some(RowBinding ctx b), _, _) when b.Optional -> true
@@ -537,6 +653,17 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
         | Call(None, mi, [ Lambda(x, body); RowBinding ctx b ]) when b.Optional && isOptionModule mi "ForAll" ->
             let inner = { ctx with Vars = ctx.Vars.Add(x, { b with Optional = false }) }
             Sql.Binary("OR", Sql.IsNull(keyOf b), predicate inner body)
+        | UnionCaseTest(UnionPath ctx (alias, u), case) -> caseIs alias u case
+        | PropertyGet(Some(UnionPath ctx (alias, u)), p, []) when
+            p.Name.StartsWith "Is" && u.Cases |> Array.exists (fun c -> "Is" + c.Case.Name = p.Name)
+            ->
+            caseIs alias u (u.Cases |> Array.find (fun c -> "Is" + c.Case.Name = p.Name)).Case
+        | SpecificCall <@ (=) @> (_, _, [ UnionPath ctx (alias, u); v ])
+        | SpecificCall <@ (=) @> (_, _, [ v; UnionPath ctx (alias, u) ]) when not (isRowDependent ctx v) ->
+            Sql.conj (unionEquals alias u (evaluate ctx v))
+        | SpecificCall <@ (<>) @> (_, _, [ UnionPath ctx (alias, u); v ])
+        | SpecificCall <@ (<>) @> (_, _, [ v; UnionPath ctx (alias, u) ]) when not (isRowDependent ctx v) ->
+            Sql.Not(Sql.conj (unionEquals alias u (evaluate ctx v)))
         | SpecificCall <@ (=) @> (_, _, [ a; b ]) -> equality ctx e a b false
         | SpecificCall <@ (<>) @> (_, _, [ a; b ]) -> equality ctx e a b true
         | Call(None, mi, [ a; b ]) when comparisonOps.ContainsKey mi.Name ->
@@ -987,8 +1114,7 @@ let translateWhere ctx binding (lambda: Expr) = translateWhereOver ctx [ binding
 let translateOrder ctx binding (lambda: Expr, dir: SortDirection) : Sql.OrderItem =
     translateOrderOver ctx [ binding ] (lambda, dir)
 
-let entityColumns (alias: string) (s: SchemaInfo) =
-    s.Fields |> Array.toList |> List.map (fun f -> Sql.readColumn f (Sql.Column(alias, f.Column)), f.Column)
+let entityColumns (alias: string) (s: SchemaInfo) = Sql.readFields alias s.Fields
 
 let private appendKey (orders: Sql.OrderItem list) (key: Sql.Expr) =
     if orders |> List.exists (fun o -> o.Expr = key) then
@@ -1305,7 +1431,8 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
             let start = columns.Count
 
             for f in b.Schema.Fields do
-                add (Sql.readColumn f (Sql.Column(b.Alias, f.Column))) $"{b.Schema.Name}.{f.Name}" |> ignore
+                for p in f.Parts do
+                    add (Sql.readPart p (Sql.Column(b.Alias, p.Name))) $"{b.Schema.Name}.{f.Name}" |> ignore
 
             EntityLeaf(start, b.Schema, b.Optional)
 
@@ -1432,24 +1559,30 @@ let private assignments (ctx: Ctx) (schema: SchemaInfo) (row: Var) (body: Expr) 
     let sets =
         parts
         |> List.indexed
-        |> List.choose (fun (i, value) ->
+        |> List.collect (fun (i, value) ->
             let unchanged =
                 match value with
                 | PropertyGet(Some(Var v), p, []) when v = row -> Some p.Name
                 | _ -> None
 
             match schema.Fields |> Array.tryFind (fun f -> f.Index = i) with
-            | Some f when unchanged = Some f.Name -> None
+            | Some f when unchanged = Some f.Name -> []
             | Some f when f.Name = schema.Key.Name -> invalid $"the primary key {schema.Name}.{f.Name} cannot be changed by a bulk write"
             | Some f when schema.Version |> Option.exists (fun v -> v.Name = f.Name) ->
                 invalid $"{schema.Name}.{f.Name} is the version; bulk writes increment it automatically"
             | Some f when f.Generated -> invalid $"{schema.Name}.{f.Name} is generated by the database and cannot be assigned"
-            | Some f -> Some(f.Column, scalar ctx value)
+            // A union with fields is assigned a whole value, set in all its columns.
+            | Some f when f.Union.IsSome ->
+                if isRowDependent ctx value then
+                    invalid $"{schema.Name}.{f.Name} is stored in several columns; a bulk write assigns it a value, not one computed from the row"
+                else
+                    Sql.fieldColumns f (evaluate ctx value)
+            | Some f -> [ f.Column, scalar ctx value ]
             | None ->
                 match schema.Assocs |> Array.tryFind (fun a -> a.Index = i) with
-                | Some a when unchanged = Some a.Name -> None
+                | Some a when unchanged = Some a.Name -> []
                 | Some a -> invalid $"relationship {schema.Name}.{a.Name} cannot be changed by a bulk write"
-                | None -> None)
+                | None -> [])
 
     if sets.IsEmpty then
         invalid $"the bulk change assigns no field of {schema.Name}"

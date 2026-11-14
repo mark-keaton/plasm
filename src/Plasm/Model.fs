@@ -234,6 +234,123 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, registered:
 [<RequireQualifiedAccess>]
 module Model =
 
+    /// The scalar mapping of a type: built in (None), registered, or by convention.
+    let private scalarMapping (scalars: IReadOnlyDictionary<Type, ScalarMapping>) (scalarType: Type) : Result<ScalarMapping option, string> =
+        if Scalar.isBuiltIn scalarType then
+            Ok None
+        else
+            match scalars.TryGetValue scalarType with
+            | true, m -> Ok(Some m)
+            | _ ->
+                match Conventions.tryFor scalarType with
+                | Some(Ok m) -> Ok(Some m)
+                | Some(Error reason) -> Error reason
+                | None ->
+                    Error
+                        $"type {Reflection.typeName scalarType} has no persistence mapping; it is not a single-case union over a built-in type or a fieldless union, so register Scalar.wrap, Scalar.tryWrap or Scalar.enum"
+
+    /// A field (or a union's case field) stored in one column.
+    let private scalarField (name: string) (index: int) (column: string) (t: Type) (mapping: ScalarMapping option) : FieldMap =
+        let isOpt = Reflection.isOption t
+        let scalarType = if isOpt then Reflection.elementType t else t
+
+        { Name = name
+          Index = index
+          Column = column
+          FieldType = t
+          ScalarType = scalarType
+          IsOption = isOpt
+          Generated = false
+          Unique = false
+          References = None
+          Mapping = mapping
+          ProviderType =
+            match mapping with
+            | Some m -> m.ProviderType
+            | None -> scalarType
+          WrapSome = if isOpt then Reflection.makeSome t else id
+          ReadOption = if isOpt then Reflection.getOptionValue t else fun v -> if isNull v then None else Some v
+          Union = None }
+
+    /// A union with fields (one no scalar mapping or convention covers), stored
+    /// across columns (union-fields.feature).
+    let rec private unionLayout (scalars: IReadOnlyDictionary<Type, ScalarMapping>) (t: Type) (column: string) : Result<UnionLayout, string> =
+        if not (FSharpType.IsUnion(t, false)) then
+            Error $"union {t.Name} has a private representation; Plasm would construct its cases behind the domain's back, so give it a scalar mapping instead"
+        else
+            let cases = FSharpType.GetUnionCases t
+
+            let caseLayout (c: UnionCaseInfo) : Result<UnionCaseLayout, string> =
+                let parts =
+                    c.GetFields()
+                    |> Array.toList
+                    |> List.map (fun p ->
+                        // Unnamed fields (Item1, Item2) are named after their case.
+                        let name = if p.Name.StartsWith "Item" then $"{c.Name}_{p.Name}" else p.Name
+                        let partColumn = column + "_" + Paths.snakeCase name
+                        let ft = p.PropertyType
+                        let inner = if Reflection.isOption ft then Reflection.elementType ft else ft
+
+                        if Reflection.isList ft || FSharpType.IsRecord(inner, true) || (inner.IsArray && inner <> typeof<byte[]>) then
+                            Error $"{t.Name}.{c.Name}.{p.Name} is a {Reflection.typeName ft}; a case field must be a scalar or a union to be stored in columns"
+                        else
+                            match scalarMapping scalars inner with
+                            | Ok mapping -> Ok(Leaf(scalarField p.Name 0 partColumn ft mapping))
+                            | Error reason when FSharpType.IsUnion(inner, true) && not (Reflection.isOption ft) ->
+                                match Conventions.tryFor inner with
+                                | Some(Error r) -> Error r
+                                | _ -> unionLayout scalars inner partColumn |> Result.map (fun n -> Nested(p, n))
+                            | Error reason -> Error $"{t.Name}.{c.Name}.{p.Name}: {reason}")
+
+                match parts |> List.tryPick (function Error e -> Some e | _ -> None) with
+                | Some e -> Error e
+                | None ->
+                    Ok
+                        { Case = c
+                          Stored = Paths.snakeCase c.Name
+                          Parts = parts |> List.map (function Ok p -> p | Error _ -> failwith "unreachable")
+                          Make = FSharpValue.PreComputeUnionConstructor(c, true)
+                          Read = FSharpValue.PreComputeUnionReader(c, true) }
+
+            let layouts = cases |> Array.map caseLayout
+
+            match layouts |> Array.tryPick (function Error e -> Some e | _ -> None) with
+            | Some e -> Error e
+            | None ->
+                let cs = layouts |> Array.map (function Ok c -> c | Error _ -> failwith "unreachable")
+
+                let partColumns =
+                    cs
+                    |> Array.toList
+                    |> List.collect (fun c ->
+                        c.Parts
+                        |> List.collect (function
+                            | Leaf f ->
+                                [ { Name = f.Column
+                                    ProviderType = f.ProviderType
+                                    Mapping = f.Mapping } ]
+                            | Nested(_, n) -> n.Columns))
+
+                // Case fields of the same name share a column, if their types agree.
+                let clash =
+                    partColumns
+                    |> List.groupBy (fun p -> p.Name)
+                    |> List.tryFind (fun (_, ps) -> ps |> List.map (fun p -> p.ProviderType) |> List.distinct |> List.length > 1)
+
+                match clash with
+                | Some(name, _) -> Error $"two cases of {t.Name} have a field stored in {name} with different types; rename one"
+                | None ->
+                    Ok
+                        { Type = t
+                          TagColumn = column
+                          Cases = cs
+                          Columns =
+                            { Name = column
+                              ProviderType = typeof<string>
+                              Mapping = None }
+                            :: (partColumns |> List.distinctBy (fun p -> p.Name))
+                          Tag = FSharpValue.PreComputeUnionTagReader(t, true) }
+
     let private resolveSchema
         (scalars: IReadOnlyDictionary<Type, ScalarMapping>)
         (defs: IReadOnlyDictionary<Type, SchemaDef>)
@@ -361,23 +478,26 @@ module Model =
                     if Reflection.isOption scalarType then
                         err (Some prop.Name) "nested options cannot be stored unambiguously"
                     else
+                        let column = def.Columns.TryFind prop.Name |> Option.defaultValue (Paths.snakeCase prop.Name)
+
                         let mapping =
-                            if Scalar.isBuiltIn scalarType then
-                                Ok None
-                            else
-                                match scalars.TryGetValue scalarType with
-                                | true, m -> Ok(Some m)
-                                | _ ->
-                                    match Conventions.tryFor scalarType with
-                                    | Some(Ok m) -> Ok(Some m)
-                                    | Some(Error reason) -> Error reason
-                                    | None ->
-                                        Error
-                                            $"type {Reflection.typeName scalarType} has no persistence mapping; it is not a single-case union over a built-in type or a fieldless union, so register Scalar.wrap, Scalar.tryWrap or Scalar.enum"
+                            match scalarMapping scalars scalarType with
+                            | Ok m -> Ok(Choice1Of2 m)
+                            | Error reason when FSharpType.IsUnion(scalarType, true) && (Conventions.tryFor scalarType).IsNone ->
+                                if isOpt then
+                                    Error $"an optional union with fields ({Reflection.typeName t}) is not supported; give the union a case for absence"
+                                else
+                                    unionLayout scalars scalarType column |> Result.map Choice2Of2
+                            | Error reason -> Error reason
 
                         match mapping with
                         | Error reason -> err (Some prop.Name) reason
-                        | Ok mapping ->
+                        | Ok(Choice2Of2 layout) ->
+                            fields.Add
+                                { scalarField prop.Name i column t None with
+                                    ProviderType = typeof<string>
+                                    Union = Some layout }
+                        | Ok(Choice1Of2 mapping) ->
                             fields.Add
                                 { Name = prop.Name
                                   Index = i
@@ -400,7 +520,8 @@ module Model =
                                     if isOpt then
                                         Reflection.getOptionValue t
                                     else
-                                        fun v -> if isNull v then None else Some v }
+                                        fun v -> if isNull v then None else Some v
+                                  Union = None }
 
             for a in def.Assocs do
                 if not (shape.Fields |> Array.exists (fun f -> f.Name = a.Property.Name)) then

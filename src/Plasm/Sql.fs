@@ -79,6 +79,8 @@ module internal Sql =
         | Aggregate of name: string * distinct: bool * arg: Expr option
         /// Literal SQL text interleaved with translated expressions (Raw.fragment).
         | Fragment of parts: Choice<string, Expr> list
+        /// CASE WHEN condition THEN value ... ELSE otherwise END.
+        | Case of branches: (Expr * Expr) list * otherwise: Expr
 
     and OrderItem =
         { Expr: Expr
@@ -194,9 +196,34 @@ module internal Sql =
         | Some _ -> AsText column
         | None -> column
 
-    /// RETURNING every field of a table, each read as `readColumn` reads it.
-    let returningFields (table: string) (fields: FieldMap seq) =
-        fields |> Seq.map (fun f -> readColumn f (Column(table, f.Column)), f.Column) |> List.ofSeq
+    /// The database type one column's values are stored as, if not the provider type's.
+    let partStoreType (p: ColumnPart) = p.Mapping |> Option.bind (fun m -> m.StoreType)
+
+    /// One column of a field as it is read (as text when it has a type of its own).
+    let readPart (p: ColumnPart) (column: Expr) =
+        match partStoreType p with
+        | Some _ -> AsText column
+        | None -> column
+
+    /// A provider value for one column, as a parameter cast to its type.
+    let partValue (p: ColumnPart) (providerValue: obj) =
+        let x = Param providerValue
+
+        match partStoreType p with
+        | Some t -> Cast(x, t, false)
+        | None -> x
+
+    /// Each column a field is stored in, with the parameter its value stores
+    /// there: one column, or a union's several (union-fields.feature).
+    let fieldColumns (f: FieldMap) (value: obj) : (string * Expr) list =
+        List.map2 (fun (p: ColumnPart) v -> p.Name, partValue p v) f.Parts (f.ToColumns value)
+
+    /// Every column of some fields, each read as `readPart` reads it.
+    let readFields (table: string) (fields: FieldMap seq) =
+        fields |> Seq.collect (fun f -> f.Parts |> List.map (fun p -> readPart p (Column(table, p.Name)), p.Name)) |> List.ofSeq
+
+    /// RETURNING every column of a table's fields.
+    let returningFields (table: string) (fields: FieldMap seq) = readFields table fields
 
     type private Renderer(d: ISqlDialect) =
         let sb = StringBuilder()
@@ -326,6 +353,18 @@ module internal Sql =
                     r.Expr a
 
                 w ")"
+            | Case(branches, otherwise) ->
+                w "(CASE"
+
+                for c, v in branches do
+                    w " WHEN "
+                    r.Expr c
+                    w " THEN "
+                    r.Expr v
+
+                w " ELSE "
+                r.Expr otherwise
+                w " END)"
             | Fragment parts ->
                 w "("
 
