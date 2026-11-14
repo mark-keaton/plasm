@@ -1,3 +1,11 @@
+# Query.from reads every row
+3
+# A where keeps the matching rows
+1
+# An orderBy sorts the rows
+[ "Gadget"; "Gizmo"; "Widget" ]
+# take keeps the first rows
+[ "Ada"; "Bob" ]
 # Building a query runs nothing
 0
 # Extending makes a new query

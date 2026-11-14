@@ -1,6 +1,15 @@
 # A record needs nothing from Plasm
 "Widget"
 "Better widget"
+# A schema names the table
+true
+# Columns are named in snake_case
+true
+false
+# A key finds one record
+"Gadget"
+# A union is stored as text
+Cancelled
 # Wrapped keys keep their meaning
 CustomerId 1L
 # Stored values can be rejected

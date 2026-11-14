@@ -15,6 +15,61 @@ let lesson =
     Lesson.make
         "About filters and ordering"
         [ Koan.Task(
+              "Comparing numbers",
+              fun k ->
+                  task {
+                      // A filter compares a field as F# would: Total is a decimal, so it is
+                      // compared with a decimal (20m). count, defined at the top of this
+                      // lesson, runs k.Repo.Count: how many rows the query matches.
+                      let! n = count k (plasm { for o in Db.orders do where (o.Total > 20m) })
+                      n |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Contains on text becomes LIKE",
+              fun k ->
+                  task {
+                      // s.Contains "o" is true when the text s has an "o" in it. In a filter it
+                      // becomes SQL's LIKE, which matches text against a pattern.
+                      let withO = plasm { for c in Db.customers do where (c.Name.Contains "o") }
+                      (k.Sql withO).Contains "LIKE" |> shouldBe __
+                      let! customers = k.Repo.All withO
+                      ok customers |> List.map (fun c -> c.Name) |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "And needs both",
+              fun k ->
+                  task {
+                      // && keeps a row only when both sides are true.
+                      let! n = count k (plasm { for o in Db.orders do where (o.Status = Published && o.Total < 50m) })
+                      n |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Or needs either",
+              fun k ->
+                  task {
+                      // || keeps a row when either side is true, or both.
+                      let! n = count k (plasm { for o in Db.orders do where (o.Status = Draft || o.Total > 50m) })
+                      n |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Ordering largest first",
+              fun k ->
+                  task {
+                      // orderByDescending sorts the rows largest first.
+                      let! orders = k.Repo.All(plasm { for o in Db.orders do orderByDescending o.Total })
+                      ok orders |> List.map (fun o -> o.Total) |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
               "Independent filters combine",
               fun k ->
                   task {

@@ -16,6 +16,10 @@ Feature: About records and schemas
     Examples:
       | koan                                  | the learner discovers                                                                            | teaches                                                           |
       | A record needs nothing from Plasm     | persistence metadata lives in a schema value, not on the record                                  | elegance: Persistence metadata does not require mutable records   |
+      | A schema names the table              | a schema value says which table holds the records, and k.Sql shows it                            | elegance: Persistence metadata does not require mutable records   |
+      | Columns are named in snake_case       | a field called PlacedAt is stored in the column placed_at unless the schema says otherwise       | elegance: Persistence metadata does not require mutable records   |
+      | A key finds one record                | the schema's key is the Id field; filtering on it finds exactly one Product                      | elegance: Domain scalar wrappers preserve their meaning           |
+      | A union is stored as text             | Scalar.enum stores Cancelled as the text 'cancelled' and reads that text back as Cancelled       | core: Querying a mapped property uses its declared type           |
       | Wrapped keys keep their meaning       | Scalar.wrap maps CustomerId to a bigint and back, and CustomerId cannot be compared with OrderId | elegance: Domain scalar wrappers preserve their meaning           |
       | Stored values can be rejected         | Scalar.tryWrap refuses a stored value the domain forbids, with the field named                   | elegance: Domain reconstruction can fail explicitly               |
       | Absent values are options             | a nullable column is an option field; None is not an empty string                                | core: Nullable values remain explicit                             |

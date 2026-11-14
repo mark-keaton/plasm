@@ -15,6 +15,10 @@ Feature: About reading
 
     Examples:
       | koan                             | the learner discovers                                                             | teaches                                                 |
+      | All returns a list               | repo.All gives a Result holding an F# list of records                             | core: Querying a mapped property uses its declared type |
+      | One returns an option            | repo.One gives Some record when one row matches                                   | reading: A query matching no rows returns None          |
+      | Count returns an int64           | repo.Count gives the number of matching rows as an int64                          | aggregates: Counting a filtered query                   |
+      | Selecting one field              | select c.Name reads a list of names instead of whole Customers                    | core: Projection retrieves the requested data           |
       | Reading returns typed rows       | repo.All returns Result<Order list, DbError>, with fields of their declared types | core: Querying a mapped property uses its declared type |
       | Counting transfers no rows       | repo.Count sends COUNT(*) and returns a number                                    | aggregates: Counting a filtered query                   |
       | Asking whether anything exists   | repo.Exists stops at the first matching row                                       | aggregates: Testing existence                           |

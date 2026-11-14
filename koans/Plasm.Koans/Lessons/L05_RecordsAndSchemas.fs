@@ -19,6 +19,58 @@ let lesson =
                   renamed.Name |> shouldBe __
           )
 
+          Koan.Sync(
+              "A schema names the table",
+              fun k ->
+                  // A schema is a value that says how a record is stored. In Shop.fs,
+                  // Db.products is: schema<Product> "products" { identityKey (fun p -> p.Id) }
+                  // Query.from makes a query for every row of a schema's table.
+                  // k.Sql shows the SQL a query would send, without sending it.
+                  let sql = k.Sql(Query.from Db.products)
+                  // Which table does the query read from?
+                  sql.Contains "FROM \"products\"" |> shouldBe __
+          )
+
+          Koan.Sync(
+              "Columns are named in snake_case",
+              fun k ->
+                  // A column is named after its field, in snake_case: lower case words
+                  // joined by underscores. The schema could name a column itself, but
+                  // Db.orders does not.
+                  let sql = k.Sql(Query.from Db.orders)
+                  // Order has a field PlacedAt. Which name does the SQL use?
+                  sql.Contains "\"placed_at\"" |> shouldBe __
+                  sql.Contains "\"PlacedAt\"" |> shouldBe __
+          )
+
+          Koan.Task(
+              "A key finds one record",
+              fun k ->
+                  task {
+                      // The key is the field that identifies a record: identityKey (fun p -> p.Id).
+                      // The database numbers new rows 1, 2, 3, in the order they were inserted.
+                      // A repo (k.Repo) runs queries against the database; One reads one record, if any.
+                      let! product = k.Repo.One(plasm { for p in Db.products do where (p.Id = ProductId 2L) })
+                      // ok takes the value out of an Ok result; .Value takes it out of Some.
+                      (ok product).Value.Name |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "A union is stored as text",
+              fun k ->
+                  task {
+                      // OrderStatus is a union with no fields. Scalar.enum in Db.scalars stores
+                      // each case as text: Draft as "draft", Published as "published", and so on.
+                      // Here the status column of Order 2 is changed with SQL, as text.
+                      // (The change is made in this koan's sandbox and vanishes when it ends.)
+                      let! _ = k.Repo.ExecuteSql $"update orders set status = 'cancelled' where id = 2"
+                      let! order = k.Repo.One(plasm { for o in Db.orders do where (o.Id = OrderId 2L) })
+                      // Is Status the text, or a case of OrderStatus?
+                      (ok order).Value.Status |> shouldBe __
+                  }
+          )
+
           Koan.Task(
               "Wrapped keys keep their meaning",
               fun k ->
