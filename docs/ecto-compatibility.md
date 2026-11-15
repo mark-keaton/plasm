@@ -20,7 +20,7 @@ or `Tx.delete` step run by `repo.Transact`.
 | repo.exs | insert, update and delete | Same, as `Tx.insert`, `Tx.update` and `Tx.delete` steps |
 | repo.exs | insert and update with empty changeset | Same: `Tx.update (order, order)` changes nothing, issues no command and is never a conflict |
 | repo.exs | insert and update with changeset read after writes | Same: the generated id is returned in a new value; the submitted value is unchanged |
-| repo.exs | optimistic locking in update/delete operations | Same outcome (`TxFailure.Conflict` instead of `StaleEntryError`). Versioning is declared on the schema; a record without a version field is checked by every column of the record read |
+| repo.exs | optimistic locking in update/delete operations | Same outcome (`TxFailure.Conflict` instead of `StaleEntryError`). Versioning is declared on the record (`[<Version>]`); a record without a version field is checked by every column of the record read |
 | repo.exs | unique constraint | Deliberately different (strict design, step 4): Ecto needs `unique_constraint` on each changeset. Plasm maps a constraint with PostgreSQL's default name (`customers_email_key`) to its field with nothing declared, "has already been taken", as `TxFailure.InvalidChanges`; any other name stays a database failure (`TxFailure.Failed` with `UniqueViolation`) |
 | repo.exs | foreign key constraint | Same pattern (`<table>_<column>_fkey`, "does not exist") |
 | repo.exs | invalid changeset is not written | Removed (one style, step b): Plasm validates no input; the domain's constructors do. A change the database refuses is covered by the `Multi` case below |

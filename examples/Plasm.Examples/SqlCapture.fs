@@ -201,10 +201,10 @@ let run (connectionString: string) (outputPath: string) =
         do!
             capture
                 "model"
-                "Field names become snake_case columns, and every field is read. The lines are not a column: they are the order's own rows, read in one more command for every order the first one found, in the order the schema names."
+                "Field names become snake_case columns, and every field is read. The lines are not a column: they are the order's own rows, read in one more command for every order the first one found, in the order of their key."
                 [ "\"customer_id\""; "\"placed_at\""; "FROM \"order_lines\""; "\"t0\".\"order_id\" = ANY(@p0)" ]
                 None
-                (fun () -> task { let! _ = repo.All(Query.from Db.orders) in () })
+                (fun () -> task { let! _ = repo.All(Query.from (tableOf<Order>)) in () })
 
         // 2 · Scalars
         do!
@@ -236,10 +236,10 @@ let run (connectionString: string) (outputPath: string) =
                 "The page is chosen first (ORDER BY with the key as tiebreaker, LIMIT, OFFSET). The lines of exactly those orders follow in one command, their keys as one array parameter: two commands for a page of 20 or of 1,000."
                 [ "LIMIT @p1"; "OFFSET @p2"; "\"t0\".\"id\" ASC"; "\"t0\".\"order_id\" = ANY(@p0)" ]
                 None
-                (fun () -> task { let! _ = repo.All(Query.from Db.orders |> forCustomer ada.Id |> orderPage 0 20) in () })
+                (fun () -> task { let! _ = repo.All(Query.from (tableOf<Order>) |> forCustomer ada.Id |> orderPage 0 20) in () })
 
         // 5 · Other aggregates, by id
-        let! page = repo.All(Query.from Db.orders |> orderPage 0 20)
+        let! page = repo.All(Query.from (tableOf<Order>) |> orderPage 0 20)
         let page = ok page
 
         do!
@@ -300,7 +300,7 @@ let run (connectionString: string) (outputPath: string) =
                         | Error { Failure = TxFailure.Conflict _ } -> ()
                         | other -> failwithf "expected a conflict, got %A" other
 
-                        let! _ = repo.All(plasm { for o in Db.orders do where (isLucky o.Total) })
+                        let! _ = repo.All(plasm { for o in tableOf<Order> do where (isLucky o.Total) })
                         ()
                     })
 
@@ -477,11 +477,11 @@ let run (connectionString: string) (outputPath: string) =
                             repo.Sandbox(fun repo ->
                                 task {
                                     let! _ = repo.Transact(Tx.insert { Id = CustomerId 0L; Name = "Test"; Email = "test@example.com" }: Tx<Customer, Refusal>)
-                                    let! n = repo.Count(Query.from Db.customers)
+                                    let! n = repo.Count(Query.from (tableOf<Customer>))
                                     return ok n
                                 })
 
-                        let! after = repo.Count(Query.from Db.customers)
+                        let! after = repo.Count(Query.from (tableOf<Customer>))
 
                         if ok after <> inside - 1L then
                             failwith "the sandbox was not rolled back"

@@ -2,7 +2,8 @@
 // time (each ends with ;;), or run `dotnet fsi < fsi-tour.fsx` from this folder.
 // Needs `dotnet build -c Release` and PLASM_PG pointing at a database built
 // from the DDL the first submission prints (the tables of Plasm.Examples/Model.fs).
-// Once the packages are published, the two #r lines become #r "nuget: Plasm.Postgres".
+// Once the packages are published, the three #r lines become #r "nuget: Plasm.Postgres".
+#r "../src/Plasm.Postgres/bin/Release/net11.0/Plasm.Annotations.dll"
 #r "../src/Plasm.Postgres/bin/Release/net11.0/Plasm.dll"
 #r "../src/Plasm.Postgres/bin/Release/net11.0/Plasm.Postgres.dll"
 #r "nuget: Npgsql, 10.0.3"
@@ -21,7 +22,7 @@ printfn "%s" (repo.Ddl());;
 // orders' lines. Nothing is executed.
 let recent =
     plasm {
-        for o in Db.orders do
+        for o in tableOf<Order> do
             where (o.Status = Published)
             orderByDescending o.PlacedAt
             take 5
@@ -30,11 +31,11 @@ let recent =
 // A playground keeps changes across submissions and never commits them.
 let pg = repo.Playground();;
 pg.Transact(Tx.insert { Id = CustomerId 0L; Name = "Ada"; Email = "ada@example.com" }: Tx<Customer, unit>) |> wait;;
-pg.All(plasm { for c in Db.customers do orderBy c.Name }) |> wait;;
+pg.All(plasm { for c in tableOf<Customer> do orderBy c.Name }) |> wait;;
 pg.Reset();;
-pg.All(plasm { for c in Db.customers do orderBy c.Name }) |> wait;;
+pg.All(plasm { for c in tableOf<Customer> do orderBy c.Name }) |> wait;;
 
-// Generate a record and schema from a table.
+// Generate a record that says how an existing table stores it.
 repo.Scaffold "payments" |> wait;;
 
 // Redefine the model (re-send Model.fs) and the earlier query explains itself.

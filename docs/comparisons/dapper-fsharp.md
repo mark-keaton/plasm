@@ -45,7 +45,7 @@ Sources: [README](https://github.com/Dzoukr/Dapper.FSharp/blob/master/README.md)
 - There is no subquery, `EXISTS`, `UNION` or CTE support ([#101](https://github.com/Dzoukr/Dapper.FSharp/issues/101) union closed).
 
 **Plasm**
-- What a record owns (`owns`, `ownsOptional`, `ownsOne`) or links to through a join table (`links`) is declared in the schema and is a plain field, always loaded: one batched `= ANY(@keys)` command per list per level. Other aggregates are referred to by typed id and reached by joins, `exists (plasm { ... })` or a second query; a page of orders with their lines and their payments takes 3 commands at any parent count. `List.exists` / `List.forall` over owned and linked lists compile to correlated `EXISTS`. Joins are explicit flat tuples, with left-joined records as options, just like Dapper.FSharp's, but with no fixed arity limit stated and with composite keys.
+- What a record owns (a list, record or option of records holding its key) or links to through a join table (`[<JoinTable>]`) follows from its field types and is a plain field, always loaded: one batched `= ANY(@keys)` command per list per level. Other aggregates are referred to by typed id and reached by joins, `exists (plasm { ... })` or a second query; a page of orders with their lines and their payments takes 3 commands at any parent count. `List.exists` / `List.forall` over owned and linked lists compile to correlated `EXISTS`. Joins are explicit flat tuples, with left-joined records as options, just like Dapper.FSharp's, but with no fixed arity limit stated and with composite keys.
 
 **Verdict:** this is the dimension that matters most for the stated goal ("as easy as AsSplitQuery"), and Dapper.FSharp has nothing comparable. Its joins are on a par with Plasm's `join` / `leftJoin` for flat reads.
 
@@ -60,7 +60,7 @@ Sources: [README](https://github.com/Dzoukr/Dapper.FSharp/blob/master/README.md)
 - **Transactions:** pass an `IDbTransaction` as the optional `trans` argument to each call ([#85](https://github.com/Dzoukr/Dapper.FSharp/issues/85), [#17](https://github.com/Dzoukr/Dapper.FSharp/issues/17)). You manage begin, commit, rollback and isolation with ADO.NET. There is no transaction abstraction, retry or optimistic concurrency, and no validation.
 
 **Plasm**
-- Every write is a step of a typed transaction: `Tx.insert`, `Tx.update (original, changed)` (only the columns that differ; owned rows by difference; links as the new set) and `Tx.delete`. Plasm validates no input (the domain's constructors do); constraints with PostgreSQL's default names (unique, foreign key, check) come back as field errors; concurrency is checked by a version field or by the original record's columns (`TxFailure.Conflict`). `transaction { }` provides isolation levels and an opt-in `RetryPolicy`, and the connection and transaction are not exposed to steps. Bulk `update`, `delete`, `insert` (split above 65,000 parameters in one transaction), `upsert` and `insertMissing` are supported. Generated keys are handled through `identityKey` / `generated` with `RETURNING`.
+- Every write is a step of a typed transaction: `Tx.insert`, `Tx.update (original, changed)` (only the columns that differ; owned rows by difference; links as the new set) and `Tx.delete`. Plasm validates no input (the domain's constructors do); constraints with PostgreSQL's default names (unique, foreign key, check) come back as field errors; concurrency is checked by a version field or by the original record's columns (`TxFailure.Conflict`). `transaction { }` provides isolation levels and an opt-in `RetryPolicy`, and the connection and transaction are not exposed to steps. Bulk `update`, `delete`, `insert` (split above 65,000 parameters in one transaction), `upsert` and `insertMissing` are supported. Generated keys (an integer `Id`) and `[<Generated>]` columns are read back with `RETURNING`.
 
 **Verdict:** Plasm is far richer. Dapper.FSharp is honest, explicit CRUD where you own the transaction.
 
@@ -121,7 +121,7 @@ Roughly, MSSQL and PostgreSQL get the most attention. All four cover the same ba
 
 ## What Plasm does that Dapper.FSharp does not
 
-- **Aggregates loaded whole** (`owns` / `ownsOptional` / `ownsOne` / `links`, at every level), with constant command count and no cartesian product. Dapper.FSharp has only flat join tuples, and you avoid N+1 by hand.
+- **Aggregates loaded whole** (owned and linked records, at every level), with constant command count and no cartesian product. Dapper.FSharp has only flat join tuples, and you avoid N+1 by hand.
 - **Unions and domain types as scalars** by convention (wrappers, `create` functions, fieldless unions, unions with fields across columns), with `Scalar.*` overrides. Dapper.FSharp has none (#100 open) and its CE reportedly bypasses user union type handlers (#88).
 - **Result-valued errors** with classified database failures, versus exceptions.
 - **Writes by difference**: constraint-to-field mapping, optimistic concurrency, owned rows and links written with their owner.

@@ -52,7 +52,7 @@ let retag (article: Article) (names: string list) : Tx<Article, Refusal> =
 /// One UPDATE for every stale draft; versions are incremented.
 let expireDrafts (before: DateTime) =
     Bulk.update (
-        plasm { for o in Db.orders do where (o.Status = Draft && o.PlacedAt < before) },
+        plasm { for o in tableOf<Order> do where (o.Status = Draft && o.PlacedAt < before) },
         fun o -> { o with Status = Cancelled "expired" }
     )
 

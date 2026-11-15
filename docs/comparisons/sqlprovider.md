@@ -6,7 +6,7 @@ Evidence key: **[doc]** the project's docs say so; **[src]** I read it in the so
 
 ## What SQLProvider is
 
-SQLProvider (https://github.com/fsprojects/SQLProvider) is an *erasing F# type provider*. At compile time (and in the IDE) it connects to a live database, or reads a saved schema file or a SQL Server `.dacpac`. It then provides a `dataContext` type with one property per table/view, entity types with one mutable property per column, foreign-key navigation properties, stored procedures and "Individuals" (rows as IntelliSense members). Queries are F# `query { }` expressions translated from LINQ expression trees. Writes go through a change-tracking data context and `SubmitUpdates()`. Plasm is the reverse: you write records and a `schema<T>` mapping, and the database is checked against the model at run time (`repo.CheckSchema`).
+SQLProvider (https://github.com/fsprojects/SQLProvider) is an *erasing F# type provider*. At compile time (and in the IDE) it connects to a live database, or reads a saved schema file or a SQL Server `.dacpac`. It then provides a `dataContext` type with one property per table/view, entity types with one mutable property per column, foreign-key navigation properties, stored procedures and "Individuals" (rows as IntelliSense members). Queries are F# `query { }` expressions translated from LINQ expression trees. Writes go through a change-tracking data context and `SubmitUpdates()`. Plasm is the reverse: you write records that name their tables, and the database is checked against the model at run time (`repo.CheckSchema`).
 
 ---
 
@@ -54,7 +54,7 @@ SQLProvider (https://github.com/fsprojects/SQLProvider) is an *erasing F# type p
 
 **Plasm**
 
-- What a record owns (`owns`/`ownsOptional`/`ownsOne`) or links (`links`) is declared in the schema, is a plain field, and is loaded with every read of the record, each level with batched `= ANY(@keys)` commands. Command count is constant in the number of parents (3 commands for a page of orders with their lines and their payments, at 20, 100 and 1,000 orders; `docs/benchmarks.md`). Nothing is lazy and nothing is left unloaded; other aggregates are reached by joins, `exists` or a second query.
+- What a record owns or links follows from its field types, is a plain field, and is loaded with every read of the record, each level with batched `= ANY(@keys)` commands. Command count is constant in the number of parents (3 commands for a page of orders with their lines and their payments, at 20, 100 and 1,000 orders; `docs/benchmarks.md`). Nothing is lazy and nothing is left unloaded; other aggregates are reached by joins, `exists` or a second query.
 
 **Verdict:** this is Plasm's main advantage. SQLProvider gives you lazy navigation (an N+1 trap) and joins. Its docs tell you to do the batching yourself.
 

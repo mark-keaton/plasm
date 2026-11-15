@@ -42,7 +42,7 @@
   <div class="hero-code">
 <pre class="code fsharp">let page customer =
     plasm {
-        for o in Db.orders do
+        for o in tableOf&lt;Order&gt; do
             where (o.CustomerId = Some customer)
             orderByDescending o.PlacedAt
             take 20
@@ -154,7 +154,7 @@ match! repo.Transact(cancelOrder id version "changed my mind") with
     <div>
       <h3>Works today</h3>
       <ul>
-        <li>Schemas over your own records; scalars by convention</li>
+        <li>Your own records as the model, with attributes for the table and what types can't say; scalars by convention</li>
         <li>Owned lists and records, linked lists, unions with fields</li>
         <li>Typed queries, projections, <code>exists</code> across aggregates</li>
         <li>Inner and left joins, with option-typed left sides</li>

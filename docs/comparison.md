@@ -43,13 +43,14 @@ F# types and semantics throughout.
 
 ## What Plasm does that none of the others do
 
-- **Aggregates with plain F# types.** The application's own records, without
-  attributes or `CLIMutable`: F# lists, options, single-case wrappers, types
-  with a `create` function and unions with fields, stored by convention. A
-  schema value states the rest: the key, `unique`, what a record owns (`owns`,
-  `ownsOptional`, `ownsOne`) and what it links to through a join table
-  (`links`). Of the others, only EF Core loads related rows, and not into these
-  types.
+- **Aggregates with plain F# types.** The application's own immutable records,
+  without `CLIMutable` or base classes: F# lists, options, single-case
+  wrappers, types with a `create` function and unions with fields, stored by
+  convention. The record names its table (`[<Table>]`) and marks what no type
+  can say (`[<Unique>]`, `[<Version>]`, `[<OrderedBy>]`); what it owns and
+  links follows from its field types. The attributes come from a package with
+  no dependencies, which Fable compiles. Of the others, only EF Core loads
+  related rows, and not into these types.
 - **Split loading as the only mode.** What a record owns or links is loaded with
   it, one command per list per batch of owners (`= ANY(@keys)`), at every
   level. There is no cartesian explosion to avoid and no `AsSplitQuery` to

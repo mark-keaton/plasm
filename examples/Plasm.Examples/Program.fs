@@ -125,7 +125,7 @@ let tour (connectionString: string) (ddl: string) =
                 : Tx<Payment, Refusal>
             )
 
-        let page = Query.from Db.orders |> forCustomer ada.Id |> orderPage 0 20
+        let page = Query.from (tableOf<Order>) |> forCustomer ada.Id |> orderPage 0 20
         let! orders = repo.All page
         let orders = ok orders
 
@@ -166,7 +166,7 @@ let tour (connectionString: string) (ddl: string) =
 
         // Untranslatable expressions are refused, never run client-side.
         let isLucky (d: decimal) = d = 7m
-        let! rejected = repo.All(plasm { for o in Db.orders do where (isLucky o.Total) })
+        let! rejected = repo.All(plasm { for o in tableOf<Order> do where (isLucky o.Total) })
         show "untranslatable" rejected
 
         return 0

@@ -98,7 +98,7 @@ mb.Entity<Order>().Property(fun o -> o.Status)
 **Plasm:**
 - Options are native, including on keys and in joins (`leftJoin` gives `'T option`).
 - `= None` → `IS NULL`; option-to-option equality → `IS NOT DISTINCT FROM`. `.IsSome`, `.Value`, `Option.map` and `Option.bind` to a field all translate.
-- Nothing is ever "not loaded": what a record owns (`owns`, `ownsOptional`) or links is a plain field, always loaded with it, so `None` and `[]` mean none.
+- Nothing is ever "not loaded": what a record owns or links is a plain field, always loaded with it, so `None` and `[]` mean none.
 
 ## 3. Relationships and loading
 
@@ -357,7 +357,7 @@ The gap list for an EF Core replacement. Plasm status is from `docs/status.md` (
 
    EF fails on `List.contains`, `Option.map`, union patterns and out-of-order anonymous records **[probe]**.
 5. **Batched loading by key.** One `= ANY(@keys)` command per owned or linked list, a cartesian-free default with no mode to choose, and parent pages fetched first. In Plasm's own benchmark (`docs/benchmarks.md`) a page of 1,000 orders with their lines and payments took 14.5 ms against 21 ms for EF split query.
-6. **The application's own records, read whole.** Types state what they can (wrappers, `create` functions, unions with fields stored across columns, typed ids as references); the schema states the rest once.
+6. **The application's own records, read whole.** Types state what they can (wrappers, `create` functions, unions with fields stored across columns, typed ids as references); the record states the rest once, with `[<Table>]` and a few field attributes.
 7. **Writes by difference.** Constraint-to-field error mapping by PostgreSQL's default names, and "only what differs is written". EF `Update` on a detached record writes every column **[probe]**.
 8. **Immutable updates as values.** `Tx.update (order, { order with ... })` versus EF's identity-map conflict on `{ o with }` **[probe]** (#11457).
 9. **Results, not exceptions.** `TxFailure.Rejected | InvalidChanges | Conflict | Failed` with a classified `DbFailureKind`, plus `DbError.MoreThanOneRow` and `RepositoryClosed`. EF throws `DbUpdateException` wrapping `PostgresException` **[probe]**.

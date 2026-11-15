@@ -5,8 +5,8 @@
 **Plasm is not production-ready.** It is designed and verified end-to-end
 against PostgreSQL:
 
-- the application's own records stored by convention, with a schema for what
-  the types cannot say
+- the application's own records stored by convention, each saying on itself
+  what the types cannot (its table, unique fields, its version)
 - aggregates that own lists and records, and link to shared records, always
   read and written whole
 - typed immutable queries (`plasm { }`), joins, `exists`, aggregates and
@@ -24,8 +24,10 @@ operational maturity does not transfer. That has to be earned.
 
 **One style.** Store the domain's own records. Types state what they can:
 wrappers and `create` functions, fieldless unions, unions with fields, and
-typed ids as references. The schema states the rest: the key, `unique`,
-`owns` / `ownsOptional` / `ownsOne` and `links`. Other aggregates are referred
+typed ids as references. The record says how it is stored: `[<Table>]`, its
+field named `Id`, owned and linked records found from its field types, and
+`[<Unique>]`, `[<Version>]` and `[<OrderedBy>]` on its fields; there is no
+separate schema. Other aggregates are referred
 to by id and reached by queries. Write with `Tx<'T, 'E>` transactions, and
 check queries and the schema at start-up. [`examples/Kanban`](../examples/Kanban)
 is the reference application. There is no other style: the row-record API
@@ -45,7 +47,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 | `tests/Plasm.Tests`: `Behaviour.fs` (real database) | Edge paths: `One`, projections, materialisation errors, snapshot reads, key and version changes refused, owned items of another owner refused and rolled back, `Tx.traverse`, cancellation | 11 pass |
 | `tests/Plasm.Tests`: `Batch2.fs` (SQL shape and real database) | Aggregates and grouping errors; bulk misuse errors, foreign-key failures, a 40,000-row insert split into two commands that roll back together, composite conflict targets; raw SQL with list, option and domain parameters; prepared patterns; join-table type checks | 26 pass |
 | `tests/Plasm.Tests`: `ConventionCost.fs`, `Smoke.fs`, `WriteSmoke.fs` | A value read by convention allocates no more than a registered mapping (three types); a page read and a write path end to end | 5 pass |
-| `koans/Plasm.Koans.Specs` | Every koan (22 lessons, 223 koans) passes with its reference answer and stops at its blank as shipped; the notebook runs in a hosted session and a real kernel | 248 checks pass |
+| `koans/Plasm.Koans.Specs` | Every koan (22 lessons, 224 koans) passes with its reference answer and stops at its blank as shipped; the notebook runs in a hosted session and a real kernel | 249 checks pass |
 | `koans/browser` | The browser koans (PGlite) | 119 scenarios pass |
 
 Run the library's tests with `dotnet test` from the repository root (Docker is
@@ -77,23 +79,34 @@ required, or set `PLASM_TEST_PG`): 358 scenarios and 128 unit tests.
   as text; no Npgsql enum mapping needed; the schema check verifies the labels
   and their order). Comparisons, ordering and `Agg.min`/`Agg.max` on these
   types follow F#'s order (declaration order), not the stored text.
-- Single-column primary keys, assigned (`key`) or database-generated
-  (`identityKey`); `generated` columns; an integer `version` field.
-- Column names are the field names in snake_case, overridable per field
-  (`column`).
+- A stored record names its table (`[<Table "orders">]`). Its key is its field
+  named `Id`: database-generated when it is an integer or a typed id over one,
+  otherwise assigned; `[<Assigned>]` for an integer key the application
+  assigns. `[<Generated>]` columns; an integer `[<Version>]` field.
+- A column is named after its field, in snake_case, unless `[<Column>]` says
+  otherwise (for tables the application did not design; `repo.Scaffold`
+  prints it).
+- `Model.build scalars [ typeof<Order>; ... ]` lists the records that are not
+  owned; the records they own come with them. `tableOf<Order>` is the query
+  source.
 
-**The schema and aggregates:**
+**Records and aggregates:**
 
-- `unique (fun c -> c.Email)` states a unique field. A typed id is inferred as
-  a reference to the schema whose key it is (built-in key types never are).
-- `owns (fun o -> o.Lines) (fun l -> l.OrderId)` (or `ownsOrderedBy`, with the
-  order to read them in): a plain list of the record's own rows.
-  `ownsOptional` (`'C option`) and `ownsOne` (`'C`, required): one owned
-  record. `links` / `linksOrderedBy (fun a -> a.Tags) "article_tags"
-  "article_id" "tag_id" (fun t -> t.Name)`: a plain list of shared records
-  through a join table.
-- A list or record field that is neither owned nor linked is refused when the
-  model is built, saying how to declare it.
+- `[<Unique>]` states a unique field. A typed id is inferred as a reference to
+  the record whose key it is (built-in key types never are), unless the field
+  says `[<NotReference>]`. A typed id that is the key of two records is a model
+  error.
+- A field `OrderLine list`, `Profile option` or `Settings` of a stored record
+  that holds the owner's key is owned: the record's own rows, read in the order
+  of their key unless `[<OrderedBy(nameof the<OrderLine>.UnitPrice)>]` names
+  another field. A list of stored records that hold no key of the owner is
+  linked through the join table its field names (`[<JoinTable
+  "article_tags">]`, columns `article_id` and `tag_id` by default).
+- What the types leave ambiguous is refused when the model is built, naming
+  the record and field: no table, no `Id`, two fields holding the owner's key,
+  a linked list without a join table or whose records are not in the model, an
+  owned record also listed or owned twice, an unknown `[<OrderedBy>]` field, a
+  list of records that are not stored, two version fields.
 - Owned and linked fields are always read with their owner, at every level:
   one command per list per batch of owner keys (`= ANY(@keys)`), whatever the
   number of owners. A required owned record that is missing, or an owned
@@ -110,7 +123,7 @@ required, or set `PLASM_TEST_PG`): 358 scenarios and 128 unit tests.
 
 **Queries:**
 
-- Written only as `plasm { }` expressions (`Query.from` for a schema's query,
+- Written only as `plasm { }` expressions (`Query.from (tableOf<Order>)` for every row,
   `Query.prepare` for prepared ones). Operations: `where`, `orderBy` /
   `orderByDescending` / `thenBy` / `thenByDescending`, `take` and `skip`
   (ordering required; the primary key is appended as a tiebreaker), `select`
@@ -139,7 +152,7 @@ required, or set `PLASM_TEST_PG`): 358 scenarios and 128 unit tests.
 
 **Joins:**
 
-- `join c in Db.customers on (o.CustomerId = Some c.Id)` (inner) and `leftJoin`
+- `join c in tableOf<Customer> on (o.CustomerId = Some c.Id)` (inner) and `leftJoin`
   (the joined record is `'T option`), chained into flat tuples. Composite keys:
   `on ((a.X, a.Y) = (b.X, b.Y))`. Keys compare with SQL `=`, so NULL keys never
   match.
@@ -277,8 +290,10 @@ with `repo.Explain`):
 - `repo.Playground()` keeps changes across submissions on one connection and
   transaction and never commits them; `Reset()` rolls them back, `Close()` ends
   it.
-- `repo.Scaffold table` returns F# source for a record and schema generated
-  from the catalogue. Owned and linked fields are not inferred.
+- `repo.Scaffold table` returns F# source for a `[<Table>]` record generated
+  from the catalogue, its key field named `Id`, with `[<Column>]` where a
+  column is not its field's snake case. Owned and linked fields are not
+  inferred.
 
 **Transactions:**
 
@@ -542,7 +557,7 @@ a1; their behaviour is in `owned-records.feature` and
 | 2026-11-14 | Strict design, steps 1 to 7 and 9: domain scalars are stored by convention (single-case unions over built-in types, `create` functions, fieldless unions), with registered mappings as overrides; transactions are `Tx<'T, 'E>` with a typed rejection, steps found by file and line instead of names, and `Tx.one`, `Tx.count`, `Tx.orReject`, `Tx.ofResult`; `repo.CheckQueries` translates every query value and prepared query an assembly defines, without running them; schemas state `unique` fields, typed ids are inferred as references, violations map to fields by PostgreSQL's default constraint names, and the schema check reports missing uniqueness and foreign keys; a record without a version field is checked against the record a change was made from (every column, in the same command), and a version field remains the opt-in alternative; a union with fields is stored across columns by convention and queried as F# reads it; a record owns plain lists (`owns`) and links to shared records as plain lists (`links`), always loaded with it, and `List.exists`/`List.forall` over them filter; `repo.Ddl()` prints the DDL the model expects. Step 8 (deleting the old API) was first closed without deletions (next row) and then done, later the same day, as the one style (the row after) | `scalar-conventions.feature`, `typed-transactions.feature`, `query-check.feature`, `constraints.feature`, `concurrency.feature`, `union-fields.feature`, `owned-collections.feature`, `linked-collections.feature`, `ddl.feature`, ADR 0001 amended |
 | 2026-11-14 | **Superseded later the same day by the one-style decision (next row).** Step 8 closed without deletions, keeping both styles, the row-record style because the original specification and koans lesson 22 relied on it. What still holds from this decision: `key` and `identityKey` stay separate, because whether the database generates a key is a fact the model needs; the wire shape is the application's own (Plasm has no serialization); the version field and original-values concurrency both stay; there is no fluent surface, no analyzer, no type provider and no migration generation | this section |
 | 2026-11-14 | **One style.** "There should not be two styles." G1 (1cf93bd): `exists (plasm { ... })` as a correlated `EXISTS`. 1c5e90a: the schema check reports a misnamed constraint, with the rename. G2 (7e70c31): `ownsOptional` and `ownsOne`. G3 (f09a66e): `Tx.insert`, `Tx.update (original, changed, ?expectVersion)` and `Tx.delete` take records. Step b (1cf5872): Plasm validates no input; `Changeset.validate*`, `cast`, `castWith`, `set`, `clear`, `forKey`, `getField`, `tryGetChange` and `addError` removed. Step c (d6435f7): `plasm { }` is the only query syntax; the pipeline `Query.*` functions and `query-pipeline.feature` removed. Step a1 (15e2297): the test domain in the one style (an Order owns its lines; customers, payments and products referred to by id); a joined or hand-written-SQL record comes with what it owns; an owned item with another owner's key is refused; `has-one.feature` and `many-to-many.feature` folded into `owned-records.feature` and `linked-collections.feature`. Koans, examples, F# Interactive tour and website rewritten (98a60d2 to c884ed7, 24e14e6, e1179ae, 66180ab, 137f385). dc6832f: scalar conventions compiled once per type (reads were 5× slower). ba9f042: the same stored record listed twice in an owned list is refused; `Option` predicates over an owned optional record translate. Step a2 (f37403d): `Assoc`, `NotLoaded`/`Loaded`, `hasMany`/`hasOne`/`belongsTo`/`manyToMany`, `preload`/`replacePreload`/`limitPerParent`, `repo.Preload`, `Rel`, `putChildren`/`replaceChildren`/`putLinks`/`addLinks`/`removeLinks`, `ReplaceScope` and `OnReplace` removed; `AssocKind` internal. Step d (84b971b): `repo.Insert`/`Update`/`Delete`/`Execute`/`ExecuteSql`, `WriteError` and `Tx.write` removed; `Changeset`, `ChangeAction` and `FieldChange` internal; a `TransactionError` displays as what failed and where. 11a6895: `repo.Ddl()` prints an index on each column the model's reads filter on | the ledger above, ADR 0001 amendment, `docs/acceptance.md` |
-| 2026-11-14 | **A record says how it is stored** (in progress). The user asked why a `Card` needs a `schema<Card>` beside it. 567f734: a typed id that is the key of two schemas is a model error. Step a: `Plasm.Annotations` (attribute classes only, no dependencies, compiled by Fable from its sources) with `[<Table>]`, `[<Unique>]`, `[<Version>]`, `[<Generated>]`, `[<Assigned>]`, `[<NotReference>]`, `[<OrderedBy>]` and `[<JoinTable>]`; `Model.build scalars [ typeof<...> ]` derives the model from the types, owned records coming with their owner; `tableOf<'T>` is the query source; `schema { }` stays as `Model.buildSchemas` until everything is converted, then goes. Every table name is written (a join table's too); every column name is derived. **Reversal:** key versus identityKey was called a fact to state; the key's generation is now read from its type (an integer key, or a typed id over one, is generated by the database; any other key is assigned), with `[<Assigned>]` for an integer key the application assigns. A `[<Generated>]` column's default is not printed by `repo.Ddl()`: the model cannot know it. Step b: the test domain and every step file in the attribute style, `repo.Scaffold` prints a `[<Table>]` record, and `[<Column>]` was added for a column that is not its field's snake case (a scaffolded table's key column, say) | `features/stored-records.feature`, `src/Plasm/Stored.fs` |
+| 2026-11-14 to 15 | **A record says how it is stored** (in progress). The user asked why a `Card` needs a `schema<Card>` beside it. 567f734: a typed id that is the key of two schemas is a model error. Step a: `Plasm.Annotations` (attribute classes only, no dependencies, compiled by Fable from its sources) with `[<Table>]`, `[<Unique>]`, `[<Version>]`, `[<Generated>]`, `[<Assigned>]`, `[<NotReference>]`, `[<OrderedBy>]` and `[<JoinTable>]`; `Model.build scalars [ typeof<...> ]` derives the model from the types, owned records coming with their owner; `tableOf<'T>` is the query source; `schema { }` stays as `Model.buildSchemas` until everything is converted, then goes. Every table name is written (a join table's too); every column name is derived. **Reversal:** key versus identityKey was called a fact to state; the key's generation is now read from its type (an integer key, or a typed id over one, is generated by the database; any other key is assigned), with `[<Assigned>]` for an integer key the application assigns. A `[<Generated>]` column's default is not printed by `repo.Ddl()`: the model cannot know it. Step b: the test domain and every step file in the attribute style, `repo.Scaffold` prints a `[<Table>]` record, and `[<Column>]` was added for a column that is not its field's snake case (a scaffolded table's key column, say) | `features/stored-records.feature`, `src/Plasm/Stored.fs` |
 
 ## Suggested next steps
 

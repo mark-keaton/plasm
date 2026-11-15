@@ -1,10 +1,10 @@
-// A small F# highlighter: comments, strings, numbers, keywords, CE operations
+// A small F# highlighter: comments, strings, numbers, keywords, query operations
 // and capitalised type names. Code blocks stay readable plain text without it.
 (function () {
   const keywords = new Set(("let let! do do! return return! yield match match! with fun function if then else elif for in to " +
     "type of and rec mutable private open module namespace member static new use use! try finally when as not true false null").split(" "));
-  const operations = new Set(("where orderBy orderByDescending thenBy thenByDescending take skip limitPerParent preload " +
-    "replacePreload select join leftJoin on groupBy having identityKey key version generated column hasMany hasOne belongsTo manyToMany").split(" "));
+  const operations = new Set(("where orderBy orderByDescending thenBy thenByDescending take skip " +
+    "select join leftJoin on groupBy having").split(" "));
   const token = /(\/\/[^\n]*)|("(?:\\.|[^"\\])*")|(\b\d[\d_]*(?:\.\d+)?(?:L|m|M)?\b)|([A-Za-z_][\w']*!?)/g;
 
   const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

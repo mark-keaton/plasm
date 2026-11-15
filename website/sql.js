@@ -44,7 +44,7 @@ window.PLASM_SQL = {
     ]
   },
   "model": {
-    "caption": "Field names become snake_case columns, and every field is read. The lines are not a column: they are the order\u0027s own rows, read in one more command for every order the first one found, in the order the schema names.",
+    "caption": "Field names become snake_case columns, and every field is read. The lines are not a column: they are the order\u0027s own rows, read in one more command for every order the first one found, in the order of their key.",
     "commands": [
       {
         "parameters": [],

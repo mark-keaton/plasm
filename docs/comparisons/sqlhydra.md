@@ -146,7 +146,7 @@ let byOrder = lines |> List.groupBy _.OrderId |> Map.ofList   // assemble yourse
 
 **Plasm:**
 
-- `owns` / `ownsOptional` / `ownsOne` and `links` are declared in the schema; the fields are plain values.
+- What a record owns or links follows from its field types (records holding its key are owned; `[<JoinTable>]` names a link table); the fields are plain values.
 - What a record owns or links is loaded with every read of it, one `= ANY(@keys)` command per list per batch of keys, with configurable `MaxKeysPerCommand`. Nothing loads lazily, and nothing is left unloaded.
 - Other aggregates are referred to by typed id and reached by joins, `exists (plasm { ... })` (a correlated EXISTS) or a second prepared query; `List.exists`/`forall` over owned and linked lists also compile to EXISTS.
 
@@ -224,7 +224,7 @@ ctx.CommitTransaction()          // failwith "No transaction was started." if no
 
 **Plasm:**
 
-- Model-first. You write records and schemas, or use `repo.Scaffold "table"` in FSI to print a starting point (no relationships inferred).
+- Model-first. You write records with `[<Table>]` and a few field attributes, or use `repo.Scaffold "table"` in FSI to print a starting point (no relationships inferred).
 - `repo.CheckSchema()` returns `SchemaIssue`s at startup: missing tables or columns, incompatible types, nullability mismatches, unmapped NOT NULL columns.
 - Also no migrations.
 - Trade-off: SqlHydra catches drift at compile time *if you regenerate*. Plasm catches it at startup without generated code, but cannot make a dropped column a compile error.
@@ -342,7 +342,7 @@ That is three major versions in about nine months. It is active, but expect brea
 
 ## What Plasm does that SqlHydra does not
 
-- **Aggregates:** `owns`/`ownsOptional`/`ownsOne`/`links`, loaded whole in batches (one `= ANY` command per list per key batch) and written by difference. SqlHydra has no model of related rows by design (#80); you write the second query and the grouping yourself.
+- **Aggregates:** owned and linked records, loaded whole in batches (one `= ANY` command per list per key batch) and written by difference. SqlHydra has no model of related rows by design (#80); you write the second query and the grouping yourself.
 - **Predicates over other aggregates and owned lists:** `exists (plasm { ... })` and `List.exists`/`forall` as correlated EXISTS.
 - **Domain types in the model, by convention:** fieldless unions, unions with fields across columns, single-case wrappers, types with a `create` function, and typed keys that stop `CustomerId` and `OrderId` being mixed. SqlHydra maps only primitives, options and .NET enums.
 - **Errors as values:** `Result` with classified failures (`UniqueViolation` and others), constraint-to-field mapping, `Conflict`, and the domain's own rejections. SqlHydra throws provider exceptions.
