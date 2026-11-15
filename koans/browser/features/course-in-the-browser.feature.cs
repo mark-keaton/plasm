@@ -118,7 +118,7 @@ namespace Plasm.Koans.Browser.Specs.Features
         
         private static global::Reqnroll.Formatters.RuntimeSupport.FeatureLevelCucumberMessages InitializeCucumberMessages()
         {
-            return new global::Reqnroll.Formatters.RuntimeSupport.FeatureLevelCucumberMessages("../features/course-in-the-browser.feature.ndjson", 8);
+            return new global::Reqnroll.Formatters.RuntimeSupport.FeatureLevelCucumberMessages("../features/course-in-the-browser.feature.ndjson", 9);
         }
         
         async System.Threading.Tasks.ValueTask Xunit.IAsyncLifetime.InitializeAsync()
@@ -359,6 +359,48 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line hidden
 #line 51
       await testRunner.ThenAsync("the first koan can be run", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [global::Xunit.FactAttribute(DisplayName="A reload after the site is restaged uses the new site")]
+        [global::Xunit.TraitAttribute("FeatureTitle", "The koans run in a web browser")]
+        [global::Xunit.TraitAttribute("Description", "A reload after the site is restaged uses the new site")]
+        public async global::System.Threading.Tasks.Task AReloadAfterTheSiteIsRestagedUsesTheNewSite()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
+            string pickleIndex = "6";
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A reload after the site is restaged uses the new site", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
+            string[] tagsOfRule = ((string[])(null));
+            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("A reload shows the site as it was last staged", "", tagsOfRule);
+#line 58
+    this.ScenarioInitialize(scenarioInfo, ruleInfo);
+#line hidden
+            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                await testRunner.SkipScenarioAsync();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 13
+  await this.FeatureBackgroundAsync();
+#line hidden
+#line 59
+      await testRunner.GivenAsync("a learner has opened the koans page once, from a plain static host staged a day a" +
+                        "go", ((string)(null)), ((global::Reqnroll.Table)(null)), "Given ");
+#line hidden
+#line 60
+      await testRunner.WhenAsync("the site is restaged with Repo documented as \"The one way in to the database\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 61
+      await testRunner.AndAsync("the learner reloads the page", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
+#line hidden
+#line 62
+      await testRunner.ThenAsync("pointing at \"repo\" in \"repo.Count\" in the koan \"Every koan is given a repo\" says " +
+                        "\"The one way in to the database\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();

@@ -16,7 +16,7 @@ if (typeof WebAssembly !== 'object') {
 
 
 status('Loading the database, the .NET libraries and the compiler…');
-const course = await (await fetch('course.json')).json();
+const course = await (await fetch('course.json', { cache: 'no-cache' })).json();
 
 function startEngine() {
   const worker = new Worker('worker.js', { type: 'module' });

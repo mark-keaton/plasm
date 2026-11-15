@@ -12,6 +12,7 @@
     <Compile Include="ServerSide.fs" />
     <Compile Include="DatabaseSteps.fs" />
     <Compile Include="LoadingSteps.fs" />
+    <Compile Include="RestageSteps.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Reqnroll" />

@@ -25,10 +25,9 @@ for dll in FSharp.Core Plasm.Annotations Plasm Plasm.Koans.Core; do
 done
 # Their doc comments, for the editor's hover (the compiler reads <name>.xml).
 cp "$root/src/Plasm/bin/Release/net11.0/Plasm.xml" "$root/src/Plasm.Annotations/bin/Release/net11.0/Plasm.Annotations.xml" "$root/koans/Plasm.Koans.Core/bin/Release/net11.0/Plasm.Koans.Core.xml" "$site/refs/"
-(cd "$site/refs" && ls *.dll *.xml > list.txt)
 dotnet run --project "$root/koans/Plasm.Koans" -- --course "$site/course.json" > /dev/null
 # Plasm's acceptance specification, which each koan links to.
 mkdir -p "$site/spec" && cp "$root"/features/*.feature "$site/spec/"
-# Precompress what publish did not, and list every file for offline use.
-node "$here/compress.mjs" "$site" > /dev/null
+# Name the references by content, precompress, and list every file for offline use.
+node "$here/seal.mjs" "$site" > /dev/null
 echo "staged $site"

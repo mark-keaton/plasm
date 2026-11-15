@@ -67,66 +67,86 @@ let private throttle (bytes: int) =
             if wait > TimeSpan.Zero then do! Task.Delay wait
     }
 
-/// Serves the staged site on a free local port; returns its base URL. Like a
-/// static host, it sends the precompressed .br or .gz file when the browser accepts it.
-let private server =
-    lazy
-        (let site = staged.Force()
-         let port =
-             let l = new TcpListener(IPAddress.Loopback, 0)
-             l.Start()
-             let p = (l.LocalEndpoint :?> IPEndPoint).Port
-             l.Stop()
-             p
+/// Serves a site on a free local port; returns its base URL. Like a static
+/// host, it sends the precompressed .br or .gz file when the browser accepts it.
+/// The suite's host says Cache-Control: no-cache; a plain host (as
+/// python -m http.server) sends only Last-Modified and answers
+/// If-Modified-Since, which lets a browser reuse what it fetched before.
+let serve (site: string) (plain: bool) =
+    let port =
+        let l = new TcpListener(IPAddress.Loopback, 0)
+        l.Start()
+        let p = (l.LocalEndpoint :?> IPEndPoint).Port
+        l.Stop()
+        p
 
-         let listener = new HttpListener()
-         listener.Prefixes.Add $"http://127.0.0.1:{port}/"
-         listener.Start()
+    let listener = new HttpListener()
+    listener.Prefixes.Add $"http://127.0.0.1:{port}/"
+    listener.Start()
 
-         let handle (ctx: HttpListenerContext) =
-             task {
-                 try
-                     let path = Uri.UnescapeDataString(ctx.Request.Url.AbsolutePath.TrimStart('/'))
-                     let path = if path = "" then "index.html" else path
-                     let file = Path.GetFullPath(Path.Combine(site, path))
+    let handle (ctx: HttpListenerContext) =
+        task {
+            try
+                let path = Uri.UnescapeDataString(ctx.Request.Url.AbsolutePath.TrimStart('/'))
+                let path = if path = "" then "index.html" else path
+                let file = Path.GetFullPath(Path.Combine(site, path))
 
-                     if ctx.Request.HttpMethod = "GET" && file.StartsWith(Path.GetFullPath site) && File.Exists file then
-                         let accepted = defaultArg (Option.ofObj ctx.Request.Headers.["Accept-Encoding"]) ""
-                         lastAccept <- accepted
+                if ctx.Request.HttpMethod = "GET" && file.StartsWith(Path.GetFullPath site) && File.Exists file then
+                    let modified = File.GetLastWriteTimeUtc file
+                    let modified = DateTime(modified.Ticks - modified.Ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc)
 
-                         let body, encoding =
-                             if accepted.Contains "br" && File.Exists(file + ".br") then File.ReadAllBytes(file + ".br"), Some "br"
-                             elif accepted.Contains "gzip" && File.Exists(file + ".gz") then File.ReadAllBytes(file + ".gz"), Some "gzip"
-                             else File.ReadAllBytes file, None
-                         served.Enqueue(ctx.Request.HttpMethod, path, int64 body.Length)
-                         ctx.Response.ContentType <- contentType file
-                         ctx.Response.Headers.["Cache-Control"] <- "no-cache"
-                         encoding |> Option.iter (fun e -> ctx.Response.Headers.["Content-Encoding"] <- e)
-                         ctx.Response.ContentLength64 <- int64 body.Length
+                    let unchanged =
+                        plain
+                        && (match DateTime.TryParse(ctx.Request.Headers.["If-Modified-Since"], Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.AdjustToUniversal ||| Globalization.DateTimeStyles.AssumeUniversal) with
+                            | true, since -> modified <= since
+                            | _ -> false)
 
-                         // In chunks, so a throttled link interleaves parallel downloads.
-                         for offset in 0 .. 65536 .. body.Length - 1 do
-                             let n = min 65536 (body.Length - offset)
-                             do! throttle n
-                             do! ctx.Response.OutputStream.WriteAsync(body, offset, n)
-                     else
-                         served.Enqueue(ctx.Request.HttpMethod, path, 0L)
-                         ctx.Response.StatusCode <- 404
-                 finally
-                     ctx.Response.Close()
-             }
-             :> Task
+                    if unchanged then
+                        served.Enqueue(ctx.Request.HttpMethod, path, 0L)
+                        ctx.Response.StatusCode <- 304
+                    else
+                        let accepted = defaultArg (Option.ofObj ctx.Request.Headers.["Accept-Encoding"]) ""
+                        lastAccept <- accepted
 
-         Task.Run(fun () ->
-             task {
-                 while listener.IsListening do
-                     let! ctx = listener.GetContextAsync()
-                     handle ctx |> ignore
-             }
-             :> Task)
-         |> ignore
+                        let body, encoding =
+                            if accepted.Contains "br" && File.Exists(file + ".br") then File.ReadAllBytes(file + ".br"), Some "br"
+                            elif accepted.Contains "gzip" && File.Exists(file + ".gz") then File.ReadAllBytes(file + ".gz"), Some "gzip"
+                            else File.ReadAllBytes file, None
+                        served.Enqueue(ctx.Request.HttpMethod, path, int64 body.Length)
+                        ctx.Response.ContentType <- contentType file
+                        if plain then ctx.Response.Headers.["Last-Modified"] <- modified.ToString "R"
+                        else ctx.Response.Headers.["Cache-Control"] <- "no-cache"
+                        encoding |> Option.iter (fun e -> ctx.Response.Headers.["Content-Encoding"] <- e)
+                        ctx.Response.ContentLength64 <- int64 body.Length
 
-         $"http://127.0.0.1:{port}/")
+                        // In chunks, so a throttled link interleaves parallel downloads.
+                        for offset in 0 .. 65536 .. body.Length - 1 do
+                            let n = min 65536 (body.Length - offset)
+                            do! throttle n
+                            do! ctx.Response.OutputStream.WriteAsync(body, offset, n)
+                else
+                    served.Enqueue(ctx.Request.HttpMethod, path, 0L)
+                    ctx.Response.StatusCode <- 404
+            finally
+                ctx.Response.Close()
+        }
+        :> Task
+
+    Task.Run(fun () ->
+        task {
+            while listener.IsListening do
+                let! ctx = listener.GetContextAsync()
+                handle ctx |> ignore
+        }
+        :> Task)
+    |> ignore
+
+    $"http://127.0.0.1:{port}/"
+
+let private server = lazy (serve (staged.Force()) false)
+
+/// The staged site's folder.
+let stagedSite () = staged.Force()
 
 let baseUrl () = server.Force()
 

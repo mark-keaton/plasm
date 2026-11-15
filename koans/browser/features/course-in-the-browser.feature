@@ -49,3 +49,14 @@ Feature: The koans run in a web browser
       Given a learner has opened the koans page once
       When the learner opens it again without a network connection
       Then the first koan can be run
+
+  Rule: A reload shows the site as it was last staged
+
+    # A plain static host (python -m http.server) sends Last-Modified and no
+    # Cache-Control, so a browser may reuse what it fetched before; the page's
+    # parts must still come from one staging.
+    Scenario: A reload after the site is restaged uses the new site
+      Given a learner has opened the koans page once, from a plain static host staged a day ago
+      When the site is restaged with Repo documented as "The one way in to the database"
+      And the learner reloads the page
+      Then pointing at "repo" in "repo.Count" in the koan "Every koan is given a repo" says "The one way in to the database"

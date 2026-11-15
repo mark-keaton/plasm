@@ -95,10 +95,11 @@ setModuleImports('worker.js', { pglite: { query, execSync } });
 const exports = (await getAssemblyExports(getConfig().mainAssemblyName)).KoansHost;
 post({ type: 'progress', what: 'the .NET libraries', ms: since() });
 
-// The compiler's reference assemblies.
-const names = (await (await fetch('refs/list.txt')).text()).split('\n').filter((n) => n);
+// The compiler's reference assemblies. Their files are named by content
+// (<name>.<hash>.dll), so a browser's copy is never one from an older staging.
+const names = (await (await fetch('refs/list.txt', { cache: 'no-cache' })).text()).split('\n').filter((n) => n);
 await Promise.all(names.map(async (n) => {
-  exports.AddReference(n, new Uint8Array(await (await fetch('refs/' + n)).arrayBuffer()));
+  exports.AddReference(n.replace(/\.[0-9a-f]{16}(\.\w+)$/, '$1'), new Uint8Array(await (await fetch('refs/' + n)).arrayBuffer()));
 }));
 post({ type: 'progress', what: 'the compiler', ms: since() });
 
