@@ -1,0 +1,15 @@
+<Project>
+  <!-- The repository's versions (Npgsql, Reqnroll, xunit, Testcontainers), plus what only this example uses. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Packages.props', '$(MSBuildThisFileDirectory)../'))" />
+  <ItemGroup>
+    <PackageVersion Include="Giraffe" Version="8.3.0" />
+    <PackageVersion Include="Fable.Remoting.Giraffe" Version="6.1.0" />
+    <PackageVersion Include="dbup-postgresql" Version="7.0.1" />
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="11.0.0" />
+    <PackageVersion Include="Fable.Core" Version="5.6.1" />
+    <PackageVersion Include="Fable.Elmish" Version="5.0.2" />
+    <PackageVersion Include="Fable.Elmish.React" Version="5.6.0" />
+    <PackageVersion Include="Feliz" Version="3.3.3" />
+    <PackageVersion Include="Fable.Remoting.Client" Version="8.0.0" />
+  </ItemGroup>
+</Project>

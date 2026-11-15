@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Reqnroll generates C# test classes from features/*.feature; every step
+       is implemented in F# in Kanban.Specs.Steps. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ReqnrollFeatureFiles Include="../../features/*.feature" />
+    <None Include="../../features/*.feature" Link="Features/%(Filename)%(Extension)" />
+    <None Update="reqnroll.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Reqnroll.xunit.v3" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The server is an ASP.NET Core application; its packages come from the shared framework. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../Kanban.Specs.Steps/Kanban.Specs.Steps.fsproj" />
+  </ItemGroup>
+</Project>

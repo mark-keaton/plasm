@@ -1,0 +1,289 @@
+// The domain: boards of cards that move from the backlog, through work in
+// progress, to done.
+//
+// Nothing here knows how it is stored or served. The file references no
+// package, and it is compiled twice: for .NET (the server decides with it,
+// and stores these very records) and to JavaScript by Fable (the client
+// validates input with it).
+namespace Kanban
+
+open System
+
+type BoardId = BoardId of Guid
+type CardId = CardId of Guid
+type CommentId = CommentId of Guid
+type LabelId = LabelId of Guid
+type AccountId = AccountId of Guid
+
+/// A board's address: 2 to 30 lowercase letters, digits and dashes.
+type Slug =
+    private
+    | Slug of string
+
+    member s.Value =
+        let (Slug v) = s
+        v
+
+    static member create(text: string) : Result<Slug, string> =
+        let t = (if isNull text then "" else text).Trim().ToLowerInvariant()
+        let allowed c = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c = '-'
+
+        if t.Length < 2 || t.Length > 30 then
+            Error "must be 2 to 30 characters"
+        elif not (String.forall allowed t) then
+            Error "may only contain letters, digits and dashes"
+        else
+            Ok(Slug t)
+
+/// What a card or a board is called: 1 to 120 characters, trimmed.
+type Title =
+    private
+    | Title of string
+
+    member t.Value =
+        let (Title v) = t
+        v
+
+    static member create(text: string) : Result<Title, string> =
+        let t = (if isNull text then "" else text).Trim()
+
+        if t.Length = 0 then Error "is required"
+        elif t.Length > 120 then Error "must be at most 120 characters"
+        else Ok(Title t)
+
+/// Who works on a card or writes a comment: 1 to 40 characters, trimmed.
+type Person =
+    private
+    | Person of string
+
+    member p.Value =
+        let (Person v) = p
+        v
+
+    static member create(text: string) : Result<Person, string> =
+        let t = (if isNull text then "" else text).Trim()
+
+        if t.Length = 0 then Error "is required"
+        elif t.Length > 40 then Error "must be at most 40 characters"
+        else Ok(Person t)
+
+/// How many cards a board allows in progress at once: 1 to 20.
+type WipLimit =
+    private
+    | WipLimit of int
+
+    member l.Value =
+        let (WipLimit v) = l
+        v
+
+    static member create(n: int) : Result<WipLimit, string> =
+        if n < 1 || n > 20 then Error "must be between 1 and 20" else Ok(WipLimit n)
+
+/// A word cards are sorted by: 1 to 24 characters, trimmed and in lower case,
+/// so "Docs" and " docs" are the same label.
+type Label =
+    private
+    | Label of string
+
+    member l.Value =
+        let (Label v) = l
+        v
+
+    static member create(text: string) : Result<Label, string> =
+        let t = (if isNull text then "" else text).Trim().ToLowerInvariant()
+
+        if t.Length < 1 || t.Length > 24 then Error "must be 1 to 24 characters" else Ok(Label t)
+
+/// A password as someone typed it: 8 to 200 characters. It is never stored;
+/// the server keeps a hash of it.
+type Password =
+    private
+    | Password of string
+
+    member p.Value =
+        let (Password v) = p
+        v
+
+    static member create(text: string) : Result<Password, string> =
+        let t = if isNull text then "" else text
+
+        if t.Length < 8 then Error "must be at least 8 characters"
+        elif t.Length > 200 then Error "must be at most 200 characters"
+        else Ok(Password t)
+
+/// How a card ended.
+type Resolution =
+    | Shipped
+    | Dropped of reason: string
+
+/// Where a card is. Each stage carries exactly the facts that exist in it: a
+/// card in the backlog has no assignee, and a done card has no "since".
+type Stage =
+    | Backlog
+    | Doing of assignee: Person * since: DateTimeOffset
+    | Done of resolution: Resolution * at: DateTimeOffset
+
+type Board =
+    { Id: BoardId
+      Slug: Slug
+      Name: Title
+      WipLimit: WipLimit }
+
+type Comment =
+    { Id: CommentId
+      Card: CardId
+      Author: Person
+      Body: string
+      At: DateTimeOffset }
+
+/// A label as cards share it: it exists once, whichever cards carry it.
+type Tag = { Id: LabelId; Name: Label }
+
+/// A card, whole: its comments belong to it, oldest first, and its labels
+/// are the ones it carries, in alphabetical order.
+type Card =
+    { Id: CardId
+      Board: BoardId
+      Title: Title
+      Stage: Stage
+      Comments: Comment list
+      Labels: Tag list
+      Created: DateTimeOffset
+      /// How many times the card has been written. Someone changing a card
+      /// says which version they saw.
+      Version: int }
+
+    // Each stage's facts by name. [<ReflectedDefinition>] keeps the definition
+    // readable at run time, so that the server's queries can ask for
+    // "cards whose Assignee is Ada" and have it mean exactly this.
+
+    /// Who is working on the card, when someone is.
+    [<ReflectedDefinition>]
+    member c.Assignee =
+        match c.Stage with
+        | Doing(who, _) -> Some who
+        | _ -> None
+
+    /// Since when the card has been in progress.
+    [<ReflectedDefinition>]
+    member c.Since =
+        match c.Stage with
+        | Doing(_, since) -> Some since
+        | _ -> None
+
+    /// When the card was finished.
+    [<ReflectedDefinition>]
+    member c.FinishedAt =
+        match c.Stage with
+        | Done(_, at) -> Some at
+        | _ -> None
+
+/// Why the domain refused a request. Only primitives inside, so it can be sent
+/// to the client as it is.
+type DomainError =
+    /// The board already has as many cards in progress as it allows.
+    | WipLimitReached of limit: int
+    | AlreadyInProgress of assignee: string
+    /// The card is not being worked on (it is in the backlog).
+    | NotInProgress
+    /// The card is done: it cannot be started, renamed or commented on until it is reopened.
+    | CardClosed
+    /// Only a done card can be reopened.
+    | NotDone
+    | DropNeedsReason
+    | EmptyComment
+    | TooManyLabels of most: int
+
+[<RequireQualifiedAccess>]
+module Card =
+
+    let create (id: CardId) (board: Board) (title: Title) (now: DateTimeOffset) : Card =
+        { Id = id
+          Board = board.Id
+          Title = title
+          Stage = Backlog
+          Comments = []
+          Labels = []
+          Created = now
+          Version = 1 }
+
+    /// Starts work on a card. `inProgress` is how many of the board's cards
+    /// are being worked on now; the board's limit is a rule over all of them.
+    let start (assignee: Person) (now: DateTimeOffset) (board: Board) (inProgress: int) (card: Card) : Result<Card, DomainError> =
+        match card.Stage with
+        | Doing(who, _) -> Error(AlreadyInProgress who.Value)
+        | Done _ -> Error CardClosed
+        | Backlog when inProgress >= board.WipLimit.Value -> Error(WipLimitReached board.WipLimit.Value)
+        | Backlog -> Ok { card with Stage = Doing(assignee, now) }
+
+    /// Finishes a card. Only work in progress can ship; a card can be dropped
+    /// from the backlog too, but never without a reason.
+    let finish (resolution: Resolution) (now: DateTimeOffset) (card: Card) : Result<Card, DomainError> =
+        match card.Stage, resolution with
+        | Done _, _ -> Error CardClosed
+        | _, Dropped reason when String.IsNullOrWhiteSpace reason -> Error DropNeedsReason
+        | Backlog, Shipped -> Error NotInProgress
+        | (Backlog | Doing _), Dropped reason -> Ok { card with Stage = Done(Dropped(reason.Trim()), now) }
+        | Doing _, Shipped -> Ok { card with Stage = Done(Shipped, now) }
+
+    /// Puts work in progress back in the backlog.
+    let sendBack (card: Card) : Result<Card, DomainError> =
+        match card.Stage with
+        | Doing _ -> Ok { card with Stage = Backlog }
+        | Backlog -> Error NotInProgress
+        | Done _ -> Error CardClosed
+
+    /// Returns a done card to the backlog.
+    let reopen (card: Card) : Result<Card, DomainError> =
+        match card.Stage with
+        | Done _ -> Ok { card with Stage = Backlog }
+        | Backlog
+        | Doing _ -> Error NotDone
+
+    let rename (title: Title) (card: Card) : Result<Card, DomainError> =
+        match card.Stage with
+        | Done _ -> Error CardClosed
+        | Backlog
+        | Doing _ -> Ok { card with Title = title }
+
+    /// How many labels a card carries at most.
+    let mostLabels = 5
+
+    /// The labels a card would carry: each once, in alphabetical order.
+    let relabel (labels: Label list) (card: Card) : Result<Label list, DomainError> =
+        let labels = labels |> List.distinct |> List.sort
+
+        match card.Stage with
+        | Done _ -> Error CardClosed
+        | _ when labels.Length > mostLabels -> Error(TooManyLabels mostLabels)
+        | _ -> Ok labels
+
+    /// The card with one more comment, after the ones it has.
+    let comment (id: CommentId) (author: Person) (body: string) (now: DateTimeOffset) (card: Card) : Result<Card, DomainError> =
+        match card.Stage with
+        | Done _ -> Error CardClosed
+        | _ when String.IsNullOrWhiteSpace body -> Error EmptyComment
+        | _ ->
+            let comment =
+                { Id = id
+                  Card = card.Id
+                  Author = author
+                  Body = body.Trim()
+                  At = now }
+
+            Ok { card with Comments = card.Comments @ [ comment ] }
+
+[<RequireQualifiedAccess>]
+module DomainError =
+
+    /// The refusal in words, for people.
+    let describe (error: DomainError) =
+        match error with
+        | WipLimitReached limit -> $"This board allows {limit} cards in progress at once. Finish or send one back first."
+        | AlreadyInProgress who -> $"{who} is already working on this card."
+        | NotInProgress -> "This card is not in progress."
+        | CardClosed -> "This card is done. Reopen it to change it."
+        | NotDone -> "Only a done card can be reopened."
+        | DropNeedsReason -> "Say why the card is dropped."
+        | EmptyComment -> "A comment cannot be empty."
+        | TooManyLabels most -> $"A card carries at most {most} labels."

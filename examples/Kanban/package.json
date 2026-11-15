@@ -1,0 +1,16 @@
+{
+  "name": "plasm-kanban-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "dotnet fable watch src/Client -o src/Client/output --run vite",
+    "build": "dotnet fable src/Client -o src/Client/output --run vite build"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0"
+  }
+}

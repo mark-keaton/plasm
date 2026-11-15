@@ -1,0 +1,10 @@
+# The development database (the server's appsettings.json points at it).
+services:
+  db:
+    image: postgres:18.4
+    environment:
+      POSTGRES_USER: kanban
+      POSTGRES_PASSWORD: kanban
+      POSTGRES_DB: kanban
+    ports:
+      - "127.0.0.1:5544:5432"

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <AssemblyName>Kanban.Server</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Db.fs" />
+    <Compile Include="Workflows.fs" />
+    <Compile Include="Service.fs" />
+    <Compile Include="Database.fs" />
+    <Compile Include="Host.fs" />
+    <Compile Include="Program.fs" />
+    <EmbeddedResource Include="migrations/*.sql" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Shared/Shared.fsproj" />
+    <ProjectReference Include="../../../../src/Plasm/Plasm.fsproj" />
+    <ProjectReference Include="../../../../src/Plasm.Postgres/Plasm.Postgres.fsproj" />
+    <PackageReference Include="Giraffe" />
+    <PackageReference Include="Fable.Remoting.Giraffe" />
+    <PackageReference Include="dbup-postgresql" />
+  </ItemGroup>
+</Project>

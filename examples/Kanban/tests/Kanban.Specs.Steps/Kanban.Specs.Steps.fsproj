@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Databases.fs" />
+    <Compile Include="World.fs" />
+    <Compile Include="Steps.fs" />
+    <Compile Include="MoreSteps.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The server is an ASP.NET Core application; its packages come from the shared framework. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../../src/Server/Server.fsproj" />
+    <PackageReference Include="Reqnroll" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+  </ItemGroup>
+</Project>
