@@ -1,33 +1,65 @@
 # Acceptance specification: classification and traceability
 
-The supplied Gherkin specifications are the acceptance contract. `features/joins.feature`, and then `aggregates.feature`, `bulk-writes.feature`, `raw-sql.feature` and `prepared-queries.feature` (batch 2a) and `many-to-many.feature`, `schema-check.feature` and `sandbox.feature` (batch 2b), were added afterwards, each written and run red before its implementation. `fsi.feature` (F# Interactive) followed the same way; its steps run each scenario in a real F# Interactive session hosted by the test. After an architecture audit, `query-semantics.feature`, `tx-steps.feature`, `query-pipeline.feature`, `error-model.feature`, `has-one.feature` and `providers.feature` were added, with new rules in `prepared-queries.feature`, `sandbox.feature` and `fsi.feature`, each run red first. A second audit added `reading.feature` and new scenarios in `query-semantics`, `query-pipeline`, `fsi`, `prepared-queries`, `tx-steps`, `error-model` and `providers`. The comparison with the F# data-access libraries (`docs/comparison.md`) added a rule to `query-semantics.feature` (union ordering) and `pg-enums.feature`. The strict design (one fact stated once) began with `scalar-conventions.feature`. The supplied ones are kept verbatim in `docs/specs/original/`, and the executable copies in `features/` differ only
-where Gherkin validity requires it (see each file's header). Every scenario runs
-as a test through Reqnroll: `tests/Plasm.Specs` (the C# host that generates the tests) binds to F# step
-definitions in `tests/Plasm.Specs.Steps`, against a real PostgreSQL 18 database
+The Gherkin specifications in `features/` are the acceptance contract. The user
+supplied two of them, `core.feature` and `elegance.feature`; they are kept
+verbatim in `docs/specs/original/`. Every other feature was written afterwards
+and run red before its implementation: joins; aggregates, bulk writes,
+hand-written SQL and prepared queries; the schema check and the test sandbox;
+F# Interactive; the two architecture-audit follow-ups (query semantics, reading
+one row, transaction steps, the error model, providers); PostgreSQL enum types;
+and the strict design (scalar conventions, typed transactions, the query check,
+constraints, concurrency, unions with fields, owned collections and records,
+linked collections, `exists` and the printed DDL).
+
+On 2026-11-14 Plasm was reduced to one style (see `docs/status.md`). The
+scenarios that taught the removed API were rewritten or removed. Removed
+scenarios of `core.feature`, `elegance.feature`, `fsi.feature` and
+`tx-steps.feature` stay in the tables below, struck through, with the reason.
+Three features were deleted whole:
+
+- `has-one.feature`: a has-one relationship is now an owned record
+  (`ownsOptional`, `ownsOne`); its scenarios moved to `owned-records.feature`
+  ("Other queries reach an owned record").
+- `many-to-many.feature`: shared records through a join table are now a linked
+  list (`links`, `linksOrderedBy`); its behaviour is in
+  `linked-collections.feature`.
+- `query-pipeline.feature`: the pipeline `Query.*` functions were removed (step
+  c); `plasm { }` is the only way to write a query.
+
+Every scenario runs as a test through Reqnroll: `tests/Plasm.Specs` (the C#
+host that generates the tests) binds to F# step definitions in
+`tests/Plasm.Specs.Steps`, against a real PostgreSQL 18 database
 (Testcontainers, with a freshly cloned database per scenario).
 
 ```sh
-dotnet test tests/Plasm.Specs          # 260 scenarios (outline examples counted separately)
-dotnet test tests/Plasm.Tests          # 176 unit, property, compile-time and Ecto-compatibility tests
+dotnet test tests/Plasm.Specs          # 337 scenarios (outline examples counted separately)
+dotnet test tests/Plasm.Tests          # 130 unit, property, compile-time and Ecto-compatibility tests
 ```
 
 ## Summary
 
 | Classification | Scenarios |
 |---|---:|
-| Implemented and verified | 259 |
-| Implemented, deliberately changed (with rationale) | 1 |
+| Implemented and verified | 337 |
+| Implemented, deliberately changed (with rationale) | 0 |
 | Planned | 0 |
 | Unsupported, with explicit behaviour | 0 |
-| **Total** | **260** |
+| **Total** | **337** |
 
-Behaviour that is outside these scenarios and not built yet (migrations,
-other providers and so on) is listed in `docs/status.md`. None of it has an API, so
+The 337 count outline examples separately; there are 310 scenario titles. The
+13 struck-through rows are removed scenarios and are not counted. The one
+scenario that was deliberately changed, "Conflicting relationship
+customizations are explicit", was removed with `preload`.
+
+Behaviour outside these scenarios that is not built (migrations, other
+providers and so on) is listed in `docs/status.md`. None of it has an API, so
 nothing pretends to work.
 
-Each scenario name below is also the generated test name, so a failing test points
-straight back here. "Related unit tests" lists the tests in `tests/Plasm.Tests` that cover
-the same guarantee more exhaustively.
+Each scenario name below is also the generated test name, so a failing test
+points straight back here. "Related unit tests" lists the tests in
+`tests/Plasm.Tests` that cover the same guarantee more exhaustively. A note
+that says "Rewritten" means the scenario keeps its title but its steps now
+describe the one style; "Reworded" means only words changed.
 
 ### core.feature: Persistence descriptions are values and execution is explicit
 
@@ -43,7 +75,7 @@ the same guarantee more exhaustively.
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
 | Querying a mapped property uses its declared type | Implemented and verified | `TypeSteps.fs` | CompileTime.fs; Translation.fs (Model.build errors) | Compile-time checks with FSharp.Compiler.Service against the real assemblies. Note that `o.Total = 100` legitimately compiles, because F# implicitly converts int to decimal losslessly. |
-| Relationship loads are checked against the source type | Implemented and verified | `TypeSteps.fs` | CompileTime.fs; Translation.fs (Model.build errors) |  |
+| Relationship loads are checked against the source type | Implemented and verified | `TypeSteps.fs` | CompileTime.fs; Translation.fs (Model.build errors) | Rewritten (one style, step a1): with no load requests, the `owns` declaration is what is checked. |
 | Nullable values remain explicit | Implemented and verified | `TypeSteps.fs` | CompileTime.fs; Translation.fs (Model.build errors) |  |
 | Unsupported model representations fail during configuration | Implemented and verified | `TypeSteps.fs` | CompileTime.fs; Translation.fs (Model.build errors) |  |
 
@@ -57,52 +89,52 @@ the same guarantee more exhaustively.
 | Client-side processing is an explicit boundary | Implemented and verified | `CompositionSteps.fs` | Translation.fs (unsupported expressions, parameters); Properties.fs |  |
 | Projection retrieves the requested data | Implemented and verified | `CompositionSteps.fs` | Translation.fs (unsupported expressions, parameters); Properties.fs |  |
 
-### core.feature: Relationship loading is explicit, composable, and batched
+### core.feature: An aggregate is loaded whole, and other aggregates are reached by query
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| Unloaded and empty relationships are distinguishable | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering); EctoCompat.fs (preload cases) |  |
-| Reading a relationship never triggers hidden database access | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering); EctoCompat.fs (preload cases) |  |
-| Sibling collections load without a cartesian product | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering); EctoCompat.fs (preload cases) |  |
-| Relationship loading batches across parents | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering); EctoCompat.fs (preload cases) |  |
-| Nested loads compose | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering); EctoCompat.fs (preload cases) |  |
-| Pagination applies to parents before collection expansion | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering); EctoCompat.fs (preload cases) |  |
-| A child filter does not implicitly filter parents | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering); EctoCompat.fs (preload cases) |  |
-| Parent filtering through relationships is explicit | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering); EctoCompat.fs (preload cases) |  |
-| Filtered relationship queries are reusable | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering); EctoCompat.fs (preload cases) |  |
-| Per-parent limits preserve their stated meaning | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering); EctoCompat.fs (preload cases) |  |
-| Unsupported loading semantics are rejected | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering); EctoCompat.fs (preload cases) |  |
-| Provider parameter limits do not cause per-parent loading | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering); EctoCompat.fs (preload cases) |  |
-| Conflicting relationship customizations are explicit | Implemented, deliberately changed | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering); EctoCompat.fs (preload cases) | Combination is total; the conflict is reported as `LoadConflict` by `Explain` or execution, before any command. `replacePreload` is the explicit resolution. |
-| Loading onto existing values preserves the originals | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering); EctoCompat.fs (preload cases) |  |
+| Reading a relationship never triggers hidden database access | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering) | Rewritten (one style, step a1): the OrderLines read with an Order are a plain list. |
+| Sibling collections load without a cartesian product | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering) | Rewritten (one style, step a1): the Order comes with its OrderLines, and its Payments are read by a query by its id. |
+| Relationship loading batches across parents | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering) | Rewritten (one style, step a1): the OrderLines each Order owns, loaded with it. |
+| Pagination applies to parents before collection expansion | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering) | Rewritten (one style, step a1): Payments are no longer loaded with an Order. |
+| Parent filtering through relationships is explicit | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering) | Rewritten (one style, step a1): `exists (plasm { ... })` over Payments. |
+| Filtered relationship queries are reusable | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering) | Rewritten (one style, step a1): a second prepared query with `List.contains` over the page's ids; the application groups the rows. |
+| Provider parameter limits do not cause per-parent loading | Implemented and verified | `LoadingSteps.fs` | Translation.fs (load planning); Properties.fs (batch-size equivalence, child ordering) |  |
+| ~~Unloaded and empty relationships are distinguishable~~ | Removed | | | Removed (one style, steps a1 and a2): with `Assoc` gone, nothing is ever unloaded; an owned list is a plain list. |
+| ~~Nested loads compose~~ | Removed | | | Removed (one style, steps a1 and a2): there is no `preload` to nest; owned lists of owned items are loaded at every level without being asked for. |
+| ~~A child filter does not implicitly filter parents~~ | Removed | | | Removed (one style, steps a1 and a2): an owned list is always loaded whole, so there is no child filter. |
+| ~~Per-parent limits preserve their stated meaning~~ | Removed | | | Removed (one style, steps a1 and a2): `limitPerParent` was dropped; the latest few rows per parent is a report, written in SQL (raw-sql.feature). |
+| ~~Unsupported loading semantics are rejected~~ | Removed | | | Removed (one style, steps a1 and a2): it rejected `take` in a load query; there are no load queries. |
+| ~~Conflicting relationship customizations are explicit~~ | Removed | | | Removed (one style, steps a1 and a2): was the one deliberately changed scenario (`LoadConflict`, `replacePreload`); with no customisable loads there is nothing to conflict. |
+| ~~Loading onto existing values preserves the originals~~ | Removed | | | Removed (one style, steps a1 and a2): `repo.Preload` was removed; other aggregates are read by a query of their own. |
 
-### core.feature: Changes are explicit and validation is inspectable
+### core.feature: Changes are explicit and the database's refusals are inspectable
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| Creating a changeset preserves its input | Implemented and verified | `ChangesetSteps.fs` | EctoCompat.fs (changeset cases); Properties.fs (edit diff) |  |
-| Unspecified and explicitly cleared values differ | Implemented and verified | `ChangesetSteps.fs` | EctoCompat.fs (changeset cases); Properties.fs (edit diff) |  |
-| ~~Invalid changes can be inspected without execution~~ | Removed | | | Removed (one style, step b): validation is the domain's constructors; Plasm validates no input. |
+| Creating a change preserves its input | Implemented and verified | `ChangesetSteps.fs` | EctoCompat.fs (repo cases); Properties.fs (edit diff) | Renamed (one style, step d): the change is a record written by `Tx.update`, and the stored Order is compared. |
+| Unspecified and explicitly cleared values differ | Implemented and verified | `ChangesetSteps.fs` | EctoCompat.fs (repo cases); Properties.fs (edit diff) | Reworded (one style, step d): "a changeset" became "a change". |
 | Invalid changes are not persisted | Implemented and verified | `ChangesetSteps.fs` |  | Rewritten (one style, step b): a change the database refuses (orders_total_check) comes back as the field's error, and the transaction writes nothing. |
-| ~~External input cannot change protected fields~~ | Removed | | | Removed (one style, step b): with `cast` gone, external input is parsed by the application into domain values. |
-| Database constraints produce structured errors | Implemented and verified | `ChangesetSteps.fs` | EctoCompat.fs (changeset cases); Properties.fs (edit diff) |  |
-| Generated values are returned immutably | Implemented and verified | `ChangesetSteps.fs` | EctoCompat.fs (changeset cases); Properties.fs (edit diff) |  |
+| Database constraints produce structured errors | Implemented and verified | `ChangesetSteps.fs` | EctoCompat.fs (repo cases); Properties.fs (edit diff) | Rewritten (strict design step 4, one style step d): the model states that Email is unique; nothing is declared per change. |
+| Generated values are returned immutably | Implemented and verified | `ChangesetSteps.fs` | EctoCompat.fs (repo cases); Properties.fs (edit diff) |  |
+| ~~Invalid changes can be inspected without execution~~ | Removed | | | Removed (one style, step b): validation is the domain's constructors; Plasm validates no input. |
+| ~~External input cannot change protected fields~~ | Removed | | | Removed (one style, step b): with `cast` gone, the application parses external input into domain values. |
 
-### core.feature: Association writes have explicit lifecycle semantics
+### core.feature: Writing an aggregate writes what it owns
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| Omitting an association does not modify it | Implemented and verified | `AssociationWriteSteps.fs` | Behaviour.fs (child writes) |  |
-| Updating an association matches existing identities | Implemented and verified | `AssociationWriteSteps.fs` | Behaviour.fs (child writes) |  |
-| Removing related records requires a configured policy | Implemented and verified | `AssociationWriteSteps.fs` | Behaviour.fs (child writes) |  |
+| Omitting an association does not modify it | Implemented and verified | `AssociationWriteSteps.fs` | Behaviour.fs (child writes) | Rewritten (one style, step a1): an unchanged owned list sends no command. |
+| Updating an association matches existing identities | Implemented and verified | `AssociationWriteSteps.fs` | Behaviour.fs (child writes) | Rewritten (one style, step a1): the OrderLine is changed in the Order read, and written by difference. |
+| Removing an owned record deletes it | Implemented and verified | `AssociationWriteSteps.fs` | Behaviour.fs (child writes) | Rewritten (one style, step a1): was "Removing related records requires a configured policy". Ownership is the policy: a line left out of the Order is deleted. |
 | Parent and association writes are atomic | Implemented and verified | `AssociationWriteSteps.fs` | Behaviour.fs (child writes) |  |
 
 ### core.feature: Transactions and concurrency are explicit
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| Transaction steps compose | Implemented and verified | `TransactionSteps.fs` | Behaviour.fs (snapshot, Tx naming); EctoCompat.fs (Multi, optimistic locking) |  |
-| A failed transaction identifies its failed step | Implemented and verified | `TransactionSteps.fs` | Behaviour.fs (snapshot, Tx naming); EctoCompat.fs (Multi, optimistic locking) |  |
+| Transaction steps compose | Implemented and verified | `TransactionSteps.fs` | Behaviour.fs (snapshot, Tx naming); EctoCompat.fs (Multi, optimistic locking) | Renamed (strict design, step 2) from "Named transaction steps compose". |
+| A failed transaction identifies its failed step | Implemented and verified | `TransactionSteps.fs` | Behaviour.fs (snapshot, Tx naming); EctoCompat.fs (Multi, optimistic locking) | Reworded (strict design, step 2): steps have no names; the error gives the file and line. |
 | Stale updates do not overwrite newer state | Implemented and verified | `TransactionSteps.fs` | Behaviour.fs (snapshot, Tx naming); EctoCompat.fs (Multi, optimistic locking) |  |
 | Consistent multi-query reads can be requested | Implemented and verified | `TransactionSteps.fs` | Behaviour.fs (snapshot, Tx naming); EctoCompat.fs (Multi, optimistic locking) | A real concurrent commit is injected between the parent and child commands; the snapshot read does not see it and the independent read does. A provider without the capability rejects the request with no commands. |
 | Non-transactional effects are not presented as rollback-safe | Implemented and verified (by design) | `TransactionSteps.fs` | Behaviour.fs (snapshot, Tx naming); EctoCompat.fs (Multi, optimistic locking) | `Tx` can only describe database steps; `Tx.run` is the explicit escape hatch. The step demonstrates a durable outbox rolled back with the transaction, and delivery only after `Ok`. |
@@ -120,7 +152,7 @@ the same guarantee more exhaustively.
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
 | Persistence metadata does not require mutable records | Implemented and verified | `EleganceSteps.fs` | CompileTime.fs; Behaviour.fs (materialization) |  |
-| Domain scalar wrappers preserve their meaning | Implemented and verified | `EleganceSteps.fs` | CompileTime.fs; Behaviour.fs (materialization) |  |
+| Domain scalar wrappers preserve their meaning | Implemented and verified | `EleganceSteps.fs` | CompileTime.fs; Behaviour.fs (materialization) | Reworded (one style, step a1): stored by convention, with no mapping. |
 | Domain reconstruction can fail explicitly | Implemented and verified | `EleganceSteps.fs` | CompileTime.fs; Behaviour.fs (materialization) |  |
 
 ### elegance.feature: Query composition preserves relational meaning
@@ -128,7 +160,7 @@ the same guarantee more exhaustively.
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
 | Relationship filtering does not duplicate parents | Implemented and verified | `EleganceSteps.fs` | Translation.fs (EXISTS, IS NULL, empty membership, ordering) |  |
-| Optional relationships preserve parent rows | Implemented and verified | `EleganceSteps.fs` | Translation.fs (EXISTS, IS NULL, empty membership, ordering) |  |
+| Optional relationships preserve parent rows | Implemented and verified | `EleganceSteps.fs` | Translation.fs (EXISTS, IS NULL, empty membership, ordering) | Rewritten (one style, step a1): a left join to the Customer; an Order without one has `None`. |
 | Null comparisons have explicit semantics | Implemented and verified | `EleganceSteps.fs` | Translation.fs (EXISTS, IS NULL, empty membership, ordering) |  |
 | Empty membership predicates remain valid | Implemented and verified | `EleganceSteps.fs` | Translation.fs (EXISTS, IS NULL, empty membership, ordering) |  |
 | Pagination requires stable ordering | Implemented and verified | `EleganceSteps.fs` | Translation.fs (EXISTS, IS NULL, empty membership, ordering) | Without an ordering the query is rejected. With one, the primary key is appended as a documented tiebreaker. |
@@ -145,15 +177,15 @@ the same guarantee more exhaustively.
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| Projected values do not imply complete entity state | Implemented and verified | `EleganceSteps.fs` | Behaviour.fs (forKey, scoped replacement, duplicates) |  |
-| Filtered collections are not authoritative replacements | Implemented and verified | `EleganceSteps.fs` | Behaviour.fs (forKey, scoped replacement, duplicates) |  |
-| Duplicate child identities are rejected | Implemented and verified | `EleganceSteps.fs` | Behaviour.fs (forKey, scoped replacement, duplicates) |  |
+| Projected values do not imply complete entity state | Implemented and verified | `EleganceSteps.fs` | Behaviour.fs (owned items of another owner) |  |
+| Duplicate child identities are rejected | Implemented and verified | `EleganceSteps.fs` | Behaviour.fs (owned items of another owner) | Rewritten (one style, step a1): an Order holding the same OrderLine identity twice is refused when written. |
+| ~~Filtered collections are not authoritative replacements~~ | Removed | | | Removed (one style, step a1): an owned list is always loaded whole, so there is no filtered collection to write back; `ReplaceScope` left in step a2. |
 
 ### elegance.feature: Efficiency guarantees are testable
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| Loading plans can be inspected | Implemented and verified | `EleganceSteps.fs` | Properties.fs (command counts); docs/benchmarks.md |  |
+| Loading plans can be inspected | Implemented and verified | `EleganceSteps.fs` | Properties.fs (command counts); docs/benchmarks.md | Rewritten (one style, step a1): the plan shows the load of the OrderLines an Order owns. |
 | Larger parent sets do not cause N+1 behavior | Implemented and verified | `EleganceSteps.fs` | Properties.fs (command counts); docs/benchmarks.md |  |
 | Database work remains bounded by the requested page | Implemented and verified | `EleganceSteps.fs` | Properties.fs (command counts); docs/benchmarks.md |  |
 
@@ -189,7 +221,7 @@ the same guarantee more exhaustively.
 |---|---|---|---|---|
 | Joined queries compose through ordinary functions | Implemented and verified | `JoinSteps.fs` | Joins.fs (SQL shape, option semantics, misuse errors) |  |
 | Joined queries can be inspected without database access | Implemented and verified | `JoinSteps.fs` | Joins.fs (SQL shape, option semantics, misuse errors) |  |
-| Unsupported join requests are explicit | Implemented and verified | `JoinSteps.fs` | Joins.fs (SQL shape, option semantics, misuse errors) | `preload` on a joined query is a planning error pointing to `repo.Preload`. A `join` cannot be the last clause of the computation expression (F# rule FS3098). |
+| Unsupported join requests are explicit | Implemented and verified | `JoinSteps.fs` | Joins.fs (SQL shape, option semantics, misuse errors) | A `join` cannot be the last clause of the computation expression (F# rule FS3098). Its second part, relationship loads on a joined query, left in one style step a1: a whole owner in a joined row comes with what it owns. |
 | Joined queries run inside transactions | Implemented and verified | `JoinSteps.fs` | Joins.fs (SQL shape, option semantics, misuse errors) |  |
 
 ### aggregates.feature: Counting and existence never transfer rows
@@ -225,7 +257,7 @@ the same guarantee more exhaustively.
 | Bulk updates can compute from the current row | Implemented and verified | `BulkSteps.fs` | Batch2.fs (bulk misuse errors, FK failures, chunked inserts, composite conflict targets) |  |
 | Bulk updates respect optimistic concurrency | Implemented and verified | `BulkSteps.fs` | Batch2.fs (bulk misuse errors, FK failures, chunked inserts, composite conflict targets) | Bulk updates increment the version column. |
 | Deleting every row a query matches | Implemented and verified | `BulkSteps.fs` | Batch2.fs (bulk misuse errors, FK failures, chunked inserts, composite conflict targets) |  |
-| Bulk writes are explicit about what they bypass | Implemented and verified | `BulkSteps.fs` | Batch2.fs (bulk misuse errors, FK failures, chunked inserts, composite conflict targets) | No changeset validation runs; the statement is atomic, so a constraint failure changes no row. |
+| Bulk writes are explicit about what they bypass | Implemented and verified | `BulkSteps.fs` | Batch2.fs (bulk misuse errors, FK failures, chunked inserts, composite conflict targets) | No per-record decision runs; the statement is atomic, so a constraint failure changes no row. |
 | Unsupported bulk requests are rejected before execution | Implemented and verified | `BulkSteps.fs` | Batch2.fs (bulk misuse errors, FK failures, chunked inserts, composite conflict targets) |  |
 
 ### bulk-writes.feature: Inserts and upserts take many records at once
@@ -248,6 +280,7 @@ the same guarantee more exhaustively.
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
 | Reading mapped records from SQL | Implemented and verified | `RawSqlSteps.fs` | Batch2.fs (list, option and domain parameters, tuple arity, fragment escaping) |  |
+| Reading a record that owns others from SQL | Implemented and verified | `RawSqlSteps.fs` |  | One style, step a1: a record read by hand-written SQL comes with what it owns, in one more command per list. |
 | Reading tuples and scalars from SQL | Implemented and verified | `RawSqlSteps.fs` | Batch2.fs (list, option and domain parameters, tuple arity, fragment escaping) |  |
 | Reading unmapped records from SQL | Implemented and verified | `RawSqlSteps.fs` | Batch2.fs (list, option and domain parameters, tuple arity, fragment escaping) |  |
 | Interpolated values are always parameters | Implemented and verified | `RawSqlSteps.fs` | Batch2.fs (list, option and domain parameters, tuple arity, fragment escaping) | `repo.Sql` takes a `FormattableString`; a plain string does not type-check. |
@@ -274,7 +307,7 @@ the same guarantee more exhaustively.
 | A prepared query is built once and runs with different arguments | Implemented and verified | `PreparedSteps.fs` | Batch2.fs (prepared patterns, three arguments, transactions, negative counts, argument expressions) |  |
 | Arguments are typed and always parameters | Implemented and verified | `PreparedSteps.fs` | Batch2.fs (prepared patterns, three arguments, transactions, negative counts, argument expressions) | Optional arguments compare with `IS NOT DISTINCT FROM`, lists with `= ANY(@p)`, so one SQL text serves every value. |
 | Paging arguments | Implemented and verified | `PreparedSteps.fs` | Batch2.fs (prepared patterns, three arguments, transactions, negative counts, argument expressions) |  |
-| Prepared queries keep relationship loads | Implemented and verified | `PreparedSteps.fs` | Batch2.fs (prepared patterns, three arguments, transactions, negative counts, argument expressions) |  |
+| Prepared queries keep relationship loads | Implemented and verified | `PreparedSteps.fs` | Batch2.fs (prepared patterns, three arguments, transactions, negative counts, argument expressions) | Rewritten (one style, step a1): each run loads the OrderLines the Orders own. |
 | Prepared queries can be inspected and counted | Implemented and verified | `PreparedSteps.fs` | Batch2.fs (prepared patterns, three arguments, transactions, negative counts, argument expressions) |  |
 
 ### prepared-queries.feature: Argument misuse is explicit
@@ -284,24 +317,13 @@ the same guarantee more exhaustively.
 | Arguments are only read inside query operations | Implemented and verified | `PreparedSteps.fs` | Batch2.fs (prepared patterns, three arguments, transactions, negative counts, argument expressions) |  |
 | Arguments cannot choose the ordering | Implemented and verified | `PreparedSteps.fs` | Batch2.fs (prepared patterns, three arguments, transactions, negative counts, argument expressions) | Rejected when the query is prepared. |
 
-### many-to-many.feature: Many-to-many relationships load like other relationships
+### prepared-queries.feature: Prepared queries compose like any other query
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| Preloading a many-to-many relationship | Implemented and verified | `ManyToManySteps.fs` | Batch2.fs (configuration error, duplicate targets, clearing links, Tx link writes, relationship-only updates) | One command per batch of owner keys, joined through the join table; each distinct target row is materialised once and shared. |
-| An Article without Tags has an empty, loaded relationship | Implemented and verified | `ManyToManySteps.fs` | Batch2.fs (configuration error, duplicate targets, clearing links, Tx link writes, relationship-only updates) |  |
-| Loaded Tags can be filtered, ordered and limited per Article | Implemented and verified | `ManyToManySteps.fs` | Batch2.fs (configuration error, duplicate targets, clearing links, Tx link writes, relationship-only updates) |  |
-| Filtering through a many-to-many relationship | Implemented and verified | `ManyToManySteps.fs` | Batch2.fs (configuration error, duplicate targets, clearing links, Tx link writes, relationship-only updates) |  |
-
-### many-to-many.feature: Changing links writes only the join table
-
-| Scenario | Classification | Step definitions | Related unit tests | Notes |
-|---|---|---|---|---|
-| Replacing an Article's Tags | Implemented and verified | `ManyToManySteps.fs` | Batch2.fs (configuration error, duplicate targets, clearing links, Tx link writes, relationship-only updates) |  |
-| Adding and removing individual links | Implemented and verified | `ManyToManySteps.fs` | Batch2.fs (configuration error, duplicate targets, clearing links, Tx link writes, relationship-only updates) | Following "unknown is unloaded": the relationship comes back NotLoaded because the full set was not read. |
-| Inserting an Article with its Tags | Implemented and verified | `ManyToManySteps.fs` | Batch2.fs (configuration error, duplicate targets, clearing links, Tx link writes, relationship-only updates) |  |
-| Linking to a record that does not exist changes nothing | Implemented and verified | `ManyToManySteps.fs` | Batch2.fs (configuration error, duplicate targets, clearing links, Tx link writes, relationship-only updates) | Link writes run in the write's transaction; links never create target records. |
-| Link writes need a many-to-many relationship | Implemented and verified | `ManyToManySteps.fs` | Batch2.fs (configuration error, duplicate targets, clearing links, Tx link writes, relationship-only updates) |  |
+| Extending a prepared query applies the extension everywhere | Implemented and verified | `PreparedSteps.fs` |  | Found by the architecture audit: extending a prepared query used to plan the template and drop the extension. |
+| An extended prepared query still binds its arguments per call | Implemented and verified | `PreparedSteps.fs` |  |  |
+| A prepared query used as a load query binds its own arguments | Implemented and verified | `PreparedSteps.fs` |  | Rewritten (one style, step a1): the Payments of the Orders held are read by a second prepared query bound to a status; the title is from when it was a load query. |
 
 ### schema-check.feature: The check reports what would fail, and nothing else
 
@@ -324,6 +346,12 @@ the same guarantee more exhaustively.
 | Concurrent sandboxes are isolated | Implemented and verified | `SandboxSteps.fs` | Batch2.fs (failed transaction step inside a sandbox) |  |
 | Overlapping work in one sandbox is serialised | Implemented and verified | `SandboxSteps.fs` | Batch2.fs (failed transaction step inside a sandbox) | One connection: operations run one at a time. |
 
+### sandbox.feature: Sandboxes nest
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A sandbox inside a sandbox rolls back to the outer sandbox | Implemented and verified | `SandboxSteps.fs` |  | Sandbox transactions pass named savepoints through. |
+
 ### fsi.feature: Referencing Plasm is the only setup
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
@@ -338,11 +366,11 @@ the same guarantee more exhaustively.
 | A query displays its SQL and parameters | Implemented and verified | `FsiSteps.fs` |  | Translated by the most recently created live repository that maps the type; no database access. |
 | A query with loads displays one command per load | Implemented and verified | `FsiSteps.fs` |  |  |
 | A query that cannot be translated displays why | Implemented and verified | `FsiSteps.fs` |  |  |
-| Relationships that were not loaded display as not loaded | Implemented and verified | `FsiSteps.fs` |  | `NotLoaded` is the union case FSI already prints. |
 | A prepared query displays its bound arguments | Implemented and verified | `FsiSteps.fs` |  | Shows each bound value with its argument position. |
 | Displaying a query leaves how it runs unchanged | Implemented and verified | `FsiSteps.fs` |  | Displays plan without the repository's plan cache. |
 | Formatting a query in compiled code hides its parameter values | Implemented and verified | `FsiSteps.fs` |  | Values appear only with `IncludeParameterValues` or F# Interactive types; `CompiledDisplaySteps` in `FsiSteps.fs`. |
 | Formatting a query shows values when the repository includes them | Implemented and verified | `FsiSteps.fs` |  |  |
+| ~~Relationships that were not loaded display as not loaded~~ | Removed | | | Removed (one style, step a1): no relationship is ever unloaded. |
 
 ### fsi.feature: Results display without awaiting tasks
 
@@ -379,13 +407,56 @@ the same guarantee more exhaustively.
 | A table with no mappable columns is reported | Implemented and verified | `FsiSteps.fs` |  | New `ScaffoldError` (`TableNotFound`, `NoMappableColumns`, `Failed`). |
 | A missing table is reported as missing | Implemented and verified | `FsiSteps.fs` |  |  |
 
+### query-semantics.feature: Negation follows F# meaning, including for absent values
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Negating an optional equality keeps rows whose value is absent | Implemented and verified | `QuerySemanticsSteps.fs` |  | `not` renders `(...) IS NOT TRUE`, so an unknown comparison negates to true, as in F#. `NOT EXISTS` is kept for `exists` and list predicates. |
+| not (a = b) and a <> b return the same rows | Implemented and verified | `QuerySemanticsSteps.fs` |  |  |
+| Negating a compound predicate over absent values | Implemented and verified | `QuerySemanticsSteps.fs` |  |  |
+| Negating a comparison that cannot be absent stays a plain NOT | Implemented and verified | `QuerySemanticsSteps.fs` |  | `IS NOT TRUE` only where an operand can be NULL. |
+
+### query-semantics.feature: Captured values are read each time the query runs
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A query sees the current contents of a captured <container> | Implemented and verified | `QuerySemanticsSteps.fs` |  | Captured arrays, collections and reference cells mark the plan volatile; only immutable captured values (primitives, strings, F# lists, options, records without mutable fields) let a plan be cached. |
+| A query comparing with the current time reads the clock each run | Implemented and verified | `QuerySemanticsSteps.fs` |  | Found by the second audit: static properties such as `DateTime.UtcNow` were treated as stable. |
+| A query sees the current contents of a module-level <container> | Implemented and verified | `QuerySemanticsSteps.fs` |  | Only F# module values whose current value is immutable allow plan reuse. |
+| A query capturing only immutable values is planned once | Implemented and verified | `QuerySemanticsSteps.fs` |  |  |
+
+### query-semantics.feature: Union cases stored as text compare in the order F# declares them
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Ordering by a union follows its declaration, <direction> | Implemented and verified | `QuerySemanticsSteps.fs` |  | Found by the comparison with the F# libraries: ordering compared the stored text alphabetically. A `Scalar.enum` value now orders by its position in the declaration (`CASE ... WHEN 'draft' THEN 0 ... END`); an index on the text column does not serve that ordering. |
+| Comparing a union with a case keeps F# meaning (<comparison>) | Implemented and verified | `QuerySemanticsSteps.fs` |  | The constant side is sent as its position. |
+| A prepared query compares a union argument in declaration order | Implemented and verified | `QuerySemanticsSteps.fs` |  | The argument's position is bound per call. |
+| The earliest and latest case of a union follow its declaration | Implemented and verified | `QuerySemanticsSteps.fs` |  | `Agg.min`/`Agg.max` take the minimum position and read back its stored name. |
+| The ordering is done by the database | Implemented and verified | `QuerySemanticsSteps.fs` |  |  |
+
+### tx-steps.feature: Custom steps work inside the transaction without controlling it
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A custom step's commands run in the transaction | Implemented and verified | `TxStepSteps.fs` |  |  |
+| A custom step cannot commit or roll back the transaction | Implemented and verified | `TxStepSteps.fs` |  | `TxContext` now offers `CreateCommand()` (enlisted in the transaction) and `CancellationToken`; the connection and transaction are no longer exposed (breaking). |
+| A custom step cannot end the transaction with SQL | Implemented and verified | `TxStepSteps.fs` |  | `TxContext.CreateCommand()` returns a command that refuses transaction-control statements. |
+
+### tx-steps.feature: ~~The repository's writes match their changesets~~ (rule removed)
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| ~~A step whose changeset is for a different action is rejected~~ | Removed | | | Removed (one style, G3): write steps take records, so a step's action is its name and the mistake cannot be written. |
+| ~~The repository rejects a mismatched changeset the same way~~ | Removed | | | Removed (one style, step d): the repository's write methods are gone; every write is a transaction step. |
+
 ### error-model.feature: Expected failures are returned, not thrown
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
 | Using a sandbox's repository after the sandbox ended | Implemented and verified | `ErrorModelSteps.fs` |  | New `DbFailureKind.RepositoryClosed`; the closed playground reports the same. |
 | Using a closed playground | Implemented and verified | `ErrorModelSteps.fs` |  |  |
-| A written row that cannot be read back | Implemented and verified | `ErrorModelSteps.fs` |  | New `WriteError.Materialization`. A single-row write without children is not rolled back; one in a transaction is. |
+| A written row that cannot be read back | Implemented and verified | `ErrorModelSteps.fs` |  | `TxFailure.Failed (DbError.Materialization ...)`, and the transaction is rolled back. Before one style step d, `repo.Insert` returned `WriteError.Materialization` and kept the row. |
 
 ### error-model.feature: Error cases are always qualified
 
@@ -394,21 +465,12 @@ the same guarantee more exhaustively.
 | Domain unions keep their own case names | Implemented and verified | `ErrorModelSteps.fs` |  | `DbError` and `TranslationError` are now `RequireQualifiedAccess` (breaking). |
 | <union> cases must be qualified | Implemented and verified | `ErrorModelSteps.fs` |  | `QualifiedUnionSteps` in `ErrorModelSteps.fs`. |
 
-### has-one.feature: Has-one relationships load like other relationships
+### error-model.feature: Transaction failures are typed
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| Preloading a has-one relationship | Implemented and verified | `HasOneSteps.fs` |  |  |
-| Filtering through a has-one relationship | Implemented and verified | `HasOneSteps.fs` |  | New `Rel.exists` for optional relationships. |
-| A has-one relationship with more than one related row is an error | Implemented and verified | `HasOneSteps.fs` |  |  |
-
-### prepared-queries.feature: Prepared queries compose like any other query
-
-| Scenario | Classification | Step definitions | Related unit tests | Notes |
-|---|---|---|---|---|
-| Extending a prepared query applies the extension everywhere | Implemented and verified | `PreparedSteps.fs` |  | Found by the architecture audit: extending a prepared query used to plan the template and drop the extension. |
-| An extended prepared query still binds its arguments per call | Implemented and verified | `PreparedSteps.fs` |  |  |
-| A prepared query used as a load query binds its own arguments | Implemented and verified | `PreparedSteps.fs` |  | Load nodes carry the bound child query's arguments. |
+| A step's rejection reason comes back with its type | Implemented and verified | `ErrorModelSteps.fs` |  | `TxFailure.Rejected of 'E`: the transaction's own error type. Reading it as another type does not compile (strict design, step 2). |
+| A step's invalid changes come back as the changeset's errors | Implemented and verified | `ErrorModelSteps.fs` |  | The title predates one style step d, after which changesets are internal; the errors are `TxFailure.InvalidChanges (entity, errors)`. |
 
 ### providers.feature: Constructs the dialect can express are rendered by it
 
@@ -424,37 +486,20 @@ the same guarantee more exhaustively.
 |---|---|---|---|---|
 | <operation> needs <capability> | Implemented and verified | `ProviderSteps.fs` |  | New capabilities `Upserts` and `RowLocking`; `Returning` is now checked. Every call reports it as `TranslationError.UnsupportedByProvider`, naming every missing capability. |
 
-### ~~query-pipeline.feature~~ (removed, one style step c): Pipeline queries equal their computation-expression forms
-
-The feature was deleted with the pipeline `Query.*` functions: `plasm { }` is the only way to write a query.
-
-### query-semantics.feature: Negation follows F# meaning, including for absent values
+### providers.feature: An unsupported operation is reported the same way by every write step
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| Negating an optional equality keeps rows whose value is absent | Implemented and verified | `QuerySemanticsSteps.fs` |  | `not` renders `(...) IS NOT TRUE`, so an unknown comparison negates to true, as in F#. `NOT EXISTS` is kept for relationship predicates. |
-| not (a = b) and a <> b return the same rows | Implemented and verified | `QuerySemanticsSteps.fs` |  |  |
-| Negating a compound predicate over absent values | Implemented and verified | `QuerySemanticsSteps.fs` |  |  |
-| Negating a comparison that cannot be absent stays a plain NOT | Implemented and verified | `QuerySemanticsSteps.fs` |  | `IS NOT TRUE` only where an operand can be NULL. |
+| <call> reports an unsupported operation as UnsupportedByProvider | Implemented and verified | `ProviderSteps.fs` |  | An insert step and a bulk write step both fail with `TxFailure.Failed (DbError.Translation (UnsupportedByProvider ...))`. The `repo.Insert` and `repo.Execute` examples left with those methods (one style, step d). |
 
-### query-semantics.feature: Captured values are read each time the query runs
+### reading.feature: One respects the query and reports too many rows as data
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| A query sees the current contents of a captured <container> | Implemented and verified | `QuerySemanticsSteps.fs` |  | Captured arrays, collections and reference cells mark the plan volatile; only immutable captured values (primitives, strings, F# lists, options, records without mutable fields) let a plan be cached. |
-| A query capturing only immutable values is planned once | Implemented and verified | `QuerySemanticsSteps.fs` |  |  |
-| A query comparing with the current time reads the clock each run | Implemented and verified | `QuerySemanticsSteps.fs` |  | Found by the second audit: static properties such as `DateTime.UtcNow` were treated as stable. |
-| A query sees the current contents of a module-level <container> | Implemented and verified | `QuerySemanticsSteps.fs` |  | Only F# module values whose current value is immutable allow plan reuse. |
-
-### query-semantics.feature: Union cases stored as text compare in the order F# declares them
-
-| Scenario | Classification | Step definitions | Related unit tests | Notes |
-|---|---|---|---|---|
-| Ordering by a union follows its declaration, <direction> | Implemented and verified | `QuerySemanticsSteps.fs` |  | Found by the comparison with the F# libraries: ordering compared the stored text alphabetically. A `Scalar.enum` value now orders by its position in the declaration (`CASE ... WHEN 'draft' THEN 0 ... END`); an index on the text column does not serve that ordering. |
-| Comparing a union with a case keeps F# meaning (<comparison>) | Implemented and verified | `QuerySemanticsSteps.fs` |  | The constant side is sent as its position. |
-| A prepared query compares a union argument in declaration order | Implemented and verified | `QuerySemanticsSteps.fs` |  | The argument's position is bound per call. |
-| The earliest and latest case of a union follow its declaration | Implemented and verified | `QuerySemanticsSteps.fs` |  | `Agg.min`/`Agg.max` take the minimum position and read back its stored name. |
-| The ordering is done by the database | Implemented and verified | `QuerySemanticsSteps.fs` |  |  |
+| One keeps the query's own ordering and limit | Implemented and verified | `ReadingSteps.fs` |  | Found by the second audit: `One` replaced the query's limit. |
+| A query matching no rows returns None | Implemented and verified | `ReadingSteps.fs` |  |  |
+| More than one matching row is reported as a property of the data | Implemented and verified | `ReadingSteps.fs` |  | New `DbError.MoreThanOneRow`. |
+| Reading One of the same query twice plans it once | Implemented and verified | `ReadingSteps.fs` |  |  |
 
 ### pg-enums.feature: Values are written and read without driver configuration
 
@@ -462,7 +507,7 @@ The feature was deleted with the pipeline `Query.*` functions: `plasm { }` is th
 |---|---|---|---|---|
 | Inserting and reading a Shipment keeps its status | Implemented and verified | `PgEnumSteps.fs` |  | `Scalar.asPgEnum`: values are sent as text in `CAST(@p AS "type")` and read as `CAST(col AS text)`, so Npgsql needs no `MapEnum`. |
 | The enum type is created after the data source first connected | Implemented and verified | `PgEnumSteps.fs` |  | The trap in Npgsql's type loading: reads of the column fail unless they are text. |
-| Updating a status through a changeset | Implemented and verified | `PgEnumSteps.fs` |  |  |
+| Updating a status through a changeset | Implemented and verified | `PgEnumSteps.fs` |  | The title predates one style step d; the update is `Tx.update (original, changed)`. |
 | An optional status is written and read, including None | Implemented and verified | `PgEnumSteps.fs` |  |  |
 | Bulk writes accept statuses | Implemented and verified | `PgEnumSteps.fs` |  | Bulk insert, upsert (with `RETURNING` read as text) and bulk update. |
 
@@ -520,69 +565,113 @@ The feature was deleted with the pipeline `Query.*` functions: `plasm { }` is th
 |---|---|---|---|---|
 | An explicit mapping is used instead of the convention | Implemented and verified | `ConventionSteps.fs` |  |  |
 
-### ddl.feature
+### typed-transactions.feature: A failure says where its step is written
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| The DDL for <model> builds a matching database | Implemented and verified | `DdlSteps.fs` |  | Strict design, step 9: `repo.Ddl()` (`Ddl.print` in `SchemaCheck.fs`) prints enum types, tables (columns, NOT NULL, identity keys, unique constraints), join tables, then every reference as `alter table ... add constraint <table>_<column>_fkey`. Run on an empty database, the schema check reports nothing, for the test domain, Tickets, Cards with a Stage, Invoices and linked Cards. |
-| Uniqueness and references carry their names | Implemented and verified | `DdlSteps.fs` |  | The names Plasm maps violations by. |
-| Printing the DDL runs nothing | Implemented and verified | `DdlSteps.fs` |  | Plasm does not write or apply migrations. |
+| A failed step is reported at its file and line | Implemented and verified | `TypedTxSteps.fs` |  | Strict design, step 2: steps are static members taking `[<CallerFilePath; CallerLineNumber>]`, so `Tx.insert cs` needs no name. |
 
-### linked-collections.feature
+### typed-transactions.feature: Rejections keep their type
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| Reading a card reads its tags, in their order | Implemented and verified | `LinkedSteps.fs` |  | Step 7b, asked for by the Kanban example: `links`/`linksOrderedBy (fun c -> c.Tags) "card_tags" "card_id" "tag_id" (fun t -> t.Name)`, a plain list of shared records, always loaded. |
-| A card without tags reads with an empty list | Implemented and verified | `LinkedSteps.fs` |  |  |
-| Every card's tags are read in one more command | Implemented and verified | `LinkedSteps.fs` |  |  |
-| Inserting a card links it to its tags | Implemented and verified | `LinkedSteps.fs` |  | Join-table rows only (`PutLinks`). |
-| Changing the tags of a card read writes only its links | Implemented and verified | `LinkedSteps.fs` |  |  |
-| A link to a tag that does not exist is the field's error | Implemented and verified | `LinkedSteps.fs` |  | `<join table>_<target column>_fkey` maps to the list field. |
-| Changing a linked tag through the card is refused | Implemented and verified | `LinkedSteps.fs` |  | A linked record belongs to its own aggregate. |
-| Deleting a card deletes its links, not its tags | Implemented and verified | `LinkedSteps.fs` |  |  |
-| A join table without its foreign key is reported | Implemented and verified | `LinkedSteps.fs` |  | For every join table (manyToMany too): both sides must reference their tables. |
+| A rejection has the transaction's error type | Implemented and verified | `TypedTxSteps.fs` |  | `Tx<'T, 'E>`; `TxFailure.Rejected of 'E`. |
+| A custom step's Error is a rejection of the same type | Implemented and verified | `TypedTxSteps.fs` |  |  |
+| A domain decision's Error becomes a rejection | Implemented and verified | `TypedTxSteps.fs` |  | `Tx.ofResult`. |
+| A rejection cannot be read as another type | Implemented and verified | `TypedTxSteps.fs` |  | Compiled in the test. |
 
-### owned-records.feature
+### typed-transactions.feature: Reading one row and counting are steps
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| Reading an account reads its profile and settings | Implemented and verified | `OwnedOneSteps.fs` |  | One style, gap G2: `ownsOptional (fun a -> a.Profile) (fun p -> p.Account)` for a `'C option`, `ownsOne` for a required `'C`. Separate names, not `owns` overloads: with overloads F# resolves the owner lambda's record label before the overload, so `fun p -> p.Account` picks the last record with an `Account` field. The model treats it as an owned has-one (`Reflection.ownedOneCtors`); the loader adds it like an owned list. |
-| An account without a profile reads with None | Implemented and verified | `OwnedOneSteps.fs` |  |  |
-| Every account's records are read in one more command each | Implemented and verified | `OwnedOneSteps.fs` |  | Batched by key. |
-| An account whose required record is missing is refused when read | Implemented and verified | `OwnedOneSteps.fs` |  | A materialization error naming the field. |
-| Inserting an account inserts its records | Implemented and verified | `OwnedOneSteps.fs` |  | `Writes.owned` writes an owned record as a list of none or one; `MakeList` rebuilds the field. |
-| Changing the owned record of an account read updates it in place | Implemented and verified | `OwnedOneSteps.fs` |  | By key, only changed columns. |
-| Removing the optional record deletes it | Implemented and verified | `OwnedOneSteps.fs` |  |  |
-| Adding the optional record inserts it | Implemented and verified | `OwnedOneSteps.fs` |  |  |
-| Deleting an account deletes its records | Implemented and verified | `OwnedOneSteps.fs` |  |  |
-| A record field the schema does not own is refused at build, saying how to own it | Implemented and verified | `OwnedOneSteps.fs` |  | Before, the message asked for a scalar mapping. |
+| Tx.one gives the only matching row | Implemented and verified | `TypedTxSteps.fs` |  | Shares `OneRow.limit` with `repo.One`. |
+| Tx.one gives None when nothing matches | Implemented and verified | `TypedTxSteps.fs` |  |  |
+| A missing row becomes a rejection with Tx.orReject | Implemented and verified | `TypedTxSteps.fs` |  |  |
+| Tx.count counts without reading the rows | Implemented and verified | `TypedTxSteps.fs` |  |  |
 
-### owned-collections.feature
+### typed-transactions.feature: Steps need no names
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| Reading an invoice reads its lines | Implemented and verified | `OwnedSteps.fs` |  | Strict design, step 7: `owns (fun i -> i.Lines) (fun l -> l.Invoice)` (or `ownsOrderedBy`, with an order); the planner adds a load for every owned list a query does not request, at every level. |
-| An invoice without lines reads with an empty list | Implemented and verified | `OwnedSteps.fs` |  | A plain list; there is no unloaded state. |
-| Every invoice's lines are read in one more command | Implemented and verified | `OwnedSteps.fs` |  | Batched by key, as preloads are. |
-| A whole Invoice cannot be selected from a join | Implemented and verified | `OwnedSteps.fs` |  | Neither can hand-written SQL read one; both say why. |
-| Inserting an Invoice inserts its lines | Implemented and verified | `OwnedSteps.fs` |  | `Writes.owned` turns the list into child writes. |
-| Changing the lines of an Invoice read writes the difference | Implemented and verified | `OwnedSteps.fs` |  | By key: new items inserted, changed ones updated (only their changed columns), missing ones deleted; the returned record holds the new list as stored. |
-| Deleting an Invoice deletes its lines | Implemented and verified | `OwnedSteps.fs` |  | Items that own lists of their own delete them in turn. |
-| A list field the schema does not own is refused at build | Implemented and verified | `OwnedSteps.fs` |  |  |
+| A transaction is written without naming its steps | Implemented and verified | `TypedTxSteps.fs` |  | Compiled in the test. |
 
-### query-exists.feature
+### typed-transactions.feature: Steps write records
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| Orders with a succeeded payment | Implemented and verified | `ExistsSteps.fs` |  | One style, gap G1: `exists (plasm { ... })` (in `QueryBuilderInstance`). The translator rebuilds the inner query from its builder calls (`innerQuery`), keeping each quoted condition as it is, and translates it as a correlated `EXISTS` in the same command. It replaces `Rel.any`/`Rel.exists` for records in other aggregates. |
-| Orders without a succeeded payment | Implemented and verified | `ExistsSteps.fs` |  | `NOT EXISTS`. |
-| An exists inside a larger condition | Implemented and verified | `ExistsSteps.fs` |  | Inside `||` and `&&`. |
-| The inner query takes a prepared argument too | Implemented and verified | `ExistsSteps.fs` |  | The outer row and an `Arg` in the same inner condition. |
-| A module's queries that use exists are checked | Implemented and verified | `ExistsSteps.fs` |  | `repo.CheckQueries` translates the inner query with the outer one. |
-| An inner query that cannot be translated is reported | Implemented and verified | `ExistsSteps.fs` |  |  |
-| An inner query that pages is refused | Implemented and verified | `ExistsSteps.fs` |  | A condition only: no take/skip, ordering, joins, grouping or loads. |
+| Inserting a record gives it back with its key | Implemented and verified | `TypedTxSteps.fs` |  | One style, G3: write steps take records. `Tx.write` and the public `Changeset` left in step d. |
+| An update writes only the columns that changed | Implemented and verified | `TypedTxSteps.fs` |  | `Tx.update (original, changed)` compares the two records and writes the columns that differ. |
+| An update expecting a version the record no longer has is a conflict | Implemented and verified | `TypedTxSteps.fs` |  | `expectVersion` overrides the version of `original`. |
+| Expecting a version of a record without a version field is invalid | Implemented and verified | `TypedTxSteps.fs` |  | New check in `Writes.check`. |
+| Deleting the record read deletes it | Implemented and verified | `TypedTxSteps.fs` |  |  |
 
-### union-fields.feature
+### query-check.feature: The check translates every query without running it
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Queries that translate pass | Implemented and verified | `QueryCheckSteps.fs` |  | Strict design, step 3: `repo.CheckQueries(assembly, ?inNamespace)` finds the module values whose type ends in `Query<_>` or `Projection<_>` and translates each. |
+| A query that cannot be translated is reported by its name | Implemented and verified | `QueryCheckSteps.fs` |  | `QueryProblem = { Query: "Module.value"; Error }`. |
+| A prepared query that cannot be translated is reported without being called | Implemented and verified | `QueryCheckSteps.fs` |  | `Query.prepare` returns a function value that is also checkable (`PreparedQuery` inherits `FSharpFunc`); its template is translated with its arguments as parameters. |
+
+### query-check.feature: A prepared query is still called like a function
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A checked prepared query reads with its argument | Implemented and verified | `QueryCheckSteps.fs` |  | Callers still apply it like a function. |
+
+### query-check.feature: A prepared query can end in a projection
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A prepared projection reads with its argument | Implemented and verified | `QueryCheckSteps.fs` |  | Step 3b, asked for by the Kanban example: `Query.prepare`/`prepare2` overloads for a builder that ends in `select` return `'A -> Projection<'R>`. |
+| A prepared projection that cannot be translated is reported without being called | Implemented and verified | `QueryCheckSteps.fs` |  |  |
+
+### constraints.feature: Violations come back as the field's errors
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A duplicate of a unique field is the field's error | Implemented and verified | `ConstraintSteps.fs` | `EctoCompat.fs` | Strict design, step 4: a violated constraint named `<table>_<column>_key`, `_fkey` or `_check` maps to that field (`Writes.conventional`); `Changeset.uniqueConstraint`/`foreignKeyConstraint`/`checkConstraint` were deleted. |
+| A violation by an owned record is that record's field error | Implemented and verified | `ConstraintSteps.fs` |  | Rewritten (one style, step a1): was "A duplicate on a record written with its children is the record's field error". An owned line's missing product is the error of `Lines[0].ProductId`, and no Order is written. |
+| A reference to a missing row is the field's error | Implemented and verified | `ConstraintSteps.fs` |  |  |
+| A broken column check is the field's error | Implemented and verified | `ConstraintSteps.fs` |  |  |
+| A constraint whose name follows no convention stays a database failure | Implemented and verified | `ConstraintSteps.fs` |  | A table-level check over several columns guards against impossible rows; its violation is a bug, not input. |
+
+### constraints.feature: The model knows the constraints
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A typed id references the schema whose key it is | Implemented and verified | `ConstraintSteps.fs` |  | `Model.References`; only typed ids (never built-in key types) are inferred. |
+
+### constraints.feature: The schema check finds a missing or misnamed constraint
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A unique field without a unique constraint is reported | Implemented and verified | `ConstraintSteps.fs` |  | `unique (fun c -> c.Email)` in the schema; `SchemaIssueKind.MissingUnique`. |
+| A reference without a foreign key is reported | Implemented and verified | `ConstraintSteps.fs` |  | `SchemaIssueKind.MissingReference`. |
+| A unique constraint under another name is reported, with the rename | Implemented and verified | `ConstraintSteps.fs` |  | Found by the Kanban session: a renamed `boards_slug_key` left CheckSchema silent and turned the Slug error into a database failure. New `SchemaIssueKind.MisnamedConstraint`; the message gives the `alter table ... rename constraint` to run. Violations stay mapped by name: at the moment of a violation the transaction is aborted (no catalog lookup) and Npgsql hides the error detail, so the start-up check is where the name is enforced. |
+| A unique index under another name is reported, with the rename | Implemented and verified | `ConstraintSteps.fs` |  | `alter index ... rename to ...`. |
+| A foreign key under another name is reported, with the rename | Implemented and verified | `ConstraintSteps.fs` |  | Inferred references, and the target side of a linked list's join table. Check constraints are not stated in the model, so they are not reported: the default name is how a field claims one. |
+| A misnamed constraint is reported once its field is the only holder | Implemented and verified | `ConstraintSteps.fs` |  | A second constraint with the default name satisfies the check. |
+
+### concurrency.feature: A record without a version field is checked against what was read
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A change to a row nobody else changed is saved | Implemented and verified | `ConcurrencySteps.fs` |  | Strict design, step 5: for a record without a version field, `Writes.originalWhere` adds `column IS NOT DISTINCT FROM @original` for every column to the UPDATE or DELETE. |
+| A change after another writer changed the row is a conflict | Implemented and verified | `ConcurrencySteps.fs` |  | 0 rows is `TxFailure.Conflict`, as for versions. |
+| A delete after another writer changed the row is a conflict | Implemented and verified | `ConcurrencySteps.fs` |  |  |
+| A NULL that is still NULL matches | Implemented and verified | `ConcurrencySteps.fs` |  | `IS NOT DISTINCT FROM`, not `=`. |
+| A NULL another writer filled in is a conflict | Implemented and verified | `ConcurrencySteps.fs` |  |  |
+| The check is part of the change's own command | Implemented and verified | `ConcurrencySteps.fs` |  | No read before the write. |
+| A change made from a key alone is not checked | Implemented and verified | `ConcurrencySteps.fs` |  | Rewritten (one style, step b): a change by key alone is a bulk update (`Bulk.update` over a query by id). |
+
+### concurrency.feature: A record with a version field is checked by its version
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A versioned record is checked by its version alone | Implemented and verified | `ConcurrencySteps.fs` |  | Both mechanisms are supported: a `version` field opts in (for records that cross a wire). |
+
+### union-fields.feature: Each case is stored in its columns
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
@@ -591,123 +680,147 @@ The feature was deleted with the pipeline `Query.*` functions: `plasm { }` is th
 | A row that is no case is refused when read, naming the field | Implemented and verified | `UnionFieldSteps.fs` |  | A materialization error naming the field and the column. |
 | A row with a value in another case's column is refused when read | Implemented and verified | `UnionFieldSteps.fs` |  |  |
 | A union whose case holds a list cannot be stored in columns | Implemented and verified | `UnionFieldSteps.fs` |  | A ConfigError at Model.build. |
+
+### union-fields.feature: Queries read a union as F# does
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
 | A case test | Implemented and verified | `UnionFieldSteps.fs` |  | `UnionCaseTest` and the `Is<Case>` properties become `stage = 'doing'`. |
 | Comparing with a case without fields | Implemented and verified | `UnionFieldSteps.fs` |  |  |
 | Matching on a case's field | Implemented and verified | `UnionFieldSteps.fs` |  | A `match` normalises to `if case then field = x else false`, translated as AND. |
 | Matching on a nested case's field | Implemented and verified | `UnionFieldSteps.fs` |  |  |
 | The domain's own member reads as its column | Implemented and verified | `UnionFieldSteps.fs` |  | `[<ReflectedDefinition>]` members and functions are inlined; `if case then Some field else None` is the field's column itself. |
+| Selecting case fields through the domain's members reads their types | Implemented and verified | `UnionFieldSteps.fs` |  | A `[<ReflectedDefinition>]` member that gives a case field as an option is selected as its column, read back as the field's type. |
 | Comparing with a whole value | Implemented and verified | `UnionFieldSteps.fs` |  | The case and each of its fields. |
 | Counting by case, through the domain's own member | Implemented and verified | `UnionFieldSteps.fs` |  | A `match` that produces values is a SQL CASE; stored case names are written as literals so GROUP BY and SELECT match. F# hides the compiled `Tag` property, so a member naming each case is the way to group by case. |
 | Counting by a member that names each case in words | Implemented and verified | `UnionFieldSteps.fs` |  | Found by koans lesson 22: a string written in the query's code is written into the SQL (quoted, `'` doubled), so the same branch in SELECT and GROUP BY is one expression; before, a string with a space was a parameter, and SELECT and GROUP BY had different parameters. A captured value stays a parameter. |
+
+### union-fields.feature: Bulk writes and the schema check know the columns
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
 | A bulk update sets every column of the union | Implemented and verified | `UnionFieldSteps.fs` |  | The assigned value must not depend on the row. |
 | A missing case column is reported | Implemented and verified | `UnionFieldSteps.fs` |  | Also: a case column must allow NULL. |
 
-### concurrency.feature
+### owned-collections.feature: An owned list is always loaded
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| A change to a row nobody else changed is saved | Implemented and verified | `ConcurrencySteps.fs` |  | Strict design, step 5: for a record without a version field, `Writes.originalWhere` adds `column IS NOT DISTINCT FROM @original` for every column to the UPDATE or DELETE. |
-| A change after another writer changed the row is a conflict | Implemented and verified | `ConcurrencySteps.fs` |  | 0 rows is `WriteError.Stale` (`TxFailure.Conflict` in a transaction), as for versions. |
-| A delete after another writer changed the row is a conflict | Implemented and verified | `ConcurrencySteps.fs` |  |  |
-| A NULL that is still NULL matches | Implemented and verified | `ConcurrencySteps.fs` |  | `IS NOT DISTINCT FROM`, not `=`. |
-| A NULL another writer filled in is a conflict | Implemented and verified | `ConcurrencySteps.fs` |  |  |
-| The check is part of the change's own command | Implemented and verified | `ConcurrencySteps.fs` |  | No read before the write. |
-| A change made from a key alone is not checked | Implemented and verified | `ConcurrencySteps.fs` |  | Rewritten (one style, step b): a change by key alone is a bulk update (`Bulk.update` over a query by id). |
-| A versioned record is checked by its version alone | Implemented and verified | `ConcurrencySteps.fs` |  | Both mechanisms are supported: a `version` field opts in (for records that cross a wire). |
+| Reading an invoice reads its lines | Implemented and verified | `OwnedSteps.fs` |  | Strict design, step 7: `owns (fun i -> i.Lines) (fun l -> l.Invoice)` (or `ownsOrderedBy`, with an order); the planner adds a load for every owned list a query does not request, at every level. |
+| An invoice without lines reads with an empty list | Implemented and verified | `OwnedSteps.fs` |  | A plain list; there is no unloaded state. |
+| Every invoice's lines are read in one more command | Implemented and verified | `OwnedSteps.fs` |  | Batched by key (`= ANY(@keys)`). |
+| A whole Invoice selected from a join comes with its lines | Implemented and verified | `OwnedSteps.fs` |  | Rewritten (one style, step a1): was "A whole Invoice cannot be selected from a join". A whole owner in a joined row comes with what it owns, in one more command per list. |
 
-### constraints.feature
+### owned-collections.feature: Writing the owner writes what it owns
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| A duplicate of a unique field is the field's error | Implemented and verified | `ConstraintSteps.fs` | `EctoCompat.fs` | Strict design, step 4: a violated constraint named `<table>_<column>_key`, `_fkey` or `_check` maps to that field (`Writes.conventional`); `Changeset.uniqueConstraint`/`foreignKeyConstraint`/`checkConstraint` were deleted. |
-| A duplicate on a record written with its children is the record's field error | Implemented and verified | `ConstraintSteps.fs` |  | Asked for by the Kanban example (a board's slug taken while its cards are inserted). |
-| A reference to a missing row is the field's error | Implemented and verified | `ConstraintSteps.fs` |  |  |
-| A broken column check is the field's error | Implemented and verified | `ConstraintSteps.fs` |  |  |
-| A constraint whose name follows no convention stays a database failure | Implemented and verified | `ConstraintSteps.fs` |  | A table-level check over several columns guards against impossible rows; its violation is a bug, not input. |
-| A typed id references the schema whose key it is | Implemented and verified | `ConstraintSteps.fs` |  | `Model.References`; only typed ids (never built-in key types) are inferred. |
-| A unique field without a unique constraint is reported | Implemented and verified | `ConstraintSteps.fs` |  | `unique (fun c -> c.Email)` in the schema; `SchemaIssueKind.MissingUnique`. |
-| A reference without a foreign key is reported | Implemented and verified | `ConstraintSteps.fs` |  | `SchemaIssueKind.MissingReference`. |
-| A unique constraint under another name is reported, with the rename | Implemented and verified | `ConstraintSteps.fs` |  | Found by the Kanban session: a renamed `boards_slug_key` left CheckSchema silent and turned the Slug error into a database failure. New `SchemaIssueKind.MisnamedConstraint`; the message gives the `alter table ... rename constraint` to run. Violations stay mapped by name: at the moment of a violation the transaction is aborted (no catalog lookup) and Npgsql hides the error detail, so the start-up check is where the name is enforced. |
-| A unique index under another name is reported, with the rename | Implemented and verified | `ConstraintSteps.fs` |  | `alter index ... rename to ...`. |
-| A foreign key under another name is reported, with the rename | Implemented and verified | `ConstraintSteps.fs` |  | Inferred references, and the target side of a linked list's join table. Check constraints are not stated in the model, so they are not reported: the default name is how a field claims one. |
-| A misnamed constraint is reported once its field is the only holder | Implemented and verified | `ConstraintSteps.fs` |  | A second constraint with the default name satisfies the check. |
+| Inserting an Invoice inserts its lines | Implemented and verified | `OwnedSteps.fs` |  | `Writes.owned` turns the list into child writes. |
+| Changing the lines of an Invoice read writes the difference | Implemented and verified | `OwnedSteps.fs` |  | By key: new items inserted, changed ones updated (only their changed columns), missing ones deleted; the returned record holds the new list as stored. |
+| A line of another Invoice is refused, not copied | Implemented and verified | `OwnedSteps.fs` |  | One style, step a1: an owned item carrying another owner's key is refused, so writing one owner never moves or copies another's rows. |
+| The same line twice is refused | Implemented and verified | `OwnedSteps.fs` |  | Found by the koans rewrite (ba9f042): the same stored item listed twice in an owned list is refused before any command. |
+| Deleting an Invoice deletes its lines | Implemented and verified | `OwnedSteps.fs` |  | Items that own lists of their own delete them in turn. |
 
-
-### query-check.feature
+### owned-collections.feature: A list field is owned or refused
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| Queries that translate pass | Implemented and verified | `QueryCheckSteps.fs` |  | Strict design, step 3: `repo.CheckQueries(assembly, ?inNamespace)` finds the module values whose type ends in `Query<_>` or `Projection<_>` and translates each. |
-| A query that cannot be translated is reported by its name | Implemented and verified | `QueryCheckSteps.fs` |  | `QueryProblem = { Query: "Module.value"; Error }`. |
-| A prepared query that cannot be translated is reported without being called | Implemented and verified | `QueryCheckSteps.fs` |  | `Query.prepare` returns a function value that is also checkable (`PreparedQuery` inherits `FSharpFunc`); its template is translated with its arguments as parameters. |
-| A checked prepared query reads with its argument | Implemented and verified | `QueryCheckSteps.fs` |  | Callers still apply it like a function. |
-| A prepared projection reads with its argument | Implemented and verified | `QueryCheckSteps.fs` |  | Step 3b, asked for by the Kanban example: `Query.prepare`/`prepare2` overloads for a builder that ends in `select` return `'A -> Projection<'R>`. |
-| A prepared projection that cannot be translated is reported without being called | Implemented and verified | `QueryCheckSteps.fs` |  |  |
+| A list field the schema does not own is refused at build | Implemented and verified | `OwnedSteps.fs` |  |  |
 
-### typed-transactions.feature
+### owned-records.feature: An owned record is always loaded
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| A failed step is reported at its file and line | Implemented and verified | `TypedTxSteps.fs` |  | Strict design, step 2: steps are static members taking `[<CallerFilePath; CallerLineNumber>]`, so `Tx.insert cs` needs no name. |
-| A rejection has the transaction's error type | Implemented and verified | `TypedTxSteps.fs` |  | `Tx<'T, 'E>`; `TxFailure.Rejected of 'E`. |
-| A custom step's Error is a rejection of the same type | Implemented and verified | `TypedTxSteps.fs` |  |  |
-| A domain decision's Error becomes a rejection | Implemented and verified | `TypedTxSteps.fs` |  | `Tx.ofResult`. |
-| A rejection cannot be read as another type | Implemented and verified | `TypedTxSteps.fs` |  | Compiled in the test. |
-| Tx.one gives the only matching row | Implemented and verified | `TypedTxSteps.fs` |  | Shares `OneRow.limit` with `repo.One`. |
-| Tx.one gives None when nothing matches | Implemented and verified | `TypedTxSteps.fs` |  |  |
-| A missing row becomes a rejection with Tx.orReject | Implemented and verified | `TypedTxSteps.fs` |  |  |
-| Tx.count counts without reading the rows | Implemented and verified | `TypedTxSteps.fs` |  |  |
-| A transaction is written without naming its steps | Implemented and verified | `TypedTxSteps.fs` |  | Compiled in the test. |
-| Inserting a record gives it back with its key | Implemented and verified | `TypedTxSteps.fs` |  | One style, G3: write steps take records. `Tx.write` carries a changeset until changesets leave the public API. |
-| An update writes only the columns that changed | Implemented and verified | `TypedTxSteps.fs` |  | `Tx.update (original, changed)` is `Changeset.edit` underneath. |
-| An update expecting a version the record no longer has is a conflict | Implemented and verified | `TypedTxSteps.fs` |  | `expectVersion` overrides the version of `original`. |
-| Expecting a version of a record without a version field is invalid | Implemented and verified | `TypedTxSteps.fs` |  | New check in `Writes.check`. |
-| Deleting the record read deletes it | Implemented and verified | `TypedTxSteps.fs` |  |  |
+| Reading an account reads its profile and settings | Implemented and verified | `OwnedOneSteps.fs` |  | One style, gap G2: `ownsOptional (fun a -> a.Profile) (fun p -> p.Account)` for a `'C option`, `ownsOne` for a required `'C`. Separate names, not `owns` overloads: with overloads F# resolves the owner lambda's record label before the overload, so `fun p -> p.Account` picks the last record with an `Account` field. The model treats it as an owned has-one (`Reflection.ownedOneCtors`); the loader adds it like an owned list. |
+| An account without a profile reads with None | Implemented and verified | `OwnedOneSteps.fs` |  |  |
+| Every account's records are read in one more command each | Implemented and verified | `OwnedOneSteps.fs` |  | Batched by key. |
+| An account whose required record is missing is refused when read | Implemented and verified | `OwnedOneSteps.fs` |  | A materialization error naming the field. |
 
-
-### sandbox.feature: Sandboxes nest
+### owned-records.feature: Writing the owner writes what it owns
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| A sandbox inside a sandbox rolls back to the outer sandbox | Implemented and verified | `SandboxSteps.fs` |  | Sandbox transactions pass named savepoints through. |
+| Inserting an account inserts its records | Implemented and verified | `OwnedOneSteps.fs` |  | `Writes.owned` writes an owned record as a list of none or one; `MakeList` rebuilds the field. |
+| Changing the owned record of an account read updates it in place | Implemented and verified | `OwnedOneSteps.fs` |  | By key, only changed columns. |
+| Removing the optional record deletes it | Implemented and verified | `OwnedOneSteps.fs` |  |  |
+| Adding the optional record inserts it | Implemented and verified | `OwnedOneSteps.fs` |  |  |
+| Deleting an account deletes its records | Implemented and verified | `OwnedOneSteps.fs` |  |  |
 
-### tx-steps.feature: The repository's writes match their changesets
-
-| Scenario | Classification | Step definitions | Related unit tests | Notes |
-|---|---|---|---|---|
-| ~~A step whose changeset is for a different action is rejected~~ | Removed (one style, G3) | | | Write steps take records, so a step's action is its name; the mistake cannot be written. |
-| The repository rejects a mismatched changeset the same way | Implemented and verified | `TxStepSteps.fs` |  |  |
-
-### tx-steps.feature: Custom steps work inside the transaction without controlling it
+### owned-records.feature: Other queries reach an owned record
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| A custom step's commands run in the transaction | Implemented and verified | `TxStepSteps.fs` |  |  |
-| A custom step cannot commit or roll back the transaction | Implemented and verified | `TxStepSteps.fs` |  | `TxContext` now offers `CreateCommand()` (enlisted in the transaction) and `CancellationToken`; the connection and transaction are no longer exposed (breaking). |
-| A custom step cannot end the transaction with SQL | Implemented and verified | `TxStepSteps.fs` |  | `TxContext.CreateCommand()` returns a command that refuses transaction-control statements. |
+| Filtering through an owned record | Implemented and verified | `OwnedOneSteps.fs` |  | Was has-one.feature's "Filtering through a has-one relationship" (one style, step a1): `exists (plasm { ... })` over the owned table. |
+| Filtering through an owned record, as F# reads an option | Implemented and verified | `OwnedOneSteps.fs` |  | Found by the koans rewrite (ba9f042): `Option.exists`/`Option.forall` over an owned optional record are a correlated `EXISTS`. |
+| Accounts without an owned record | Implemented and verified | `OwnedOneSteps.fs` |  | `IsNone` (and `IsSome`) over an owned optional record are a correlated `NOT EXISTS`/`EXISTS` (ba9f042). |
+| An owned record matched by two rows is refused when read | Implemented and verified | `OwnedOneSteps.fs` |  | Was has-one.feature's "A has-one relationship with more than one related row is an error" (one style, step a1); a materialization error naming the field. |
 
-### error-model.feature: Transaction failures are typed
-
-| Scenario | Classification | Step definitions | Related unit tests | Notes |
-|---|---|---|---|---|
-| A step's rejection reason comes back with its type | Implemented and verified | `ErrorModelSteps.fs` |  | `TxFailure.Rejected of 'E`: the transaction's own error type. Reading it as another type does not compile (strict design, step 2). |
-| A step's invalid changes come back as the changeset's errors | Implemented and verified | `ErrorModelSteps.fs` |  |  |
-
-### providers.feature: An unsupported operation is reported the same way by every call
+### owned-records.feature: A record field is owned or refused
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| <call> reports an unsupported operation as UnsupportedByProvider | Implemented and verified | `ProviderSteps.fs` |  | `WriteError.Translation`, `DbError.Translation`, `TxFailure.Failed(DbError.Translation ...)`. |
+| A record field the schema does not own is refused at build, saying how to own it | Implemented and verified | `OwnedOneSteps.fs` |  | Before, the message asked for a scalar mapping. |
 
-### ~~query-pipeline.feature~~ (removed, one style step c): Pipelines chain like expressions
-
-The feature was deleted with the pipeline `Query.*` functions: `plasm { }` is the only way to write a query.
-
-### reading.feature: One respects the query and reports too many rows as data
+### linked-collections.feature: A linked list is always loaded
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| One keeps the query's own ordering and limit | Implemented and verified | `ReadingSteps.fs` |  | Found by the second audit: `One` replaced the query's limit. |
-| A query matching no rows returns None | Implemented and verified | `ReadingSteps.fs` |  |  |
-| More than one matching row is reported as a property of the data | Implemented and verified | `ReadingSteps.fs` |  | New `DbError.MoreThanOneRow`. |
-| Reading One of the same query twice plans it once | Implemented and verified | `ReadingSteps.fs` |  |  |
+| Reading a card reads its tags, in their order | Implemented and verified | `LinkedSteps.fs` |  | Step 7b, asked for by the Kanban example: `links`/`linksOrderedBy (fun c -> c.Tags) "card_tags" "card_id" "tag_id" (fun t -> t.Name)`, a plain list of shared records, always loaded. |
+| A card without tags reads with an empty list | Implemented and verified | `LinkedSteps.fs` |  |  |
+| Every card's tags are read in one more command | Implemented and verified | `LinkedSteps.fs` |  |  |
+| Cards are kept by their tags, as F# reads a list | Implemented and verified | `LinkedSteps.fs` |  | Was many-to-many.feature's "Filtering through a many-to-many relationship" (one style, step a1): `List.exists` over a linked list is `EXISTS` through the join table. |
+| Cards whose every tag passes, as F# reads a list | Implemented and verified | `LinkedSteps.fs` |  | `List.forall` over a linked list is `NOT EXISTS` of a failing linked row. |
+
+### linked-collections.feature: Writing the owner writes only its links
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Inserting a card links it to its tags | Implemented and verified | `LinkedSteps.fs` |  | Join-table rows only. |
+| Changing the tags of a card read writes only its links | Implemented and verified | `LinkedSteps.fs` |  |  |
+| A link to a tag that does not exist is the field's error | Implemented and verified | `LinkedSteps.fs` |  | `<join table>_<target column>_fkey` maps to the list field. |
+| Changing a linked tag through the card is refused | Implemented and verified | `LinkedSteps.fs` |  | A linked record belongs to its own aggregate. |
+| Deleting a card deletes its links, not its tags | Implemented and verified | `LinkedSteps.fs` |  |  |
+
+### linked-collections.feature: The schema check knows the join table
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A join table without its foreign key is reported | Implemented and verified | `LinkedSteps.fs` |  | For every join table: both sides must reference their tables. |
+
+### query-exists.feature: The inner query reads the outer row
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Orders with a succeeded payment | Implemented and verified | `ExistsSteps.fs` |  | One style, gap G1: `exists (plasm { ... })` (in `QueryBuilderInstance`). The translator rebuilds the inner query from its builder calls (`innerQuery`), keeping each quoted condition as it is, and translates it as a correlated `EXISTS` in the same command. It replaced `Rel.any`/`Rel.exists` (removed in step a2) for records in other aggregates. |
+| Orders without a succeeded payment | Implemented and verified | `ExistsSteps.fs` |  | `NOT EXISTS`. |
+| An exists inside a larger condition | Implemented and verified | `ExistsSteps.fs` |  | Inside ` |
+| The inner query takes a prepared argument too | Implemented and verified | `ExistsSteps.fs` |  | The outer row and an `Arg` in the same inner condition. |
+
+### query-exists.feature: It is checked like any query
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A module's queries that use exists are checked | Implemented and verified | `ExistsSteps.fs` |  | `repo.CheckQueries` translates the inner query with the outer one. |
+| An inner query that cannot be translated is reported | Implemented and verified | `ExistsSteps.fs` |  |  |
+| An inner query that pages is refused | Implemented and verified | `ExistsSteps.fs` |  | A condition only: no take/skip, ordering, joins, grouping or loads. |
+
+### ddl.feature: The printed DDL builds a database the schema check accepts
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| The DDL for <model> builds a matching database | Implemented and verified | `DdlSteps.fs` |  | Strict design, step 9: `repo.Ddl()` (`Ddl.print` in `SchemaCheck.fs`) prints enum types, tables (columns, NOT NULL, identity keys, unique constraints), join tables, then every reference as `alter table ... add constraint <table>_<column>_fkey`. Run on an empty database, the schema check reports nothing, for the test domain, Tickets, Cards with a Stage, Invoices and linked Cards. |
+
+### ddl.feature: It states the model's constraints by the names Plasm maps
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Uniqueness and references carry their names | Implemented and verified | `DdlSteps.fs` |  | The names Plasm maps violations by. |
+
+### ddl.feature: It indexes the columns the model's reads filter on
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Owner columns, link targets and references are indexed | Implemented and verified | `DdlSteps.fs` |  | 11a6895: `repo.Ddl()` prints `create index <table>_<column>_idx` for each owner column, join-table target column and inferred reference, unless the column already leads a unique constraint or the primary key (a join table's owner column leads its key). |
+| A missing index is not a schema problem | Implemented and verified | `DdlSteps.fs` |  | An index is a matter of performance, and a database may have a better composite one, so `CheckSchema` does not report it. |
+| Printing the DDL runs nothing | Implemented and verified | `DdlSteps.fs` |  | Plasm does not write or apply migrations. |
+
