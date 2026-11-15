@@ -64,6 +64,13 @@ create table article_tags (
   article_id bigint not null references articles(id),
   tag_id bigint not null references tags(id),
   primary key (article_id, tag_id)
+);
+create table deliveries (
+  id bigint generated always as identity primary key,
+  order_id bigint not null references orders(id),
+  stage text not null,
+  stage_carrier text,
+  stage_signed_by text
 );"""
 
 /// The starting data. Every koan runs in a sandbox, so every koan sees exactly this.
@@ -89,4 +96,6 @@ insert into tags(name) values ('fsharp'), ('sql'), ('draft'), ('ops');
 insert into article_tags(article_id, tag_id) values (1, 1), (1, 2), (2, 1), (2, 3);
 insert into accounts(name) values ('ada'), ('bob');
 insert into profiles(account_id, bio) values (1, 'Writes compilers');
+insert into deliveries(order_id, stage, stage_carrier, stage_signed_by) values
+  (1, 'delivered', null, 'Ada'), (3, 'in_transit', 'Swift', null), (2, 'packing', null, null);
 """

@@ -98,6 +98,37 @@ type Article =
 
 and Tag = { Id: TagId; Name: string }
 
+type DeliveryId = DeliveryId of int64
+
+/// Where a delivery is. A union whose cases carry facts: Plasm stores it across
+/// columns (stage, stage_carrier, stage_signed_by) by convention.
+type DeliveryStage =
+    | Packing
+    | InTransit of carrier: string
+    | Delivered of signedBy: string
+
+/// An Order's delivery. Its members are the domain's own vocabulary;
+/// [<ReflectedDefinition>] lets a query use them, translated to SQL.
+type Delivery =
+    { Id: DeliveryId
+      OrderId: OrderId
+      Stage: DeliveryStage }
+
+    /// The carrier, while the delivery is in transit.
+    [<ReflectedDefinition>]
+    member d.Carrier =
+        match d.Stage with
+        | InTransit carrier -> Some carrier
+        | _ -> None
+
+    /// The stage's name, to count deliveries by stage.
+    [<ReflectedDefinition>]
+    member d.StageName =
+        match d.Stage with
+        | Packing -> "packing"
+        | InTransit _ -> "in transit"
+        | Delivered _ -> "delivered"
+
 let qty n =
     match Quantity.create n with
     | Ok q -> q
@@ -158,6 +189,8 @@ module Db =
 
     let profiles = schema<Profile> "profiles" { identityKey (fun p -> p.Id) }
 
+    let deliveries = schema<Delivery> "deliveries" { identityKey (fun d -> d.Id) }
+
     let scalars =
         [ Scalar.wrap CustomerId (fun (CustomerId v) -> v)
           Scalar.wrap OrderId (fun (OrderId v) -> v)
@@ -168,12 +201,13 @@ module Db =
           Scalar.wrap TagId (fun (TagId v) -> v)
           Scalar.wrap AccountId (fun (AccountId v) -> v)
           Scalar.wrap ProfileId (fun (ProfileId v) -> v)
+          Scalar.wrap DeliveryId (fun (DeliveryId v) -> v)
           Scalar.tryWrap Quantity.create (fun (q: Quantity) -> q.Value)
           Scalar.enum [ Draft, "draft"; Published, "published"; Cancelled, "cancelled" ]
           Scalar.enum [ Pending, "pending"; Succeeded, "succeeded"; Failed, "failed" ] ]
 
     let schemasWith (orders: Schema<Order>) : ISchema list =
-        [ customers; orders; orderLines; products; payments; articles; tags; accounts; profiles ]
+        [ customers; orders; orderLines; products; payments; articles; tags; accounts; profiles; deliveries ]
 
     let model = Model.buildOrFail scalars (schemasWith orders)
     let modelDeletingLines = Model.buildOrFail scalars (schemasWith ordersDeletingLines)

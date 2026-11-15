@@ -23,10 +23,10 @@ they can: wrapper and `create` scalars, unions with fields, and typed ids as
 references. The schema states the rest: the key, `unique`, `owns` and `links`.
 Write transactions as `Tx<'T, 'E>`, and check queries and the schema at
 start-up. [`examples/Kanban`](../examples/Kanban) is the reference
-application. The row-record style (`Assoc<'T>` with `preload`,
-the pipeline `Query.*` functions) remains
-supported and specified, but it is not the recommended way to start an
-application.
+application. The row-record style (`Assoc<'T>` with `preload`) is
+being removed: one style only (2026-11-14). Validation and `cast` (step b)
+and the pipeline `Query.*` functions (step c) are gone; `plasm { }` is the
+only way to write a query.
 
 ## Verification
 

@@ -424,11 +424,9 @@ the same guarantee more exhaustively.
 |---|---|---|---|---|
 | <operation> needs <capability> | Implemented and verified | `ProviderSteps.fs` |  | New capabilities `Upserts` and `RowLocking`; `Returning` is now checked. Every call reports it as `TranslationError.UnsupportedByProvider`, naming every missing capability. |
 
-### query-pipeline.feature: Pipeline queries equal their computation-expression forms
+### ~~query-pipeline.feature~~ (removed, one style step c): Pipeline queries equal their computation-expression forms
 
-| Scenario | Classification | Step definitions | Related unit tests | Notes |
-|---|---|---|---|---|
-| <operation> in a pipeline produces the same SQL | Implemented and verified | `PipelineSteps.fs` |  | The `Query` module now has every operation, including joins, grouping and child-query preloads. |
+The feature was deleted with the pipeline `Query.*` functions: `plasm { }` is the only way to write a query.
 
 ### query-semantics.feature: Negation follows F# meaning, including for absent values
 
@@ -600,6 +598,7 @@ the same guarantee more exhaustively.
 | The domain's own member reads as its column | Implemented and verified | `UnionFieldSteps.fs` |  | `[<ReflectedDefinition>]` members and functions are inlined; `if case then Some field else None` is the field's column itself. |
 | Comparing with a whole value | Implemented and verified | `UnionFieldSteps.fs` |  | The case and each of its fields. |
 | Counting by case, through the domain's own member | Implemented and verified | `UnionFieldSteps.fs` |  | A `match` that produces values is a SQL CASE; stored case names are written as literals so GROUP BY and SELECT match. F# hides the compiled `Tag` property, so a member naming each case is the way to group by case. |
+| Counting by a member that names each case in words | Implemented and verified | `UnionFieldSteps.fs` |  | Found by koans lesson 22: a string written in the query's code is written into the SQL (quoted, `'` doubled), so the same branch in SELECT and GROUP BY is one expression; before, a string with a space was a parameter, and SELECT and GROUP BY had different parameters. A captured value stays a parameter. |
 | A bulk update sets every column of the union | Implemented and verified | `UnionFieldSteps.fs` |  | The assigned value must not depend on the row. |
 | A missing case column is reported | Implemented and verified | `UnionFieldSteps.fs` |  | Also: a case column must allow NULL. |
 
@@ -700,11 +699,9 @@ the same guarantee more exhaustively.
 |---|---|---|---|---|
 | <call> reports an unsupported operation as UnsupportedByProvider | Implemented and verified | `ProviderSteps.fs` |  | `WriteError.Translation`, `DbError.Translation`, `TxFailure.Failed(DbError.Translation ...)`. |
 
-### query-pipeline.feature: Pipelines chain like expressions
+### ~~query-pipeline.feature~~ (removed, one style step c): Pipelines chain like expressions
 
-| Scenario | Classification | Step definitions | Related unit tests | Notes |
-|---|---|---|---|---|
-| Chaining joins in a pipeline | Implemented and verified | `PipelineSteps.fs` |  | Pipeline joins nest (`((o, l), p)`); the translator follows the lambda's tuple shape. |
+The feature was deleted with the pipeline `Query.*` functions: `plasm { }` is the only way to write a query.
 
 ### reading.feature: One respects the query and reports too many rows as data
 

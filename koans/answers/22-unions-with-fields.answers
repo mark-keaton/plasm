@@ -1,0 +1,16 @@
+# A union with fields is read back whole
+InTransit "Swift"
+# A case test is a query
+[ OrderId 1L ]
+# Matching on a case's field
+[ OrderId 3L ]
+# The domain's own member in a query
+[ OrderId 3L ]
+# Comparing with a whole value
+[ OrderId 1L ]
+# Counting by stage
+[ "delivered", 1L; "in transit", 1L; "packing", 1L ]
+# Changing the stage clears the old stage's columns
+[ None ]
+# A row that is no case is refused
+true

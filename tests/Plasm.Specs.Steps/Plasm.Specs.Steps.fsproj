@@ -33,7 +33,6 @@
     <Compile Include="UnionFieldSteps.fs" />
     <Compile Include="OwnedSteps.fs" />
     <Compile Include="LinkedSteps.fs" />
-    <Compile Include="PipelineSteps.fs" />
     <Compile Include="HasOneSteps.fs" />
     <Compile Include="ProviderSteps.fs" />
     <Compile Include="ReadingSteps.fs" />

@@ -25,4 +25,4 @@ let lessons: Lesson list =
       L19_PreparedQueries.lesson
       L20_Failures.lesson
       L21_TestingWithPlasm.lesson
-      L22_QueryPipelines.lesson ]
+      L22_UnionsWithFields.lesson ]

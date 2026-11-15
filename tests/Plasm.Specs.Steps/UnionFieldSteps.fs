@@ -54,6 +54,15 @@ module UnionCards =
             | Doing _ -> Working
             | Done _ -> Finished
 
+    /// The card's phase in words: strings a query writes into its SQL.
+    type Card with
+        [<ReflectedDefinition>]
+        member c.PhaseName =
+            match c.Stage with
+            | Backlog -> "not started"
+            | Doing _ -> "in progress"
+            | Done _ -> "it's done"
+
     /// A union whose case holds a list: it has no columns.
     type Tagged =
         | Untagged
@@ -327,6 +336,26 @@ type UnionFieldSteps(w: World) =
             w.Set("counts", ok r)
         }
         |> unit
+
+    [<StepDefinition("I count the Cards grouped by the member Card.PhaseName, which names each case in words")>]
+    member _.CountByPhaseName() =
+        task {
+            let! r =
+                repo().All(
+                    plasm {
+                        for c in cards do
+                            groupBy c.PhaseName
+                            select (c.PhaseName, Agg.count ())
+                    }
+                )
+
+            w.Set("namedCounts", ok r |> List.sort)
+        }
+        |> unit
+
+    [<StepDefinition("the counts are 1 \"not started\", 1 \"in progress\" and 2 \"it's done\"")>]
+    member _.NamedCounts() =
+        equal [ "in progress", 1L; "it's done", 2L; "not started", 1L ] (w.Get<(string * int64) list> "namedCounts") "counts"
 
     [<StepDefinition("the counts are 1 Waiting, 1 Working and 2 Finished")>]
     member _.Counts() = equal [ Waiting, 1L; Working, 1L; Finished, 2L ] (w.Get<(Phase * int64) list> "counts") "counts"

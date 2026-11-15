@@ -17,7 +17,7 @@ Feature: What a repo is
       | koan                                 | the learner discovers                                                                             | teaches                                                    |
       | Every koan is given a repo        | every koan is given repo, a Plasm Repo whose changes are undone when the koan ends; its Count answers Ok 3L for the three customers | aggregates: Counting a filtered query                                    |
       | ok opens a Result                 | a repo answers with a Result; ok takes the value out of an Ok, so ok (Ok 4L) is 4L                    | core: Unsupported translation is explicit                                |
-      | A repo pairs a model with a database | repo holds Db.model and its nine record types, and can check them against the database's tables | schema-check: A model that matches the database passes     |
+      | A repo pairs a model with a database | repo holds Db.model and its ten record types, and can check them against the database's tables | schema-check: A model that matches the database passes     |
       | In your app, you make the repo    | Repo(Db.model, provider) makes a repo, as an app does with Postgres.connect; it reads the same three customers | schema-check: A model that matches the database passes                   |
       | A query is a description             | Query.from builds a value; no command is sent until a repo runs it                                | core: Constructing a query performs no database operations |
       | The repo shows its SQL               | repo.Explain shows the SQL a repo would send for a query, without sending anything                       | elegance: Loading plans can be inspected                   |

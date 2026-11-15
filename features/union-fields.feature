@@ -98,6 +98,11 @@ Feature: A union with fields is stored across columns
       When I count the Cards grouped by the member Card.Phase, which names each case
       Then the counts are 1 Waiting, 1 Working and 2 Finished
 
+    Scenario: Counting by a member that names each case in words
+      Given a Card in each stage
+      When I count the Cards grouped by the member Card.PhaseName, which names each case in words
+      Then the counts are 1 "not started", 1 "in progress" and 2 "it's done"
+
   Rule: Bulk writes and the schema check know the columns
 
     Scenario: A bulk update sets every column of the union

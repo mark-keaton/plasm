@@ -66,7 +66,9 @@ baseline.
   against the record: `o.Total > "x"`, `preload o.Total` and
   `preload o.Product` are compile errors.
 - Composition is ordinary F#: `let forCustomer c q = plasm { for o in q do where (o.CustomerId = Some c) }`.
-  Pipeline helpers (`Query.where`, ...) exist too.
+  *Amended 2026-11-14 (one style):* the pipeline helpers (`Query.where`, ...)
+  were removed; `plasm { }` is the only way to write a query, and
+  `Query.from` and `Query.prepare` remain.
 - Translation to a small SQL AST (`Sql.fs`) happens only when a query is
   planned (`repo.Explain`) or executed. The rules:
   - A subexpression that does not mention a row variable is *closed*. It is

@@ -80,10 +80,7 @@ type internal JoinDef =
     { Kind: JoinKind
       Target: Type
       OuterKey: Expr
-      InnerKey: Expr
-      /// A pipeline join pairs the rows so far with the joined record
-      /// ((o, l), p); the computation expression extends a flat tuple (o, l, p).
-      Nested: bool }
+      InnerKey: Expr }
 
 type internal LoadSpec =
     { Assoc: PropertyInfo
@@ -285,17 +282,14 @@ module internal QueryOps =
                           Child = child
                           Replace = replace } ] })
 
-    let joinWith nested (outer: QueryDef) kind (target: Type) (outerKey: Expr) (innerKey: Expr) : QueryDef =
+    let join (outer: QueryDef) kind (target: Type) (outerKey: Expr) (innerKey: Expr) : QueryDef =
         { outer with
             Joins =
                 outer.Joins
                 @ [ { Kind = kind
                       Target = target
                       OuterKey = outerKey
-                      InnerKey = innerKey
-                      Nested = nested } ] }
-
-    let join outer kind target outerKey innerKey = joinWith false outer kind target outerKey innerKey
+                      InnerKey = innerKey } ] }
 
 /// Computation expression for queries:
 ///
@@ -554,7 +548,7 @@ type internal PreparedProjection2<'A, 'B, 'R>(template: QueryDef, select: Expr) 
         member _.Def = { template with Args = Array.zeroCreate 2 }
         member _.Select = Some select
 
-/// Pipeline-style query functions, equivalent to the computation expression.
+/// Queries over a whole schema, and prepared queries.
 type Query =
     /// Prepares a query with one argument. The description is built and
     /// translated once; each call only binds the argument as a parameter:
@@ -593,79 +587,6 @@ type Query =
 
     static member from(_schema: Schema<'T>) : Query<'T> = Query<'T>(QueryDef.Empty typeof<'T>)
 
-    static member where([<ReflectedDefinition>] predicate: Expr<'T -> bool>) =
-        fun (q: Query<'T>) -> QueryOps.where q predicate
-
-    static member orderBy([<ReflectedDefinition>] key: Expr<'T -> 'K>) =
-        fun (q: Query<'T>) -> QueryOps.order q key SortDirection.Ascending
-
-    static member orderByDescending([<ReflectedDefinition>] key: Expr<'T -> 'K>) =
-        fun (q: Query<'T>) -> QueryOps.order q key SortDirection.Descending
-
-    static member thenBy([<ReflectedDefinition>] key: Expr<'T -> 'K>) =
-        fun (q: Query<'T>) -> QueryOps.order q key SortDirection.Ascending
-
-    static member thenByDescending([<ReflectedDefinition>] key: Expr<'T -> 'K>) =
-        fun (q: Query<'T>) -> QueryOps.order q key SortDirection.Descending
-
-    /// Limits the rows; in a prepared query, `Query.take size.Value` binds per call.
-    static member take([<ReflectedDefinition>] count: Expr<int>) =
-        fun (q: Query<'T>) -> QueryOps.take "take" q count
-
-    /// Skips rows (requires an ordering); `Query.skip offset.Value` binds per call.
-    static member skip([<ReflectedDefinition>] count: Expr<int>) =
-        fun (q: Query<'T>) -> QueryOps.take "skip" q count
-
-    static member groupBy([<ReflectedDefinition>] key: Expr<'T -> 'K>) =
-        fun (q: Query<'T>) -> QueryOps.map q (fun d -> { d with GroupBy = d.GroupBy @ [ key ] })
-
-    static member having([<ReflectedDefinition>] predicate: Expr<'T -> bool>) =
-        fun (q: Query<'T>) -> QueryOps.map q (fun d -> { d with Havings = d.Havings @ [ predicate ] })
-
-    static member limitPerParent(count: int) =
-        QueryOps.checkCount "limitPerParent" count
-        fun (q: Query<'T>) -> QueryOps.map q (fun d -> { d with PerParentLimit = Some count })
-
-    static member preload([<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'R>>) =
-        fun (q: Query<'T>) -> QueryOps.preload q assoc None false
-
-    /// Loads a has-many relationship with a query for the related records.
-    static member preload([<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C list>>, related: Query<'C>) =
-        fun (q: Query<'T>) -> QueryOps.preload q assoc (Some related.Def) false
-
-    /// Loads an optional relationship with a query for the related record.
-    static member preload([<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C option>>, related: Query<'C>) =
-        fun (q: Query<'T>) -> QueryOps.preload q assoc (Some related.Def) false
-
-    /// Loads a required relationship with a query for the related record.
-    static member preload([<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C>>, related: Query<'C>) =
-        fun (q: Query<'T>) -> QueryOps.preload q assoc (Some related.Def) false
-
-    static member replacePreload([<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'R>>) =
-        fun (q: Query<'T>) -> QueryOps.preload q assoc None true
-
-    static member replacePreload([<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C list>>, related: Query<'C>) =
-        fun (q: Query<'T>) -> QueryOps.preload q assoc (Some related.Def) true
-
-    /// Inner join on equal keys: rows become (outer, inner) pairs.
-    static member join
-        (_inner: Schema<'U>, [<ReflectedDefinition>] outerKey: Expr<'T -> 'K>, [<ReflectedDefinition>] innerKey: Expr<'U -> 'K>)
-        =
-        fun (q: Query<'T>) -> Query<'T * 'U>(QueryOps.joinWith true { q.Def with Template = None } InnerJoin typeof<'U> outerKey innerKey)
-
-    /// Left join on equal keys: rows become (outer, inner option) pairs.
-    static member leftJoin
-        (_inner: Schema<'U>, [<ReflectedDefinition>] outerKey: Expr<'T -> 'K>, [<ReflectedDefinition>] innerKey: Expr<'U -> 'K>)
-        =
-        fun (q: Query<'T>) -> Query<'T * 'U option>(QueryOps.joinWith true { q.Def with Template = None } LeftJoin typeof<'U> outerKey innerKey)
-
-    /// Projects each row; must come last. Only the columns used are read.
-    static member select([<ReflectedDefinition>] projection: Expr<'T -> 'R>) =
-        fun (q: Query<'T>) ->
-            if not q.Def.Loads.IsEmpty then
-                invalidOp "A projected query cannot load relationships; remove preload or select whole records."
-
-            Projection<'R>(q.Def, projection)
 
 [<AutoOpen>]
 module QueryBuilderInstance =

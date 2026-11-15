@@ -69,7 +69,8 @@ single simplest use of each feature.
 
 ### Part 5: living with it (lessons 20 to 22)
 
-20 Failures, 21 Testing with Plasm, 22 Query pipelines.
+20 Failures, 21 Testing with Plasm, 22 Unions with fields (a union whose cases
+carry facts, stored across columns, and the domain's own members in queries).
 
 ## Writing a koan
 

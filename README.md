@@ -57,8 +57,7 @@ short schemas. The shape it sends over the wire (`src/Shared/Api.fs`) is the
 application's own: Plasm does not serialize.
 
 Plasm also supports an older row-record style: `Assoc<'T>` fields loaded with
-`preload`, changesets, and the pipeline `Query.*`
-functions. It is fully supported and specified, but it is not the
+`preload`, and changesets. It is fully supported and specified, but it is not the
 recommended way to start an application. Use it when the stored rows really
 are a different shape from the domain, or when relationships should load only
 on request. The overview below and the koans are written mostly in this

@@ -25,8 +25,7 @@ type Binding =
       Optional: bool }
 
 /// The sources a tuple-typed row variable stands for (after joins). The
-/// computation expression gives a flat tuple (o, l, p); pipeline joins give
-/// nested pairs ((o, l), p).
+/// computation expression gives a flat tuple (o, l, p).
 type Space =
     | Source of Binding
     | Sources of Space list
@@ -608,11 +607,16 @@ and branch (ctx: Ctx) (e: Expr) : Sql.Expr =
     if isRowDependent ctx e || mentionsArg e then
         scalar ctx e
     else
-        match scalar ctx e with
-        | Sql.Param(:? string as text) when Text.RegularExpressions.Regex.IsMatch(text, "^[A-Za-z0-9_]+$") -> storedLiteral text
-        | Sql.Param(:? int as n) -> Sql.Literal(string n)
-        | Sql.Param(:? int64 as n) -> Sql.Literal(string n)
-        | other -> other
+        // A value written in the query's own code is written into the SQL, so
+        // the same branch in SELECT and GROUP BY is the same expression (two
+        // parameters would not be). A captured value stays a parameter.
+        match e, scalar ctx e with
+        | ValueWithName _, other -> other
+        | Value(:? string as text, _), Sql.Param _ when not (text.Contains '\000') -> Sql.Literal("'" + text.Replace("'", "''") + "'")
+        | _, Sql.Param(:? string as text) when Text.RegularExpressions.Regex.IsMatch(text, "^[A-Za-z0-9_]+$") -> storedLiteral text
+        | _, Sql.Param(:? int as n) -> Sql.Literal(string n)
+        | _, Sql.Param(:? int64 as n) -> Sql.Literal(string n)
+        | _, other -> other
 
 /// True when the translated expression can be NULL: it reads an option field,
 /// a left-joined source, an aggregate or a raw fragment.
@@ -1628,12 +1632,7 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
                         let t = items |> List.map snd |> Array.ofList |> FSharpType.MakeTupleType
                         Build(FSharpValue.PreComputeTupleConstructor t, items |> List.map fst), t
 
-                let items =
-                    List.zip space.Tail def.Joins
-                    |> List.fold
-                        (fun items (b, j: JoinDef) ->
-                            if j.Nested then [ pack items; entity b ] else items @ [ entity b ])
-                        [ entity space.Head ]
+                let items = space |> List.map entity
 
                 fst (pack items)
 
