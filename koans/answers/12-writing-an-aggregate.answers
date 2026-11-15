@@ -1,25 +1,26 @@
-# A parent can be saved with a child
+# Inserting an order inserts its lines
 5L
 5L
-# The saved parent holds its children
+# The stored order holds its stored lines
 1
 true
-# Saved children can be read back
+# Saved lines are read back
 2
 10m
-# Adding a child to an existing parent
+# Adding a line to an order read
 2L
-# Omitted children are untouched
+# Lines that did not change are not written
+0
 2L
-# Children are matched by identity
-3L
-# Removing children needs a policy
-true
+# Lines are matched by key
+OrderLineId 1L
+9m
+# A line left out of the list is deleted
 1L
-# Parent and children succeed together
-true
-4L
-# A filtered list is not the whole list
+# Changing some lines is changing the list
 [ ProductId 1L ]
-# The same child twice is refused
-true
+# A line's error is the order's field error
+[ "Lines[1].UnitPrice" ]
+4L
+# Deleting an order deletes its lines
+0L
