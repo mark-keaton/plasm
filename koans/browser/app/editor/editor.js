@@ -7,8 +7,9 @@ let vimModule = null;
 const loadVim = async () => (vimModule ??= await import('@replit/codemirror-vim'));
 import { EditorState, Compartment, RangeSetBuilder, Annotation, StateField, StateEffect } from '@codemirror/state';
 import { EditorView, ViewPlugin, Decoration, keymap, lineNumbers, drawSelection, highlightActiveLine, hoverTooltip, showTooltip } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { autocompletion, completionKeymap, startCompletion } from '@codemirror/autocomplete';
+import { defaultKeymap, history, historyKeymap, indentMore, indentLess } from '@codemirror/commands';
+import { autocompletion, completionKeymap, startCompletion, acceptCompletion, completionStatus } from '@codemirror/autocomplete';
+import { linter, forEachDiagnostic } from '@codemirror/lint';
 import { indentUnit, indentService } from '@codemirror/language';
 import { tokens, colour } from '../Koans.Browser.Host/wwwroot/fsharp.js';
 
@@ -100,7 +101,37 @@ const fromPage = Annotation.define();
 /// Creates the editor in `parent`. `complete(code, offset)` answers what can
 /// follow the cursor; `onEdit(code)` hears the learner's changes; `onRun()`
 /// runs the koan; `onVimMode(mode)` hears 'normal', 'insert', 'visual' or null.
-export function createEditor(parent, { complete, hover, onEdit, onRun, onVimMode }) {
+/// The editor's look, in the page's colours (CodeMirror's own theme would
+/// otherwise draw light popups).
+const look = EditorView.theme({
+  '.cm-tooltip': { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line-2)', borderRadius: '8px', overflow: 'hidden' },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul': { fontFamily: 'var(--mono)', maxHeight: '16em' },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul > li': { color: 'var(--ink)', padding: '2px 10px' },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]': { background: 'var(--accent-soft)', color: 'var(--accent-ink)' },
+  '.cm-completionLabel': { color: 'inherit' },
+  '.cm-completionDetail': { color: 'var(--ink-3)', fontStyle: 'normal', marginLeft: '1.2em' },
+  '.cm-completionIcon': { color: 'var(--ink-3)', opacity: '1' },
+  '.cm-tooltip-lint': { padding: '0' },
+  '.cm-diagnostic': { padding: '6px 10px', font: '13px/1.5 var(--mono)', whiteSpace: 'pre-wrap', maxWidth: '560px' },
+  '.cm-diagnostic-error': { borderLeft: '4px solid var(--warn)' },
+}, { dark: matchMedia('(prefers-color-scheme: dark)').matches });
+
+/// Tab: completes when the list is open, opens it after a name or a dot, and
+/// otherwise indents (Shift+Tab unindents).
+const tab = (view) => {
+  if (completionStatus(view.state) === 'active') return acceptCompletion(view);
+  const r = view.state.selection.main;
+  const before = r.empty ? view.state.sliceDoc(Math.max(0, r.head - 1), r.head) : '';
+  if (/[\w.']/.test(before)) return startCompletion(view);
+  if (!r.empty) return indentMore(view);
+  // Spaces to the next multiple of four, as F# wants.
+  const column = r.head - view.state.doc.lineAt(r.head).from;
+  view.dispatch(view.state.replaceSelection(' '.repeat(4 - (column % 4))));
+  return true;
+};
+
+export function createEditor(parent, { complete, hover, diagnose, onEdit, onRun, onVimMode }) {
+  let checkedCode = null;
   const vimSlot = new Compartment();
   let vimOn = false;
 
@@ -156,15 +187,23 @@ export function createEditor(parent, { complete, hover, onEdit, onRun, onVimMode
         colouring,
         hoverTip,
         cursorTip,
+        look,
+        // The compiler's mistakes, underlined a moment after typing stops.
+        linter(async (view) => {
+          const code = view.state.doc.toString();
+          const found = (await diagnose(code)) ?? [];
+          checkedCode = code;
+          return found.map((d) => ({ from: Math.min(d.from, code.length), to: Math.min(d.to, code.length), severity: d.severity, message: d.message }));
+        }, { delay: 600 }),
         autocompletion({ override: [source], activateOnTyping: true, icons: true }),
         keymap.of([
           { key: 'Mod-Enter', run: () => { onRun(); return true; } },
           { key: 'Ctrl-Enter', run: () => { onRun(); return true; } },
           { key: 'Ctrl-Space', run: startCompletion },
+          { key: 'Tab', run: tab, shift: indentLess },
           ...completionKeymap,
           ...keys,
           ...historyKeymap,
-          indentWithTab,
         ]),
         EditorView.updateListener.of((u) => {
           if (u.docChanged && !u.transactions.some((t) => t.annotation(fromPage))) onEdit(u.state.doc.toString());
@@ -198,6 +237,9 @@ export function createEditor(parent, { complete, hover, onEdit, onRun, onVimMode
     select(from, to = from) { view.dispatch({ selection: { anchor: from, head: to }, scrollIntoView: true }); },
     selection() { const r = view.state.selection.main; return { from: r.from, to: r.to, head: r.head }; },
     focus() { view.focus(); },
+    /// The mistakes underlined now, and the code they were found in.
+    diagnostics() { const all = []; forEachDiagnostic(view.state, (d) => all.push({ from: d.from, to: d.to, severity: d.severity, message: d.message })); return all; },
+    checkedCode: () => checkedCode,
     /// Scrolls so that the character at `pos` is on screen.
     reveal(pos) { view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: 'center' }) }); },
     /// Where on screen the character at `pos` is (for tests that point at it).

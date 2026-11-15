@@ -53,6 +53,10 @@ public static partial class KoansHost
         Plasm.Koans.Browser.KoanRun.hover(RefsDir, helpers, isTask, framed, body, offset);
 
     [JSExport]
+    public static Task<string> Diagnose(string helpers, bool isTask, bool framed, string body) =>
+        Plasm.Koans.Browser.KoanRun.diagnose(RefsDir, helpers, isTask, framed, body);
+
+    [JSExport]
     public static Task<string> RunKoan(string title, string name, string helpers, bool isTask, bool framed, string body) =>
         Plasm.Koans.Browser.KoanRun.run(RefsDir, title, name, helpers, isTask, framed, body);
 }

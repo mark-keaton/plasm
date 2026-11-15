@@ -325,6 +325,7 @@ $('shortcut').textContent = keys.run;
 const editor = createEditor($('code'), {
   complete: (code, offset) => (shown ? complete(shown.lessonIndex, shown.koanIndex, code, offset) : []),
   hover: (code, offset) => (shown ? askEngine('hover', shown.lessonIndex, shown.koanIndex, code, offset) : {}),
+  diagnose: (code) => (shown ? askEngine('diagnose', shown.lessonIndex, shown.koanIndex, code, 0) : []),
   onEdit: (code) => keep(shown.lessonIndex, shown.koanIndex, (s) => { s.edit = code; }),
   onRun: () => runShown(),
   onVimMode: (mode) => {

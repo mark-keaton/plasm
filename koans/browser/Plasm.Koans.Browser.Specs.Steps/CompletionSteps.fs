@@ -72,7 +72,10 @@ type CompletionSteps(w: BrowserWorld) =
                     PageWaitForFunctionOptions(Timeout = Nullable 30000.f)
                 )
 
-            ()
+            // CodeMirror ignores accepting within 75 ms of the list opening
+            // (so a keystroke already on its way cannot pick something); a
+            // person reads the list first.
+            do! w.Page.WaitForTimeoutAsync 200.f
         }
         |> unit
 
@@ -161,4 +164,87 @@ type CompletionSteps(w: BrowserWorld) =
     [<StepDefinition("the answer's signature mentions \"(.*)\"")>]
     member _.SignatureMentions(text: string) =
         check (hoverJson.Contains text) $"the answer is {hoverJson}"
+
+    [<StepDefinition("^(?:the learner )?presses (Tab|Escape|Ctrl\\+Space)$")>]
+    member _.Press(key: string) =
+        w.Page.Keyboard.PressAsync(
+            match key with
+            | "Ctrl+Space" -> "Control+Space"
+            | k -> k
+        )
+
+    [<StepDefinition("^the code ends with \"(.*)\"$")>]
+    member _.EndsWith(text: string) =
+        task {
+            let! code = codeOf w.Page
+            check (code.TrimEnd().EndsWith text) $"the code ends:\n%A{code.Substring(max 0 (code.Length - 60))}"
+        }
+        |> unit
+
+    [<StepDefinition("^the code ends with a line of four spaces$")>]
+    member _.EndsIndented() =
+        task {
+            let! code = codeOf w.Page
+            check (code.EndsWith "\n    ") $"the code ends:\n%A{code.Substring(max 0 (code.Length - 20))}"
+        }
+        |> unit
+
+    [<StepDefinition("^no completion is a member every object has, such as Equals$")>]
+    member _.NoObjectMembers() =
+        let found = items |> Array.filter (fun i -> List.contains i.name [ "Equals"; "GetHashCode"; "GetType"; "ToString" ])
+        check (found.Length = 0) $"completions include %A{found |> Array.map (fun i -> i.name)}"
+
+    [<StepDefinition("^no completion's description spells out System.Threading$")>]
+    member _.ShortDetails() =
+        let long = items |> Array.filter (fun i -> i.detail.Contains "System.Threading")
+        check (long.Length = 0) $"descriptions such as %A{long |> Array.truncate 2 |> Array.map (fun i -> i.detail)}"
+
+    /// Waits until the compiler has checked the editor's current code.
+    member private _.Checked() =
+        task {
+            let! _ =
+                w.Page.WaitForFunctionAsync(
+                    "() => window.koans.editor.checkedCode() === window.koans.editor.get()",
+                    null,
+                    PageWaitForFunctionOptions(Timeout = Nullable 60000.f)
+                )
+
+            let! messages = w.Page.EvaluateAsync<string[]>("() => window.koans.editor.diagnostics().map(d => d.message)")
+            return messages
+        }
+
+    [<StepDefinition("^the mistake is underlined$")>]
+    member this.Underlined() =
+        task {
+            let! messages = this.Checked()
+            check (messages.Length > 0) "nothing is underlined"
+            let! marks = w.Page.Locator("#code .cm-lintRange-error").CountAsync()
+            check (marks > 0) $"the compiler says %A{messages}, but nothing is underlined"
+        }
+        |> unit
+
+    [<StepDefinition("^the underline says what the compiler says: \"(.*)\"$")>]
+    member this.UnderlineSays(text: string) =
+        task {
+            let! messages = this.Checked()
+            check (messages |> Array.exists (fun m -> m.Contains text)) $"the underlines say %A{messages}"
+        }
+        |> unit
+
+    [<StepDefinition("^nothing is underlined$")>]
+    member this.NothingUnderlined() =
+        task {
+            let! messages = this.Checked()
+            check (messages.Length = 0) $"underlined: %A{messages}"
+        }
+        |> unit
+
+    [<StepDefinition("^the learner replaces the code with its original code$")>]
+    member _.Original() =
+        task {
+            let! name = w.Page.TextContentAsync "#name"
+            let! koan = koanNamed w.Page (name.Trim())
+            do! typeCode w.Page koan.Body
+        }
+        |> unit
 

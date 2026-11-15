@@ -240,10 +240,61 @@ Feature: Walking the path in the browser
       When the learner puts the cursor on "repo" in "repo.Count" and types "K"
       Then a tip shows "repo: Repo"
 
+    Scenario: Tab opens the completions after repo.
+      Given the learner opens the koan "Every koan is given a repo"
+      When the learner types "repo." on a new line at the end of the code
+      And presses Tab
+      Then a list of completions opens, offering Count
+
+    Scenario: Tab completes a name
+      Given the learner opens the koan "Every koan is given a repo"
+      When the learner types "repo.Cou" on a new line at the end of the code
+      And presses Tab
+      And a list of completions opens, offering Count
+      And presses Tab
+      Then the code ends with "repo.Count"
+
+    Scenario: Tab still indents where there is nothing to complete
+      Given the learner opens the koan "Every koan is given a repo"
+      When the learner types "" on a new line at the end of the code
+      And presses Tab
+      Then the code ends with a line of four spaces
+
+    Scenario: Ctrl+Space opens the completions
+      Given the learner opens the koan "Every koan is given a repo"
+      When the learner types "repo." on a new line at the end of the code
+      And presses Escape
+      And presses Ctrl+Space
+      Then a list of completions opens, offering Count
+
+    Scenario: Completions read like F#
+      When the learner asks what can follow "repo." in the koan "Every koan is given a repo"
+      Then no completion is a member every object has, such as Equals
+      And no completion's description spells out System.Threading
+
     Scenario: Completions come quickly once the compiler has warmed up
       Given the learner has asked for completions once
       When the learner asks what can follow "repo." in the koan "ok opens a Result"
       Then the completions arrive within 1500 milliseconds
+
+  Rule: Mistakes are underlined as they are made
+
+    Scenario: A mistake is underlined as the learner types
+      Given the learner opens the koan "Every koan is given a repo"
+      When the learner types "let wrong: int = 4.2" on a new line at the end of the code
+      Then the mistake is underlined
+      And the underline says what the compiler says: "float"
+
+    Scenario: A blank is not a mistake
+      When the learner opens the koan "Every koan is given a repo"
+      Then nothing is underlined
+
+    Scenario: Fixing the mistake removes the underline
+      Given the learner opens the koan "Every koan is given a repo"
+      And the learner types "let wrong: int = 4.2" on a new line at the end of the code
+      And the mistake is underlined
+      When the learner replaces the code with its original code
+      Then nothing is underlined
 
   Rule: Each koan has its own address
 

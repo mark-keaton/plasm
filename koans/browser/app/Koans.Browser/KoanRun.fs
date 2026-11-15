@@ -202,14 +202,14 @@ let private checkAt (refsDir: string) (helpers: string) (isTask: bool) (framed: 
         let checker = Compiler.checker.Value
 
         let options =
-            { checker.GetProjectOptionsFromCommandLineArgs("koan.fsproj", Array.append [| "--noframework"; "--target:library"; "--parallelcompilation-" |] refs) with
+            { checker.GetProjectOptionsFromCommandLineArgs("koan.fsproj", Array.append [| "--noframework"; "--target:library" |] refs) with
                 SourceFiles = [| file |] }
 
         let! parsed, answer = checker.ParseAndCheckFileInProject(file, 0, FSharp.Compiler.Text.SourceText.ofString src, options) |> Async.StartAsTask
 
         return
             match answer with
-            | FSharpCheckFileAnswer.Succeeded check -> Some(parsed, check, line, lineText, column)
+            | FSharpCheckFileAnswer.Succeeded check -> Some(parsed, check, line, lineText, column, prefix, indent)
             | _ -> None
     }
 
@@ -244,7 +244,7 @@ let private docOf (refsDir: string) (doc: FSharp.Compiler.Symbols.FSharpXmlDoc) 
 let complete (refsDir: string) (helpers: string) (isTask: bool) (framed: bool) (body: string) (offset: int) : Task<string> =
     task {
         match! checkAt refsDir helpers isTask framed body offset with
-        | Some(parsed, check, line, lineText, column) ->
+        | Some(parsed, check, line, lineText, column, _, _) ->
             let partial = QuickParse.GetPartialLongNameEx(lineText, column - 1)
             let list = check.GetDeclarationListInfo(Some parsed, line, lineText, partial)
 
@@ -255,9 +255,21 @@ let complete (refsDir: string) (helpers: string) (isTask: bool) (framed: bool) (
                     | _ -> None)
                 |> Option.defaultValue ""
 
+            // Every object's members (Equals, GetHashCode, ...) are left out, and
+            // a description is kept short: its type, without the member's name
+            // again, the optional cancellation token or namespaces.
+            let everyObject = set [ "Equals"; "GetHashCode"; "GetType"; "ToString"; "ReferenceEquals" ]
+
+            let short (name: string) (text: string) =
+                let text = Text.RegularExpressions.Regex.Replace(text, @"^(member|val|property|method|abstract member|static member|union case|type)\s+([\w.`']*\.)?" + Text.RegularExpressions.Regex.Escape name + @"\s*:\s*", "")
+                let text = Text.RegularExpressions.Regex.Replace(text, @"\s*\*\s*\?cancellationToken:\s*System\.Threading\.CancellationToken", "")
+                let text = Text.RegularExpressions.Regex.Replace(text, @"\?cancellationToken:\s*System\.Threading\.CancellationToken\s*->\s*", "unit -> ")
+                text.Replace("System.Threading.Tasks.", "").Replace("System.Threading.", "").Replace("System.Collections.Generic.", "")
+
             let items =
                 list.Items
-                |> Array.map (fun i -> dict [ "name", box i.NameInList; "kind", box (string i.Glyph); "detail", box (detail i.Description) ])
+                |> Array.filter (fun i -> not (everyObject.Contains i.NameInList))
+                |> Array.map (fun i -> dict [ "name", box i.NameInList; "kind", box (string i.Glyph); "detail", box (short i.NameInList (detail i.Description)) ])
 
             return JsonSerializer.Serialize items
         | None -> return "[]"
@@ -268,7 +280,7 @@ let complete (refsDir: string) (helpers: string) (isTask: bool) (framed: bool) (
 let hover (refsDir: string) (helpers: string) (isTask: bool) (framed: bool) (body: string) (offset: int) : Task<string> =
     task {
         match! checkAt refsDir helpers isTask framed body offset with
-        | Some(_, check, line, lineText, column) ->
+        | Some(_, check, line, lineText, column, _, _) ->
             match QuickParse.GetCompleteIdentifierIsland true lineText column with
             | Some(ident, endColumn, _) ->
                 let names = ident.Split('.') |> List.ofArray
@@ -300,3 +312,43 @@ let hover (refsDir: string) (helpers: string) (isTask: bool) (framed: bool) (bod
             | None -> return "{}"
         | None -> return "{}"
     }
+
+/// The compiler's errors and warnings in a koan's code, as offsets in that
+/// code: JSON [{from, to, severity, message}]. A mistake outside the code the
+/// page shows (in the frame around it) is put at the code's end.
+let diagnose (refsDir: string) (helpers: string) (isTask: bool) (framed: bool) (body: string) : Task<string> =
+    task {
+        match! checkAt refsDir helpers isTask framed body 0 with
+        | Some(_, check, _, _, _, prefix, indent) ->
+            let lines = body.Split('\n')
+            let starts = lines |> Array.scan (fun at (l: string) -> at + l.Length + 1) 0
+
+            let offset (line: int) (column: int) =
+                let n = line - prefix // 1-based line of the body
+
+                if n < 1 || n > lines.Length then
+                    body.Length
+                else
+                    starts.[n - 1] + (max 0 (column - (if lines.[n - 1] = "" then 0 else indent)) |> min lines.[n - 1].Length)
+
+            let shown =
+                check.Diagnostics
+                // Only mistakes in the koan's own code, not about the compiler's options.
+                |> Array.filter (fun d -> d.FileName.EndsWith "editor.fs")
+                |> Array.filter (fun d ->
+                    d.Severity = FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Error
+                    || d.Severity = FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Warning)
+                |> Array.map (fun d ->
+                    let from = offset d.StartLine d.StartColumn
+                    let until = max from (offset d.EndLine d.EndColumn)
+
+                    dict
+                        [ "from", box from
+                          "to", box until
+                          "severity", box (if d.Severity = FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Error then "error" else "warning")
+                          "message", box d.Message ])
+
+            return JsonSerializer.Serialize shown
+        | None -> return "[]"
+    }
+
