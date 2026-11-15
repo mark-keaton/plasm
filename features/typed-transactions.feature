@@ -65,3 +65,36 @@ Feature: Transactions are typed, and their steps need no names
     Scenario: A transaction is written without naming its steps
       When I compile a transaction that inserts a Customer and reads it back, naming no step
       Then the code compiles
+
+  Rule: Steps write records
+
+    A step writes a record: `Tx.insert customer`, `Tx.update (original, changed)`
+    and `Tx.delete customer`. An update writes only the columns `changed`
+    differs in from `original`, the record it was made from. `expectVersion`
+    names the version a caller last saw, for a copy that came back from a
+    client.
+
+    Scenario: Inserting a record gives it back with its key
+      When a transaction inserts the Customer "Ada" as a record
+      Then it gives the Customer "Ada" with its key
+
+    Scenario: An update writes only the columns that changed
+      Given a Customer named "Ada"
+      When a transaction updates that Customer's name to "Ada L." from the record read
+      Then the Customer is stored with the name "Ada L."
+      And the update sent sets only the name
+
+    Scenario: An update expecting a version the record no longer has is a conflict
+      Given a draft Order whose version is 2
+      When a transaction updates it expecting the version 1
+      Then the failure is a conflict, and the Order is unchanged
+
+    Scenario: Expecting a version of a record without a version field is invalid
+      Given a Customer named "Ada"
+      When a transaction updates that Customer expecting the version 1
+      Then the failure is an invalid change on the version, saying the record has no version field
+
+    Scenario: Deleting the record read deletes it
+      Given a Customer named "Ada"
+      When a transaction deletes that Customer
+      Then no Customer is stored

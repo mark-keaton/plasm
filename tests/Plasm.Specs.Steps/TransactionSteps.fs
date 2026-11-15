@@ -33,9 +33,9 @@ type TransactionSteps(w: World) =
             let tx =
                 transaction {
                     let! before = TxSteps.txid "txid before"
-                    let! customer = Tx.insert (Changeset.insert (New.customer "Ada" "ada@example.com"))
-                    let! order = Tx.insert (Changeset.insert (New.order (Some customer.Id) Draft 10m))
-                    let! line = Tx.insert (Changeset.insert { New.line p 1 10m with OrderId = order.Id })
+                    let! customer = Tx.insert (New.customer "Ada" "ada@example.com")
+                    let! order = Tx.insert (New.order (Some customer.Id) Draft 10m)
+                    let! line = Tx.insert { New.line p 1 10m with OrderId = order.Id }
                     let! after = TxSteps.txid "txid after"
                     return customer, order, line, before, after
                 }
@@ -71,10 +71,10 @@ type TransactionSteps(w: World) =
         w.Set(
             "tx",
             (transaction {
-                let! customer = Tx.insert (Changeset.insert (New.customer "Ada" "ada@example.com"))
-                let! first = Tx.insert (Changeset.insert (New.order (Some customer.Id) Draft 10m))
+                let! customer = Tx.insert (New.customer "Ada" "ada@example.com")
+                let! first = Tx.insert (New.order (Some customer.Id) Draft 10m)
                 // Violates orders_total_check in the database.
-                let! second = Tx.insert (Changeset.insert (New.order (Some customer.Id) Draft -10m))
+                let! second = Tx.insert (New.order (Some customer.Id) Draft -10m)
                 return first, second
             }: Tx<Order * Order, string>)
         )
@@ -256,9 +256,9 @@ type TransactionSteps(w: World) =
 
         let plan (total: decimal) : Tx<Order, string> =
             transaction {
-                let! order = Tx.insert (Changeset.insert (New.order None Draft 10m))
+                let! order = Tx.insert (New.order None Draft 10m)
                 do! outbox "order-placed" (string order.Id)
-                let! _ = Tx.insert (Changeset.insert (New.order None Draft total))
+                let! _ = Tx.insert (New.order None Draft total)
                 return order
             }
 

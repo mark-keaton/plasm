@@ -46,7 +46,7 @@ let cards =
 let addCard slug (create: Board -> Card) : Tx<Card, Refusal> =
     transaction {
         let! board = Tx.one (Queries.boardBySlug slug) |> Tx.orReject (Missing "board")
-        return! Tx.insert (Changeset.insert (create board))
+        return! Tx.insert (create board)
     }
 ```
 

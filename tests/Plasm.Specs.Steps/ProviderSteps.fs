@@ -164,7 +164,7 @@ type ProviderSteps(w: World) =
                             | Error(DbError.Translation(TranslationError.UnsupportedByProvider(op, _))) -> op
                             | other -> failwithf "got %A" other
                     | _ ->
-                        let! x = r.Transact(Tx.insert customer)
+                        let! x = r.Transact(Tx.write customer)
 
                         return
                             match x with

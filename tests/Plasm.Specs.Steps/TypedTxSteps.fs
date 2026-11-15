@@ -56,7 +56,7 @@ type TypedTxSteps(w: World) =
 
             let tx: Tx<unit, Refusal> =
                 transaction {
-                    let! _ = Tx.insert (Changeset.insert (New.customer "Ada" "ada@example.com"))
+                    let! _ = Tx.insert (New.customer "Ada" "ada@example.com")
                     return! Tx.fail (OutOfStock "widget")
                 }
 
@@ -195,8 +195,94 @@ let reason (e: TransactionError<Refusal>) =
             """
 let readBack (name: string) : Tx<Customer option, string> =
     transaction {
-        let! _ = Tx.insert (Changeset.insert (New.customer name "x@example.com"))
+        let! _ = Tx.insert (New.customer name "x@example.com")
         return! Tx.one (plasm { for c in customers do where (c.Name = name) })
     }
 """
+        |> unit
+
+    // Rule: Steps write records
+
+    [<StepDefinition("a transaction inserts the Customer \"(.*)\" as a record")>]
+    member _.InsertRecord(name: string) =
+        transact (Tx.insert (New.customer name "ada@example.com")) |> unit
+
+    [<StepDefinition("it gives the Customer \"(.*)\" with its key")>]
+    member _.GivesWithKey(name: string) =
+        let c = ok (w.Get<Result<obj, TransactionError<Refusal>>> "typedResult") |> unbox<Customer>
+        check (c.Name = name && c.Id <> CustomerId 0L) $"%A{c}"
+
+    [<StepDefinition("a transaction updates that Customer's name to \"(.*)\" from the record read")>]
+    member _.UpdateName(name: string) =
+        task {
+            let c = w.Get<Customer> "customer"
+            w.MarkCommands()
+            let! _ = transact (Tx.update (c, { c with Name = name }))
+            ()
+        }
+        |> unit
+
+    [<StepDefinition("the Customer is stored with the name \"(.*)\"")>]
+    member _.StoredName(name: string) =
+        task {
+            let! r = w.Repo.All(Query.from customers)
+            equal [ name ] (ok r |> List.map (fun c -> c.Name)) "names"
+        }
+        |> unit
+
+    [<StepDefinition("the update sent sets only the name")>]
+    member _.OnlyName() =
+        let update = w.CommandsSinceMark |> List.find (fun e -> e.Sql.StartsWith "UPDATE")
+        let set = update.Sql.Substring(0, update.Sql.IndexOf " WHERE ")
+        check (set.Contains "\"name\"" && not (set.Contains "\"email\"")) update.Sql
+
+    [<StepDefinition("a draft Order whose version is 2")>]
+    member _.Version2() =
+        task {
+            let! o = w.Repo.Insert(Changeset.insert (New.order None Draft 10m))
+            let! o = w.Repo.Update(ok o |> Changeset.edit (fun o -> { o with Total = 11m }))
+            let o = ok o
+            equal 2 o.Version "version"
+            w.Set("order", o)
+        }
+        |> unit
+
+    [<StepDefinition("a transaction updates it expecting the version 1")>]
+    member _.ExpectOne() =
+        let o = w.Get<Order> "order"
+        transact (Tx.update (o, { o with Total = 99m }, expectVersion = 1)) |> unit
+
+    [<StepDefinition("the failure is a conflict, and the Order is unchanged")>]
+    member _.ConflictUnchanged() =
+        task {
+            match (failure ()).Failure with
+            | TxFailure.Conflict _ -> ()
+            | other -> failwithf "expected a conflict, got %A" other
+
+            let! r = w.Repo.All(Query.from orders)
+            equal [ 11m ] (ok r |> List.map (fun o -> o.Total)) "totals"
+        }
+        |> unit
+
+    [<StepDefinition("a transaction updates that Customer expecting the version 1")>]
+    member _.ExpectUnversioned() =
+        let c = w.Get<Customer> "customer"
+        transact (Tx.update (c, { c with Name = "x" }, expectVersion = 1)) |> unit
+
+    [<StepDefinition("the failure is an invalid change on the version, saying the record has no version field")>]
+    member _.NoVersionField() =
+        match (failure ()).Failure with
+        | TxFailure.InvalidChanges(_, errors) -> check (errors |> List.exists (fun e -> e.Message.Contains "no version field")) $"%A{errors}"
+        | other -> failwithf "expected invalid changes, got %A" other
+
+    [<StepDefinition("a transaction deletes that Customer")>]
+    member _.DeleteRecord() =
+        transact (Tx.delete (w.Get<Customer> "customer")) |> unit
+
+    [<StepDefinition("no Customer is stored")>]
+    member _.NoCustomer() =
+        task {
+            let! r = w.Repo.All(Query.from customers)
+            equal [] (ok r) "customers"
+        }
         |> unit

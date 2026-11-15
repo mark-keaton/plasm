@@ -397,7 +397,7 @@ let ``nested loads below a many-to-many relationship and Tx link writes`` () =
         let! r =
             db.Repo.Transact(
                 transaction {
-                    let! written = Tx.update (Changeset.update article |> Changeset.putLinks ((fun x -> x.Tags), [ tag; tag ]))
+                    let! written = Tx.write (Changeset.update article |> Changeset.putLinks ((fun x -> x.Tags), [ tag; tag ]))
                     return written
                 }
             )
@@ -439,7 +439,7 @@ let ``a failed write inside a sandbox transaction step leaves the sandbox usable
                     let! failed =
                         repo.Transact(
                             transaction {
-                                let! _ = Tx.insert (Changeset.insert (New.customer "Dup" "a@x"))
+                                let! _ = Tx.insert (New.customer "Dup" "a@x")
                                 return ()
                             }
                         )

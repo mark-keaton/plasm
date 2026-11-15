@@ -15,7 +15,7 @@ let private customers (repo: Repo) =
 /// string, and has no reasons of its own to fail (unit).
 let private addDan: Tx<string, unit> =
     transaction {
-        let! dan = Tx.insert (Changeset.insert (New.customer "Dan" "dan@example.com"))
+        let! dan = Tx.insert (New.customer "Dan" "dan@example.com")
         return dan.Name
     }
 
@@ -27,7 +27,7 @@ let lesson =
               fun repo ->
                   task {
                       // A transaction is a value describing database steps that succeed or fail together.
-                      // transaction { } builds it; Tx.insert a step that inserts a changeset.
+                      // transaction { } builds it; Tx.insert a step that inserts a record.
                       let tx = addDan
                       (commands ()).Length |> shouldBe __
                       let! n = customers repo
@@ -53,7 +53,7 @@ let lesson =
                   task {
                       let tx =
                           transaction {
-                              let! _ = Tx.insert (Changeset.insert (New.customer "Dan" "dan@example.com"))
+                              let! _ = Tx.insert (New.customer "Dan" "dan@example.com")
                               // Tx.fail a step that always fails, with a reason.
                               return! Tx.fail "changed my mind"
                           }
@@ -72,9 +72,9 @@ let lesson =
                   task {
                       let rename =
                           transaction {
-                              let! dan = Tx.insert (Changeset.insert (New.customer "Dan" "dan@example.com"))
+                              let! dan = Tx.insert (New.customer "Dan" "dan@example.com")
                               // let! gives the next step what this one stored: Dan, with his new key.
-                              let! daniel = Tx.update (dan |> Changeset.edit (fun c -> { c with Name = "Daniel" }))
+                              let! daniel = Tx.update (dan, { dan with Name = "Daniel" })
                               return daniel.Name
                           }
 
@@ -89,8 +89,8 @@ let lesson =
                   task {
                       let signUp =
                           transaction {
-                              let! dan = Tx.insert (Changeset.insert (New.customer "Dan" "dan@example.com"))
-                              let! order = Tx.insert (Changeset.insert (New.order (Some dan.Id) Draft 1m))
+                              let! dan = Tx.insert (New.customer "Dan" "dan@example.com")
+                              let! order = Tx.insert (New.order (Some dan.Id) Draft 1m)
                               return order.CustomerId = Some dan.Id
                           }
 
@@ -107,9 +107,9 @@ let lesson =
                   task {
                       let signUp =
                           transaction {
-                              let! dan = Tx.insert (Changeset.insert (New.customer "Dan" "dan@example.com"))
+                              let! dan = Tx.insert (New.customer "Dan" "dan@example.com")
                               // A negative total breaks orders_total_check.
-                              let! _ = Tx.insert (Changeset.insert (New.order (Some dan.Id) Draft -1m))
+                              let! _ = Tx.insert (New.order (Some dan.Id) Draft -1m)
                               return ()
                           }
 

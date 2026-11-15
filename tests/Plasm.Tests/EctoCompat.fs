@@ -545,9 +545,9 @@ let ``ecto: insert and update changesets with dependent steps`` () =
 
         let tx =
             transaction {
-                let! o = Tx.insert (Changeset.insert order0)
-                let! l = Tx.insert (Changeset.insert { New.line p 1 1m with OrderId = o.Id })
-                let! o2 = Tx.update (o |> Changeset.edit (fun o -> { o with Status = Published }))
+                let! o = Tx.insert order0
+                let! l = Tx.insert { New.line p 1 1m with OrderId = o.Id }
+                let! o2 = Tx.update (o, { o with Status = Published })
                 return o2, l
             }
 
@@ -565,7 +565,7 @@ let ``ecto: error`` () =
 
         let tx =
             transaction {
-                let! _ = Tx.insert (Changeset.insert order0)
+                let! _ = Tx.insert order0
                 let! (_: unit) = Tx.fail "nope"
                 return ()
             }
@@ -595,8 +595,8 @@ let ``ecto: multi with invalid changeset returns the failed operation and its er
 
         let tx =
             transaction {
-                let! _ = Tx.insert (Changeset.insert order0)
-                let! _ = Tx.insert bad
+                let! _ = Tx.insert order0
+                let! _ = Tx.write bad
                 return ()
             }
 
@@ -619,7 +619,7 @@ let ``ecto: run with fun`` () =
 
         let tx =
             transaction {
-                let! _ = Tx.insert (Changeset.insert order0)
+                let! _ = Tx.insert order0
 
                 let! count =
                     Tx.run (fun ctx ->
@@ -645,7 +645,7 @@ let ``ecto: all queryable`` () =
 
         let tx =
             transaction {
-                let! _ = Tx.insert (Changeset.insert order0)
+                let! _ = Tx.insert order0
                 let! seen = Tx.all (Query.from orders)
                 return seen.Length
             }

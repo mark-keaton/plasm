@@ -95,13 +95,13 @@ type SandboxSteps(w: World) =
             let! seen =
                 w.Repo.Sandbox(fun repo ->
                     task {
-                        let! a = repo.Transact(Tx.insert (Changeset.insert (New.customer "Ada" "ada@example.com")))
+                        let! a = repo.Transact(Tx.insert (New.customer "Ada" "ada@example.com"))
                         ok a |> ignore
 
                         let! b =
                             repo.Transact(
                                 transaction {
-                                    let! _ = Tx.insert (Changeset.insert (New.customer "Bob" "bob@example.com"))
+                                    let! _ = Tx.insert (New.customer "Bob" "bob@example.com")
                                     return! Tx.fail "stop"
                                 }
                             )

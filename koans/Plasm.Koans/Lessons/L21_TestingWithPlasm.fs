@@ -85,7 +85,7 @@ let lesson =
                   task {
                       let failing =
                           transaction {
-                              let! _ = Tx.insert (Changeset.insert (New.customer "Dan" "dan@example.com"))
+                              let! _ = Tx.insert (New.customer "Dan" "dan@example.com")
                               return! Tx.fail "changed my mind"
                           }
 

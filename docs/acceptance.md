@@ -659,6 +659,12 @@ the same guarantee more exhaustively.
 | A missing row becomes a rejection with Tx.orReject | Implemented and verified | `TypedTxSteps.fs` |  |  |
 | Tx.count counts without reading the rows | Implemented and verified | `TypedTxSteps.fs` |  |  |
 | A transaction is written without naming its steps | Implemented and verified | `TypedTxSteps.fs` |  | Compiled in the test. |
+| Inserting a record gives it back with its key | Implemented and verified | `TypedTxSteps.fs` |  | One style, G3: write steps take records. `Tx.write` carries a changeset until changesets leave the public API. |
+| An update writes only the columns that changed | Implemented and verified | `TypedTxSteps.fs` |  | `Tx.update (original, changed)` is `Changeset.edit` underneath. |
+| An update expecting a version the record no longer has is a conflict | Implemented and verified | `TypedTxSteps.fs` |  | `expectVersion` overrides the version of `original`. |
+| Expecting a version of a record without a version field is invalid | Implemented and verified | `TypedTxSteps.fs` |  | New check in `Writes.check`. |
+| Deleting the record read deletes it | Implemented and verified | `TypedTxSteps.fs` |  |  |
+
 
 ### sandbox.feature: Sandboxes nest
 
@@ -666,11 +672,11 @@ the same guarantee more exhaustively.
 |---|---|---|---|---|
 | A sandbox inside a sandbox rolls back to the outer sandbox | Implemented and verified | `SandboxSteps.fs` |  | Sandbox transactions pass named savepoints through. |
 
-### tx-steps.feature: Write steps match their changesets
+### tx-steps.feature: The repository's writes match their changesets
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| A step whose changeset is for a different action is rejected | Implemented and verified | `TxStepSteps.fs` |  | Checked when the step is built (`ArgumentException`), like `repo.Insert/Update/Delete`. |
+| ~~A step whose changeset is for a different action is rejected~~ | Removed (one style, G3) | | | Write steps take records, so a step's action is its name; the mistake cannot be written. |
 | The repository rejects a mismatched changeset the same way | Implemented and verified | `TxStepSteps.fs` |  |  |
 
 ### tx-steps.feature: Custom steps work inside the transaction without controlling it

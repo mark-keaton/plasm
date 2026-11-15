@@ -261,8 +261,10 @@ query value.
 
 - `transaction { }` with `Tx.insert` / `update` / `delete` / `all` / `run` /
   `fail` / `traverse`, isolation levels, and an opt-in `RetryPolicy`.
-- `Tx.insert` / `update` / `delete` check their changeset's action when the
-  step is built, as `repo.Insert` / `Update` / `Delete` do.
+- Write steps take records: `Tx.insert customer`, `Tx.update (original,
+  changed)` (only the columns that differ are written; `expectVersion = v`
+  for a copy that came back from a client) and `Tx.delete customer`.
+  `Tx.write cs` takes a changeset while changesets are still public.
 - A `Tx.run` step gets `TxContext.CreateCommand()` (enlisted in the
   transaction) and the cancellation token. The connection and transaction are
   not exposed, so a step cannot commit or roll back.

@@ -11,19 +11,10 @@ Feature: Transaction steps do what they say
     Given a configured relational database
     And mappings for Customers, Orders, OrderLines, Products, and Payments
 
-  Rule: Write steps match their changesets
+  Rule: The repository's writes match their changesets
 
-    Scenario Outline: A step whose changeset is for a different action is rejected
-      When I build a transaction whose Tx.<step> step is given a changeset for <action>
-      Then building the transaction fails, naming where the step is written and both actions
-      And no database command is executed
-
-      Examples:
-        | step   | action |
-        | update | insert |
-        | insert | update |
-        | delete | update |
-        | update | delete |
+    A transaction's write steps take records (`Tx.insert customer`), so a step's
+    action is its name.
 
     Scenario Outline: The repository rejects a mismatched changeset the same way
       When I call repo.<member> with a changeset for <action>

@@ -331,7 +331,7 @@ let ``Tx.traverse reports the failing step and rolls back the earlier ones`` () 
     task {
         let! db = freshDefault ()
         let totals = [ 1m; -1m; 3m ]
-        let tx = totals |> Tx.traverse (fun t -> Tx.insert (Changeset.insert (New.order None Draft t)))
+        let tx = totals |> Tx.traverse (fun t -> Tx.insert (New.order None Draft t))
         let! r = db.Repo.Transact tx
         Assert.True(match r with Error e -> e.Step.Action = "insert Order" && e.RolledBack.Length = 1 | Ok _ -> false)
     }

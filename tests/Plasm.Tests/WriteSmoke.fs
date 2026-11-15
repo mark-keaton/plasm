@@ -52,9 +52,9 @@ let ``write path smoke`` () =
         // transaction
         let tx =
             transaction {
-                let! o = Tx.insert (Changeset.insert (New.order (Some c) Draft 1m))
-                let! l = Tx.insert (Changeset.insert { New.line p 1 1m with OrderId = o.Id })
-                let! _ = Tx.insert (Changeset.insert (New.order (Some c) Draft -1m))
+                let! o = Tx.insert (New.order (Some c) Draft 1m)
+                let! l = Tx.insert { New.line p 1 1m with OrderId = o.Id }
+                let! _ = Tx.insert (New.order (Some c) Draft -1m)
                 return o, l
             }
 

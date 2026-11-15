@@ -37,8 +37,8 @@ module Snippets =
         """    task {
         let failing =
             transaction {
-                let! dan = Tx.insert (Changeset.insert (New.customer "Dan" "dan@example.com"))
-                let! _ = Tx.insert (Changeset.insert (New.order (Some dan.Id) Draft -1m))
+                let! dan = Tx.insert (New.customer "Dan" "dan@example.com")
+                let! _ = Tx.insert (New.order (Some dan.Id) Draft -1m)
                 return ()
             }
         let! t = repo.Transact failing
@@ -92,7 +92,7 @@ module Snippets =
         let tx =
             repo.Transact(
                 transaction {
-                    let! _ = Tx.insert (Changeset.insert (New.customer "Pia" "pia@example.com"))
+                    let! _ = Tx.insert (New.customer "Pia" "pia@example.com")
                     let! _ =
                         Tx.run (fun _ ->
                             task {

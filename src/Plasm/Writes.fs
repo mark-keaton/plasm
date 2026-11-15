@@ -208,6 +208,13 @@ let rec check (model: Model) (s: CsState) : CsState =
                     v.Name
                     (FieldErrorKind.Custom "version")
                     "a key-only change to a versioned record must state the expected version (Changeset.expectVersion)"
+        | None when s.ExpectedVersion.IsSome ->
+            st <-
+                err
+                    st
+                    "Version"
+                    (FieldErrorKind.Custom "version")
+                    $"{schema.Name} has no version field, so there is no version to expect; the record the change was made from is checked instead"
         | _ -> ()
     | ChangeAction.Insert -> ()
 

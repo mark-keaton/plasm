@@ -32,30 +32,6 @@ type TxStepSteps(w: World) =
         check (m <> "") "expected the call to be rejected"
         m
 
-    [<StepDefinition("^I build a transaction whose Tx\\.(insert|update|delete) step is given a changeset for (insert|update|delete)$")>]
-    member _.BuildMismatched(step: string, action: string) =
-        w.MarkCommands()
-        let cs = changesetFor action
-
-        attempt (fun () ->
-            let tx =
-                match step with
-                | "insert" -> Tx.insert cs
-                | "update" -> Tx.update cs
-                | _ -> Tx.delete cs
-
-            w.Repo.Transact(tx).Wait())
-
-        w.Set("expected", (step, action))
-
-    [<StepDefinition("building the transaction fails, naming where the step is written and both actions")>]
-    member _.NamesStepAndActions() =
-        let m = rejection ()
-        let step, action = w.Get<string * string> "expected"
-        check (m.Contains "TxStepSteps.fs:") $"where the step is written is missing: {m}"
-        check (m.Contains $"Tx.{step}") $"step kind missing: {m}"
-        check (m.Contains $"for {action}") $"changeset action missing: {m}"
-
     [<StepDefinition("^I call repo\\.(Insert|Update|Delete) with a changeset for (insert|update|delete)$")>]
     member _.RepoMismatched(memberName: string, action: string) =
         let cs = changesetFor action
@@ -137,7 +113,7 @@ type TxStepSteps(w: World) =
                 let! r =
                     w.Repo.Transact(
                         transaction {
-                            let! _ = Tx.insert (Changeset.insert (New.customer "Ada" "ada@example.com"))
+                            let! _ = Tx.insert (New.customer "Ada" "ada@example.com")
 
                             let! _ =
                                 Tx.run (fun ctx ->

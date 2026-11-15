@@ -245,12 +245,6 @@ module internal TxCore =
                     return Error(TxFailure.Failed(DbError.Translation(TranslationError.UnsupportedByProvider(op, rt.Session.Provider.Dialect.Name))))
             })
 
-    let checkAction (kind: string) (expected: ChangeAction) (at: TxStep) (cs: Changeset<'T>) =
-        if cs.Action <> expected then
-            invalidArg
-                "cs"
-                $"the transaction step at {at} is Tx.{kind}, but its changeset is for {(string cs.Action).ToLowerInvariant()}; use Tx.{(string cs.Action).ToLowerInvariant()}, or build the changeset with Changeset.{kind}"
-
     /// The rows of a query, inside the transaction.
     let rows (rt: TxRuntime) (query: Query<'T>) : Task<Result<'T list, TxFailure<'E>>> =
         let rt = { rt with Session = { rt.Session with Args = query.Def.Args } }
@@ -286,37 +280,60 @@ type Tx =
 
     static member map (f: 'T -> 'U) : Tx<'T, 'E> -> Tx<'U, 'E> = TxCore.bind (f >> Pure)
 
-    /// Inserts; the changeset must be an insert (`Changeset.insert`).
+    /// Inserts a record; gives it back as stored (with its generated key),
+    /// with what it owns.
     static member insert
         (
-            cs: Changeset<'T>,
+            value: 'T,
             [<CallerFilePath; Optional; DefaultParameterValue("")>] file: string,
             [<CallerLineNumber; Optional; DefaultParameterValue(0)>] line: int
         ) : Tx<'T, 'E> =
         let at = TxCore.at file line $"insert {typeof<'T>.Name}"
-        TxCore.checkAction "insert" ChangeAction.Insert at cs
-        TxCore.write at cs
+        TxCore.write at (Changeset.insert value)
 
-    /// Updates; the changeset must be an update.
+    /// Updates `original`, the record a change was made from, to `changed`:
+    /// only the columns that differ are written, and what it owns is written by
+    /// difference. `expectVersion` is the version a caller last saw, for a copy
+    /// that came back from a client; without it the version (or, for a record
+    /// without one, every column) of `original` is checked.
     static member update
         (
-            cs: Changeset<'T>,
-            [<CallerFilePath; Optional; DefaultParameterValue("")>] file: string,
-            [<CallerLineNumber; Optional; DefaultParameterValue(0)>] line: int
+            original: 'T,
+            changed: 'T,
+            ?expectVersion: int,
+            [<CallerFilePath>] ?file: string,
+            [<CallerLineNumber>] ?line: int
         ) : Tx<'T, 'E> =
-        let at = TxCore.at file line $"update {typeof<'T>.Name}"
-        TxCore.checkAction "update" ChangeAction.Update at cs
+        let at = TxCore.at (defaultArg file "") (defaultArg line 0) $"update {typeof<'T>.Name}"
+        let cs = original |> Changeset.edit (fun _ -> changed)
+
+        let cs =
+            match expectVersion with
+            | Some v -> cs |> Changeset.expectVersion v
+            | None -> cs
+
         TxCore.write at cs
 
-    /// Deletes; the changeset must be a delete (`Changeset.delete`).
+    /// Deletes a record read (and what it owns).
     static member delete
         (
-            cs: Changeset<'T>,
+            value: 'T,
             [<CallerFilePath; Optional; DefaultParameterValue("")>] file: string,
             [<CallerLineNumber; Optional; DefaultParameterValue(0)>] line: int
         ) : Tx<'T, 'E> =
         let at = TxCore.at file line $"delete {typeof<'T>.Name}"
-        TxCore.checkAction "delete" ChangeAction.Delete at cs
+        TxCore.write at (Changeset.delete value)
+
+    /// Writes a changeset (insert, update or delete, by its action). Kept
+    /// while changesets are public; records go through insert, update and
+    /// delete.
+    static member write
+        (
+            cs: Changeset<'T>,
+            [<CallerFilePath; Optional; DefaultParameterValue("")>] file: string,
+            [<CallerLineNumber; Optional; DefaultParameterValue(0)>] line: int
+        ) : Tx<'T, 'E> =
+        let at = TxCore.at file line $"{(string cs.Action).ToLowerInvariant()} {typeof<'T>.Name}"
         TxCore.write at cs
 
     /// Every row a query matches, inside the transaction.

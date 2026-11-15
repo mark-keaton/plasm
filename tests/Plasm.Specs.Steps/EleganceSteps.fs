@@ -702,7 +702,7 @@ type EleganceSteps(w: World) =
                                 return Ok()
                             })
 
-                    return! Tx.update (order |> Changeset.edit (fun o -> { o with Total = o.Total + 1m }))
+                    return! Tx.update (order, { order with Total = order.Total + 1m })
                 }
 
             w.Set("tx", (tx: Tx<Order, string>))
