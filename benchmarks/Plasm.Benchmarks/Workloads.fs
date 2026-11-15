@@ -1,7 +1,6 @@
 /// Shared dataset and the equivalent Plasm / EF Core workloads.
 module Plasm.Benchmarks.Workloads
 
-open System
 open System.Collections.Generic
 open System.Threading.Tasks
 open Microsoft.EntityFrameworkCore
@@ -10,7 +9,6 @@ open Plasm.TestDomain.Domain
 open Plasm.TestDomain.Database
 type EfOrder = Plasm.Benchmarks.EfModel.Order
 type EfContext = Plasm.Benchmarks.EfModel.ShopContext
-type EfCapture = Plasm.Benchmarks.EfModel.CaptureInterceptor
 type EfQueries = Plasm.Benchmarks.EfModel.Queries
 
 let orderCount = 10_000
@@ -44,16 +42,12 @@ let database: Lazy<Task<TestDb>> =
         })
 
 // -- Plasm workloads -----------------------------------------------------------
+//
+// An Order owns its lines, so every query of Orders brings them, in one more
+// command per batch of orders. Payments are another aggregate, referred to by
+// id: they are read by a second query, for the orders the first one found.
 
-let successfulPayments =
-    plasm {
-        for p in Schemas.payments do
-            where (p.Status = Succeeded)
-            orderBy p.CreatedAt
-    }
-
-let linesWithProduct = plasm { for l in Schemas.orderLines do preload l.Product }
-
+/// Published orders, newest first: the lines come with them.
 let plasmPage (n: int) =
     plasm {
         for o in Schemas.orders do
@@ -61,64 +55,77 @@ let plasmPage (n: int) =
             orderByDescending o.PlacedAt
             thenBy o.Id
             take n
-            preload o.Lines linesWithProduct
-            preload o.Payments successfulPayments
     }
 
-let plasmSiblings (id: OrderId) =
-    plasm {
-        for o in Schemas.orders do
-            where (o.Id = id)
-            preload o.Lines
-            preload o.Payments
-    }
+/// The succeeded payments of the given orders, built and planned once.
+let succeededPaymentsOf =
+    Query.prepare (fun (orders: Arg<OrderId list>) ->
+        plasm {
+            for p in Schemas.payments do
+                where (List.contains p.OrderId orders.Value && p.Status = Succeeded)
+                orderBy p.CreatedAt
+        })
 
 let siblingOrderId = 1L
 
-/// The same query, prepared once: each call only binds the key.
-let plasmSiblingsPrepared =
+/// One order and all its payments, the queries built for each call.
+let plasmSiblingQueries (id: OrderId) =
+    plasm { for o in Schemas.orders do where (o.Id = id) },
+    plasm {
+        for p in Schemas.payments do
+            where (p.OrderId = id)
+            orderBy p.Id
+    }
+
+/// The same two queries, prepared once: each call only binds the key.
+let orderById =
+    Query.prepare (fun (id: Arg<OrderId>) -> plasm { for o in Schemas.orders do where (o.Id = id.Value) })
+
+let paymentsOfOrder =
     Query.prepare (fun (id: Arg<OrderId>) ->
         plasm {
-            for o in Schemas.orders do
-                where (o.Id = id.Value)
-                preload o.Lines
-                preload o.Payments
+            for p in Schemas.payments do
+                where (p.OrderId = id.Value)
+                orderBy p.Id
         })
 
-let run (repo: Repo) (q: Query<Order>) =
+let private all (repo: Repo) (q: Query<'T>) =
     task {
         match! repo.All q with
-        | Ok orders -> return orders
+        | Ok rows -> return rows
         | Error e -> return failwithf "Plasm query failed: %O" e
     }
 
-/// (orders, lines, payments, distinct Product instances) – used to check that
-/// every variant returns the same graph.
-type Shape =
-    { Orders: int
-      Lines: int
-      Payments: int
-      ProductInstances: int }
+/// A page of orders with their lines, then the succeeded payments of those orders.
+let runPage (repo: Repo) (page: Query<Order>) : Task<Order list * Payment list> =
+    task {
+        let! orders = all repo page
+        let! payments = all repo (succeededPaymentsOf (orders |> List.map (fun o -> o.Id)))
+        return orders, payments
+    }
 
-let plasmShape (orders: Order list) =
-    let products = HashSet<obj>(HashIdentity.Reference)
-    let mutable lines = 0
-    let mutable payments = 0
+let runSiblings (repo: Repo) (id: OrderId) : Task<Order list * Payment list> =
+    task {
+        let orderQuery, paymentQuery = plasmSiblingQueries id
+        let! orders = all repo orderQuery
+        let! payments = all repo paymentQuery
+        return orders, payments
+    }
 
-    for o in orders do
-        for l in Assoc.defaultValue [] o.Lines do
-            lines <- lines + 1
+let runSiblingsPrepared (repo: Repo) (id: OrderId) : Task<Order list * Payment list> =
+    task {
+        let! orders = all repo (orderById id)
+        let! payments = all repo (paymentsOfOrder id)
+        return orders, payments
+    }
 
-            match l.Product with
-            | Loaded p -> products.Add(box p) |> ignore
-            | NotLoaded -> ()
+/// (orders, lines, payments): every variant must return the same graph.
+type Shape = { Orders: int; Lines: int; Payments: int }
 
-        payments <- payments + (Assoc.defaultValue [] o.Payments).Length
-
+let plasmShape (orders: Order list, payments: Payment list) =
     { Orders = orders.Length
-      Lines = lines
-      Payments = payments
-      ProductInstances = products.Count }
+      Lines = orders |> List.sumBy (fun o -> o.Lines.Length)
+      Payments = payments.Length }
 
 // -- EF Core workloads ---------------------------------------------------------
 
@@ -135,20 +142,6 @@ let efSiblings (cs: string) (capture: Microsoft.EntityFrameworkCore.Diagnostics.
     }
 
 let efShape (orders: List<EfOrder>) =
-    let products = HashSet<obj>(HashIdentity.Reference)
-    let mutable lines = 0
-    let mutable payments = 0
-
-    for o in orders do
-        for l in o.Lines do
-            lines <- lines + 1
-
-            if not (isNull l.Product) then
-                products.Add(box l.Product) |> ignore
-
-        payments <- payments + o.Payments.Count
-
     { Orders = orders.Count
-      Lines = lines
-      Payments = payments
-      ProductInstances = products.Count }
+      Lines = orders |> Seq.sumBy (fun o -> o.Lines.Count)
+      Payments = orders |> Seq.sumBy (fun o -> o.Payments.Count) }

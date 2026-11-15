@@ -11,7 +11,6 @@ open Plasm.Benchmarks.Workloads
 type EfOrder = Plasm.Benchmarks.EfModel.Order
 type EfContext = Plasm.Benchmarks.EfModel.ShopContext
 type EfCapture = Plasm.Benchmarks.EfModel.CaptureInterceptor
-type EfQueries = Plasm.Benchmarks.EfModel.Queries
 
 type Measurement =
     { Workload: string
@@ -65,18 +64,18 @@ let private measure (op: unit -> Task<Shape>) =
         return shape, float allocated / 1024.0, sorted.[sorted.Length / 2]
     }
 
-let private plasmVariant workload (query: Plasm.Query<Order>) =
+let private plasmVariant workload variant (op: Plasm.Repo -> Task<Order list * Payment list>) =
     task {
         let! db = database.Force()
         let repo = db.RepoWith()
-        let! shape, kb, ms = measure (fun () -> task { let! r = run repo query in return plasmShape r })
+        let! shape, kb, ms = measure (fun () -> task { let! r = op repo in return plasmShape r })
         db.Recorder.Clear()
-        let! _ = run repo query
+        let! _ = op repo
         let events = db.Recorder.Events
 
         return
             { Workload = workload
-              Variant = "Plasm"
+              Variant = variant
               Commands = events.Length
               Rows = events |> List.sumBy (fun e -> e.Rows)
               AllocatedKb = kb
@@ -116,8 +115,9 @@ let all () =
         let results = ResizeArray<Measurement>()
 
         for n in [ 20; 100; 1000 ] do
-            let name = $"page of {n} orders (lines+product, successful payments)"
-            let! p = plasmVariant name (plasmPage n)
+            let name = $"page of {n} orders (lines, successful payments)"
+            let page = plasmPage n
+            let! p = plasmVariant name "Plasm" (fun repo -> runPage repo page)
             results.Add p
 
             for split, label in [ false, "EF single query"; true, "EF split query" ] do
@@ -125,7 +125,9 @@ let all () =
                 results.Add e
 
         let name = "1 order, 10 lines + 10 payments (siblings)"
-        let! p = plasmVariant name (plasmSiblings (OrderId siblingOrderId))
+        let! p = plasmVariant name "Plasm, queries built per call" (fun repo -> runSiblings repo (OrderId siblingOrderId))
+        results.Add p
+        let! p = plasmVariant name "Plasm, prepared queries" (fun repo -> runSiblingsPrepared repo (OrderId siblingOrderId))
         results.Add p
 
         for split, label in [ false, "EF single query"; true, "EF split query" ] do
@@ -137,12 +139,12 @@ let all () =
 
 let print (results: Measurement list) =
     printfn ""
-    printfn "| Workload | Variant | Commands | Rows transferred | Allocated (KB) | Median (ms) | Orders/Lines/Payments | Product instances |"
-    printfn "|---|---|---:|---:|---:|---:|---|---:|"
+    printfn "| Workload | Variant | Commands | Rows transferred | Allocated (KB) | Median (ms) | Orders/Lines/Payments |"
+    printfn "|---|---|---:|---:|---:|---:|---|"
 
     for r in results do
         printfn
-            "| %s | %s | %d | %d | %.0f | %.2f | %d/%d/%d | %d |"
+            "| %s | %s | %d | %d | %.0f | %.2f | %d/%d/%d |"
             r.Workload
             r.Variant
             r.Commands
@@ -152,7 +154,6 @@ let print (results: Measurement list) =
             r.Shape.Orders
             r.Shape.Lines
             r.Shape.Payments
-            r.Shape.ProductInstances
 
     // Equivalence: every variant must return the same graph for a workload.
     for workload, rs in results |> List.groupBy (fun r -> r.Workload) do
@@ -179,13 +180,13 @@ let profile () =
         let q = plasmPage 1000
 
         for _ in 1..60 do
-            let! _ = run repo q
+            let! _ = runPage repo q
             ()
 
         for _ in 1..3 do
             db.Recorder.Clear()
             let sw = Stopwatch.StartNew()
-            let! _ = run repo q
+            let! _ = runPage repo q
             let total = sw.Elapsed.TotalMilliseconds
             let cmds = db.Recorder.Events |> List.map (fun e -> e.Duration.TotalMilliseconds)
             printfn "Plasm  total %.1f ms; commands %s (sum %.1f)" total (cmds |> List.map (sprintf "%.1f") |> String.concat " + ") (List.sum cmds)
@@ -243,7 +244,9 @@ let planning () =
         let! db = database.Force()
         let repo = db.RepoWith()
 
-        for name, q in [ "page 20", plasmPage 20; "siblings", plasmSiblings (OrderId siblingOrderId) ] do
+        let siblings, _ = plasmSiblingQueries (OrderId siblingOrderId)
+
+        for name, q in [ "page 20", plasmPage 20; "siblings (the order query)", siblings ] do
             for _ in 1..200 do
                 repo.Explain q |> ignore
 

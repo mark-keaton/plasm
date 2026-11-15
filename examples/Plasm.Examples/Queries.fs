@@ -1,4 +1,5 @@
-/// 2. Queries are values; reusable pieces are ordinary functions.
+/// 2. Queries are values; reusable pieces are ordinary functions. Every query
+///    of a record brings what it owns: an Order comes with its lines.
 module Shop.Queries
 
 open Plasm
@@ -6,41 +7,49 @@ open Shop.Model
 
 let published = plasm { for o in Db.orders do where (o.Status = Published) }
 
+/// Domain scalars become their stored representation as parameters.
+let lookup (id: OrderId) =
+    plasm { for o in Db.orders do where (o.Id = id && o.Status = Draft) }
+
 let forCustomer customerId (q: Query<Order>) =
     plasm { for o in q do where (o.CustomerId = Some customerId) }
 
-/// A relationship predicate: EXISTS in SQL, so parents never duplicate.
+/// Another aggregate as a condition: a correlated NOT EXISTS, so an order
+/// never appears twice.
 let unpaid (q: Query<Order>) =
-    plasm { for o in q do where (not (o.Payments |> Rel.any (fun p -> p.Status = Succeeded))) }
-
-/// Child queries are reusable too: filtered, ordered, with nested loads.
-let successfulPayments =
     plasm {
-        for p in Db.payments do
-            where (p.Status = Succeeded)
-            orderBy p.CreatedAt
+        for o in q do
+            where (not (exists (plasm { for p in Db.payments do where (p.OrderId = o.Id && p.Status = Succeeded) })))
     }
 
-let linesWithProducts = plasm { for l in Db.orderLines do preload l.Product }
-
-let latestPayments n =
+/// The domain's own member, and the order's own lines, as F# reads them.
+let openWithProduct (product: ProductId) =
     plasm {
-        for p in Db.payments do
-            orderByDescending p.CreatedAt
-            limitPerParent n // per order, never a global limit
+        for o in Db.orders do
+            where (o.IsOpen && (o.Lines |> List.exists (fun l -> l.ProductId = product)))
     }
 
-/// The milestone: a typed, deterministically ordered page of orders with
-/// nested, batched relationship loads.
+/// Reusable filters compose by ordinary function application.
+let overdue customerId = Query.from Db.orders |> forCustomer customerId |> unpaid
+
+/// A page of orders, each with its lines: two commands however long the page.
 let orderPage page size (q: Query<Order>) =
     plasm {
         for o in q do
-            orderByDescending o.PlacedAt // the primary key is appended as a tiebreaker
+            orderByDescending o.PlacedAt // the key is appended as a tiebreaker
             skip (page * size)
             take size
-            preload o.Lines linesWithProducts
-            preload o.Payments successfulPayments
     }
+
+/// Payments are their own aggregate: read for a page of orders by a second
+/// query, built and planned once.
+let succeededPaymentsOf =
+    Query.prepare (fun (orders: Arg<OrderId list>) ->
+        plasm {
+            for p in Db.payments do
+                where (List.contains p.OrderId orders.Value && p.Status = Succeeded)
+                orderBy p.CreatedAt
+        })
 
 /// Only the projected columns are read.
 let totals =
@@ -50,22 +59,7 @@ let totals =
             select {| Id = o.Id; Total = o.Total; Version = o.Version |}
     }
 
-/// Domain scalars become their stored representation as parameters.
-let lookup (id: OrderId) =
-    plasm {
-        for o in Db.orders do
-            where (o.Id = id && o.Status = Draft)
-    }
-
-/// Reusable filters compose by ordinary function application.
-let overdue customerId = Query.from Db.orders |> forCustomer customerId |> unpaid
-
-/// A per-parent limit inside a load: at most n payments for each order.
-let recentPayments n =
-    plasm { for o in Db.orders do preload o.Payments (latestPayments n) }
-
-/// A load specification to apply to values already in hand.
-let withPayments = plasm { for o in Db.orders do preload o.Payments }
+// -- Joins ------------------------------------------------------------------------
 
 /// Inner join: one row per order that has a customer.
 let ordersWithCustomers =
@@ -90,26 +84,9 @@ let soldProducts =
         for o in Db.orders do
             join l in Db.orderLines on (o.Id = l.OrderId)
             join p in Db.products on (l.ProductId = p.Id)
-            where (o.Status <> Cancelled)
+            where o.IsOpen
             orderBy p.Sku
             select (o.Id, p.Sku, l.Quantity)
-    }
-
-/// The EF Core comparison query, written clause for clause like the C# version
-/// (benchmarks/Plasm.Benchmarks.EfModel/Model.cs).
-let efComparisonPage =
-    plasm {
-        for o in Db.orders do
-            where (o.Status = Published)
-            orderByDescending o.PlacedAt
-            thenBy o.Id
-            take 20
-            preload o.Lines (plasm { for l in Db.orderLines do preload l.Product })
-            preload o.Payments (plasm {
-                for p in Db.payments do
-                    where (p.Status = Succeeded)
-                    orderBy p.CreatedAt
-            })
     }
 
 // -- Counts, aggregates and grouping ------------------------------------------
@@ -118,7 +95,7 @@ let efComparisonPage =
 let orderStats =
     plasm {
         for o in Db.orders do
-            where (o.Status <> Cancelled)
+            where o.IsOpen
             select (Agg.count (), Agg.sum o.Total, Agg.avg o.Total, Agg.max o.PlacedAt)
     }
 
@@ -145,6 +122,12 @@ let latestOrdersOf =
                 take size.Value
         })
 
+let orderById =
+    Query.prepare (fun (id: Arg<OrderId>) -> plasm { for o in Db.orders do where (o.Id = id.Value) })
+
+let customerNamed =
+    Query.prepare (fun (name: Arg<string>) -> plasm { for c in Db.customers do where (c.Name = name.Value) })
+
 // -- SQL fragments ---------------------------------------------------------------
 
 /// Literal SQL inside a typed query: the pattern is still a parameter.
@@ -155,17 +138,33 @@ let customersMatching (pattern: string) =
             orderBy c.Name
     }
 
-// -- Many-to-many ------------------------------------------------------------------
+// -- Linked records ------------------------------------------------------------------
 
-let articlesWithTags =
-    plasm {
-        for a in Db.articles do
-            orderBy a.Id
-            preload a.Tags (plasm { for t in Db.tags do orderBy t.Name })
-    }
+/// Articles come with their tags, in the order the schema names.
+let articles = plasm { for a in Db.articles do orderBy a.Id }
 
-let taggedWith (name: string) =
-    plasm {
-        for a in Db.articles do
-            where (Rel.any (fun t -> t.Name = name) a.Tags)
-    }
+let taggedWith =
+    Query.prepare (fun (name: Arg<string>) ->
+        plasm {
+            for a in Db.articles do
+                where (a.Tags |> List.exists (fun t -> t.Name = name.Value))
+        })
+
+let tagsNamed =
+    Query.prepare (fun (names: Arg<string list>) ->
+        plasm { for t in Db.tags do where (List.contains t.Name names.Value) })
+
+// -- Compared with EF Core --------------------------------------------------------
+
+/// The page the EF Core comparison reads, clause for clause like the C# version
+/// (benchmarks/Plasm.Benchmarks.EfModel/Model.cs); the lines come with each
+/// order, and the payments follow with `succeededPaymentsOf`.
+let efComparisonPage =
+    Query.prepare (fun (size: Arg<int>) ->
+        plasm {
+            for o in Db.orders do
+                where (o.Status = Published)
+                orderByDescending o.PlacedAt
+                thenBy o.Id
+                take size.Value
+        })

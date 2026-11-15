@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Plasm: persistence that thinks in F#</title>
-<meta name="description" content="Immutable records, compiler-checked queries, explicit changesets and batched relationship loading for F#. Ecto's design, expressed in F#.">
+<meta name="description" content="Your own immutable F# records stored as they are, compiler-checked queries, and typed transactions. One way to build an application, over PostgreSQL.">
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -33,7 +33,7 @@
   <div>
     <p class="eyebrow">Ecto's design · expressed in F#</p>
     <h1>Persistence that thinks in F#.</h1>
-    <p class="sub">Immutable records, compiler-checked queries, explicit changesets and batched relationship loading. Queries, changes and transactions are values; the repo is the only place anything touches the database.</p>
+    <p class="sub">Your domain's own immutable records, stored as they are, with what they own. Compiler-checked queries and typed transactions are values; the repo is the only place anything touches the database. There is one way to build an application with it.</p>
     <div class="ctas">
       <a class="btn primary" href="#start">Get started</a>
       <a class="btn" href="examples.html">See examples</a>
@@ -46,15 +46,13 @@
             where (o.CustomerId = Some customer)
             orderByDescending o.PlacedAt
             take 20
-            preload o.Lines linesWithProducts
-            preload o.Payments successfulPayments
     }
 
 let! orders = repo.All(page customerId)
-// Result&lt;Order list, DbError&gt;</pre>
+// Result&lt;Order list, DbError&gt;: every Order with its Lines</pre>
     <div class="tags">
-      <span class="tag violet">4 commands at 20, 100 or 1,000 orders</span>
-      <span class="tag teal">children restricted to the selected page</span>
+      <span class="tag violet">2 commands at 20, 100 or 1,000 orders</span>
+      <span class="tag teal">lines restricted to the selected page</span>
       <span class="tag amber">no cartesian product</span>
     </div>
   </div>
@@ -67,12 +65,12 @@ let! orders = repo.All(page customerId)
       <p>Each one is an executable Gherkin scenario, run against a real PostgreSQL database.</p>
     </div>
     <div class="grid">
-      <div class="card"><h3>No hidden database access</h3><p>Relationships are <code>NotLoaded | Loaded of 'T</code>. Reading one never queries, and empty and unloaded are different values.</p></div>
+      <div class="card"><h3>No hidden database access</h3><p>What a record owns or links is read with it, as a plain list. Reading a field never queries, and an empty list always means empty.</p></div>
       <div class="card"><h3>Nothing runs client-side by accident</h3><p>A predicate that can't become SQL fails with the expression named. Rows are never fetched to be filtered in memory.</p></div>
-      <div class="card"><h3>No N+1, no cartesian product</h3><p>Each relationship is one command per batch of parent keys. Sibling collections load separately.</p></div>
-      <div class="card"><h3>Limits mean what they say</h3><p><code>limitPerParent 3</code> is per parent. A plain <code>take</code> in a load query is rejected as ambiguous.</p></div>
-      <div class="card"><h3>Typed throughout</h3><p>Comparing <code>o.Total</code> with a string, loading a field that isn't a relationship, or mixing <code>OrderId</code> with <code>CustomerId</code> won't compile.</p></div>
-      <div class="card"><h3>Partial data can't destroy data</h3><p>Unmentioned fields are never written. Replacing children needs an explicit scope and a declared removal policy.</p></div>
+      <div class="card"><h3>No N+1, no cartesian product</h3><p>Each owned or linked list is one command per batch of owner keys. Sibling lists are read separately.</p></div>
+      <div class="card"><h3>Your rules, not Plasm's</h3><p>Plasm validates no input. Your constructors and functions decide, and a transaction's refusals are of your own error type.</p></div>
+      <div class="card"><h3>Typed throughout</h3><p>Comparing <code>o.Total</code> with a string, or mixing <code>OrderId</code> with <code>CustomerId</code>, won't compile. Stored values are read through your types' own <code>create</code>.</p></div>
+      <div class="card"><h3>Only what changed is written</h3><p>An update writes the columns that differ from the record read, and owned lists by difference, under an optimistic version check.</p></div>
     </div>
   </div>
 </section>
@@ -81,47 +79,46 @@ let! orders = repo.All(page customerId)
   <div class="wrap section">
     <div class="lede">
       <h2>How a page of orders loads</h2>
-      <p>The parent page is chosen first. Each relationship then receives exactly the selected keys as one array parameter. Records are built once, bottom-up, and shared products are a single immutable value.</p>
+      <p>The orders are chosen first. Their lines then receive exactly the selected keys as one array parameter. Payments are another aggregate, so the application reads them by a second query, for the same keys.</p>
     </div>
     <ol class="flow" style="list-style: none; margin: 0; padding: 0">
-      <li class="step first"><span class="num">1 · parent</span><strong>orders</strong><code>ORDER BY placed_at DESC, id LIMIT 20</code></li>
-      <li class="step"><span class="num">2 · has many</span><strong>order_lines</strong><code>order_id = ANY(@keys)</code></li>
-      <li class="step"><span class="num">3 · belongs to, nested</span><strong>products</strong><code>id = ANY(@distinct keys)</code></li>
-      <li class="step"><span class="num">4 · has many, filtered</span><strong>payments</strong><code>order_id = ANY(@keys) AND status = @p1</code></li>
+      <li class="step first"><span class="num">1 · the orders</span><strong>orders</strong><code>ORDER BY placed_at DESC, id LIMIT 20</code></li>
+      <li class="step"><span class="num">2 · what they own</span><strong>order_lines</strong><code>order_id = ANY(@keys)</code></li>
+      <li class="step"><span class="num">3 · another aggregate, by id</span><strong>payments</strong><code>order_id = ANY(@keys) AND status = @p1</code></li>
     </ol>
-    <p class="small">You can inspect any plan without touching the database: <code>repo.Explain query</code> returns the SQL, the load paths and the batching strategy.</p>
+    <p class="small">You can inspect any plan without touching the database: <code>repo.Explain query</code> returns the SQL and the lists read with it.</p>
   </div>
 </section>
 
 <section class="band alt">
   <div class="wrap section split">
     <div>
-      <h2>Changes are values</h2>
-      <p class="muted">Unchanged, assigned and cleared are three different states. Validation is pure and can be inspected before anything runs.</p>
-<pre class="code fsharp">let cs =
-    order
-    |&gt; Changeset.edit (fun o -&gt; { o with Status = Cancelled })
-    |&gt; Changeset.validateRange((fun o -&gt; o.Total), min = 0m)
+      <h2>Your domain decides</h2>
+      <p class="muted">The rules are plain functions over your records, with no persistence in them. Plasm stores the record they return, and validates nothing itself.</p>
+<pre class="code fsharp">let cancel (reason: string) (order: Order) =
+    match order.Status with
+    | Cancelled _ -&gt; Error AlreadyCancelled
+    | _ when String.IsNullOrWhiteSpace reason -&gt; Error ReasonRequired
+    | _ -&gt; Ok { order with Status = Cancelled(reason.Trim()) }
 
-match! repo.Update cs with
-| Ok updated -&gt; ...
-| Error(WriteError.Invalid cs) -&gt; cs.Errors   // per field
-| Error(WriteError.Stale _)    -&gt; ...         // newer version stored
-| Error(WriteError.Failed f)   -&gt; f.Kind      // classified failure</pre>
+// A constraint with PostgreSQL's default name is the field's error:
+// customers_email_key -&gt; { Field = "Email"; Kind = UniqueConstraint ... }</pre>
     </div>
     <div>
-      <h2>So are transactions</h2>
-      <p class="muted">Steps pass typed results with <code>let!</code>. A failure says where its step is written and what was rolled back, and carries your own error type. Retries are opt-in.</p>
-<pre class="code fsharp">let checkout name email product =
+      <h2>Writes are transactions</h2>
+      <p class="muted">Every write is a typed transaction. Steps pass results with <code>let!</code>; a failure says where its step is written and what was rolled back, and a refusal has your own error type. Retries are opt-in.</p>
+<pre class="code fsharp">let cancelOrder id seen reason : Tx&lt;Order, Refusal&gt; =
     transaction {
-        let! customer = Tx.insert (registerCustomer name email)
-        let! order = Tx.insert (placeOrder customer.Id [ line ])
-        return customer, order
+        let! order = Tx.one (orderById id) |&gt; Tx.orReject (Missing "order")
+        let! changed = cancel reason order |&gt; Tx.ofResult Domain
+        return! Tx.update (order, changed, expectVersion = seen)
     }
 
-match! repo.Transact(checkout "Ada" "ada@example.com" widget) with
-| Ok (customer, order) -&gt; ...
-| Error e -&gt; printfn "%s failed; rolled back %A" e.Step e.RolledBack</pre>
+match! repo.Transact(cancelOrder id version "changed my mind") with
+| Ok order -&gt; ...
+| Error { Failure = TxFailure.Rejected r } -&gt; ...   // your Refusal
+| Error { Failure = TxFailure.Conflict _ } -&gt; ...   // a newer version is stored
+| Error e -&gt; printfn "%O failed; rolled back %A" e.Step e.RolledBack</pre>
     </div>
   </div>
 </section>
@@ -130,21 +127,21 @@ match! repo.Transact(checkout "Ada" "ada@example.com" widget) with
   <div class="wrap section">
     <div class="lede">
       <h2>Measured against EF Core 11</h2>
-      <p>Orders with their lines, products and successful payments. The dataset is 10,000 orders × 10 lines × 10 payments on PostgreSQL 18 over loopback; figures are BenchmarkDotNet means.</p>
+      <p>Orders with their lines, and the successful payments of those orders. The dataset is 10,000 orders × 10 lines × 10 payments on PostgreSQL 18 over loopback; figures are BenchmarkDotNet means.</p>
     </div>
     <div class="table-box">
       <table>
         <thead><tr><th scope="col">Workload</th><th scope="col">Plasm</th><th scope="col">EF single query</th><th scope="col">EF split query</th></tr></thead>
         <tbody>
-          <tr><td>Page of 20</td><td class="win">1.56 ms · 401 KB</td><td>2.57 ms · 610 KB</td><td>4.10 ms · 450 KB</td></tr>
-          <tr><td>Page of 100</td><td class="win">2.47 ms · 1.1 MB</td><td>18.6 ms · 2.7 MB</td><td>13.3 ms · 1.8 MB</td></tr>
-          <tr><td>Page of 1,000</td><td class="win">16.5 ms · 8.8 MB</td><td>76.2 ms · 26.7 MB</td><td>34.8 ms · 18.2 MB</td></tr>
-          <tr><td>One order, query rebuilt per call</td><td>474 µs · 207 KB</td><td>415 µs · 128 KB</td><td>453 µs · 91 KB</td></tr>
-          <tr><td>One order, prepared query</td><td class="win">392 µs · 108 KB</td><td>415 µs · 128 KB</td><td>453 µs · 91 KB</td></tr>
+          <tr><td>Page of 20</td><td>3.20 ms · 1.4 MB</td><td class="win">2.59 ms · 502 KB</td><td>3.58 ms · 240 KB</td></tr>
+          <tr><td>Page of 100</td><td>11.1 ms · 6.9 MB</td><td>15.1 ms · 2.2 MB</td><td class="win">10.5 ms · 808 KB</td></tr>
+          <tr><td>Page of 1,000</td><td>108 ms · 69 MB</td><td>80.1 ms · 21.4 MB</td><td class="win">25.0 ms · 7.7 MB</td></tr>
+          <tr><td>One order, queries rebuilt per call</td><td>719 µs · 406 KB</td><td class="win">490 µs · 128 KB</td><td>605 µs · 92 KB</td></tr>
+          <tr><td>One order, prepared queries</td><td>510 µs · 138 KB</td><td class="win">490 µs · 128 KB</td><td>605 µs · 92 KB</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="small" style="max-width: 52rem">EF wins on tiny loads when the Plasm query is rebuilt on every call, because building and planning a quotation-based query costs about 140 µs and 100 KB. A prepared query (<code>Query.prepare</code>) is built and planned once and wins on time; EF split query still allocates less. These were measured on one machine against a local database; the full method and limitations are in <code>docs/benchmarks.md</code>.</p>
+    <p class="small" style="max-width: 52rem">Plasm sends as few commands as EF split query and reads the same rows, but it is slower and allocates more, because the scalars it reads by convention are converted by reflection on every row. With the same model and registered mappings, a page of 1,000 measured 23 ms and 20 MB, level with EF split query on time; that conversion is the next thing to fix. These were measured on one machine, shared with other work, against a local database; the full method and limitations are in <code>docs/benchmarks.md</code>.</p>
   </div>
 </section>
 
@@ -152,20 +149,20 @@ match! repo.Transact(checkout "Ada" "ada@example.com" widget) with
   <div class="wrap section status">
     <div class="main">
       <div class="lede"><h2>Honest status</h2><p>An experimental first delivery, not production-ready. Ecto's design transfers; its operational maturity has to be earned.</p></div>
-      <p class="ok">229 / 229 acceptance scenarios · 176 unit, property and compile-time tests</p>
+      <p class="ok">Every behaviour is an executable Gherkin scenario, run against PostgreSQL</p>
     </div>
     <div>
       <h3>Works today</h3>
       <ul>
-        <li>Typed queries, projections, relationship predicates</li>
+        <li>Schemas over your own records; scalars by convention</li>
+        <li>Owned lists and records, linked lists, unions with fields</li>
+        <li>Typed queries, projections, <code>exists</code> across aggregates</li>
         <li>Inner and left joins, with option-typed left sides</li>
-        <li>Nested batched loads, per-parent limits, snapshots</li>
-        <li>Changesets, constraints, optimistic concurrency</li>
-        <li>Atomic child writes, transactions, retries</li>
+        <li>Typed transactions, constraints as field errors, optimistic concurrency</li>
         <li>Count, exists, aggregates, group by and having</li>
         <li>Bulk update, delete, insert and upsert</li>
         <li>Typed hand-written SQL; prepared queries</li>
-        <li>Many-to-many; schema check; test sandboxes</li>
+        <li>Printed DDL; schema and query checks; test sandboxes</li>
         <li>F# Interactive: query displays, playground, scaffolding</li>
       </ul>
     </div>

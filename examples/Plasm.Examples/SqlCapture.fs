@@ -7,7 +7,6 @@
 module Shop.SqlCapture
 
 open System
-open System.Collections.Generic
 open System.IO
 open System.Text
 open System.Text.Json
@@ -143,56 +142,67 @@ let run (connectionString: string) (outputPath: string) =
             | Ok v -> v
             | Error e -> failwithf "unexpected error: %A" e
 
-        // -- Setup (not captured) ---------------------------------------------
-        let! widget = repo.Insert(Changeset.insert { Id = ProductId 0L; Sku = "W-1"; Name = "Widget" })
-        let widget = ok widget
-        let! gadget = repo.Insert(Changeset.insert { Id = ProductId 0L; Sku = "G-1"; Name = "Gadget" })
-        let gadget = ok gadget
+        let qty n = Quantity.create n |> ok
 
-        // 9 · Transactions first: it creates the customer and the first order.
+        /// A transaction that should succeed.
+        let transact (tx: Tx<'T, Refusal>) =
+            task {
+                let! r = repo.Transact tx
+                return ok r
+            }
+
+        let at minutes = DateTime(2026, 11, 14, 9, 0, 0, DateTimeKind.Utc).AddMinutes(float minutes)
+
+        // -- Setup (not captured) ---------------------------------------------
+        let! products =
+            transact (Tx.execute (Bulk.insert [ { Id = ProductId 0L; Sku = "W-1"; Name = "Widget" }; { Id = ProductId 0L; Sku = "G-1"; Name = "Gadget" } ]))
+
+        let widget, gadget = products.[0], products.[1]
+
+        // 7 · Transactions first: it creates the customer and the first order.
         let mutable ada = Unchecked.defaultof<Customer>
-        let mutable firstOrder = Unchecked.defaultof<Order>
+        let mutable first = Unchecked.defaultof<Order>
 
         do!
             capture
                 "transactions"
-                "Three named steps, one database transaction. Each insert returns the generated key, and the next step uses it as a parameter."
+                "One database transaction. Each insert gives back the record as stored, with its generated key, and the next step uses it; the order's lines are inserted with the order and carry its key."
                 [ "INSERT INTO \"customers\""; "INSERT INTO \"orders\""; "INSERT INTO \"order_lines\""; "RETURNING" ]
                 None
                 (fun () ->
                     task {
-                        let! r = repo.Transact(checkout "Ada" "ada@example.com" widget.Id)
-                        let c, o = ok r
+                        let! c, o =
+                            transact (checkout { Id = CustomerId 0L; Name = "Ada"; Email = "ada@example.com" } [ Order.line widget.Id (qty 2) 9.99m ] (at 0))
+
                         ada <- c
-                        firstOrder <- o
+                        first <- o
                     })
 
         for amount, status, minutes in [ 19.98m, Succeeded, 5; 5m, Failed, 1; 2m, Pending, 3 ] do
             let! _ =
-                repo.Insert(
-                    Changeset.insert
+                transact (
+                    Tx.insert
                         { Id = PaymentId 0L
-                          OrderId = firstOrder.Id
+                          OrderId = first.Id
                           Amount = amount
                           Status = status
-                          CreatedAt = DateTime.UtcNow.AddMinutes(float minutes) }
+                          CreatedAt = at minutes }
                 )
 
             ()
 
-        // A second order for Ada with no successful payment, so "overdue" finds one.
-        let! second = repo.Insert(placeOrder ada.Id [ (newLine gadget.Id 1 3m |> Result.toOption).Value ])
-        let second = ok second
+        // A second order for Ada with two lines and no successful payment, so "overdue" finds one.
+        let! second = transact (Tx.insert (Order.create ada.Id [ Order.line widget.Id (qty 1) 9.99m; Order.line gadget.Id (qty 2) 3m ] (at 10) |> ok))
 
         // An order nobody has claimed yet, so the left join has a None to show.
-        let! _ = repo.Insert(Changeset.insert { newOrder ada.Id with CustomerId = None; Total = 4m })
+        let! _ = transact (Tx.insert { (Order.create ada.Id [ Order.line gadget.Id (qty 1) 4m ] (at 20) |> ok) with CustomerId = None })
 
         // 1 · Model
         do!
             capture
                 "model"
-                "Field names become snake_case columns, and every mapped field is read. Relationship fields are not columns: they stay NotLoaded until requested."
-                [ "\"customer_id\""; "\"cancellation_reason\""; "\"placed_at\"" ]
+                "Field names become snake_case columns, and every field is read. The lines are not a column: they are the order's own rows, read in one more command for every order the first one found, in the order the schema names."
+                [ "\"customer_id\""; "\"placed_at\""; "FROM \"order_lines\""; "\"t0\".\"order_id\" = ANY(@p0)" ]
                 None
                 (fun () -> task { let! _ = repo.All(Query.from Db.orders) in () })
 
@@ -200,25 +210,105 @@ let run (connectionString: string) (outputPath: string) =
         do!
             capture
                 "scalars"
-                "OrderId 1L is sent as the int64 1, and Draft as the text 'draft', using the mappings you registered. The parameter values are listed below the statement."
-                [ "\"t0\".\"id\" = @p0"; "\"t0\".\"status\" = @p1" ]
+                "OrderId 1L is sent as the int64 1, and Draft as the text 'draft': conventions, with nothing registered. OrderStatus has a case with a field, so it is read from two columns, status and status_reason. The parameter values are listed below each statement."
+                [ "\"t0\".\"id\" = @p0"; "\"t0\".\"status\" = @p1"; "\"t0\".\"status_reason\"" ]
                 None
-                (fun () -> task { let! _ = repo.All(lookup firstOrder.Id) in () })
+                (fun () -> task { let! _ = repo.All(lookup second.Id) in () })
 
         // 3 · Queries
         do!
             capture
                 "queries"
-                "Both functions' filters reach the database. The relationship predicate is a correlated NOT EXISTS, so each order appears at most once."
-                [ "\"t0\".\"customer_id\" = @p0"; "NOT EXISTS" ]
+                "Both functions' filters reach the database. The payments query becomes a correlated NOT EXISTS, so each order appears at most once. List.exists over the order's own lines is an EXISTS over order_lines, and the domain's IsOpen member is written out from its definition. Each query's orders bring their lines in one more command."
+                [ "\"t0\".\"customer_id\" = @p0"; "NOT EXISTS"; "FROM \"payments\""; "FROM \"order_lines\"" ]
                 None
-                (fun () -> task { let! _ = repo.All(overdue ada.Id) in () })
+                (fun () ->
+                    task {
+                        let! _ = repo.All(overdue ada.Id)
+                        let! _ = repo.All(openWithProduct gadget.Id)
+                        ()
+                    })
 
-        // 11 · Joins
+        // 4 · Owned records
+        do!
+            capture
+                "owned"
+                "The page is chosen first (ORDER BY with the key as tiebreaker, LIMIT, OFFSET). The lines of exactly those orders follow in one command, their keys as one array parameter: two commands for a page of 20 or of 1,000."
+                [ "LIMIT @p1"; "OFFSET @p2"; "\"t0\".\"id\" ASC"; "\"t0\".\"order_id\" = ANY(@p0)" ]
+                None
+                (fun () -> task { let! _ = repo.All(Query.from Db.orders |> forCustomer ada.Id |> orderPage 0 20) in () })
+
+        // 5 · Other aggregates, by id
+        let! page = repo.All(Query.from Db.orders |> orderPage 0 20)
+        let page = ok page
+
+        do!
+            capture
+                "references"
+                "One command for the payments of every order on the page: the ids are one array parameter, and the status filter and the ordering run in SQL. No orders query is sent again."
+                [ "\"t0\".\"order_id\" = ANY(@p0)"; "\"t0\".\"status\" = @p1"; "ORDER BY \"t0\".\"created_at\" ASC" ]
+                None
+                (fun () -> task { let! _ = repo.All(succeededPaymentsOf (page |> List.map (fun o -> o.Id))) in () })
+
+        // 6 · Projections
+        do!
+            capture
+                "projections"
+                "Only the three projected columns are selected, and no Order is built, so no lines are read. Explain itself sends nothing."
+                [ "\"t0\".\"id\" AS \"c0\""; "\"t0\".\"total\" AS \"c1\""; "\"t0\".\"version\" AS \"c2\"" ]
+                None
+                (fun () -> task { let! _ = repo.All totals in () })
+
+        // 8 · Changes
+        do!
+            capture
+                "changes"
+                "The order is read with its lines. The update sets only what differs from the record read, here the total, and requires the version the caller saw. The line left out is checked to belong to the order, then deleted. Cancelling writes the status and its reason, the two columns of the case."
+                [ "SET \"total\" = @p0, \"version\" = (\"orders\".\"version\" + @p1)"
+                  "\"orders\".\"version\" = @p"
+                  "DELETE FROM \"order_lines\""
+                  "SET \"status\" = @p0, \"status_reason\" = @p1" ]
+                None
+                (fun () ->
+                    task {
+                        let! trimmed = transact (changeOrder second.Id second.Version (Order.removeLines (fun l -> l.ProductId = gadget.Id)))
+                        let! _ = transact (cancel trimmed.Id trimmed.Version "changed my mind")
+                        ()
+                    })
+
+        // 9 · Failures. Publishing the first order moves it to version 2.
+        let! _ = transact (changeOrder first.Id first.Version Order.publish)
+        let isLucky (d: decimal) = d = 7m
+
+        do!
+            capture
+                "errors"
+                "The duplicate email reaches the database, which refuses it by customers_email_key; that is the Email field's error. The stale cancel requires version 1, but the stored row is at version 2, so no row matches: a Conflict. The untranslatable query sends nothing at all."
+                [ "INSERT INTO \"customers\""; "\"orders\".\"version\" = @p" ]
+                (Some "isLucky o.Total: no command was sent; translation failed first.")
+                (fun () ->
+                    task {
+                        let! dup = repo.Transact(Tx.insert { ada with Id = CustomerId 0L; Name = "Eve" }: Tx<Customer, Refusal>)
+
+                        match dup with
+                        | Error { Failure = TxFailure.InvalidChanges(_, [ { Field = "Email" } ]) } -> ()
+                        | other -> failwithf "expected the Email field's error, got %A" other
+
+                        let! stale = repo.Transact(cancel first.Id first.Version "too late")
+
+                        match stale with
+                        | Error { Failure = TxFailure.Conflict _ } -> ()
+                        | other -> failwithf "expected a conflict, got %A" other
+
+                        let! _ = repo.All(plasm { for o in Db.orders do where (isLucky o.Total) })
+                        ()
+                    })
+
+        // 10 · Joins
         do!
             capture
                 "joins"
-                "Each join is part of one command. The inner join drops the order without a customer; the left join keeps it, and its customer columns read as NULL, which becomes None. Chained joins add one JOIN each, and the projection reads only the three columns it names."
+                "Each join is part of one command. The inner join drops the order without a customer, and its whole Orders come with their lines, in one more command; the left join keeps it, and its customer columns read as NULL, which becomes None. Chained joins add one JOIN each, and the projection reads only the three columns it names."
                 [ "INNER JOIN \"customers\" AS \"j1\" ON (\"t0\".\"customer_id\" = \"j1\".\"id\")"
                   "LEFT JOIN \"customers\" AS \"j1\""
                   "\"j1\".\"email\" AS \"c1\""
@@ -232,112 +322,32 @@ let run (connectionString: string) (outputPath: string) =
                         ()
                     })
 
-        // 4 · Loads
-        do!
-            capture
-                "loads"
-                "The page is chosen first (ORDER BY with the id tiebreaker, LIMIT, OFFSET). Each relationship then gets the selected keys as one array parameter, and the payments filter and ordering run in SQL. The last command is the per-parent limit, a window function partitioned by order."
-                [ "LIMIT @p1"
-                  "OFFSET @p2"
-                  "\"t0\".\"id\" ASC"
-                  "\"t0\".\"order_id\" = ANY(@p0)"
-                  "\"t0\".\"id\" = ANY(@p0)"
-                  "\"t0\".\"status\" = @p1"
-                  "ROW_NUMBER() OVER (PARTITION BY \"t0\".\"order_id\""
-                  "\"s\".\"__rank\" <= @p1" ]
-                None
-                (fun () ->
-                    task {
-                        let! _ = repo.All(Query.from Db.orders |> forCustomer ada.Id |> orderPage 0 20)
-                        let! _ = repo.All(recentPayments 3)
-                        ()
-                    })
-
-        // 5 · Existing values
-        let! held = repo.All(Query.from Db.orders)
-        let held = ok held
-
-        do!
-            capture
-                "existing"
-                "Only the payments are queried. The orders you already hold supply the keys, and no orders query is sent."
-                [ "\"t0\".\"order_id\" = ANY(@p0)" ]
-                None
-                (fun () -> task { let! _ = repo.Preload(withPayments, held) in () })
-
-        // 6 · Projections
-        do!
-            capture
-                "projections"
-                "Only the three projected columns are selected, and no Order is built. Explain itself sends nothing."
-                [ "\"t0\".\"id\" AS \"c0\""; "\"t0\".\"total\" AS \"c1\""; "\"t0\".\"version\" AS \"c2\"" ]
-                None
-                (fun () -> task { let! _ = repo.All totals in () })
-
-        // 7 · Changesets
-        let form = Dictionary(dict [ "cancellationReason", "changed my mind"; "id", "999"; "version", "7" ])
-        do!
-            capture
-                "changesets"
-                "The insert omits the generated id and returns it. The form update sets only the two changed fields plus the version, and only if the stored version still matches; the id and version in the form were ignored. The key-only update writes the status alone."
-                [ "INSERT INTO \"customers\" (\"name\", \"email\")"
-                  "SET \"cancellation_reason\" = @p0, \"status\" = @p1, \"version\" = (\"orders\".\"version\" + @p2)"
-                  "\"orders\".\"version\" = @p4"
-                  "SET \"status\" = @p0, \"version\"" ]
-                None
-                (fun () ->
-                    task {
-                        let! _ = repo.Insert(registerCustomer "Bob" "bob@example.com")
-                        let! _ = repo.Update(firstOrder |> cancelFromForm form)
-                        let! _ = repo.Update(publishByKey second.Id second.Version)
-                        ()
-                    })
-
-        // 8 · Child writes
-        let lines =
-            [ newLine widget.Id 1 9.99m; newLine gadget.Id 2 3m ]
-            |> List.map (fun r -> (Result.toOption r).Value)
-
-        let mutable placed = Unchecked.defaultof<Order>
-
-        do!
-            capture
-                "children"
-                "The parent is inserted first; its generated id becomes each line's order_id. Replacing the lines locks the order's current lines with FOR UPDATE, then deletes the ones that were left out (the schema declares OnReplace.Delete)."
-                [ "INSERT INTO \"order_lines\""; "FOR UPDATE"; "DELETE FROM \"order_lines\"" ]
-                None
-                (fun () ->
-                    task {
-                        let! o = repo.Insert(placeOrder ada.Id lines)
-                        placed <- ok o
-                        let kept = Assoc.get placed.Lines |> List.take 1
-                        let! r = repo.Update(keepOnly placed kept)
-                        ok r |> ignore
-                    })
-
         let! _ =
-            repo.Insert(
-                Changeset.insert
+            transact (
+                Tx.insert
                     { Id = PaymentId 0L
                       OrderId = second.Id
                       Amount = 3m
                       Status = Succeeded
-                      CreatedAt = DateTime.UtcNow }
+                      CreatedAt = at 30 }
             )
 
-        // 12 · Compared with EF Core's AsSplitQuery: the same page of published
-        // orders with lines, products and successful payments.
+        // 11 · Compared with EF Core's AsSplitQuery: the same page of published
+        // orders with their lines, and the successful payments of those orders.
         do!
             capture
                 "split"
-                "Plasm's relationship commands receive the selected order ids as one array parameter. The parent filter, ordering and LIMIT run once, in the first command, and are never repeated."
-                [ "LIMIT @p1"
-                  "\"t0\".\"order_id\" = ANY(@p0)"
-                  "\"t0\".\"id\" = ANY(@p0)" ]
+                "The page's filter, ordering and LIMIT run once, in the first command. The lines and then the payments receive the selected order ids as one array parameter; the parent query is never repeated."
+                [ "LIMIT @p1"; "\"t0\".\"order_id\" = ANY(@p0)" ]
                 None
-                (fun () -> task { let! _ = repo.All efComparisonPage in () })
+                (fun () ->
+                    task {
+                        let! orders = repo.All(efComparisonPage 20)
+                        let! _ = repo.All(succeededPaymentsOf (ok orders |> List.map (fun o -> o.Id)))
+                        ()
+                    })
 
-        // 13 · Counts and aggregates
+        // 12 · Counts and aggregates
         do!
             capture
                 "aggregates"
@@ -357,31 +367,33 @@ let run (connectionString: string) (outputPath: string) =
                         ()
                     })
 
-        // 14 · Bulk writes
+        // 13 · Bulk writes
         do!
             capture
                 "bulk"
-                "One UPDATE changes every matching draft. Only the assigned fields are in the SET clause, and the version is incremented. The upsert is one INSERT; a row whose SKU already exists is updated from the incoming row (excluded) instead, and both kinds come back through RETURNING."
-                [ "SET \"status\" = @p0, \"cancellation_reason\" = @p1, \"version\" = (\"orders\".\"version\" + @p2)"
+                "One UPDATE changes every matching draft. Only the assigned field is in the SET clause, as its two columns, and the version is incremented. The upsert is one INSERT; a row whose SKU already exists is updated from the incoming row (excluded) instead, and both kinds come back through RETURNING."
+                [ "SET \"status\" = @p0, \"status_reason\" = @p1, \"version\" = (\"orders\".\"version\" + @p2)"
                   "\"orders\".\"placed_at\" < @p"
                   "ON CONFLICT (\"sku\") DO UPDATE"
                   "\"name\" = \"excluded\".\"name\"" ]
                 None
                 (fun () ->
                     task {
-                        let! _ = repo.Execute(expireDrafts (DateTime.UtcNow.AddMinutes 1.0))
+                        let! _ = transact (Tx.execute (expireDrafts (at 60)))
 
                         let! _ =
-                            repo.Execute(
-                                syncCatalogue
-                                    [ { widget with Name = "Widget (2026)" }
-                                      { Id = ProductId 0L; Sku = "S-1"; Name = "Sprocket" } ]
+                            transact (
+                                Tx.execute (
+                                    syncCatalogue
+                                        [ { widget with Name = "Widget (2026)" }
+                                          { Id = ProductId 0L; Sku = "S-1"; Name = "Sprocket" } ]
+                                )
                             )
 
                         ()
                     })
 
-        // 15 · Hand-written SQL
+        // 14 · Hand-written SQL
         do!
             capture
                 "raw"
@@ -393,7 +405,7 @@ let run (connectionString: string) (outputPath: string) =
                         let minimum = 5m
 
                         let! _ =
-                            repo.Sql<string * int>(
+                            repo.Sql<string * int64>(
                                 $"SELECT c.name, count(o.id) FROM customers c JOIN orders o ON o.customer_id = c.id WHERE o.total >= {minimum} GROUP BY c.name ORDER BY c.name"
                             )
 
@@ -401,9 +413,8 @@ let run (connectionString: string) (outputPath: string) =
                         ()
                     })
 
-        // 16 · Prepared queries
-        let! bob = repo.One(plasm { for c in Db.customers do where (c.Name = "Bob") })
-        let bob = (ok bob).Value
+        // 15 · Prepared queries
+        let! bob = transact (Tx.insert { Id = CustomerId 0L; Name = "Bob"; Email = "bob@example.com" })
 
         do!
             capture
@@ -418,51 +429,44 @@ let run (connectionString: string) (outputPath: string) =
                         ()
                     })
 
-        // 17 · Many-to-many (setup is not captured)
-        let! tags = repo.Execute(Bulk.insert [ { Id = TagId 0L; Name = "fsharp" }; { Id = TagId 0L; Name = "sql" }; { Id = TagId 0L; Name = "orm" } ])
-        let tags = ok tags |> List.map (fun t -> t.Name, t) |> Map.ofList
-
-        let! intro =
-            repo.Insert(
-                Changeset.insert { Id = ArticleId 0L; Title = "Plasm in ten minutes"; Tags = NotLoaded }
-                |> Changeset.putLinks ((fun a -> a.Tags), [ tags.["fsharp"]; tags.["orm"] ])
-            )
-
-        let intro = ok intro
-
-        let! _ =
-            repo.Insert(
-                Changeset.insert { Id = ArticleId 0L; Title = "Window functions"; Tags = NotLoaded }
-                |> Changeset.putLinks ((fun a -> a.Tags), [ tags.["sql"] ])
-            )
+        // 16 · Linked records (setup is not captured)
+        let! intro = transact (Tx.insert { Id = ArticleId 0L; Title = "Plasm in ten minutes"; Tags = [] })
+        let! intro = transact (retag intro [ "fsharp"; "orm" ])
+        let! windows = transact (Tx.insert { Id = ArticleId 0L; Title = "Window functions"; Tags = [] })
+        let! _ = transact (retag windows [ "sql" ])
 
         do!
             capture
-                "manytomany"
-                "Tags load with one command per batch of articles, joined through article_tags, which also supplies each row's article. Retagging writes only join-table rows: links outside the new set are deleted, missing ones inserted. The filter is an EXISTS through the join table."
+                "linked"
+                "Tags are read with their articles in one more command, joined through article_tags, which also supplies each row's article. Retagging inserts only the tags not yet stored, then writes only join-table rows: links outside the new set are deleted, missing ones inserted. The filter is an EXISTS through the join table."
                 [ "INNER JOIN \"article_tags\" AS \"j\" ON (\"j\".\"tag_id\" = \"t0\".\"id\")"
                   "(\"j\".\"article_id\" = ANY(@p0))"
+                  "ON CONFLICT (\"name\") DO NOTHING"
                   "DELETE FROM \"article_tags\""
-                  "unnest(@p1)"
-                  "INNER JOIN \"article_tags\" AS \"t1j\"" ]
+                  "unnest(@p1)" ]
                 None
                 (fun () ->
                     task {
-                        let! _ = repo.All articlesWithTags
-                        let! _ = repo.Update(retag intro [ tags.["fsharp"]; tags.["sql"] ])
+                        let! _ = repo.All articles
+                        let! _ = transact (retag intro [ "fsharp"; "sql" ])
                         let! _ = repo.All(taggedWith "fsharp")
                         ()
                     })
 
-        // 18 · Schema check and sandbox
+        // 17 · Checks and the sandbox
         do!
             capture
                 "testing"
-                "The schema check is one catalogue query; it found no differences for this model. The sandbox's insert and count run inside a transaction that is rolled back afterwards. Its BEGIN, savepoints and ROLLBACK are sent by the connection, not as commands, so they do not appear here."
+                "Checking the queries and printing the DDL send nothing. The schema check reads the catalogue; it found no differences for this model. The sandbox's insert and count run inside a transaction that is rolled back afterwards. Its BEGIN, savepoints and ROLLBACK are sent by the connection, not as commands, so they do not appear here."
                 [ "information_schema.columns"; "INSERT INTO \"customers\"" ]
                 None
                 (fun () ->
                     task {
+                        match repo.CheckQueries(typeof<Order>.Assembly, "Shop") with
+                        | [] -> ()
+                        | found -> failwithf "the example queries do not translate: %A" found
+
+                        repo.Ddl() |> ignore
                         let! issues = repo.CheckSchema()
 
                         match ok issues with
@@ -472,7 +476,7 @@ let run (connectionString: string) (outputPath: string) =
                         let! inside =
                             repo.Sandbox(fun repo ->
                                 task {
-                                    let! _ = repo.Insert(registerCustomer "Test" "test@example.com")
+                                    let! _ = repo.Transact(Tx.insert { Id = CustomerId 0L; Name = "Test"; Email = "test@example.com" }: Tx<Customer, Refusal>)
                                     let! n = repo.Count(Query.from Db.customers)
                                     return ok n
                                 })
@@ -481,22 +485,6 @@ let run (connectionString: string) (outputPath: string) =
 
                         if ok after <> inside - 1L then
                             failwith "the sandbox was not rolled back"
-                    })
-
-        // 10 · Failures
-        let isLucky (d: decimal) = d = 7m
-
-        do!
-            capture
-                "errors"
-                "The stale update's WHERE requires version 1, but the stored row is at version 2, so 0 rows match and the result is WriteError.Stale. The untranslatable query sends nothing at all."
-                [ "\"orders\".\"version\" = @p3" ]
-                (Some "isLucky o.Total: no command was sent; translation failed first.")
-                (fun () ->
-                    task {
-                        let! _ = repo.Update(firstOrder |> Changeset.edit (fun o -> { o with Total = 1m }))
-                        let! _ = repo.All(plasm { for o in Db.orders do where (isLucky o.Total) })
-                        ()
                     })
 
         let payload =

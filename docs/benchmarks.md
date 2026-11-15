@@ -1,8 +1,11 @@
-# Graph-load measurements: Plasm vs EF Core
+# Read measurements: Plasm vs EF Core
 
-Measured 2026-11-12, before and after the performance fixes described below.
-These numbers describe one machine and one dataset; read the limitations before
-generalising.
+Measured 2026-11-15 in the one style: an Order owns its lines, and payments
+are another aggregate read by id. These numbers describe one machine and one
+dataset. Read the limitations before generalising. The earlier measurements
+(2026-11-12) were taken of a different workload, with relationships loaded by
+`preload` and products included, so they are not comparable; they are not
+repeated here.
 
 ## How to run
 
@@ -30,35 +33,50 @@ per process with bulk SQL (`benchmarks/Plasm.Benchmarks/Workloads.fs`).
 | EF Core | Microsoft.EntityFrameworkCore 11.0.0-rc.3.26522.148 + Npgsql.EntityFrameworkCore.PostgreSQL 11.0.0-rc.3 (the provider is RC and pins EF to rc.3) |
 | BenchmarkDotNet | 0.15.8, `InProcessEmitToolchain`, 3 warm-ups, 10 iterations, 1 launch |
 
-BenchmarkDotNet labels the runtime "DEBUG". All five benchmark assemblies were
-checked and have `DebuggableAttribute.IsJITOptimizerDisabled = false`. The label
-looks like 0.15.8 misreading .NET 11's JIT information.
+BenchmarkDotNet labels the runtime "DEBUG". The benchmark assemblies have
+`DebuggableAttribute.IsJITOptimizerDisabled = false` (checked 2026-11-12); the
+label looks like 0.15.8 misreading .NET 11's JIT information.
+
+During this run other builds and test suites were running on the same machine,
+so the times are noisier than an idle machine would give: `counts` medians for
+the same workload varied by up to 40% between two runs. Allocations and command
+and row counts are stable.
 
 ## Dataset
 
 100 customers, 200 products and 10,000 orders. Two in three orders are `published`,
-and `placed_at` rises one minute per order. Each order has 10 lines, whose
-products are spread over the 200 products, and 10 payments. A third of the
-payments are `succeeded`; the rest are `failed` or `pending`. That gives 100,000
-lines and 100,000 payments, with indexes on `order_lines(order_id)` and
-`payments(order_id)`. The schema is `tests/Plasm.TestDomain/Database.fs`.
+and `placed_at` rises one minute per order. Each order has 10 lines and 10
+payments. A third of the payments are `succeeded`; the rest are `failed` or
+`pending`. That gives 100,000 lines and 100,000 payments, with indexes on
+`order_lines(order_id)` and `payments(order_id)`. The schema is
+`tests/Plasm.TestDomain/Database.fs`; the domain is
+`tests/Plasm.TestDomain/Domain.fs`, whose scalars are all stored by convention.
 
 ## Workloads
 
 1. **Page.** Published orders ordered by `placed_at desc, id`, taking N = 20,
-   100 or 1,000. Each order loads its Lines and each line's Product, plus only
-   its succeeded Payments ordered by `created_at`.
-2. **Siblings.** Order 1 with all 10 lines and all 10 payments. Two
-   collections are loaded side by side to show the cartesian product.
+   100 or 1,000, each with its lines, and the succeeded payments of those
+   orders ordered by `created_at`.
+2. **Siblings.** Order 1 with its 10 lines and all 10 payments. Two
+   collections side by side show the cartesian product.
 
 The variants are:
 
-- **Plasm:** `repo.All` with `preload o.Lines linesWithProduct` and
-  `preload o.Payments successfulPayments`. The records are immutable; see
+- **Plasm:** `repo.All (plasmPage n)` gives the orders with their lines (two
+  commands: orders, then the lines of exactly those orders). The payments are a
+  second query, prepared once:
+  `succeededPaymentsOf (orders |> List.map (fun o -> o.Id))`, which is
+  `List.contains p.OrderId ids && p.Status = Succeeded`, one array parameter.
+  For the siblings workload there are two Plasm variants: both queries built
+  for each call, and both prepared (`orderById`, `paymentsOfOrder`). See
   `Workloads.fs`.
-- **EF single query:** `AsNoTracking`, `Include(o => o.Lines).ThenInclude(l => l.Product)`,
-  and a filtered `Include(o => o.Payments.Where(..).OrderBy(..))`, run with `AsSingleQuery`.
+- **EF single query:** `AsNoTracking`, `Include(o => o.Lines)` and a filtered
+  `Include(o => o.Payments.Where(..).OrderBy(..))`, run with `AsSingleQuery`.
 - **EF split query:** the same query with `AsSplitQuery`.
+
+Products are no longer part of the workload: in the one style a line refers to
+its product by id, and the EF query no longer includes them, so both sides read
+the same rows.
 
 The EF model and queries are written in C#
 (`benchmarks/Plasm.Benchmarks.EfModel`). That is EF's idiomatic surface, and it
@@ -66,203 +84,156 @@ avoids F#-quotation-to-LINQ translation differences. EF needs mutable classes
 with settable navigation collections.
 
 Every run checks that all variants return the same graph (orders, lines and
-payments counts). They did in every run.
+payments counts). They did.
 
 ## Methodology
 
 - **Commands and rows:** for Plasm, `RepoOptions.OnCommand` (`CommandEvent.Rows`).
   For EF, a `DbCommandInterceptor` captures each command. Its rows are counted
   by re-running the captured SQL as `select count(*) from (<sql>)` with the same
-  parameters. The rows column counts rows, not bytes; rows are not the same width
-  across variants (see below).
+  parameters. The rows column counts rows, not bytes.
 - **Allocations and time:** `counts` mode reports `GC.GetTotalAllocatedBytes(true)`
-  for one warm execution, and the median of 21 executions after 60 warm-ups
-  (enough to reach Tier-1 JIT). `bench` mode reports BenchmarkDotNet
-  `[MemoryDiagnoser]` means. The two agree to within about 10%.
+  for one warm execution, and the median of 21 executions after 60 warm-ups.
+  `bench` mode reports BenchmarkDotNet `[MemoryDiagnoser]` means.
 - **Per run:** EF creates a new `DbContext` per execution, which is typical usage.
   The `Repo` is reused.
 
 ## Results
 
-### Commands and rows transferred
+### Commands and rows transferred (`counts`)
 
-| Workload | Variant | Commands | Rows transferred | Product instances |
-|---|---|---:|---:|---:|
-| page 20 | Plasm | 4 | 446 | 166 |
-| page 20 | EF single query | 1 | 600 | 200 |
-| page 20 | EF split query | 3 | 280 | 200 |
-| page 100 | Plasm | 4 | 1,600 | 200 |
-| page 100 | EF single query | 1 | 3,000 | 1,000 |
-| page 100 | EF split query | 3 | 1,400 | 1,000 |
-| page 1000 | Plasm | 4 | 14,200 | 200 |
-| page 1000 | EF single query | 1 | 30,000 | 10,000 |
-| page 1000 | EF split query | 3 | 14,000 | 10,000 |
-| siblings (10 lines × 10 payments) | Plasm | 3 | 21 | – |
-| siblings | EF single query | 1 | **100** (cartesian) | – |
-| siblings | EF split query | 3 | 21 | – |
+| Workload | Variant | Commands | Rows transferred |
+|---|---|---:|---:|
+| page 20 | Plasm | 3 | 280 |
+| page 20 | EF single query | 1 | 600 |
+| page 20 | EF split query | 3 | 280 |
+| page 100 | Plasm | 3 | 1,400 |
+| page 100 | EF single query | 1 | 3,000 |
+| page 100 | EF split query | 3 | 1,400 |
+| page 1000 | Plasm | 3 | 14,000 |
+| page 1000 | EF single query | 1 | 30,000 |
+| page 1000 | EF split query | 3 | 14,000 |
+| siblings | Plasm (either variant) | 3 | 21 |
+| siblings | EF single query | 1 | **100** (cartesian) |
+| siblings | EF split query | 3 | 21 |
 
-How to read the row counts:
-
-- **Plasm** sends one command per relationship whatever the parent count: orders,
-  lines, products and payments. Its products are fetched once per distinct key
-  (166 rows for the page of 20), and each Product record is shared by every line
-  that references it.
-- **EF split query** joins products into the line query, so it has fewer rows,
-  but each line row carries the product columns. That is 200, 1,000 and 10,000
-  product copies.
-- **EF single query** multiplies lines by succeeded payments per order:
-  10 × 3 = 30 rows per order. In the siblings case it transfers the full 10 × 10
-  cross product.
-- **Product instances:** EF `AsNoTracking` materialises one Product object per
-  line. `AsNoTrackingWithIdentityResolution` (not measured) would share them.
+Plasm and EF split query now read the same rows in the same number of commands.
+EF single query multiplies lines by succeeded payments per order (10 × 3 = 30
+rows per order), and in the siblings case the full 10 × 10 cross product.
 
 ### Time and allocations (BenchmarkDotNet, mean of 10 iterations)
 
-Measured after the materialiser and planner fixes listed under "Plasm
-performance findings". The figures from before the fixes are kept for
-comparison.
+| Workload | Variant | Mean | Allocated | vs Plasm (time) |
+|---|---|---:|---:|---:|
+| page 20 | Plasm | 3.20 ms | 1,443 KB | 1.00 |
+| page 20 | EF single query | 2.59 ms | 502 KB | 0.81 |
+| page 20 | EF split query | 3.58 ms | 240 KB | 1.12 |
+| page 100 | Plasm | 11.10 ms | 6,951 KB | 1.00 |
+| page 100 | EF single query | 15.06 ms | 2,210 KB | 1.36 |
+| page 100 | EF split query | 10.51 ms | 808 KB | 0.95 |
+| page 1000 | Plasm | 107.77 ms | 69,043 KB | 1.00 |
+| page 1000 | EF single query | 80.14 ms | 21,408 KB | 0.74 |
+| page 1000 | EF split query | 24.98 ms | 7,668 KB | 0.23 |
+| siblings | Plasm, queries built per call | 719 µs | 406 KB | 1.00 |
+| siblings | Plasm, prepared queries | 510 µs | 138 KB | 0.71 |
+| siblings | EF single query | 490 µs | 128 KB | 0.68 |
+| siblings | EF split query | 605 µs | 92 KB | 0.84 |
 
-| Workload | Variant | Mean | Allocated | vs Plasm (time) | Plasm before fixes |
-|---|---|---:|---:|---:|---:|
-| page 20 | Plasm | 1.56 ms | 401 KB | 1.00 | 1.66 ms / 690 KB |
-| page 20 | EF single query | 2.57 ms | 610 KB | 1.65 | |
-| page 20 | EF split query | 4.10 ms | 450 KB | 2.64 | |
-| page 100 | Plasm | 2.47 ms | 1,107 KB | 1.00 | 2.50 ms / 1,733 KB |
-| page 100 | EF single query | 18.64 ms | 2,739 KB | 7.55 | |
-| page 100 | EF split query | 13.31 ms | 1,836 KB | 5.39 | |
-| page 1000 | Plasm | 16.51 ms | 8,751 KB | 1.00 | 18.38 ms / 13,094 KB |
-| page 1000 | EF single query | 76.17 ms | 26,681 KB | 4.61 | |
-| page 1000 | EF split query | 34.82 ms | 18,230 KB | 2.11 | |
-| siblings | Plasm | 435 µs | 206 KB | 1.00 | 470 µs / 225 KB |
-| siblings | EF single query | 411 µs | 128 KB | 0.94 | |
-| siblings | EF split query | 449 µs | 91 KB | 1.03 | |
-
-The page benchmarks reuse one query value, so Plasm's cached plan applies. The
-siblings benchmark builds a new query on every call (`plasmSiblings id`), so
-it pays for building the query value and planning it each time. The two cases
-measure the warm path and the cold path respectively. Measured in isolation
-(Release, the same machine, siblings-shaped query with two preloads):
-
-| Per call | Time | Allocated |
-|---|---:|---:|
-| Building the query value (F# materialises the `ReflectedDefinition` quotations at each call site) | ~79 µs | ~63 KB |
-| Planning a new query value (translation and load planning) | ~62 µs | ~38 KB |
-| Reusing a planned query value | ~0 | ~0 |
-
-**Prepared queries.** `Query.prepare` removes both costs from the per-call
-path: the query is built once and planned once, and each call binds the
-argument. A rerun of the siblings benchmark with a prepared variant
-(`plasmSiblingsPrepared`, the same query; BenchmarkDotNet, one run, same
-machine):
-
-| Siblings, per call | Mean | Allocated | vs rebuilt Plasm |
-|---|---:|---:|---:|
-| Plasm, query rebuilt per call | 474 µs | 207 KB | 1.00 |
-| Plasm, prepared | **392 µs** | 108 KB | 0.83 |
-| EF single query | 415 µs | 128 KB | 0.88 |
-| EF split query | 453 µs | **91 KB** | 0.96 |
-
-The rebuilt variant measured 435 µs in the earlier run (table above), so the
-difference between runs is about ±10%. The prepared query is the fastest
-variant in both runs. It allocates less than EF single query, but more than EF
-split query.
-
-`counts` mode medians after the fixes, using the same single-pass harness:
+`counts` medians from the same day agree on allocations to within 2%:
 
 | Workload | Plasm | EF single | EF split |
 |---|---:|---:|---:|
-| page 20 | 2.71 ms / 419 KB | 3.90 ms / 633 KB | 4.42 ms / 474 KB |
-| page 100 | 4.67 ms / 1,141 KB | 25.78 ms / 2,817 KB | 12.35 ms / 1,913 KB |
-| page 1000 | 14.48 ms / 8,768 KB | 84.48 ms / 27,339 KB | 32.80 ms / 18,891 KB |
-| siblings (query reused) | 0.36 ms / 110 KB | 0.38 ms / 133 KB | 0.46 ms / 97 KB |
+| page 20 | 5.96 ms / 1,466 KB | 3.69 ms / 510 KB | 4.09 ms / 248 KB |
+| page 100 | 24.70 ms / 7,020 KB | 17.17 ms / 2,216 KB | 10.66 ms / 815 KB |
+| page 1000 | 118.93 ms / 69,040 KB | 87.40 ms / 21,410 KB | 22.83 ms / 7,669 KB |
+| siblings, built per call | 0.80 ms / 418 KB | 0.57 ms / 133 KB | 0.56 ms / 97 KB |
+| siblings, prepared | 0.48 ms / 149 KB | | |
+
+`profile` mode, page of 1,000: Plasm's three commands took about 3, 100 and 10
+ms (orders, lines, payments), against about 14 ms for reading the same 10,000
+line rows with raw Npgsql (`GetFieldValue` per column, no materialisation).
 
 ### How each variant restricts child queries
 
-Plasm sends the selected parent keys as one array parameter, so each child
-query reads only those parents' rows and the parent page is not evaluated again:
+Plasm sends the selected order keys as one array parameter, so each child
+query reads only those orders' rows and the page is not evaluated again:
 
 ```sql
-SELECT "t0"."id", "t0"."order_id", ... FROM "order_lines" AS "t0"
+SELECT "t0"."id" AS "id", "t0"."order_id" AS "order_id", ... FROM "order_lines" AS "t0"
 WHERE ("t0"."order_id" = ANY(@p0)) ORDER BY "t0"."id" ASC
 SELECT ... FROM "payments" AS "t0"
 WHERE (("t0"."order_id" = ANY(@p0)) AND ("t0"."status" = @p1))
-ORDER BY "t0"."created_at" ASC, "t0"."id" ASC
+ORDER BY "t0"."created_at" ASC
 ```
 
 EF split query restricts each child query by running the parent query again
 (filter, `ORDER BY` and `LIMIT`) as a derived table and joining to it:
 
 ```sql
-SELECT s.id, s.order_id, ..., s.id0, s.name, s.sku, o1.id
+SELECT o0.id, o0.order_id, o0.product_id, o0.quantity, o0.unit_price, o1.id
 FROM (SELECT o.id, o.placed_at FROM orders AS o
       WHERE o.status = 'published' ORDER BY o.placed_at DESC, o.id LIMIT @p) AS o1
-INNER JOIN (SELECT o0.id, ..., p.id AS id0, p.name, p.sku
-            FROM order_lines AS o0 INNER JOIN products AS p ON o0.product_id = p.id) AS s
-        ON o1.id = s.order_id
+INNER JOIN order_lines AS o0 ON o1.id = o0.order_id
 ORDER BY o1.placed_at DESC, o1.id
 ```
 
-This keeps EF's split queries consistent without sending keys. The cost is that
-the database evaluates the parent filter, sort and limit once per collection.
-The results can also differ if the data changes between commands. Plasm's key
-lists cannot drift that way: children always belong to the parents that were
-returned. Plasm still needs `ReadConsistency.Snapshot` to see one database state
-across commands.
+The database evaluates the parent filter, sort and limit once per collection,
+and the results can differ if the data changes between commands. Plasm's key
+lists cannot drift that way, though it still needs `ReadConsistency.Snapshot`
+to see one database state across commands.
 
 ## Interpretation
 
-- **Bounded command count.** Plasm used 4 commands for 20, 100 and 1,000
-  parents. EF split query also has a constant count (3). EF single query always
-  uses 1 command, but its rows grow with the product of the collection sizes.
-- **No cartesian product.** On the sibling workload, Plasm and EF split query
+- **Bounded command count.** Plasm used 3 commands for 20, 100 and 1,000
+  orders, like EF split query. EF single query always uses 1 command, but its
+  rows grow with the product of the collection sizes.
+- **No cartesian product.** On the siblings workload, Plasm and EF split query
   each transfer 21 rows; EF single query transfers 100.
-- **Larger pages.** At 1,000 parents Plasm was 2.1× faster than EF split
-  query and 4.6× faster than EF single query, and allocated 52% and 67% less.
-  Most of the saving comes from fetching each distinct product once and sharing
-  its instance, and from not re-running the parent query.
-- **Small loads.** For one order with 21 rows:
-  - With the query value reused, Plasm matches EF on time and allocates between
-    EF's two variants (110 KB, against 97–133 KB).
-  - When the query is rebuilt per call, Plasm is about 6% slower than EF single
-    query and allocates 1.6–2.3× more. Almost all of the difference is building
-    and planning the quotation-based query value (see the table above).
-  - EF caches its compiled LINQ query by expression shape. Plasm caches only
-    per query value.
+- **Materialisation is now Plasm's bottleneck.** With the same rows, Plasm is
+  about 4× slower than EF split query at 1,000 orders and allocates about 9×
+  more. The cost is per row read, not in the SQL; see the finding below.
+- **Prepared queries** cut the per-call cost of the siblings read from 719 µs
+  and 406 KB to 510 µs and 138 KB, level with EF single query.
 
 ## Plasm performance findings
 
-Found during the first measurement run. Items 1 and 2 are now fixed; item 3 is open.
+1. **Scalars read by convention are slow.** *Open.* The test domain registers
+   no scalar mappings; its ids, `Quantity` and statuses are stored by
+   convention. As a diagnostic, the page workload was run once more with the
+   same schemas and registered mappings (`Scalar.wrap` for the ids,
+   `Scalar.tryWrap Quantity.create`, `Scalar.enum` for the statuses). This was
+   not committed, because registered mappings are not the one style.
+   `counts` mode:
 
-1. **Planning was redone on every execution.** *Fixed.* Plans are cached per
-   repo, keyed by the immutable query value. A plan is not reused if translation
-   evaluated a volatile closed expression, such as `DateTime.UtcNow`.
-   - Load filters and orderings are translated once per plan, not once per key
-     batch.
-   - Load signatures are rendered only when a relationship is requested more
-     than once.
-   - The validation-only dry run is gone.
-2. **Per-row materialisation overhead.** *Fixed in part.*
-   - Records are built and decomposed by compiled expression-tree delegates.
-   - Column readers are resolved once per schema.
-   - Option wrap/unwrap and list builders are precomputed when the model is
-     built.
-   - Still open: `ReadAsync` is awaited for every row.
-   - Allocation at 1,000 parents fell from 13.1 MB to 8.8 MB.
-3. **Building and planning the query value per call.** *Open.* A query built
-   inside a function on every request costs about 140 µs and 100 KB before any
-   I/O; see the breakdown above. Two possible fixes:
-   - A compiled-query form, built once with typed parameter placeholders and
-     bound per call, like EF's `CompileQuery`.
-   - A structural plan-cache key.
+   | Page | By convention | Registered mappings | EF split query |
+   |---|---:|---:|---:|
+   | 20 | 5.93 ms / 1,466 KB | 2.11 ms / 467 KB | 4.05 ms / 248 KB |
+   | 100 | 17.03 ms / 7,020 KB | 3.44 ms / 2,056 KB | 10.30 ms / 813 KB |
+   | 1000 | 111.61 ms / 69,040 KB | 23.23 ms / 20,063 KB | 23.49 ms / 7,663 KB |
 
-   Until then, queries that take no per-request values can be defined once as
-   module-level values. A query parameterised per request (for example by an id)
-   is rebuilt on each call and pays this cost. That is correct, just slower.
+   With registered mappings Plasm matches EF split query on time at 1,000
+   orders. The convention mappings in `src/Plasm/Model.fs` (`Conventions`)
+   convert each value by reflection. A type read through its `create` calls
+   `MethodInfo.Invoke` and then `FSharpValue.GetUnionFields` on the `Result`,
+   for every value. A single-case union is built through
+   `PreComputeUnionConstructor`, which allocates an argument array per value.
+   Compiling these conversions to delegates once per type should bring the
+   convention numbers to the registered ones.
+2. **Per-field allocation in the row reader.** *Open.* `Execution.readEntity`
+   builds an F# list of column values for every field of every row, which is
+   needed only for unions stored across columns. Even with registered mappings,
+   Plasm allocates 2.6× more than EF split query at 1,000 orders.
+3. **Building and planning a query per call.** Measured 2026-11-12 and not
+   re-measured: building a query value costs about 80 µs and 60 KB and planning
+   it about 60 µs and 40 KB. `Query.prepare` removes both from the per-call
+   path. `profile` mode measured `Explain` (plan and render) at about 55–60 µs
+   and 21 KB per call on this run.
 
 ## Limitations
 
-- One machine and a local container over loopback. Network latency would favour
-  fewer round trips (EF single query) more than it does here.
+- One machine, shared with other work during this run, and a local container
+  over loopback. Network latency would favour fewer round trips (EF single
+  query) more than it does here.
 - Warm caches throughout: the dataset fits in `shared_buffers`, and connections
   are pooled. No cold-start numbers are reported.
 - The EF provider is a release candidate (11.0.0-rc.3).
@@ -272,6 +243,5 @@ Found during the first measurement run. Items 1 and 2 are now fixed; item 3 is o
 - Each variant has a single, sequential client. There is no concurrency or
   throughput testing.
 - The "Rows transferred" column counts rows, not bytes or column widths.
-- BenchmarkDotNet ran in-process (`InProcessEmitToolchain`) with 10 iterations.
-  The 99.9% error margins are 2–8% of the mean, except EF split query at
-  1,000 parents (±14%).
+- BenchmarkDotNet ran in-process (`InProcessEmitToolchain`) with 10 iterations,
+  once.

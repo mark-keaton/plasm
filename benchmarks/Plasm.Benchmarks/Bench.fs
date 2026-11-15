@@ -27,7 +27,7 @@ type GraphLoad() =
         page <- plasmPage this.Parents
 
     [<Benchmark(Baseline = true)>]
-    member _.Plasm() : Task<Order list> = run repo page
+    member _.Plasm() : Task<Order list * Payment list> = runPage repo page
 
     [<Benchmark>]
     member this.EfSingleQuery() = efPage cs null this.Parents false
@@ -47,10 +47,10 @@ type Siblings() =
         cs <- db.ConnectionString
 
     [<Benchmark(Baseline = true)>]
-    member _.Plasm() = run repo (plasmSiblings (OrderId siblingOrderId))
+    member _.Plasm() = runSiblings repo (OrderId siblingOrderId)
 
     [<Benchmark>]
-    member _.PlasmPrepared() = run repo (plasmSiblingsPrepared (OrderId siblingOrderId))
+    member _.PlasmPrepared() = runSiblingsPrepared repo (OrderId siblingOrderId)
 
     [<Benchmark>]
     member _.EfSingleQuery() = efSiblings cs null false

@@ -118,13 +118,13 @@ public class ShopContext : DbContext
 
 public static class Queries
 {
-    /// Page of published orders with Lines→Product and successful Payments ordered by creation time.
+    /// Page of published orders with their Lines and their successful Payments ordered by creation time.
     public static IQueryable<Order> Page(ShopContext ctx, int take, bool split) =>
         Shape(ctx.Orders.AsNoTracking()
             .Where(o => o.Status == "published")
             .OrderByDescending(o => o.PlacedAt).ThenBy(o => o.Id)
             .Take(take)
-            .Include(o => o.Lines).ThenInclude(l => l.Product)
+            .Include(o => o.Lines)
             .Include(o => o.Payments.Where(p => p.Status == "succeeded").OrderBy(p => p.CreatedAt)), split);
 
     /// One order with all its lines and all its payments (sibling collections).
