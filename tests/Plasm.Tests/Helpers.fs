@@ -5,6 +5,9 @@ open Plasm
 open Plasm.Postgres
 open Plasm.TestDomain.Domain
 
+/// The change `f` makes to `original`, as one write step.
+let edit (f: 'T -> 'T) (original: 'T) : Tx<'T, unit> = Tx.update (original, f original)
+
 let ok r =
     match r with
     | Ok v -> v

@@ -11,19 +11,9 @@ Feature: Transaction steps do what they say
     Given a configured relational database
     And mappings for Customers, Orders, OrderLines, Products, and Payments
 
-  Rule: The repository's writes match their changesets
-
-    A transaction's write steps take records (`Tx.insert customer`), so a step's
-    action is its name.
-
-    Scenario Outline: The repository rejects a mismatched changeset the same way
-      When I call repo.<member> with a changeset for <action>
-      Then the call fails before execution, naming both actions
-
-      Examples:
-        | member | action |
-        | Update | insert |
-        | Insert | delete |
+  # One style: "The repository rejects a mismatched changeset the same way" was
+  # removed with the repository's write methods; every write is a transaction
+  # step named for its action (Tx.insert, Tx.update, Tx.delete).
 
   Rule: Custom steps work inside the transaction without controlling it
 

@@ -90,18 +90,18 @@ type ProviderSteps(w: World) =
                 task {
                     match operation with
                     | "an upsert" ->
-                        let! x = r.Execute(Bulk.upsert ([ New.product "SKU" "Widget" ], (fun p -> p.Sku), (fun _ incoming -> incoming)))
+                        let! x = r.Transact(Tx.execute (Bulk.upsert ([ New.product "SKU" "Widget" ], (fun p -> p.Sku), (fun _ incoming -> incoming))): Tx<_, unit>)
 
                         return
                             match x with
-                            | Error(DbError.Translation(TranslationError.UnsupportedByProvider(op, _))) -> Some op
+                            | Error { Failure = TxFailure.Failed(DbError.Translation(TranslationError.UnsupportedByProvider(op, _))) } -> Some op
                             | other -> failwithf "expected an unsupported upsert, got %A" other
                     | "an insert" ->
-                        let! x = r.Insert(Changeset.insert (New.customer "Ada" "ada@example.com"))
+                        let! x = r.Transact(Tx.insert (New.customer "Ada" "ada@example.com"): Tx<_, unit>)
 
                         return
                             match x with
-                            | Error(WriteError.Translation(TranslationError.UnsupportedByProvider(op, _))) -> Some op
+                            | Error { Failure = TxFailure.Failed(DbError.Translation(TranslationError.UnsupportedByProvider(op, _))) } -> Some op
                             | other -> failwithf "expected an unsupported insert, got %A" other
                     | "deleting an Order and its Lines" ->
                         // Deleting an owner deletes every line it has, read FOR UPDATE.
@@ -133,39 +133,19 @@ type ProviderSteps(w: World) =
         check (op.Contains capability) $"expected the refusal to name {capability}: {op}"
         equal [] (w.CommandsSinceMark |> List.map (fun c -> c.Sql)) "commands sent"
 
-    [<StepDefinition("^I attempt an operation the test dialect cannot perform through (repo\\.Insert|repo\\.Execute|a transaction step)$")>]
+    [<StepDefinition("^I attempt an operation the test dialect cannot perform through (an insert step|a bulk write step)$")>]
     member _.AttemptThrough(call: string) =
         task {
             let r = repo ()
-            let customer = Changeset.insert (New.customer "Ada" "ada@example.com")
 
-            let! op =
-                task {
-                    match call with
-                    | "repo.Insert" ->
-                        let! x = r.Insert customer
+            let! x =
+                match call with
+                | "an insert step" -> r.Transact(Tx.insert (New.customer "Ada" "ada@example.com") |> Tx.map ignore: Tx<unit, unit>)
+                | _ -> r.Transact(Tx.execute (Bulk.upsert ([ New.product "SKU" "Widget" ], (fun p -> p.Sku), (fun _ incoming -> incoming))) |> Tx.map ignore: Tx<unit, unit>)
 
-                        return
-                            match x with
-                            | Error(WriteError.Translation(TranslationError.UnsupportedByProvider(op, _))) -> op
-                            | other -> failwithf "got %A" other
-                    | "repo.Execute" ->
-                        let! x = r.Execute(Bulk.upsert ([ New.product "SKU" "Widget" ], (fun p -> p.Sku), (fun _ incoming -> incoming)))
-
-                        return
-                            match x with
-                            | Error(DbError.Translation(TranslationError.UnsupportedByProvider(op, _))) -> op
-                            | other -> failwithf "got %A" other
-                    | _ ->
-                        let! x = r.Transact(Tx.write customer)
-
-                        return
-                            match x with
-                            | Error { Failure = TxFailure.Failed(DbError.Translation(TranslationError.UnsupportedByProvider(op, _))) } -> op
-                            | other -> failwithf "got %A" other
-                }
-
-            w.Set("refused", op)
+            match x with
+            | Error { Failure = TxFailure.Failed(DbError.Translation(TranslationError.UnsupportedByProvider(op, _))) } -> w.Set("refused", op)
+            | other -> failwithf "got %A" other
         }
         |> unit
 

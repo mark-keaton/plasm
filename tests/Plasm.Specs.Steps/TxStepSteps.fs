@@ -11,46 +11,6 @@ open Plasm.TestDomain.Database
 [<Binding>]
 type TxStepSteps(w: World) =
 
-    let stored = { New.customer "Ada" "ada@example.com" with Id = CustomerId 1L }
-
-    let changesetFor (action: string) =
-        match action with
-        | "insert" -> Changeset.insert (New.customer "Ada" "ada@example.com")
-        | "update" -> stored |> Changeset.edit (fun c -> { c with Name = "Ada L." })
-        | "delete" -> Changeset.delete stored
-        | a -> failwithf "unknown action %s" a
-
-    let attempt (f: unit -> unit) =
-        try
-            f ()
-            w.Set("rejection", "")
-        with :? ArgumentException as e ->
-            w.Set("rejection", e.Message)
-
-    let rejection () =
-        let m = w.Get<string> "rejection"
-        check (m <> "") "expected the call to be rejected"
-        m
-
-    [<StepDefinition("^I call repo\\.(Insert|Update|Delete) with a changeset for (insert|update|delete)$")>]
-    member _.RepoMismatched(memberName: string, action: string) =
-        let cs = changesetFor action
-
-        attempt (fun () ->
-            match memberName with
-            | "Insert" -> w.Repo.Insert(cs) |> ignore
-            | "Update" -> w.Repo.Update(cs) |> ignore
-            | _ -> w.Repo.Delete(cs) |> ignore)
-
-        w.Set("expected", (memberName, action))
-
-    [<StepDefinition("the call fails before execution, naming both actions")>]
-    member _.CallNamesActions() =
-        let m = rejection ()
-        let memberName, action = w.Get<string * string> "expected"
-        check (m.Contains $"repo.{memberName}") $"member missing: {m}"
-        check (m.Contains $"for {action}") $"changeset action missing: {m}"
-
     [<StepDefinition("a transaction runs a custom step that inserts a row with a command and a later step fails")>]
     member _.CustomStepThenFail() =
         task {

@@ -9,11 +9,11 @@ open Plasm.TestDomain.Domain
 [<Binding>]
 type ConstraintSteps(w: World) =
 
-    let insertResult (r: Result<'T, WriteError<'T>>) =
+    let insertResult (r: Result<'T, TransactionError<unit>>) =
         match r with
         | Ok _ -> failwith "the insert succeeded"
-        | Error(WriteError.Invalid cs) -> w.Set("constraintFailure", (Choice1Of2 cs.Errors: Choice<FieldError list, DbFailure>))
-        | Error(WriteError.Failed f) -> w.Set("constraintFailure", (Choice2Of2 f: Choice<FieldError list, DbFailure>))
+        | Error { Failure = TxFailure.InvalidChanges(_, errors) } -> w.Set("constraintFailure", (Choice1Of2 errors: Choice<FieldError list, DbFailure>))
+        | Error { Failure = TxFailure.Failed(DbError.Database f) } -> w.Set("constraintFailure", (Choice2Of2 f: Choice<FieldError list, DbFailure>))
         | Error other -> failwithf "unexpected %A" other
 
     let failure () = w.Get<Choice<FieldError list, DbFailure>> "constraintFailure"
@@ -21,7 +21,7 @@ type ConstraintSteps(w: World) =
     [<StepDefinition("^a Customer with the email \"(.*)\"$")>]
     member _.Customer(email: string) =
         task {
-            let! r = w.Repo.Insert(Changeset.insert (New.customer "Ada" email))
+            let! r = w.Repo.Transact(Tx.insert (New.customer "Ada" email): Tx<_, unit>)
             ok r |> ignore
         }
         |> unit
@@ -29,7 +29,7 @@ type ConstraintSteps(w: World) =
     [<StepDefinition("^I insert another Customer with the email \"(.*)\"$")>]
     member _.InsertDuplicate(email: string) =
         task {
-            let! r = w.Repo.Insert(Changeset.insert (New.customer "Another" email))
+            let! r = w.Repo.Transact(Tx.insert (New.customer "Another" email): Tx<_, unit>)
             insertResult r
         }
         |> unit
@@ -38,7 +38,7 @@ type ConstraintSteps(w: World) =
     member _.InsertWithMissingProduct(id: int64) =
         task {
             let order = { New.order None Draft 5m with Lines = [ New.line (ProductId id) 1 1m ] }
-            let! r = w.Repo.Insert(Changeset.insert order)
+            let! r = w.Repo.Transact(Tx.insert order: Tx<_, unit>)
             insertResult r
         }
         |> unit
@@ -46,7 +46,7 @@ type ConstraintSteps(w: World) =
     [<StepDefinition("^I insert an Order for the Customer with id (\\d+)$")>]
     member _.InsertForMissing(id: int64) =
         task {
-            let! r = w.Repo.Insert(Changeset.insert (New.order (Some(CustomerId id)) Draft 5m))
+            let! r = w.Repo.Transact(Tx.insert (New.order (Some(CustomerId id)) Draft 5m): Tx<_, unit>)
             insertResult r
         }
         |> unit
@@ -54,7 +54,7 @@ type ConstraintSteps(w: World) =
     [<StepDefinition("^I insert an Order with the total (-?\\d+)$")>]
     member _.InsertTotal(total: decimal) =
         task {
-            let! r = w.Repo.Insert(Changeset.insert (New.order None Draft total))
+            let! r = w.Repo.Transact(Tx.insert (New.order None Draft total): Tx<_, unit>)
             insertResult r
         }
         |> unit

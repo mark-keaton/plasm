@@ -32,12 +32,12 @@ type ConcurrencySteps(w: World) =
     let repo () = w.Get<Repo> "noteRepo"
     let read () = w.Get<Note> "note"
 
-    let saved (r: Result<'T, WriteError<'T>>) =
-        w.Set("noteWrite", r |> Result.map ignore |> Result.mapError (fun e -> string e, (match e with WriteError.Stale _ -> true | _ -> false)))
+    let saved (r: Result<'T, TransactionError<unit>>) =
+        w.Set("noteWrite", r |> Result.map ignore |> Result.mapError (fun e -> string e, (match e.Failure with TxFailure.Conflict _ -> true | _ -> false)))
 
     let readNote (author: string option) =
         task {
-            let! inserted = repo().Insert(Changeset.insert { Id = NoteId 0L; Text = "first"; Author = author })
+            let! inserted = repo().Transact(Tx.insert { Id = NoteId 0L; Text = "first"; Author = author }: Tx<_, unit>)
             let! stored = repo().One(plasm { for n in notes do where (n.Id = (ok inserted).Id) })
             w.Set("note", (ok stored).Value)
         }
@@ -66,7 +66,7 @@ type ConcurrencySteps(w: World) =
     member _.Change() =
         task {
             w.MarkCommands()
-            let! r = repo().Update(read () |> Changeset.edit (fun n -> { n with Text = "mine" }))
+            let! r = repo().Transact(read () |> edit (fun n -> { n with Text = "mine" }))
             saved r
         }
         |> unit
@@ -74,7 +74,7 @@ type ConcurrencySteps(w: World) =
     [<StepDefinition("I delete the Note I read")>]
     member _.Delete() =
         task {
-            let! r = repo().Delete(Changeset.delete (read ()))
+            let! r = repo().Transact(Tx.delete (read ()): Tx<_, unit>)
             saved r
         }
         |> unit
@@ -126,7 +126,7 @@ type ConcurrencySteps(w: World) =
     member _.ChangeOrder() =
         task {
             let order = w.Get<Order> "order"
-            let! r = w.Repo.Update(order |> Changeset.edit (fun o -> { o with Status = Published }))
+            let! r = w.Repo.Transact(order |> edit (fun o -> { o with Status = Published }))
             saved r
         }
         |> unit

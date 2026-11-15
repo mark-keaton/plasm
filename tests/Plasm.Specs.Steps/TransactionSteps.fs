@@ -152,7 +152,7 @@ type TransactionSteps(w: World) =
     [<StepDefinition("another operation has changed that version")>]
     member _.OtherChanged() =
         task {
-            let! r = w.Repo.Update(w.Get<Order> "order" |> Changeset.edit (fun o -> { o with Total = 99m }))
+            let! r = w.Repo.Transact(w.Get<Order> "order" |> edit (fun o -> { o with Total = 99m }))
             equal 2 (ok r).Version "other writer's version"
         }
         |> unit
@@ -160,16 +160,16 @@ type TransactionSteps(w: World) =
     [<StepDefinition("I submit an update expecting the original version")>]
     member _.SubmitStale() =
         task {
-            let! r = w.Repo.Update(w.Get<Order> "order" |> Changeset.edit (fun o -> { o with Status = Cancelled }))
+            let! r = w.Repo.Transact(w.Get<Order> "order" |> edit (fun o -> { o with Status = Cancelled }))
             w.Set("result", r)
         }
         |> unit
 
     [<StepDefinition("the operation returns a concurrency conflict")>]
     member _.Conflict() =
-        match w.Get<Result<Order, WriteError<Order>>> "result" with
-        | Error(WriteError.Stale _) -> ()
-        | other -> failwithf "expected Stale, got %A" other
+        match w.Get<Result<Order, TransactionError<unit>>> "result" with
+        | Error { Failure = TxFailure.Conflict _ } -> ()
+        | other -> failwithf "expected a conflict, got %A" other
 
     [<StepDefinition("the newer state is preserved")>]
     member _.NewerPreserved() =

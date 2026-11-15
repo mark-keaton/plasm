@@ -145,7 +145,7 @@ let ``a bulk update can clear an optional field and filter through a relationshi
         let sql = (ok (offlineRepo.Explain bulk)).Sql
         contains "\"cancellation_reason\" = NULL" sql
         contains "WHERE EXISTS (SELECT 1 FROM \"payments\" AS \"t1\"" sql
-        let! n = db.Repo.Execute bulk
+        let! n = db.Repo.Transact(Tx.execute bulk: Tx<_, unit>)
         Assert.Equal(1, ok n)
         let (OrderId p), (OrderId u) = paid, unpaid
         let! a = db.Scalar<obj>("select cancellation_reason from orders where id = @i", [ "i", box p ])
@@ -160,10 +160,10 @@ let ``a bulk delete blocked by a foreign key is a classified failure`` () =
         let! db = freshDefault ()
         let! o = Seed.order db None "draft" 1m (Seed.at 1)
         let! _ = Seed.payment db o 1m "pending" (Seed.at 1)
-        let! r = db.Repo.Execute(Bulk.delete (Query.from orders))
+        let! r = db.Repo.Transact(Tx.execute (Bulk.delete (Query.from orders)): Tx<_, unit>)
 
         match r with
-        | Error(DbError.Database f) -> Assert.Equal(DbFailureKind.ForeignKeyViolation, f.Kind)
+        | Error { Failure = TxFailure.Failed(DbError.Database f) } -> Assert.Equal(DbFailureKind.ForeignKeyViolation, f.Kind)
         | other -> failwithf "expected a foreign key violation, got %A" other
     }
 
@@ -184,7 +184,7 @@ let ``an empty bulk insert sends nothing`` () =
     task {
         let! db = freshDefault ()
         db.Recorder.Clear()
-        let! r = db.Repo.Execute(Bulk.insert ([]: Product list))
+        let! r = db.Repo.Transact(Tx.execute (Bulk.insert ([]: Product list)): Tx<_, unit>)
         Assert.Equal<Product list>([], ok r)
         Assert.Equal(0, db.Recorder.Count)
     }
@@ -196,13 +196,13 @@ let ``a large bulk insert is split into commands inside one transaction`` () =
         // Two columns per product: at most 32,500 rows per command.
         let products = [ for i in 1..40_000 -> { Id = ProductId 0L; Sku = $"S{i}"; Name = "n" } ]
         db.Recorder.Clear()
-        let! r = db.Repo.Execute(Bulk.insert products)
+        let! r = db.Repo.Transact(Tx.execute (Bulk.insert products): Tx<_, unit>)
         Assert.Equal(40_000, (ok r).Length)
         Assert.Equal(2, db.Recorder.Events |> List.filter (fun e -> e.Sql.StartsWith "INSERT") |> List.length)
 
         // A duplicate in the second command rolls back the first.
         let clash = [ for i in 1..40_000 -> { Id = ProductId 0L; Sku = $"T{i}"; Name = "n" } ] @ [ { Id = ProductId 0L; Sku = "S1"; Name = "dup" } ]
-        let! failed = db.Repo.Execute(Bulk.insert clash)
+        let! failed = db.Repo.Transact(Tx.execute (Bulk.insert clash): Tx<_, unit>)
         Assert.True(Result.isError failed)
         let! n = db.Scalar<int64>("select count(*) from products where sku like 'T%'")
         Assert.Equal(0L, n)
@@ -419,7 +419,7 @@ let ``a failed write inside a sandbox transaction step leaves the sandbox usable
         let! names =
             db.Repo.Sandbox(fun repo ->
                 task {
-                    let! _ = repo.Insert(Changeset.insert (New.customer "Ada" "a@x"))
+                    let! _ = repo.Transact(Tx.insert (New.customer "Ada" "a@x"): Tx<_, unit>)
 
                     let! failed =
                         repo.Transact(

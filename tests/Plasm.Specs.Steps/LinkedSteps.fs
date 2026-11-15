@@ -57,7 +57,7 @@ type LinkedSteps(w: World) =
 
     let insertCard (ts: Tag list) =
         task {
-            let! r = repo().Insert(Changeset.insert { Id = CardId 0L; Title = "a card"; Tags = ts })
+            let! r = repo().Transact(Tx.insert { Id = CardId 0L; Title = "a card"; Tags = ts }: Tx<_, unit>)
             return r
         }
 
@@ -179,7 +179,7 @@ type LinkedSteps(w: World) =
         task {
             let! c = readOne ()
             let! ts = tagsNamed [ "bug"; "docs" ]
-            let! r = repo().Update(c |> Changeset.edit (fun c -> { c with Tags = ts }))
+            let! r = repo().Transact(c |> edit (fun c -> { c with Tags = ts }))
             ok r |> ignore
         }
         |> unit
@@ -194,9 +194,9 @@ type LinkedSteps(w: World) =
 
     [<StepDefinition("the insert fails with an error on Tags, naming (\\w+)")>]
     member _.FieldError(name: string) =
-        match w.Get<Result<unit, WriteError<Card>>> "linkWrite" with
-        | Error(WriteError.Invalid cs) ->
-            check (cs.Errors |> List.exists (fun e -> e.Field = "Tags" && e.Kind = FieldErrorKind.ForeignKeyConstraint name)) $"%A{cs.Errors}"
+        match w.Get<Result<unit, TransactionError<unit>>> "linkWrite" with
+        | Error { Failure = TxFailure.InvalidChanges(_, errors) } ->
+            check (errors |> List.exists (fun e -> e.Field = "Tags" && e.Kind = FieldErrorKind.ForeignKeyConstraint name)) $"%A{errors}"
         | other -> failwithf "expected invalid changes, got %A" other
 
     [<StepDefinition("I read it, then rename its tag \"bug\" to \"defect\" through the card")>]
@@ -205,7 +205,7 @@ type LinkedSteps(w: World) =
             let! c = readOne ()
 
             let! r =
-                repo().Update(c |> Changeset.edit (fun c -> { c with Tags = c.Tags |> List.map (fun t -> if t.Name = "bug" then { t with Name = "defect" } else t) }))
+                repo().Transact(c |> edit (fun c -> { c with Tags = c.Tags |> List.map (fun t -> if t.Name = "bug" then { t with Name = "defect" } else t) }))
 
             w.Set("linkWrite", r |> Result.map ignore)
         }
@@ -213,9 +213,9 @@ type LinkedSteps(w: World) =
 
     [<StepDefinition("the change is refused for Tags, saying a linked record belongs to its own aggregate")>]
     member _.Refused() =
-        match w.Get<Result<unit, WriteError<Card>>> "linkWrite" with
-        | Error(WriteError.Invalid cs) ->
-            check (cs.Errors |> List.exists (fun e -> e.Field = "Tags" && e.Message.Contains "belongs to its own aggregate")) $"%A{cs.Errors}"
+        match w.Get<Result<unit, TransactionError<unit>>> "linkWrite" with
+        | Error { Failure = TxFailure.InvalidChanges(_, errors) } ->
+            check (errors |> List.exists (fun e -> e.Field = "Tags" && e.Message.Contains "belongs to its own aggregate")) $"%A{errors}"
         | other -> failwithf "expected invalid changes, got %A" other
 
     [<StepDefinition("the tag \"bug\" keeps its name")>]
@@ -230,7 +230,7 @@ type LinkedSteps(w: World) =
     member _.Delete() =
         task {
             let! c = readOne ()
-            let! r = repo().Delete(Changeset.delete c)
+            let! r = repo().Transact(Tx.delete c: Tx<_, unit>)
             ok r |> ignore
         }
         |> unit

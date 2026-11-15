@@ -6,26 +6,6 @@ open System.Runtime.CompilerServices
 open System.Threading
 open System.Threading.Tasks
 
-/// Why a write did not happen (or was rolled back). Cases are qualified
-/// (`WriteError.Invalid`) so they never collide with domain unions.
-[<RequireQualifiedAccess>]
-type WriteError<'T> =
-    /// Validation or declared-constraint errors; inspect `Changeset.Errors`.
-    | Invalid of Changeset<'T>
-    /// The stored version differs from the expected one (or the row is gone).
-    | Stale of Changeset<'T>
-    /// A database failure not described by the changeset's constraints.
-    | Failed of DbFailure
-    /// The row was written but could not be read back into the domain model
-    /// (for example a trigger stored a value the model rejects). A write that
-    /// ran in a transaction (one with children or links) is rolled back; a
-    /// single-row write is not.
-    | Materialization of MaterializationError
-    /// The write could not be translated, or the provider cannot perform it
-    /// (`TranslationError.UnsupportedByProvider`, naming the missing
-    /// capability). Nothing was sent to the database.
-    | Translation of TranslationError
-
 /// Text for query displays (F# Interactive): SQL broken before its top-level
 /// clauses, with parameter values.
 module internal QueryDisplay =
@@ -326,54 +306,6 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
             { Sql = BulkExec.sqlOf cmds |> String.concat ";\n"
               Loads = [] })
 
-    /// Runs a bulk write. Several commands (very large inserts) run in one
-    /// transaction; an empty insert sends nothing.
-    member _.Execute(write: BulkWrite<'R>, ?cancellationToken: CancellationToken) : Task<Result<'R, DbError>> =
-        let ct = defaultArg cancellationToken CancellationToken.None
-
-        Execution.guard provider (fun () ->
-            task {
-                match BulkExec.commands model provider.Dialect write.Def with
-                | Error e -> return Error(DbError.Translation e)
-                | Ok [] -> return Ok(write.Finish(box ([]: obj list)))
-                | Ok cmds ->
-                    let args =
-                        match write.Def with
-                        | UpdateAll(q, _)
-                        | DeleteAll q -> q.Args
-                        | InsertAll _ -> [||]
-
-                    use! conn = provider.OpenConnection ct
-
-                    let! tx =
-                        if cmds.Length > 1 then
-                            task {
-                                let! t = provider.BeginTransaction(conn, IsolationLevel.ReadCommitted, ct)
-                                return Some t
-                            }
-                        else
-                            Task.FromResult None
-
-                    try
-                        let session: Execution.Session =
-                            { Provider = provider
-                              Options = options
-                              Connection = conn
-                              Transaction = tx
-                              Ct = ct
-                              Args = args }
-
-                        let! v = BulkExec.run session write.Def cmds
-
-                        match tx with
-                        | Some t -> do! t.CommitAsync(ct)
-                        | None -> ()
-
-                        return Ok(write.Finish v)
-                    finally
-                        tx |> Option.iter (fun t -> t.Dispose())
-            })
-
     /// Runs hand-written SQL, reading each row as `'R`: a mapped record
     /// (columns by name, relationships not loaded), another record (fields by
     /// name or snake_case name), a tuple (columns in order) or a scalar.
@@ -387,18 +319,6 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                 let cmd = Execution.rawCommand model provider.Dialect sql
                 let! rows = withSession ct false (fun s -> Execution.rawRecords s model typeof<'R> cmd)
                 return Ok(rows |> Seq.map unbox<'R> |> List.ofSeq)
-            })
-
-    /// Runs a hand-written command, returning the number of affected rows.
-    /// Interpolated values are always command parameters.
-    member _.ExecuteSql(sql: FormattableString, ?cancellationToken: CancellationToken) : Task<Result<int, DbError>> =
-        let ct = defaultArg cancellationToken CancellationToken.None
-
-        Execution.guard provider (fun () ->
-            task {
-                let cmd = Execution.rawCommand model provider.Dialect sql
-                let! n = withSession ct false (fun s -> Execution.execute s cmd)
-                return Ok n
             })
 
     /// Compares the model with the live database catalogue and reports every
@@ -524,79 +444,6 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
             | Error e -> return Error e
         }
 
-    member private _.WriteOne(cs: Changeset<'T>, ct: CancellationToken) : Task<Result<'T, WriteError<'T>>> =
-        task {
-            let checkedState = Writes.check model cs.State
-
-            if not (Writes.isValid checkedState) then
-                return Error(WriteError.Invalid(Changeset<'T>(checkedState)))
-            else
-                try
-                    use! conn = provider.OpenConnection ct
-
-                    let! tx =
-                        if Writes.needsTransaction checkedState then
-                            task {
-                                let! t = provider.BeginTransaction(conn, IsolationLevel.ReadCommitted, ct)
-                                return Some t
-                            }
-                        else
-                            Task.FromResult None
-
-                    use _ = { new IDisposable with member _.Dispose() = tx |> Option.iter (fun t -> t.Dispose()) }
-
-                    let session: Execution.Session =
-                        { Provider = provider
-                          Options = options
-                          Connection = conn
-                          Transaction = tx
-                          Ct = ct
-                          Args = [||] }
-
-                    let! r = Writes.write model session checkedState
-
-                    match r, tx with
-                    | Ok v, Some t ->
-                        do! t.CommitAsync(ct)
-                        return Ok(unbox<'T> v)
-                    | Ok v, None -> return Ok(unbox<'T> v)
-                    | Error e, t ->
-                        match t with
-                        | Some t -> do! t.RollbackAsync(CancellationToken.None)
-                        | None -> ()
-
-                        match e with
-                        | Writes.Invalid s -> return Error(WriteError.Invalid(Changeset<'T>(s)))
-                        | Writes.Stale s -> return Error(WriteError.Stale(Changeset<'T>(s)))
-                        | Writes.Failed f -> return Error(WriteError.Failed f)
-                        | Writes.Unsupported op -> return Error(WriteError.Translation(TranslationError.UnsupportedByProvider(op, provider.Dialect.Name)))
-                with
-                | :? OperationCanceledException as ex -> return Err.rethrow ex
-                | Execution.MaterializationFailure m -> return Error(WriteError.Materialization m)
-                | ex ->
-                    match provider.Classify ex with
-                    | Some f -> return Error(WriteError.Failed f)
-                    | None -> return Err.rethrow ex
-        }
-
-    /// Validates and inserts. Invalid changesets are returned without any
-    /// write; generated values come back in a new record.
-    member this.Insert(cs: Changeset<'T>, ?cancellationToken) =
-        if cs.Action <> ChangeAction.Insert then
-            invalidArg "cs" $"repo.Insert was given a changeset for {(string cs.Action).ToLowerInvariant()}; build it with Changeset.insert, or call repo.{string cs.Action}"
-        this.WriteOne(cs, defaultArg cancellationToken CancellationToken.None)
-
-    /// Validates and updates only the changed fields, enforcing the version.
-    member this.Update(cs: Changeset<'T>, ?cancellationToken) =
-        if cs.Action <> ChangeAction.Update then
-            invalidArg "cs" $"repo.Update was given a changeset for {(string cs.Action).ToLowerInvariant()}; build it with Changeset.update or Changeset.edit, or call repo.{string cs.Action}"
-        this.WriteOne(cs, defaultArg cancellationToken CancellationToken.None)
-
-    member this.Delete(cs: Changeset<'T>, ?cancellationToken) =
-        if cs.Action <> ChangeAction.Delete then
-            invalidArg "cs" $"repo.Delete was given a changeset for {(string cs.Action).ToLowerInvariant()}; build it with Changeset.delete, or call repo.{string cs.Action}"
-        this.WriteOne(cs, defaultArg cancellationToken CancellationToken.None)
-
     /// Runs a transaction description atomically. An empty description
     /// succeeds without opening a connection.
     member _.Transact(tx: Tx<'T, 'E>, ?isolation: IsolationLevel, ?retry: RetryPolicy, ?cancellationToken: CancellationToken) =
@@ -677,11 +524,3 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                 return outcome.Value
         }
 
-[<AutoOpen>]
-module ChangesetModelExtensions =
-    type Changeset with
-        /// Model-aware validation without database access: primary-key and
-        /// version changes, relationship write targets and duplicate child
-        /// identities. Repo writes run the same checks before any command.
-        static member check (model: Model) (cs: Changeset<'T>) : Changeset<'T> =
-            Changeset<'T>(Writes.check model cs.State)

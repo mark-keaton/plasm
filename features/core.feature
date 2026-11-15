@@ -163,17 +163,17 @@ Feature: Predictable functional persistence for F#
     # execution" and "External input cannot change protected fields" were
     # removed with Changeset.validate* and Changeset.cast.
 
-    Scenario: Creating a changeset preserves its input
+    Scenario: Creating a change preserves its input
       Given an existing Order
-      When I create a changeset with a different status
-      Then the changeset exposes the proposed status
+      When I make a change with a different status and write it
+      Then the stored Order has the proposed status
       And the original Order retains its original status
 
     Scenario: Unspecified and explicitly cleared values differ
       Given an Order has a CancellationReason
-      When a changeset does not mention CancellationReason
+      When a change does not mention CancellationReason
       Then the stored value is preserved
-      When a changeset explicitly clears CancellationReason
+      When a change explicitly clears CancellationReason
       Then the stored value becomes absent
 
     Scenario: Invalid changes are not persisted
@@ -183,7 +183,7 @@ Feature: Predictable functional persistence for F#
       And nothing is written
 
     Scenario: Database constraints produce structured errors
-      Given a changeset for a field the model states is unique
+      Given a new Customer whose email the model states is unique
       When a concurrent operation causes that constraint to be violated
       Then the write returns the corresponding structured constraint error
       And unrelated database failures are not misreported as validation errors

@@ -117,13 +117,13 @@ let ``changing the primary key or the version is rejected before writing`` () =
         let! o = Seed.order db None "draft" 1m (Seed.at 1)
         let! all = db.Repo.All(Query.from orders)
         let order = (ok all).Head
-        let! a = db.Repo.Update(order |> Changeset.edit (fun x -> { x with Id = OrderId 99L }))
-        let! b = db.Repo.Update(order |> Changeset.edit (fun x -> { x with Version = 7 }))
+        let! a = db.Repo.Transact(order |> edit (fun x -> { x with Id = OrderId 99L }))
+        let! b = db.Repo.Transact(order |> edit (fun x -> { x with Version = 7 }))
 
         match a, b with
-        | Error(WriteError.Invalid ca), Error(WriteError.Invalid cb) ->
-            Assert.Equal(FieldErrorKind.KeyChange, ca.Errors.Head.Kind)
-            Assert.Equal("Version", cb.Errors.Head.Field)
+        | Error { Failure = TxFailure.InvalidChanges(_, ea) }, Error { Failure = TxFailure.InvalidChanges(_, eb) } ->
+            Assert.Equal(FieldErrorKind.KeyChange, ea.Head.Kind)
+            Assert.Equal("Version", eb.Head.Field)
         | x -> failwithf "unexpected %A" x
 
         Assert.Empty(db.Recorder.Writes)
@@ -218,7 +218,7 @@ let ``cancellation propagates to a blocked database command`` () =
         let! thrown =
             task {
                 try
-                    let! _ = db.Repo.Update((ok all).Head |> Changeset.edit (fun x -> { x with Total = 5m }), cts.Token)
+                    let! _ = db.Repo.Transact((ok all).Head |> edit (fun x -> { x with Total = 5m }), cancellationToken = cts.Token)
                     return false
                 with :? OperationCanceledException ->
                     return true

@@ -92,7 +92,7 @@ type PgEnumSteps(w: World) =
     member _.Insert(status: string) =
         task {
             let s = PgEnums.unsaved "T-1" (PgEnums.parse status) None
-            let! r = repo().Insert(Changeset.insert s)
+            let! r = repo().Transact(Tx.insert s: Tx<_, unit>)
             w.Set("inserted", ok r)
         }
         |> unit
@@ -120,7 +120,7 @@ type PgEnumSteps(w: World) =
     [<StepDefinition("a Shipment with status Packed")>]
     member _.APacked() =
         task {
-            let! r = repo().Insert(Changeset.insert (PgEnums.unsaved "T-1" Packed None))
+            let! r = repo().Transact(Tx.insert (PgEnums.unsaved "T-1" Packed None): Tx<_, unit>)
             w.Set("inserted", ok r)
         }
         |> unit
@@ -128,8 +128,7 @@ type PgEnumSteps(w: World) =
     [<StepDefinition("I update its status to Delivered")>]
     member _.UpdateToDelivered() =
         task {
-            let cs = w.Get<Shipment> "inserted" |> Changeset.edit (fun s -> { s with Status = Delivered })
-            let! r = repo().Update cs
+            let! r = repo().Transact(w.Get<Shipment> "inserted" |> edit (fun s -> { s with Status = Delivered }))
             ok r |> ignore
         }
         |> unit
@@ -146,8 +145,8 @@ type PgEnumSteps(w: World) =
     [<StepDefinition("I insert Shipments with and without a previous status")>]
     member _.InsertPrevious() =
         task {
-            let! a = repo().Insert(Changeset.insert (PgEnums.unsaved "T-1" Shipped (Some Packed)))
-            let! b = repo().Insert(Changeset.insert (PgEnums.unsaved "T-2" Packed None))
+            let! a = repo().Transact(Tx.insert (PgEnums.unsaved "T-1" Shipped (Some Packed)): Tx<_, unit>)
+            let! b = repo().Transact(Tx.insert (PgEnums.unsaved "T-2" Packed None): Tx<_, unit>)
             ok a |> ignore
             ok b |> ignore
         }
@@ -167,13 +166,11 @@ type PgEnumSteps(w: World) =
     member _.BulkInsert() =
         task {
             let! r =
-                repo().Execute(
-                    Bulk.insert
+                repo().Transact(Tx.execute (Bulk.insert
                         [ PgEnums.unsaved "T-1" Packed None
                           PgEnums.unsaved "T-2" Shipped (Some Packed)
                           PgEnums.unsaved "T-3" Delivered (Some Shipped)
-                          PgEnums.unsaved "T-4" Packed None ]
-                )
+                          PgEnums.unsaved "T-4" Packed None ]): Tx<_, unit>)
 
             equal [ Packed; Shipped; Delivered; Packed ] (ok r |> List.map (fun s -> s.Status)) "statuses returned by the insert"
         }
@@ -183,13 +180,11 @@ type PgEnumSteps(w: World) =
     member _.Upsert() =
         task {
             let! r =
-                repo().Execute(
-                    Bulk.upsert (
+                repo().Transact(Tx.execute (Bulk.upsert (
                         [ PgEnums.unsaved "T-2" Delivered None ],
                         (fun s -> s.Tracking),
                         fun current incoming -> { current with Status = incoming.Status }
-                    )
-                )
+                    )): Tx<_, unit>)
 
             equal [ Delivered ] (ok r |> List.map (fun s -> s.Status)) "status returned by the upsert"
         }
@@ -199,7 +194,7 @@ type PgEnumSteps(w: World) =
     member _.BulkUpdate() =
         task {
             let packed = plasm { for s in PgEnums.shipments do where (s.Status = Packed) }
-            let! n = repo().Execute(Bulk.update (packed, fun s -> { s with Status = Shipped; PreviousStatus = Some Packed }))
+            let! n = repo().Transact(Tx.execute (Bulk.update (packed, fun s -> { s with Status = Shipped; PreviousStatus = Some Packed })): Tx<_, unit>)
             equal 2 (ok n) "Shipments updated"
         }
         |> unit

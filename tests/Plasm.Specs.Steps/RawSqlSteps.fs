@@ -198,7 +198,7 @@ type RawSqlSteps(w: World) =
     member _.HandUpdate() =
         task {
             let ada = w.Get<CustomerId> "ada"
-            let! r = w.Repo.ExecuteSql($"UPDATE orders SET total = total + 1 WHERE customer_id = {ada}")
+            let! r = w.Repo.Transact(Tx.executeSql ($"UPDATE orders SET total = total + 1 WHERE customer_id = {ada}"): Tx<int, unit>)
             w.Set("affected", ok r)
         }
         |> unit

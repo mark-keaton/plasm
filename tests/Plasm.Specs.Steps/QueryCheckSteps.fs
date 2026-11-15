@@ -87,7 +87,7 @@ type QueryCheckSteps(w: World) =
     member _.TwoCustomers(a: string, b: string) =
         task {
             for name in [ a; b ] do
-                let! r = w.Repo.Insert(Changeset.insert (New.customer name $"{name.ToLower()}@example.com"))
+                let! r = w.Repo.Transact(Tx.insert (New.customer name $"{name.ToLower()}@example.com"): Tx<_, unit>)
                 ok r |> ignore
         }
         |> unit

@@ -62,7 +62,7 @@ let private unsavedKey (schema: SchemaInfo) (key: obj) =
 
 let rec private owned (model: Model) (s: CsState) : CsState =
     let schema = schemaOf model s.Type
-    let declared = s.Children |> List.map (fun w -> w.Assoc) |> set
+    let declared = s.Children |> List.map (fun w -> w.Field) |> set
 
     // An owned record is written as a list of none or one.
     let items (a: AssocMap) (list: obj) =
@@ -76,7 +76,7 @@ let rec private owned (model: Model) (s: CsState) : CsState =
     let state t action (v: obj) = Cs.emptyState t (Some v) action
 
     // Linked lists: only join-table rows are written (linked-collections.feature).
-    let linksDeclared = s.Links |> List.map (fun l -> l.Assoc) |> set
+    let linksDeclared = s.Links |> List.map (fun l -> l.Field) |> set
 
     let s =
         schema.Assocs
@@ -85,7 +85,7 @@ let rec private owned (model: Model) (s: CsState) : CsState =
             (fun (st: CsState) a ->
                 let target = schemaOf model a.Target
                 let keyOf (c: obj) = (target.Shape.Deconstruct c).[target.Key.Index]
-                let put targets = { st with Links = st.Links @ [ { Assoc = a.Name; Mode = PutLinks; Targets = targets } ] }
+                let put targets = { st with Links = st.Links @ [ { Field = a.Name; Mode = PutLinks; Targets = targets } ] }
 
                 match st.Action with
                 | ChangeAction.Insert ->
@@ -131,7 +131,7 @@ let rec private owned (model: Model) (s: CsState) : CsState =
         (fun (st: CsState) a ->
             let target = schemaOf model a.Target
             let keyOf (c: obj) = (target.Shape.Deconstruct c).[target.Key.Index]
-            let child children final = { Assoc = a.Name; Replace = None; Children = children; Final = Some final }
+            let child children final = { Field = a.Name; Replace = None; Children = children; Final = Some final }
 
             match st.Action with
             | ChangeAction.Insert ->
@@ -201,7 +201,7 @@ let rec private owned (model: Model) (s: CsState) : CsState =
                     Cs.addError st a.Name (FieldErrorKind.Custom "owned") $"{a.Name} owns lists of its own: delete the {schema.Name} you read, not its key alone"
                 | _ ->
                     // Every item the owner has, whatever the record held.
-                    { st with Children = st.Children @ [ { Assoc = a.Name; Replace = Some AllChildren; Children = []; Final = Some [] } ] })
+                    { st with Children = st.Children @ [ { Field = a.Name; Replace = Some AllChildren; Children = []; Final = Some [] } ] })
         s
 
 /// Model-aware structural validation, run before any command is sent.
@@ -241,7 +241,7 @@ let rec check (model: Model) (s: CsState) : CsState =
     let children =
         s.Children
         |> List.map (fun w ->
-            match schema.TryAssoc w.Assoc with
+            match schema.TryAssoc w.Field with
             | Some a when a.Kind = AssocKind.HasMany || (a.Owned && a.Kind = AssocKind.HasOne) ->
                 let target = schemaOf model a.Target
                 let checkedChildren = w.Children |> List.map (check model)
@@ -258,27 +258,27 @@ let rec check (model: Model) (s: CsState) : CsState =
                     st <-
                         err
                             st
-                            w.Assoc
+                            w.Field
                             FieldErrorKind.DuplicateIdentity
                             $"more than one change for {target.Name} {d}; combine them into one changeset"
 
                 for c in checkedChildren do
                     if c.Type <> target.Type then
-                        st <- err st w.Assoc (FieldErrorKind.Custom "type") $"child changeset is for {c.Type.Name}, expected {target.Name}"
+                        st <- err st w.Field (FieldErrorKind.Custom "type") $"child changeset is for {c.Type.Name}, expected {target.Name}"
 
                 { w with Children = checkedChildren }
             | _ ->
-                st <- err st w.Assoc (FieldErrorKind.Custom "relationship") "not a declared relationship"
+                st <- err st w.Field (FieldErrorKind.Custom "relationship") "not a declared relationship"
                 w)
 
     for l in s.Links do
-        match schema.TryAssoc l.Assoc with
+        match schema.TryAssoc l.Field with
         | Some a when a.Kind = AssocKind.ManyToMany ->
             let target = schemaOf model a.Target
 
             if l.Targets |> List.exists (fun t -> isNull t || t.GetType() <> target.Type) then
-                st <- err st l.Assoc (FieldErrorKind.Custom "type") $"links of {schema.Name}.{a.Name} must be {target.Name} records"
-        | _ -> st <- err st l.Assoc (FieldErrorKind.Custom "relationship") "not a linked list"
+                st <- err st l.Field (FieldErrorKind.Custom "type") $"links of {schema.Name}.{a.Name} must be {target.Name} records"
+        | _ -> st <- err st l.Field (FieldErrorKind.Custom "relationship") "not a linked list"
 
     { st with Children = children }
 
@@ -556,7 +556,7 @@ and private writeLinks model (sess: Session) (schema: SchemaInfo) (s: CsState) (
         let mutable written = Map.empty
 
         for l in s.Links do
-            let a = (schema.TryAssoc l.Assoc).Value
+            let a = (schema.TryAssoc l.Field).Value
             let j = a.Through.Value
             let target = schemaOf model a.Target
             let owner = schema.Key.ScalarToDb parentKey
@@ -597,7 +597,7 @@ and private writeChildList model sess (schema: SchemaInfo) (s: CsState) (parentK
             match result with
             | Error _ -> ()
             | Ok written ->
-                let a = (schema.TryAssoc w.Assoc).Value
+                let a = (schema.TryAssoc w.Field).Value
                 let target = schemaOf model a.Target
                 let fk = target.Field a.ForeignKey
 
@@ -732,7 +732,7 @@ and private writeChildList model sess (schema: SchemaInfo) (s: CsState) (parentK
                             | None when complete -> a.Ctors.Loaded(a.MakeList produced)
                             | None -> a.Ctors.Empty
 
-                        result <- Ok(written.Add(w.Assoc, value))
+                        result <- Ok(written.Add(w.Field, value))
 
 
         return result

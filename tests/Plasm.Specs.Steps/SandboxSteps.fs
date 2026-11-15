@@ -12,7 +12,7 @@ open Plasm.TestDomain.Database
 type SandboxSteps(w: World) =
 
     let insert (repo: Repo) name =
-        repo.Insert(Changeset.insert (New.customer name $"{name}@example.com"))
+        repo.Transact(Tx.insert (New.customer name $"{name}@example.com"): Tx<_, unit>)
 
     let names (repo: Repo) =
         task {
@@ -140,15 +140,15 @@ type SandboxSteps(w: World) =
 
     [<StepDefinition("the violation is reported as usual")>]
     member _.Reported() =
-        let duplicate, _, _ = w.Get<Result<Customer, WriteError<Customer>> * Result<Customer, WriteError<Customer>> * string list> "violation"
+        let duplicate, _, _ = w.Get<Result<Customer, TransactionError<unit>> * Result<Customer, TransactionError<unit>> * string list> "violation"
 
         match duplicate with
-        | Error(WriteError.Invalid cs) -> equal [ FieldErrorKind.UniqueConstraint "customers_email_key" ] (cs.Errors |> List.map (fun e -> e.Kind)) "kind"
+        | Error { Failure = TxFailure.InvalidChanges(_, errors) } -> equal [ FieldErrorKind.UniqueConstraint "customers_email_key" ] (errors |> List.map (fun e -> e.Kind)) "kind"
         | other -> failwithf "expected a unique violation, got %A" other
 
     [<StepDefinition("later work in the same sandbox succeeds")>]
     member _.Continues() =
-        let _, later, seen = w.Get<Result<Customer, WriteError<Customer>> * Result<Customer, WriteError<Customer>> * string list> "violation"
+        let _, later, seen = w.Get<Result<Customer, TransactionError<unit>> * Result<Customer, TransactionError<unit>> * string list> "violation"
         ok later |> ignore
         equal [ "Ada"; "Bob" ] seen "customers inside"
 

@@ -36,6 +36,7 @@ type TxFailure<'E> =
     | Misused of message: string
 
 /// A failed transaction. Every write in it was rolled back.
+[<StructuredFormatDisplay("{Display}")>]
 type TransactionError<'E> =
     { /// The step that failed (its Action is "commit" if the commit itself failed).
       Step: TxStep
@@ -44,6 +45,31 @@ type TransactionError<'E> =
       RolledBack: TxStep list
       /// Attempts made (more than one only with a retry policy).
       Attempts: int }
+
+    /// What failed, in words, then where (F# Interactive and %A show this):
+    /// `Customer: Email has already been taken (customers_email_key), at Shop.fs:12 (insert Customer)`.
+    member e.Display =
+        let reason =
+            match e.Failure with
+            | TxFailure.Rejected r -> $"rejected: %A{r}"
+            | TxFailure.InvalidChanges(entity, errors) ->
+                let named (f: FieldError) =
+                    match f.Kind with
+                    | FieldErrorKind.UniqueConstraint n
+                    | FieldErrorKind.ForeignKeyConstraint n
+                    | FieldErrorKind.CheckConstraint n -> $"{f.Field} {f.Message} ({n})"
+                    | _ -> $"{f.Field} {f.Message}"
+
+                let all = errors |> List.map named |> String.concat "; "
+                $"{entity}: {all}"
+            | TxFailure.Conflict entity -> $"{entity}: changed or deleted by another writer since it was read"
+            | TxFailure.Failed d -> $"failed: {d}"
+            | TxFailure.Misused m -> $"misused: {m}"
+
+        let rolledBack = if e.RolledBack.IsEmpty then "" else $"; rolled back {e.RolledBack.Length} earlier step(s)"
+        $"{reason}, at {e.Step}{rolledBack}"
+
+    override e.ToString() = e.Display
 
 /// Raised when a `Tx.run` step's command would end or nest the transaction.
 exception internal TransactionControlException of string with
@@ -323,18 +349,6 @@ type Tx =
         ) : Tx<'T, 'E> =
         let at = TxCore.at file line $"delete {typeof<'T>.Name}"
         TxCore.write at (Changeset.delete value)
-
-    /// Writes a changeset (insert, update or delete, by its action). Kept
-    /// while changesets are public; records go through insert, update and
-    /// delete.
-    static member write
-        (
-            cs: Changeset<'T>,
-            [<CallerFilePath; Optional; DefaultParameterValue("")>] file: string,
-            [<CallerLineNumber; Optional; DefaultParameterValue(0)>] line: int
-        ) : Tx<'T, 'E> =
-        let at = TxCore.at file line $"{(string cs.Action).ToLowerInvariant()} {typeof<'T>.Name}"
-        TxCore.write at cs
 
     /// Every row a query matches, inside the transaction.
     static member all

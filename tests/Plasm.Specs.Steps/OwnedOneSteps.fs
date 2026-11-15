@@ -77,10 +77,10 @@ type OwnedOneSteps(w: World) =
 
     let insert (a: Account) =
         task {
-            let! r = repo().Insert(Changeset.insert a)
+            let! r = repo().Transact(Tx.insert a: Tx<_, unit>)
 
             match r with
-            | Error(WriteError.Invalid cs) -> return failwithf "the insert was refused: %O" cs
+            | Error e -> return failwithf "the insert was refused: %A" e.Failure
             | _ -> return ok r
         }
 
@@ -100,7 +100,7 @@ type OwnedOneSteps(w: World) =
         task {
             let! read = readOne ()
             w.Set("profileKey", read.Profile |> Option.map (fun p -> p.Id))
-            let! r = repo().Update(read |> Changeset.edit f)
+            let! r = repo().Transact(read |> edit f)
             ok r |> ignore
         }
         |> unit
@@ -290,7 +290,7 @@ type OwnedOneSteps(w: World) =
     member _.Delete() =
         task {
             let! read = readOne ()
-            let! r = repo().Delete(Changeset.delete read)
+            let! r = repo().Transact(Tx.delete read: Tx<_, unit>)
             ok r |> ignore
         }
         |> unit

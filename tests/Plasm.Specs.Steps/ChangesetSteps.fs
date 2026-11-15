@@ -17,16 +17,22 @@ type ChangesetSteps(w: World) =
 
     // Scenario: Creating a changeset preserves its input (Given an existing Order is shared)
 
-    [<StepDefinition("I create a changeset with a different status")>]
-    member _.CreateChangeset() =
-        let o: Order = w.Get "order"
-        w.Set("changeset", o |> Changeset.edit (fun o -> { o with Status = Published }))
+    [<StepDefinition("I make a change with a different status and write it")>]
+    member _.MakeChange() =
+        task {
+            let o: Order = w.Get "order"
+            let! r = w.Write(o |> edit (fun o -> { o with Status = Published }))
+            ok r |> ignore
+        }
+        |> unit
 
-    [<StepDefinition("the changeset exposes the proposed status")>]
-    member _.ExposesStatus() =
-        let cs: Changeset<Order> = w.Get "changeset"
-        equal [ "Status", FieldChange.Assigned(box Published) ] cs.Changes "changes"
-        equal (Some Published) (cs.Proposed |> Option.map (fun o -> o.Status)) "proposed record"
+    [<StepDefinition("the stored Order has the proposed status")>]
+    member _.StoredStatus() =
+        task {
+            let! s = w.Db.Scalar<string>("select status from orders")
+            equal "published" s "stored status"
+        }
+        |> unit
 
     [<StepDefinition("the original Order retains its original status")>]
     member _.OriginalRetains() =
@@ -43,14 +49,17 @@ type ChangesetSteps(w: World) =
         }
         |> unit
 
-    [<StepDefinition("a changeset does not mention CancellationReason")>]
+    [<StepDefinition("a change does not mention CancellationReason")>]
     member _.DoesNotMention() =
         task {
             let! o = readOrder (w.Get "id")
-            let cs = o |> Changeset.edit (fun o -> { o with Total = 12m })
-            equal [ "Total" ] (cs.Changes |> List.map fst) "changes"
-            let! r = w.Repo.Update cs
+            w.MarkCommands()
+            let! r = w.Write(o |> edit (fun o -> { o with Total = 12m }))
             ok r |> ignore
+            // Only the changed column is set.
+            let update = w.CommandsSinceMark |> List.find (fun c -> c.Sql.StartsWith "UPDATE")
+            let set = update.Sql.Substring(0, update.Sql.IndexOf " WHERE ")
+            check (set.Contains "\"total\"" && not (set.Contains "cancellation_reason")) update.Sql
         }
         |> unit
 
@@ -62,13 +71,11 @@ type ChangesetSteps(w: World) =
         }
         |> unit
 
-    [<StepDefinition("a changeset explicitly clears CancellationReason")>]
+    [<StepDefinition("a change explicitly clears CancellationReason")>]
     member _.Clears() =
         task {
             let! o = readOrder (w.Get "id")
-            let cs = o |> Changeset.edit (fun o -> { o with CancellationReason = None })
-            equal [ "CancellationReason", FieldChange.Cleared ] cs.Changes "changes"
-            let! r = w.Repo.Update cs
+            let! r = w.Write(o |> edit (fun o -> { o with CancellationReason = None }))
             w.Set("updated", ok r)
         }
         |> unit
@@ -118,32 +125,28 @@ type ChangesetSteps(w: World) =
 
     // Scenario: Database constraints produce structured errors
 
-    [<StepDefinition("a changeset for a field the model states is unique")>]
-    member _.UniqueConstraint() =
-        let cs = Changeset.insert (New.customer "Ada" "ada@example.com")
-
-        check cs.IsValid "valid before execution"
-        w.Set("changeset", cs)
+    [<StepDefinition("a new Customer whose email the model states is unique")>]
+    member _.UniqueConstraint() = w.Set("newCustomer", New.customer "Ada" "ada@example.com")
 
     [<StepDefinition("a concurrent operation causes that constraint to be violated")>]
     member _.ConcurrentViolation() =
         task {
             // Another writer takes the email after the changeset was validated.
             let! _ = Seed.customer w.Db "Someone else" "ada@example.com"
-            let! r = w.Repo.Insert(w.Get<Changeset<Customer>> "changeset")
+            let! r = w.Write(Tx.insert (w.Get<Customer> "newCustomer"))
             w.Set("result", r)
         }
         |> unit
 
     [<StepDefinition("the write returns the corresponding structured constraint error")>]
     member _.ConstraintError() =
-        match w.Get<Result<Customer, WriteError<Customer>>> "result" with
-        | Error(WriteError.Invalid cs) ->
+        match w.Get<Result<Customer, TransactionError<unit>>> "result" with
+        | Error { Failure = TxFailure.InvalidChanges(_, errors) } ->
             equal
                 [ { Field = "Email"
                     Message = "has already been taken"
                     Kind = FieldErrorKind.UniqueConstraint "customers_email_key" } ]
-                cs.Errors
+                errors
                 "errors"
         | other -> failwithf "expected Invalid, got %A" other
 
@@ -153,10 +156,10 @@ type ChangesetSteps(w: World) =
             // A table-level rule whose name follows no column's convention belongs
             // to no field, so breaking it stays a database failure.
             let! _ = w.Db.Exec "alter table orders add constraint orders_not_thirteen check (total <> 13)"
-            let! r = w.Repo.Insert(Changeset.insert (New.order None Draft 13m))
+            let! r = w.Repo.Transact(Tx.insert (New.order None Draft 13m): Tx<_, unit>)
 
             match r with
-            | Error(WriteError.Failed f) ->
+            | Error { Failure = TxFailure.Failed(DbError.Database f) } ->
                 equal DbFailureKind.CheckViolation f.Kind "failure kind"
                 equal (Some "orders_not_thirteen") f.Constraint "constraint"
             | other -> failwithf "expected Failed, got %A" other
@@ -172,7 +175,7 @@ type ChangesetSteps(w: World) =
     [<StepDefinition("the insert succeeds")>]
     member _.InsertSucceeds() =
         task {
-            let! r = w.Repo.Insert(Changeset.insert (w.Get<Product> "submitted"))
+            let! r = w.Repo.Transact(Tx.insert (w.Get<Product> "submitted"): Tx<_, unit>)
             w.Set("inserted", ok r)
         }
         |> unit

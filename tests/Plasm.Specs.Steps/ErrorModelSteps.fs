@@ -60,7 +60,7 @@ type ErrorModelSteps(w: World) =
                     match c with
                     | Choice2Of2 ex -> failwithf "an exception was thrown: %s" ex.Message
                     | _ -> ()
-                | :? Choice<Result<OrderLine, WriteError<OrderLine>>, exn> as c ->
+                | :? Choice<Result<OrderLine, TransactionError<unit>>, exn> as c ->
                     match c with
                     | Choice2Of2 ex -> failwithf "an exception was thrown: %s" ex.Message
                     | _ -> ()
@@ -94,17 +94,17 @@ type ErrorModelSteps(w: World) =
             let! order = Seed.order w.Db None "draft" 10m (Seed.at 1)
 
             try
-                let! r = w.Repo.Insert(Changeset.insert { New.line product 2 5m with OrderId = order })
+                let! r = w.Repo.Transact(Tx.insert { New.line product 2 5m with OrderId = order }: Tx<_, unit>)
                 w.Set("unreadable", (Choice1Of2 r: Choice<_, exn>))
             with ex ->
-                w.Set("unreadable", (Choice2Of2 ex: Choice<Result<OrderLine, WriteError<OrderLine>>, exn>))
+                w.Set("unreadable", (Choice2Of2 ex: Choice<Result<OrderLine, TransactionError<unit>>, exn>))
         }
         |> unit
 
     [<StepDefinition("the insert returns a materialisation error naming OrderLine.Quantity")>]
     member _.MaterialisationError() =
-        match w.Get<Choice<Result<OrderLine, WriteError<OrderLine>>, exn>> "unreadable" with
-        | Choice1Of2(Error(WriteError.Materialization m)) ->
+        match w.Get<Choice<Result<OrderLine, TransactionError<unit>>, exn>> "unreadable" with
+        | Choice1Of2(Error { Failure = TxFailure.Failed(DbError.Materialization m) }) ->
             equal "OrderLine" m.Model "model"
             equal "Quantity" m.Property "property"
         | other -> failwithf "expected a materialisation error, got %A" other

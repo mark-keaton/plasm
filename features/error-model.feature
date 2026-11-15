@@ -48,9 +48,7 @@ Feature: Failures are values with qualified names
 
       Examples:
         | union          |
-        | ChangeAction   |
         | SortDirection  |
-        | FieldChange    |
         | LoadStrategy   |
         | TxFailure      |
 

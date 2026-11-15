@@ -41,12 +41,12 @@ let order0 = New.order None Draft 10m
 let ``ecto: insert, update and delete`` () =
     task {
         let! db = freshDefault ()
-        let! inserted = db.Repo.Insert(Changeset.insert order0)
+        let! inserted = db.Repo.Transact(Tx.insert order0: Tx<_, unit>)
         let inserted = ok (inserted |> Result.mapError string)
-        let! updated = db.Repo.Update(inserted |> Changeset.edit (fun o -> { o with Total = 2m }))
+        let! updated = db.Repo.Transact(inserted |> edit (fun o -> { o with Total = 2m }))
         let updated = ok (updated |> Result.mapError string)
         Assert.Equal(2m, updated.Total)
-        let! deleted = db.Repo.Delete(Changeset.delete updated)
+        let! deleted = db.Repo.Transact(Tx.delete updated: Tx<_, unit>)
         Assert.Equal(updated, ok (deleted |> Result.mapError string))
         let! n = db.Scalar<int64>("select count(*) from orders")
         Assert.Equal(0L, n)
@@ -57,12 +57,12 @@ let ``ecto: insert, update and delete`` () =
 let ``ecto: insert and update with empty changeset`` () =
     task {
         let! db = freshDefault ()
-        let! inserted = db.Repo.Insert(Changeset.insert order0)
+        let! inserted = db.Repo.Transact(Tx.insert order0: Tx<_, unit>)
         let inserted = ok (inserted |> Result.mapError string)
         db.Recorder.Clear()
-        let cs = Changeset.update inserted
-        let! a = db.Repo.Update cs
-        let! b = db.Repo.Update cs
+        // An update that changes nothing.
+        let! a = db.Repo.Transact(Tx.update (inserted, inserted): Tx<_, unit>)
+        let! b = db.Repo.Transact(Tx.update (inserted, inserted): Tx<_, unit>)
         Assert.Equal(inserted, ok (a |> Result.mapError string))
         Assert.Equal(inserted, ok (b |> Result.mapError string))
         Assert.Equal(0, db.Recorder.Count)
@@ -73,7 +73,7 @@ let ``ecto: insert and update with empty changeset`` () =
 let ``ecto: insert and update with changeset read after writes`` () =
     task {
         let! db = freshDefault ()
-        let! inserted = db.Repo.Insert(Changeset.insert order0)
+        let! inserted = db.Repo.Transact(Tx.insert order0: Tx<_, unit>)
         let inserted = ok (inserted |> Result.mapError string)
         Assert.NotEqual(order0.Id, inserted.Id)
         Assert.Equal(OrderId 0L, order0.Id)
@@ -86,15 +86,15 @@ let ``ecto: insert and update with changeset read after writes`` () =
 let ``ecto: optimistic locking in update/delete operations`` () =
     task {
         let! db = freshDefault ()
-        let! base' = db.Repo.Insert(Changeset.insert order0)
+        let! base' = db.Repo.Transact(Tx.insert order0: Tx<_, unit>)
         let base' = ok (base' |> Result.mapError string)
-        let! okUpdate = db.Repo.Update(base' |> Changeset.edit (fun o -> { o with Total = 3m }))
+        let! okUpdate = db.Repo.Transact(base' |> edit (fun o -> { o with Total = 3m }))
         Assert.Equal(2, (ok (okUpdate |> Result.mapError string)).Version)
-        let! staleUpdate = db.Repo.Update(base' |> Changeset.edit (fun o -> { o with Total = 4m }))
-        let! staleDelete = db.Repo.Delete(Changeset.delete base')
+        let! staleUpdate = db.Repo.Transact(base' |> edit (fun o -> { o with Total = 4m }))
+        let! staleDelete = db.Repo.Transact(Tx.delete base': Tx<_, unit>)
 
         match staleUpdate, staleDelete with
-        | Error(WriteError.Stale _), Error(WriteError.Stale _) -> ()
+        | Error { Failure = TxFailure.Conflict _ }, Error { Failure = TxFailure.Conflict _ } -> ()
         | a, b -> failwithf "expected stale errors, got %A / %A" a b
 
         let! total = db.Scalar<decimal>("select total from orders")
@@ -106,24 +106,22 @@ let ``ecto: optimistic locking in update/delete operations`` () =
 let ``ecto: unique constraint`` () =
     task {
         let! db = freshDefault ()
-        let cs = Changeset.insert (New.customer "A" "dup@example.com")
-        let! first = db.Repo.Insert cs
+        let customer = New.customer "A" "dup@example.com"
+        let! first = db.Repo.Transact(Tx.insert customer: Tx<_, unit>)
         ok (first |> Result.mapError string) |> ignore
 
         // A constraint with PostgreSQL's default name maps to its field, with
-        // nothing declared on the changeset (constraints.feature).
-        let! duplicate = db.Repo.Insert cs
+        // nothing declared (constraints.feature).
+        let! duplicate = db.Repo.Transact(Tx.insert customer: Tx<_, unit>)
 
         match duplicate with
-        | Error(WriteError.Invalid c) ->
+        | Error { Failure = TxFailure.InvalidChanges("Customer", errors) } ->
             Assert.Equal<FieldError list>(
                 [ { Field = "Email"
                     Message = "has already been taken"
                     Kind = FieldErrorKind.UniqueConstraint "customers_email_key" } ],
-                c.Errors
+                errors
             )
-
-            Assert.Equal(Some(New.customer "A" "dup@example.com"), c.Data)
         | other -> failwithf "expected Invalid, got %A" other
     }
 
@@ -134,12 +132,12 @@ let ``ecto: foreign key constraint`` () =
         let! db = freshDefault ()
         let! o = Seed.order db None "draft" 1m (Seed.at 1)
         let line = { New.line (ProductId 999L) 1 1m with OrderId = o }
-        let! declared = db.Repo.Insert(Changeset.insert line)
+        let! declared = db.Repo.Transact(Tx.insert line: Tx<_, unit>)
 
         match declared with
-        | Error(WriteError.Invalid c) ->
-            Assert.Equal(FieldErrorKind.ForeignKeyConstraint "order_lines_product_id_fkey", c.Errors.Head.Kind)
-            Assert.Equal("ProductId", c.Errors.Head.Field)
+        | Error { Failure = TxFailure.InvalidChanges(_, errors) } ->
+            Assert.Equal(FieldErrorKind.ForeignKeyConstraint "order_lines_product_id_fkey", errors.Head.Kind)
+            Assert.Equal("ProductId", errors.Head.Field)
         | other -> failwithf "expected Invalid, got %A" other
     }
 

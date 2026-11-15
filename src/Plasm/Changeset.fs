@@ -7,14 +7,14 @@ open System.Text.RegularExpressions
 open Microsoft.FSharp.Quotations
 
 [<RequireQualifiedAccess>]
-type ChangeAction =
+type internal ChangeAction =
     | Insert
     | Update
     | Delete
 
 /// A proposed change to one field.
 [<RequireQualifiedAccess>]
-type FieldChange =
+type internal FieldChange =
     /// The field is set to this value (for option fields, a `Some`).
     | Assigned of obj
     /// An optional field is explicitly set to `None`.
@@ -24,7 +24,7 @@ type FieldChange =
 type internal ReplaceScopeDef = | AllChildren
 
 type internal ChildWrite =
-    { Assoc: string
+    { Field: string
       Replace: ReplaceScopeDef option
       Children: CsState list
       /// For an owned list: the owner's whole new list, each item marked
@@ -34,7 +34,7 @@ type internal ChildWrite =
 and internal LinkMode = | PutLinks
 
 and internal LinkWrite =
-    { Assoc: string
+    { Field: string
       Mode: LinkMode
       Targets: obj list }
 
@@ -80,14 +80,14 @@ and internal CsState =
                 w.Children
                 |> List.indexed
                 |> List.collect (fun (i, c) ->
-                    c.AllErrors |> List.map (fun e -> { e with Field = $"{w.Assoc}[{i}].{e.Field}" })))
+                    c.AllErrors |> List.map (fun e -> { e with Field = $"{w.Field}[{i}].{e.Field}" })))
 
         s.Errors @ childErrors
 
 /// An immutable description of proposed changes to a `'T`, with validation
 /// errors. Constructing, validating and inspecting it never touches the database.
 [<Sealed>]
-type Changeset<'T> internal (state: CsState) =
+type internal Changeset<'T>(state: CsState) =
     member internal _.State = state
 
     member _.Action = state.Action
@@ -168,7 +168,7 @@ module internal Cs =
                       Kind = kind } ] }
 
 /// Functions for building changesets. All are pure.
-type Changeset =
+type internal Changeset =
 
     /// A changeset that inserts `value`. Fields the schema marks as generated
     /// are ignored and returned from the database.

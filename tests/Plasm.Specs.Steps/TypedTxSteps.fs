@@ -135,7 +135,7 @@ let reason (e: TransactionError<Refusal>) =
     [<StepDefinition("a Customer named \"(.*)\"")>]
     member _.Customer(name: string) =
         task {
-            let! c = w.Repo.Insert(Changeset.insert (New.customer name $"{name.ToLower()}@example.com"))
+            let! c = w.Repo.Transact(Tx.insert (New.customer name $"{name.ToLower()}@example.com"): Tx<_, unit>)
             w.Set("customer", ok c)
         }
         |> unit
@@ -144,7 +144,7 @@ let reason (e: TransactionError<Refusal>) =
     member _.Customers(a: string, b: string, c: string) =
         task {
             for name in [ a; b; c ] do
-                let! r = w.Repo.Insert(Changeset.insert (New.customer name $"{name.ToLower()}@example.com"))
+                let! r = w.Repo.Transact(Tx.insert (New.customer name $"{name.ToLower()}@example.com"): Tx<_, unit>)
                 ok r |> ignore
         }
         |> unit
@@ -239,8 +239,8 @@ let readBack (name: string) : Tx<Customer option, string> =
     [<StepDefinition("a draft Order whose version is 2")>]
     member _.Version2() =
         task {
-            let! o = w.Repo.Insert(Changeset.insert (New.order None Draft 10m))
-            let! o = w.Repo.Update(ok o |> Changeset.edit (fun o -> { o with Total = 11m }))
+            let! o = w.Repo.Transact(Tx.insert (New.order None Draft 10m): Tx<_, unit>)
+            let! o = w.Repo.Transact(ok o |> edit (fun o -> { o with Total = 11m }))
             let o = ok o
             equal 2 o.Version "version"
             w.Set("order", o)

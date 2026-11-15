@@ -117,7 +117,7 @@ type UnionFieldSteps(w: World) =
 
     let insert (s: Stage) =
         task {
-            let! r = repo().Insert(Changeset.insert (card s))
+            let! r = repo().Transact(Tx.insert (card s): Tx<_, unit>)
             return ok r
         }
 
@@ -205,7 +205,7 @@ type UnionFieldSteps(w: World) =
     [<StepDefinition("I change the Card to done and shipped")>]
     member _.ToDone() =
         task {
-            let! r = repo().Update(w.Get<Card> "card" |> Changeset.edit (fun c -> { c with Stage = Done(Shipped, since) }))
+            let! r = repo().Transact(w.Get<Card> "card" |> edit (fun c -> { c with Stage = Done(Shipped, since) }))
             ok r |> ignore
         }
         |> unit
@@ -363,7 +363,7 @@ type UnionFieldSteps(w: World) =
     [<StepDefinition("I bulk update every Card back to Backlog")>]
     member _.BulkBacklog() =
         task {
-            let! r = repo().Execute(Bulk.update (Query.from cards, fun c -> { c with Stage = Backlog }))
+            let! r = repo().Transact(Tx.execute (Bulk.update (Query.from cards, fun c -> { c with Stage = Backlog })): Tx<_, unit>)
             ok r |> ignore
         }
         |> unit

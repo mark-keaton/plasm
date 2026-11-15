@@ -75,7 +75,7 @@ type ObservabilitySteps(w: World) =
             let! _ = cmd.ExecuteNonQueryAsync()
             let cts = new CancellationTokenSource()
             let started = DateTime.UtcNow
-            let running = w.Repo.Update(order |> Changeset.edit (fun o -> { o with Total = 11m }), cts.Token)
+            let running = w.Repo.Transact(order |> edit (fun o -> { o with Total = 11m }), cancellationToken = cts.Token)
             w.Set("blocker", blocker)
             w.Set("blockerTx", tx)
             w.Set("cts", cts)
@@ -88,7 +88,7 @@ type ObservabilitySteps(w: World) =
     member _.Cancel() =
         task {
             do! Task.Delay 300
-            check (not (w.Get<Task<Result<Order, WriteError<Order>>>> "running").IsCompleted) "still blocked in the database"
+            check (not (w.Get<Task<Result<Order, TransactionError<unit>>>> "running").IsCompleted) "still blocked in the database"
             (w.Get<CancellationTokenSource> "cts").Cancel()
         }
         |> unit
@@ -96,7 +96,7 @@ type ObservabilitySteps(w: World) =
     [<StepDefinition("cancellation is propagated to the provider")>]
     member _.Propagated() =
         task {
-            let running: Task<Result<Order, WriteError<Order>>> = w.Get "running"
+            let running: Task<Result<Order, TransactionError<unit>>> = w.Get "running"
 
             let! outcome =
                 task {
@@ -124,7 +124,7 @@ type ObservabilitySteps(w: World) =
     [<StepDefinition("the operation does not return a successful result")>]
     member _.NotSuccessful() =
         task {
-            match w.Get<Choice<Result<Order, WriteError<Order>>, exn>> "outcome" with
+            match w.Get<Choice<Result<Order, TransactionError<unit>>, exn>> "outcome" with
             | Choice2Of2(:? OperationCanceledException) -> ()
             | other -> failwithf "expected cancellation, got %A" other
 
@@ -143,7 +143,7 @@ type ObservabilitySteps(w: World) =
         task {
             let repo = Repo(w.Db.Model, Postgres.connect "Host=127.0.0.1;Port=1;Timeout=3;Database=none;Username=x;Password=y")
             let! read = repo.All(Query.from Schemas.orders)
-            let! write = repo.Insert(Changeset.insert (New.order None Draft 1m))
+            let! write = repo.Transact(Tx.insert (New.order None Draft 1m): Tx<_, unit>)
             w.Set("read", read)
             w.Set("write", write)
         }
@@ -155,22 +155,22 @@ type ObservabilitySteps(w: World) =
         | Error(DbError.Database f) -> equal DbFailureKind.ConnectionFailure f.Kind "read failure kind"
         | other -> failwithf "expected a database failure, got %A" other
 
-        match w.Get<Result<Order, WriteError<Order>>> "write" with
-        | Error(WriteError.Failed f) -> equal DbFailureKind.ConnectionFailure f.Kind "write failure kind"
-        | Error(WriteError.Invalid _)
-        | Error(WriteError.Stale _) -> failwith "infrastructure failure misreported as a domain error"
+        match w.Get<Result<Order, TransactionError<unit>>> "write" with
+        | Error { Failure = TxFailure.Failed(DbError.Database f) } -> equal DbFailureKind.ConnectionFailure f.Kind "write failure kind"
+        | Error { Failure = TxFailure.InvalidChanges _ }
+        | Error { Failure = TxFailure.Conflict _ } -> failwith "infrastructure failure misreported as a domain error"
         | other -> failwithf "expected Failed, got %A" other
 
     [<StepDefinition("application code can handle it without parsing error messages")>]
     member _.HandleWithoutParsing() =
-        let handle (r: Result<Order, WriteError<Order>>) =
+        let handle (r: Result<Order, TransactionError<unit>>) =
             match r with
-            | Error(WriteError.Failed { Kind = DbFailureKind.ConnectionFailure }) -> "retry later"
-            | Error(WriteError.Failed _) -> "report"
-            | Error(WriteError.Invalid _) -> "show form errors"
-            | Error(WriteError.Stale _) -> "reload and retry"
-            | Error(WriteError.Materialization _)
-            | Error(WriteError.Translation _) -> "report"
+            | Error { Failure = TxFailure.Failed(DbError.Database { Kind = DbFailureKind.ConnectionFailure }) } -> "retry later"
+            | Error { Failure = TxFailure.Failed _ } -> "report"
+            | Error { Failure = TxFailure.InvalidChanges _ } -> "show form errors"
+            | Error { Failure = TxFailure.Conflict _ } -> "reload and retry"
+            | Error { Failure = TxFailure.Rejected() } -> "explain the refusal"
+            | Error { Failure = TxFailure.Misused _ } -> "report"
             | Ok _ -> "done"
 
         equal "retry later" (handle (w.Get "write")) "handled by pattern matching"

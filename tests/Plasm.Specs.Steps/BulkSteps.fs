@@ -54,7 +54,7 @@ type BulkSteps(w: World) =
     member _.CancelDrafts() =
         task {
             w.MarkCommands()
-            let! n = w.Repo.Execute cancelDrafts
+            let! n = w.Write(Tx.execute cancelDrafts)
             w.Set("affected", ok n)
         }
         |> unit
@@ -91,7 +91,7 @@ type BulkSteps(w: World) =
     member _.AddTen() =
         task {
             w.MarkCommands()
-            let! n = w.Repo.Execute(Bulk.update (publishedOrders, fun o -> { o with Total = o.Total + 10m }))
+            let! n = w.Repo.Transact(Tx.execute (Bulk.update (publishedOrders, fun o -> { o with Total = o.Total + 10m })): Tx<_, unit>)
             equal 2 (ok n) "rows updated"
         }
         |> unit
@@ -136,7 +136,7 @@ type BulkSteps(w: World) =
     [<StepDefinition("one workflow bulk-cancels it")>]
     member _.BulkCancelsIt() =
         task {
-            let! n = w.Repo.Execute(Bulk.update (w.Get<Query<Order>> "byId", fun o -> { o with Status = Cancelled }))
+            let! n = w.Repo.Transact(Tx.execute (Bulk.update (w.Get<Query<Order>> "byId", fun o -> { o with Status = Cancelled })): Tx<_, unit>)
             equal 1 (ok n) "rows updated"
         }
         |> unit
@@ -145,23 +145,23 @@ type BulkSteps(w: World) =
     member _.SavesOld() =
         task {
             let order: Order = w.Get "second"
-            let! r = w.Repo.Update(order |> Changeset.edit (fun o -> { o with Total = 99m }))
+            let! r = w.Repo.Transact(order |> edit (fun o -> { o with Total = 99m }))
             w.Set("save", r)
         }
         |> unit
 
     [<StepDefinition("the second save is rejected as stale")>]
     member _.Stale() =
-        match w.Get<Result<Order, WriteError<Order>>> "save" with
-        | Error(WriteError.Stale _) -> ()
-        | other -> failwithf "expected Stale, got %A" other
+        match w.Get<Result<Order, TransactionError<unit>>> "save" with
+        | Error { Failure = TxFailure.Conflict _ } -> ()
+        | other -> failwithf "expected a conflict, got %A" other
 
     // Scenario: Deleting every row a query matches
 
     [<StepDefinition("I delete every draft Order with one bulk delete")>]
     member _.DeleteDrafts() =
         task {
-            let! n = w.Repo.Execute(Bulk.delete drafts)
+            let! n = w.Repo.Transact(Tx.execute (Bulk.delete drafts): Tx<_, unit>)
             w.Set("affected", ok n)
         }
         |> unit
@@ -181,15 +181,15 @@ type BulkSteps(w: World) =
         task {
             // Totals must be >= 0; the draft with total 1 would become -1.
             let all = plasm { for o in Schemas.orders do where (o.Total < 100m) }
-            let! r = w.Repo.Execute(Bulk.update (all, fun o -> { o with Total = o.Total - 2m }))
+            let! r = w.Repo.Transact(Tx.execute (Bulk.update (all, fun o -> { o with Total = o.Total - 2m })): Tx<_, unit>)
             w.Set("bulkResult", r)
         }
         |> unit
 
     [<StepDefinition("the bulk update fails with a classified constraint violation")>]
     member _.Classified() =
-        match w.Get<Result<int, DbError>> "bulkResult" with
-        | Error(DbError.Database f) ->
+        match w.Get<Result<int, TransactionError<unit>>> "bulkResult" with
+        | Error { Failure = TxFailure.Failed(DbError.Database f) } ->
             equal DbFailureKind.CheckViolation f.Kind "failure kind"
             equal (Some "orders_total_check") f.Constraint "constraint"
         | other -> failwithf "expected a database failure, got %A" other
@@ -217,8 +217,8 @@ type BulkSteps(w: World) =
                         take 2
                 }
 
-            let! r = w.Repo.Execute(Bulk.update (firstTwo, fun o -> { o with Status = Cancelled }))
-            w.Set("loadFailure", (match r with Error e -> Some e | Ok _ -> None))
+            let! r = w.Repo.Transact(Tx.execute (Bulk.update (firstTwo, fun o -> { o with Status = Cancelled })): Tx<_, unit>)
+            w.Set("loadFailure", (match r with Error { Failure = TxFailure.Failed e } -> Some e | _ -> None))
             w.Set("expectedExplanation", [ "every row the query matches"; "ordering, take and skip" ])
         }
         |> unit
@@ -226,8 +226,8 @@ type BulkSteps(w: World) =
     [<StepDefinition("I request a bulk update that changes the primary key")>]
     member _.KeyBulk() =
         task {
-            let! r = w.Repo.Execute(Bulk.update (drafts, fun o -> { o with Id = OrderId 1L }))
-            w.Set("loadFailure", (match r with Error e -> Some e | Ok _ -> None))
+            let! r = w.Repo.Transact(Tx.execute (Bulk.update (drafts, fun o -> { o with Id = OrderId 1L })): Tx<_, unit>)
+            w.Set("loadFailure", (match r with Error { Failure = TxFailure.Failed e } -> Some e | _ -> None))
             w.Set("expectedExplanation", [ "primary key"; "cannot be changed" ])
         }
         |> unit
@@ -240,7 +240,7 @@ type BulkSteps(w: World) =
             w.MarkCommands()
 
             let! r =
-                w.Repo.Execute(Bulk.insert [ product "A-1" "Anvil"; product "B-2" "Bolt"; product "C-3" "Clamp" ])
+                w.Repo.Transact(Tx.execute (Bulk.insert [ product "A-1" "Anvil"; product "B-2" "Bolt"; product "C-3" "Clamp" ]): Tx<_, unit>)
 
             w.Set("inserted", ok r)
         }
@@ -272,13 +272,11 @@ type BulkSteps(w: World) =
             w.MarkCommands()
 
             let! r =
-                w.Repo.Execute(
-                    Bulk.upsert (
+                w.Repo.Transact(Tx.execute (Bulk.upsert (
                         [ product sku1 name1; product sku2 name2 ],
                         (fun p -> p.Sku),
                         fun current incoming -> { current with Name = incoming.Name }
-                    )
-                )
+                    )): Tx<_, unit>)
 
             w.Set("upserted", ok r)
             check ((w.CommandsSinceMark |> List.exactlyOne).Sql.Contains "ON CONFLICT (\"sku\") DO UPDATE SET \"name\" = \"excluded\".\"name\"") "upsert SQL"
@@ -304,7 +302,7 @@ type BulkSteps(w: World) =
     [<StepDefinition("^I insert Products \"(.*)\" and \"(.*)\" ignoring existing SKUs$")>]
     member _.InsertMissing(sku1: string, sku2: string) =
         task {
-            let! r = w.Repo.Execute(Bulk.insertMissing ([ product sku1 "Ignored"; product sku2 "Second" ], fun p -> p.Sku))
+            let! r = w.Repo.Transact(Tx.execute (Bulk.insertMissing ([ product sku1 "Ignored"; product sku2 "Second" ], fun p -> p.Sku)): Tx<_, unit>)
             w.Set("insertedMissing", ok r)
         }
         |> unit

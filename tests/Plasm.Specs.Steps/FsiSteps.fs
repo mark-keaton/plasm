@@ -150,16 +150,16 @@ type FsiSteps(w: World) =
         w.Db.Scalar<int64>("select count(*) from customers where name = @n", [ "n", box name ]).Result
 
     let insertInPlayground (name: string) =
-        fsi().Run($"pg.Insert(Changeset.insert (New.customer \"{name}\" \"{name.ToLowerInvariant()}@example.com\")) |> wait")
+        fsi().Run($"pg.Transact(Tx.insert (New.customer \"{name}\" \"{name.ToLowerInvariant()}@example.com\"): Tx<_, unit>) |> wait")
 
     let openPlayground () =
         fsi().Run "let pg = repo.Playground()" |> ignore
 
     let seed () =
         task {
-            let! c = w.Repo.Insert(Changeset.insert (New.customer "Ada" "ada@example.com"))
+            let! c = w.Write(Tx.insert (New.customer "Ada" "ada@example.com"))
             let c = ok c
-            let! o = w.Repo.Insert(Changeset.insert (New.order (Some c.Id) Published 12.5m))
+            let! o = w.Write(Tx.insert (New.order (Some c.Id) Published 12.5m))
             ok o |> ignore
         }
 
@@ -282,11 +282,11 @@ type FsiSteps(w: World) =
 
     [<StepDefinition("a Customer with a given email exists")>]
     member _.CustomerWithEmail() =
-        w.Repo.Insert(Changeset.insert (New.customer "Ada" "ada@example.com")).Result |> ok |> ignore
+        w.Write(Tx.insert (New.customer "Ada" "ada@example.com")).Result |> ok |> ignore
 
     [<StepDefinition("I evaluate an insert of another Customer with the same email through the interactive helpers")>]
     member _.DuplicateInsert() =
-        fsi().Run "repo.Insert(Changeset.insert (New.customer \"Other\" \"ada@example.com\")) |> wait" |> display
+        fsi().Run "repo.Transact(Tx.insert (New.customer \"Other\" \"ada@example.com\"): Tx<_, unit>) |> wait" |> display
 
     [<StepDefinition("the session displays a unique constraint violation naming the constraint")>]
     member _.DisplaysViolation() =
@@ -387,7 +387,7 @@ type FsiSteps(w: World) =
     [<StepDefinition("code in the playground hits a unique constraint violation and then continues")>]
     member _.PlaygroundViolation() =
         insertInPlayground "Pia" |> ignore
-        fsi().Run "pg.Insert(Changeset.insert (New.customer \"Again\" \"pia@example.com\")) |> wait" |> display
+        fsi().Run "pg.Transact(Tx.insert (New.customer \"Again\" \"pia@example.com\"): Tx<_, unit>) |> wait" |> display
         insertInPlayground "Quinn" |> ignore
 
     [<StepDefinition("the violation is displayed as usual")>]
@@ -480,7 +480,7 @@ type FsiSteps(w: World) =
     [<StepDefinition("a sandbox inside the playground inserts another Customer")>]
     member _.SandboxInPlayground() =
         fsi().Run
-            "pg.Sandbox(fun r -> task { let! _ = r.Insert(Changeset.insert (New.customer \"Quinn\" \"quinn@example.com\")) in return () }) |> wait"
+            "pg.Sandbox(fun r -> task { let! _ = r.Transact(Tx.insert (New.customer \"Quinn\" \"quinn@example.com\"): Tx<_, unit>) in return () }) |> wait"
         |> ignore
 
     [<StepDefinition("after the sandbox ends the playground still has only its own Customer")>]

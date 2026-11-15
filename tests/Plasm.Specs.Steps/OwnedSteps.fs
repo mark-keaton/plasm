@@ -68,7 +68,7 @@ type OwnedSteps(w: World) =
 
     let insert (i: Invoice) =
         task {
-            let! r = repo().Insert(Changeset.insert i)
+            let! r = repo().Transact(Tx.insert i: Tx<_, unit>)
             return ok r
         }
 
@@ -203,7 +203,7 @@ type OwnedSteps(w: World) =
             w.Set("penKey", pen.Id)
 
             let! r =
-                repo().Update(read |> Changeset.edit (fun i -> { i with Lines = [ { pen with Amount = 3m }; line "pad" 4m ] }))
+                repo().Transact(read |> edit (fun i -> { i with Lines = [ { pen with Amount = 3m }; line "pad" 4m ] }))
 
             ok r |> ignore
         }
@@ -265,7 +265,7 @@ type OwnedSteps(w: World) =
     member _.Delete() =
         task {
             let! read = readOne ()
-            let! r = repo().Delete(Changeset.delete read)
+            let! r = repo().Transact(Tx.delete read: Tx<_, unit>)
             ok r |> ignore
         }
         |> unit

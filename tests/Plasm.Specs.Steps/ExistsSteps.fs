@@ -83,7 +83,7 @@ type ExistsSteps(w: World) =
 
     let insertOrder number total =
         task {
-            let! r = repo().Insert(Changeset.insert { Id = OrderId 0L; Number = number; Total = total })
+            let! r = repo().Transact(Tx.insert { Id = OrderId 0L; Number = number; Total = total }: Tx<_, unit>)
             return ok r
         }
 
@@ -112,12 +112,13 @@ type ExistsSteps(w: World) =
 
             for n, amount, ok' in [ "A", 10m, true; "B", 50m, false ] do
                 let! r =
-                    repo().Insert(
-                        Changeset.insert
+                    repo().Transact(
+                        Tx.insert
                             { Id = PaymentId 0L
                               Order = byNumber.[n].Id
                               Amount = amount
                               Succeeded = ok' }
+                        : Tx<_, unit>
                     )
 
                 ok r |> ignore

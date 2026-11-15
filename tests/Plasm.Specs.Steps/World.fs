@@ -23,6 +23,9 @@ type World() =
 
     member w.Repo = w.Db.Repo
 
+    /// A single write: one transaction of one step, refusing nothing of its own.
+    member w.Write(tx: Tx<'T, unit>) = w.Db.Repo.Transact tx
+
     /// Remember how many commands have run so far.
     member w.MarkCommands() = w.Mark <- w.Db.Recorder.Count
 
@@ -36,6 +39,9 @@ type World() =
 
 [<AutoOpen>]
 module Support =
+
+    /// The change `f` makes to `original`, as one write step.
+    let edit (f: 'T -> 'T) (original: 'T) : Tx<'T, unit> = Tx.update (original, f original)
 
     let ok (r: Result<'a, 'e>) =
         match r with

@@ -45,14 +45,13 @@ Feature: Database-specific SQL comes from the provider
         | deleting an Order and its Lines | row locking   |
         | changing an Article's links     | array parameters |
 
-  Rule: An unsupported operation is reported the same way by every call
+  Rule: An unsupported operation is reported the same way by every write step
 
     Scenario Outline: <call> reports an unsupported operation as UnsupportedByProvider
       When I attempt an operation the test dialect cannot perform through <call>
       Then the failure contains TranslationError.UnsupportedByProvider naming the missing capability
 
       Examples:
-        | call                 |
-        | repo.Insert          |
-        | repo.Execute         |
-        | a transaction step   |
+        | call               |
+        | an insert step     |
+        | a bulk write step  |

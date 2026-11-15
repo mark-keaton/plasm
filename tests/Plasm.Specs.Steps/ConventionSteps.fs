@@ -96,7 +96,7 @@ type ConventionSteps(w: World) =
 
     let insert (t: Ticket) =
         task {
-            let! r = repo().Insert(Changeset.insert t)
+            let! r = repo().Transact(Tx.insert t: Tx<_, unit>)
             return ok r
         }
 
