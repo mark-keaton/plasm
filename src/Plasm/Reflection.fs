@@ -84,6 +84,13 @@ let listCtors: Type -> AssocCtors =
           Loaded = id
           Read = Some })
 
+/// An owned record (`Profile option` or `Settings`): the field is its own
+/// payload, and there is no unloaded state.
+let ownedOneCtors: AssocCtors =
+    { NotLoaded = null
+      Loaded = id
+      Read = Some }
+
 type RecordShape =
     { Fields: PropertyInfo[]
       Construct: obj[] -> obj

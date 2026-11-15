@@ -158,6 +158,33 @@ type SchemaBuilder<'T> internal (table: string) =
     member _.Owns(s: SchemaDef, [<ReflectedDefinition>] list: Expr<'T -> 'C list>, [<ReflectedDefinition>] owner: Expr<'C -> 'K>) =
         add s (fun s -> SchemaBuilder<'T>.AddOwned(s, list, owner, None))
 
+    /// A record this one owns that may be absent (`Profile: Profile option`):
+    /// its own row, holding this record's key in `owner`; always loaded with it
+    /// and written with it (owned-records.feature).
+    [<CustomOperation("ownsOptional")>]
+    member _.OwnsOptional(s: SchemaDef, [<ReflectedDefinition>] one: Expr<'T -> 'C option>, [<ReflectedDefinition>] owner: Expr<'C -> 'K>) =
+        add s (fun s -> SchemaBuilder<'T>.AddOwnedOne(s, one, owner))
+
+    /// A record this one owns that must exist (`Settings: Settings`): its own
+    /// row, holding this record's key in `owner`; reading an owner without it
+    /// is an error naming the field.
+    [<CustomOperation("ownsOne")>]
+    member _.OwnsOne(s: SchemaDef, [<ReflectedDefinition>] one: Expr<'T -> 'C>, [<ReflectedDefinition>] owner: Expr<'C -> 'K>) =
+        add s (fun s -> SchemaBuilder<'T>.AddOwnedOne(s, one, owner))
+
+    static member private AddOwnedOne(s: SchemaDef, one: Expr, owner: Expr) =
+        { s with
+            Assocs =
+                s.Assocs
+                @ [ { Property = Paths.property "owns" one
+                      Kind = AssocKind.HasOne
+                      ForeignKey = Paths.property "owns owner" owner
+                      OnReplace = OnReplace.Delete
+                      Through = None
+                      Owned = true
+                      Linked = false
+                      Order = None } ] }
+
     /// Like `owns`, with the order the owned records are read in.
     [<CustomOperation("ownsOrderedBy")>]
     member _.OwnsOrderedBy

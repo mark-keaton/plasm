@@ -402,6 +402,7 @@ module Model =
                             match a.Kind, cardinality with
                             | AssocKind.HasMany, Many -> true
                             | AssocKind.HasOne, OptionalOne -> true
+                            | AssocKind.HasOne, RequiredOne when a.Owned -> true
                             | AssocKind.BelongsTo, (OptionalOne | RequiredOne) -> true
                             | AssocKind.ManyToMany, Many -> true
                             | _ -> false
@@ -471,8 +472,21 @@ module Model =
                                   ForeignKey = (if isNull a.ForeignKey then "" else a.ForeignKey.Name)
                                   Through = a.Through
                                   OnReplace = a.OnReplace
-                                  Ctors = if a.Owned || a.Linked then Reflection.listCtors t else Reflection.assocCtors t
-                                  MakeList = Reflection.makeList target
+                                  Ctors =
+                                    if (a.Owned || a.Linked) && cardinality = Many then Reflection.listCtors t
+                                    elif a.Owned then Reflection.ownedOneCtors
+                                    else Reflection.assocCtors t
+                                  // An owned record (owned-records.feature) is written as a
+                                  // list of none or one: this rebuilds the field from it.
+                                  MakeList =
+                                    if a.Owned && cardinality <> Many then
+                                        let some = Reflection.makeSome (typedefof<option<_>>.MakeGenericType target)
+                                        fun items ->
+                                            match Seq.tryHead items with
+                                            | None -> null
+                                            | Some x -> if cardinality = OptionalOne then some x else x
+                                    else
+                                        Reflection.makeList target
                                   WrapSome = Reflection.makeSome (typedefof<option<_>>.MakeGenericType target)
                                   Owned = a.Owned
                                   Linked = a.Linked
@@ -483,6 +497,12 @@ module Model =
 
                     if Reflection.isOption scalarType then
                         err (Some prop.Name) "nested options cannot be stored unambiguously"
+                    elif FSharpType.IsRecord(scalarType, true) && defs.ContainsKey scalarType then
+                        let op = if isOpt then "ownsOptional" else "ownsOne"
+
+                        err
+                            (Some prop.Name)
+                            $"{prop.Name} is a {scalarType.Name}, a record with its own schema, so it must be owned to be stored: declare `{op} (fun x -> x.{prop.Name}) (fun item -> item.Owner)`, or hold its id instead to refer to it"
                     elif Reflection.isList t then
                         err
                             (Some prop.Name)

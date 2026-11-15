@@ -544,6 +544,21 @@ the same guarantee more exhaustively.
 | Deleting a card deletes its links, not its tags | Implemented and verified | `LinkedSteps.fs` |  |  |
 | A join table without its foreign key is reported | Implemented and verified | `LinkedSteps.fs` |  | For every join table (manyToMany too): both sides must reference their tables. |
 
+### owned-records.feature
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Reading an account reads its profile and settings | Implemented and verified | `OwnedOneSteps.fs` |  | One style, gap G2: `ownsOptional (fun a -> a.Profile) (fun p -> p.Account)` for a `'C option`, `ownsOne` for a required `'C`. Separate names, not `owns` overloads: with overloads F# resolves the owner lambda's record label before the overload, so `fun p -> p.Account` picks the last record with an `Account` field. The model treats it as an owned has-one (`Reflection.ownedOneCtors`); the loader adds it like an owned list. |
+| An account without a profile reads with None | Implemented and verified | `OwnedOneSteps.fs` |  |  |
+| Every account's records are read in one more command each | Implemented and verified | `OwnedOneSteps.fs` |  | Batched by key. |
+| An account whose required record is missing is refused when read | Implemented and verified | `OwnedOneSteps.fs` |  | A materialization error naming the field. |
+| Inserting an account inserts its records | Implemented and verified | `OwnedOneSteps.fs` |  | `Writes.owned` writes an owned record as a list of none or one; `MakeList` rebuilds the field. |
+| Changing the owned record of an account read updates it in place | Implemented and verified | `OwnedOneSteps.fs` |  | By key, only changed columns. |
+| Removing the optional record deletes it | Implemented and verified | `OwnedOneSteps.fs` |  |  |
+| Adding the optional record inserts it | Implemented and verified | `OwnedOneSteps.fs` |  |  |
+| Deleting an account deletes its records | Implemented and verified | `OwnedOneSteps.fs` |  |  |
+| A record field the schema does not own is refused at build, saying how to own it | Implemented and verified | `OwnedOneSteps.fs` |  | Before, the message asked for a scalar mapping. |
+
 ### owned-collections.feature
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |

@@ -55,8 +55,12 @@ let rec private owned (model: Model) (s: CsState) : CsState =
     let schema = schemaOf model s.Type
     let declared = s.Children |> List.map (fun w -> w.Assoc) |> set
 
+    // An owned record is written as a list of none or one.
     let items (a: AssocMap) (list: obj) =
         match a.Ctors.Read list with
+        | Some null -> []
+        | Some l when a.Cardinality = OptionalOne -> [ l.GetType().GetProperty("Value").GetValue l ]
+        | Some l when a.Cardinality = RequiredOne -> [ l ]
         | Some l -> Reflection.listItems a.Target l |> List.ofSeq
         | None -> []
 
@@ -211,7 +215,7 @@ let rec check (model: Model) (s: CsState) : CsState =
         s.Children
         |> List.map (fun w ->
             match schema.TryAssoc w.Assoc with
-            | Some a when a.Kind = AssocKind.HasMany ->
+            | Some a when a.Kind = AssocKind.HasMany || (a.Owned && a.Kind = AssocKind.HasOne) ->
                 let target = schemaOf model a.Target
                 let checkedChildren = w.Children |> List.map (check model)
 

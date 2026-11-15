@@ -40,6 +40,7 @@
     <Compile Include="PgEnumSteps.fs" />
     <Compile Include="ConventionSteps.fs" />
     <Compile Include="ExistsSteps.fs" />
+    <Compile Include="OwnedOneSteps.fs" />
     <Compile Include="DdlSteps.fs" />
   </ItemGroup>
   <ItemGroup>
