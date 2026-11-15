@@ -53,7 +53,7 @@ Feature: Predictable functional persistence for F#
       When I attempt to compare Total with an incompatible value
       Then the expression is rejected at compile time
 
-    Scenario: Relationship loads are checked against the source type
+    Scenario: Owned relationships are checked against the source type
       When I attempt to declare that Orders own a relationship not defined for them
       Then the declaration is rejected at compile time
 

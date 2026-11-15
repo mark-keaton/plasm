@@ -59,6 +59,6 @@ Feature: Failures are values with qualified names
       Then the failure gives back the domain error with its type, without casting
       And reading it as another type does not compile
 
-    Scenario: A step's invalid changes come back as the changeset's errors
+    Scenario: A step's invalid changes come back as the field errors
       When a transaction step's changeset is invalid
       Then the failure names the entity and lists the field errors

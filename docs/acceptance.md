@@ -75,7 +75,7 @@ describe the one style; "Reworded" means only words changed.
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
 | Querying a mapped property uses its declared type | Implemented and verified | `TypeSteps.fs` | CompileTime.fs; Translation.fs (Model.build errors) | Compile-time checks with FSharp.Compiler.Service against the real assemblies. Note that `o.Total = 100` legitimately compiles, because F# implicitly converts int to decimal losslessly. |
-| Relationship loads are checked against the source type | Implemented and verified | `TypeSteps.fs` | CompileTime.fs; Translation.fs (Model.build errors) | Rewritten (one style, step a1): with no load requests, the `owns` declaration is what is checked. |
+| Owned relationships are checked against the source type | Implemented and verified | `TypeSteps.fs` | CompileTime.fs; Translation.fs (Model.build errors) | Rewritten (one style, step a1): with no load requests, the `owns` declaration is what is checked. |
 | Nullable values remain explicit | Implemented and verified | `TypeSteps.fs` | CompileTime.fs; Translation.fs (Model.build errors) |  |
 | Unsupported model representations fail during configuration | Implemented and verified | `TypeSteps.fs` | CompileTime.fs; Translation.fs (Model.build errors) |  |
 
@@ -307,7 +307,7 @@ describe the one style; "Reworded" means only words changed.
 | A prepared query is built once and runs with different arguments | Implemented and verified | `PreparedSteps.fs` | Batch2.fs (prepared patterns, three arguments, transactions, negative counts, argument expressions) |  |
 | Arguments are typed and always parameters | Implemented and verified | `PreparedSteps.fs` | Batch2.fs (prepared patterns, three arguments, transactions, negative counts, argument expressions) | Optional arguments compare with `IS NOT DISTINCT FROM`, lists with `= ANY(@p)`, so one SQL text serves every value. |
 | Paging arguments | Implemented and verified | `PreparedSteps.fs` | Batch2.fs (prepared patterns, three arguments, transactions, negative counts, argument expressions) |  |
-| Prepared queries keep relationship loads | Implemented and verified | `PreparedSteps.fs` | Batch2.fs (prepared patterns, three arguments, transactions, negative counts, argument expressions) | Rewritten (one style, step a1): each run loads the OrderLines the Orders own. |
+| Prepared queries load what an aggregate owns | Implemented and verified | `PreparedSteps.fs` | Batch2.fs (prepared patterns, three arguments, transactions, negative counts, argument expressions) | Rewritten (one style, step a1): each run loads the OrderLines the Orders own. |
 | Prepared queries can be inspected and counted | Implemented and verified | `PreparedSteps.fs` | Batch2.fs (prepared patterns, three arguments, transactions, negative counts, argument expressions) |  |
 
 ### prepared-queries.feature: Argument misuse is explicit
@@ -323,7 +323,7 @@ describe the one style; "Reworded" means only words changed.
 |---|---|---|---|---|
 | Extending a prepared query applies the extension everywhere | Implemented and verified | `PreparedSteps.fs` |  | Found by the architecture audit: extending a prepared query used to plan the template and drop the extension. |
 | An extended prepared query still binds its arguments per call | Implemented and verified | `PreparedSteps.fs` |  |  |
-| A prepared query used as a load query binds its own arguments | Implemented and verified | `PreparedSteps.fs` |  | Rewritten (one style, step a1): the Payments of the Orders held are read by a second prepared query bound to a status; the title is from when it was a load query. |
+| A prepared query over another aggregate binds its own arguments | Implemented and verified | `PreparedSteps.fs` |  | Rewritten (one style, step a1): the Payments of the Orders held are read by a second prepared query bound to a status; the title is from when it was a load query. |
 
 ### schema-check.feature: The check reports what would fail, and nothing else
 
@@ -470,7 +470,7 @@ describe the one style; "Reworded" means only words changed.
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
 | A step's rejection reason comes back with its type | Implemented and verified | `ErrorModelSteps.fs` |  | `TxFailure.Rejected of 'E`: the transaction's own error type. Reading it as another type does not compile (strict design, step 2). |
-| A step's invalid changes come back as the changeset's errors | Implemented and verified | `ErrorModelSteps.fs` |  | The title predates one style step d, after which changesets are internal; the errors are `TxFailure.InvalidChanges (entity, errors)`. |
+| A step's invalid changes come back as the field errors | Implemented and verified | `ErrorModelSteps.fs` |  | The title predates one style step d, after which changesets are internal; the errors are `TxFailure.InvalidChanges (entity, errors)`. |
 
 ### providers.feature: Constructs the dialect can express are rendered by it
 
@@ -507,7 +507,7 @@ describe the one style; "Reworded" means only words changed.
 |---|---|---|---|---|
 | Inserting and reading a Shipment keeps its status | Implemented and verified | `PgEnumSteps.fs` |  | `Scalar.asPgEnum`: values are sent as text in `CAST(@p AS "type")` and read as `CAST(col AS text)`, so Npgsql needs no `MapEnum`. |
 | The enum type is created after the data source first connected | Implemented and verified | `PgEnumSteps.fs` |  | The trap in Npgsql's type loading: reads of the column fail unless they are text. |
-| Updating a status through a changeset | Implemented and verified | `PgEnumSteps.fs` |  | The title predates one style step d; the update is `Tx.update (original, changed)`. |
+| Updating a status | Implemented and verified | `PgEnumSteps.fs` |  | The title predates one style step d; the update is `Tx.update (original, changed)`. |
 | An optional status is written and read, including None | Implemented and verified | `PgEnumSteps.fs` |  |  |
 | Bulk writes accept statuses | Implemented and verified | `PgEnumSteps.fs` |  | Bulk insert, upsert (with `RETURNING` read as text) and bulk update. |
 

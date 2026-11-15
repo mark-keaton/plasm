@@ -36,7 +36,7 @@ Feature: Prepared queries
       Then each page is bound from the arguments
       And the pages together contain every Order exactly once
 
-    Scenario: Prepared queries keep relationship loads
+    Scenario: Prepared queries load what an aggregate owns
       Given Orders for several Customers with Payments
       When I prepare a query for the Orders of a Customer, which own their OrderLines
       Then each run loads the OrderLines with batched commands
@@ -73,7 +73,7 @@ Feature: Prepared queries
       Then each run returns only that Customer's Orders that satisfy the filter
       And the two runs send one SQL text
 
-    Scenario: A prepared query used as a load query binds its own arguments
+    Scenario: A prepared query over another aggregate binds its own arguments
       Given Orders for several Customers with Payments
       When I read the Payments of the Orders I hold with a prepared query bound to a status
       Then each Order has only the Payments with that status

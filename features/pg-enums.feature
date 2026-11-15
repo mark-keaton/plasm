@@ -29,7 +29,7 @@ Feature: Fieldless unions stored as PostgreSQL enum types
       When I insert a Shipment with status Packed
       Then reading it back gives status Packed
 
-    Scenario: Updating a status through a changeset
+    Scenario: Updating a status
       Given a Shipment with status Packed
       When I update its status to Delivered
       Then the database holds the label delivered

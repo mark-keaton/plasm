@@ -10,13 +10,13 @@ type ProviderCapabilities =
       SnapshotReads: bool
       /// Key lists can be sent as one array parameter.
       ArrayParameters: bool
-      /// Upper bound on keys sent in one relationship command.
+      /// Upper bound on keys sent in one command loading an owned or linked list.
       MaxKeysPerCommand: int
       /// INSERT/UPDATE ... RETURNING (single and bulk writes read back rows).
       Returning: bool
       /// Inserts that resolve conflicts (ON CONFLICT ...): upserts.
       Upserts: bool
-      /// SELECT ... FOR UPDATE (replacing children locks them first).
+      /// SELECT ... FOR UPDATE (deleting an owner locks what it owns first).
       RowLocking: bool }
 
 /// Dialect-specific rendering hooks.

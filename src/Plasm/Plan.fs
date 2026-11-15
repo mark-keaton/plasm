@@ -46,7 +46,7 @@ module internal Planner =
           /// Builds the command for one batch of keys. Filters and ordering are
           /// translated once, when the plan is made.
           Build: Array -> Sql.Select
-          /// Many-to-many: each row carries the owner key in a trailing column.
+          /// A linked list: each row carries the owner key in a trailing column.
           Through: JoinTable option
           Strategy: LoadStrategy
           /// Arguments of a bound prepared query used as the load query; its
@@ -99,7 +99,7 @@ module internal Planner =
               let wheres, orders = Translate.translateBody (Translate.newCtxWith model vol) def "t0" target
               let ranked = Translate.stableOrder "t0" target orders
 
-              // Many-to-many rows come through the join table, which supplies
+              // A linked list's rows come through the join table, which supplies
               // the owner key as a trailing column.
               let matchExpr, joins, ownerColumn =
                   match assoc.Through with

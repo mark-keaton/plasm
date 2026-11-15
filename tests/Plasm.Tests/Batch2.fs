@@ -174,7 +174,7 @@ let ``bulk writes reject versions, relationships and empty changes`` () =
     let message (b: BulkWrite<int>) = offlineRepo.Explain b |> invalidQuery
 
     Assert.Contains("version", message (Bulk.update (all, fun o -> { o with Version = 7 })))
-    Assert.Contains("relationship", message (Bulk.update (all, fun o -> { o with Lines = [] })))
+    Assert.Contains("owned or linked list", message (Bulk.update (all, fun o -> { o with Lines = [] })))
     Assert.Contains("must return a copy of the row", message (Bulk.update (all, fun o -> o)))
     Assert.Contains("assigns no field", message (Bulk.update (all, fun o -> { o with Total = o.Total })))
     Assert.Contains("joins are not supported", message (Bulk.delete (plasm { for o in orders do join c in customers on (o.CustomerId = Some c.Id); where (c.Name = "x") })))

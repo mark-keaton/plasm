@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Ecto-inspired persistence for F#: immutable records, compiler-checked queries, explicit changesets and batched relationship loading. Experimental.</Description>
+    <Description>Persistence for F# that stores the domain's own records: conventions for scalars and unions, owned and linked lists loaded with their owner, compiler-checked queries, typed transactions. Experimental.</Description>
     <PackageId>Plasm</PackageId>
     <!-- FS3370 informational; FS0064 from generic constraints in builders is intentional -->
     <NoWarn>$(NoWarn);FS3370</NoWarn>

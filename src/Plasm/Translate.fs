@@ -1693,7 +1693,7 @@ let private assignments (ctx: Ctx) (schema: SchemaInfo) (row: Var) (body: Expr) 
             | None ->
                 match schema.Assocs |> Array.tryFind (fun a -> a.Index = i) with
                 | Some a when unchanged = Some a.Name -> []
-                | Some a -> invalid $"relationship {schema.Name}.{a.Name} cannot be changed by a bulk write"
+                | Some a -> invalid $"{schema.Name}.{a.Name} is an owned or linked list, which a bulk write cannot change; write the {schema.Name} with Tx.update"
                 | None -> [])
 
     if sets.IsEmpty then

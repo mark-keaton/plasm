@@ -74,7 +74,7 @@ the reference application in the same style.
 
 | # | Lesson | What it is for |
 |---|---|---|
-| 14 | Joins | Inner and left joins, selecting fields (a whole Order cannot come from a join), typed keys, filters and composition. |
+| 14 | Joins | Inner and left joins, selecting fields or whole records (a whole Order comes with its lines), typed keys, filters and composition. |
 | 15 | Aggregates and grouping | `Agg.count`, `sum`, `max`, grouping and `having`. |
 | 16 | Links and owned records | An article's tags, shared through a join table: read with it, filtered with `List.exists`, written as links only. An account's optional profile: read as an option, inserted and deleted by changing it. |
 | 17 | Bulk writes | `Bulk.update`, `delete`, `insert`, `insertMissing` as `Tx.execute` steps, and inspecting them. |

@@ -25,7 +25,6 @@ type TranslationError =
     /// The query is well-typed but its meaning is ambiguous or unsound,
     /// e.g. pagination without an ordering.
     | InvalidQuery of message: string
-    /// Two load specifications customise the same relationship differently.
     /// The provider cannot implement the requested operation faithfully.
     | UnsupportedByProvider of operation: string * provider: string
     /// F# Interactive: the query and the model use different definitions of a
