@@ -5,6 +5,10 @@ open Plasm
 open Plasm.TestDomain
 open Plasm.TestDomain.Domain
 
+/// A second record keyed by CustomerId, for the shared-key scenario.
+module SharedKey =
+    type Supplier = { Id: CustomerId; Name: string }
+
 /// Feature: Database constraints are stated once, in the model
 [<Binding>]
 type ConstraintSteps(w: World) =
@@ -102,6 +106,19 @@ type ConstraintSteps(w: World) =
     member _.NoSelfKey() =
         let refs = w.Get<ModelReference list> "references"
         check (refs |> List.forall (fun r -> r.Field <> "Id")) $"the references are %A{refs}"
+
+    [<StepDefinition("^I build a model in which Customers and Suppliers both have a CustomerId key$")>]
+    member _.SharedKey() =
+        let suppliers = schema<SharedKey.Supplier> "suppliers" { identityKey (fun s -> s.Id) }
+        w.Set("sharedKeyModel", Model.build [] [ Schemas.customers; suppliers ])
+
+    [<StepDefinition("^the model is refused, naming CustomerId and both schemas$")>]
+    member _.SharedKeyRefused() =
+        match w.Get<Result<Model, ConfigError list>> "sharedKeyModel" with
+        | Error errors ->
+            let text = errors |> List.map string |> String.concat "\n"
+            check (text.Contains "CustomerId" && text.Contains "Customer" && text.Contains "Supplier") text
+        | Ok _ -> failwith "the model was built; two schemas share the key type CustomerId"
 
     [<StepDefinition("^the customers table has lost its unique constraint on email$")>]
     member _.DropUnique() =

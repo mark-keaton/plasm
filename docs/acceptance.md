@@ -32,7 +32,7 @@ host that generates the tests) binds to F# step definitions in
 (Testcontainers, with a freshly cloned database per scenario).
 
 ```sh
-dotnet test tests/Plasm.Specs          # 337 scenarios (outline examples counted separately)
+dotnet test tests/Plasm.Specs          # 338 scenarios (outline examples counted separately)
 dotnet test tests/Plasm.Tests          # 130 unit, property, compile-time and Ecto-compatibility tests
 ```
 
@@ -40,13 +40,13 @@ dotnet test tests/Plasm.Tests          # 130 unit, property, compile-time and Ec
 
 | Classification | Scenarios |
 |---|---:|
-| Implemented and verified | 337 |
+| Implemented and verified | 338 |
 | Implemented, deliberately changed (with rationale) | 0 |
 | Planned | 0 |
 | Unsupported, with explicit behaviour | 0 |
-| **Total** | **337** |
+| **Total** | **338** |
 
-The 337 count outline examples separately; there are 310 scenario titles. The
+The 338 count outline examples separately; there are 311 scenario titles. The
 13 struck-through rows are removed scenarios and are not counted. The one
 scenario that was deliberately changed, "Conflicting relationship
 customizations are explicit", was removed with `preload`.
@@ -641,6 +641,7 @@ describe the one style; "Reworded" means only words changed.
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
 | A typed id references the schema whose key it is | Implemented and verified | `ConstraintSteps.fs` |  | `Model.References`; only typed ids (never built-in key types) are inferred. |
+| A key type shared by two schemas is refused | Implemented and verified | `ConstraintSteps.fs` |  | `Model.build` returns a ConfigError naming the key type and both schemas; before, no reference was inferred and nothing was said. |
 
 ### constraints.feature: The schema check finds a missing or misnamed constraint
 

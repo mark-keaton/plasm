@@ -51,6 +51,10 @@ Feature: Database constraints are stated once, in the model
       And OrderLine.ProductId references Product
       And no record's own key references itself
 
+    Scenario: A key type shared by two schemas is refused
+      When I build a model in which Customers and Suppliers both have a CustomerId key
+      Then the model is refused, naming CustomerId and both schemas
+
   Rule: The schema check finds a missing or misnamed constraint
 
     A unique field and a reference are facts the model states, and a violation

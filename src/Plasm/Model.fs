@@ -646,13 +646,31 @@ module Model =
             | Ok s -> resolved.[d.Type] <- s
             | Error es -> errors.AddRange es
 
-        // A typed id that is the key type of exactly one schema references it.
-        // Built-in key types (int64, Guid, ...) are never inferred.
-        let keysOf =
+        // A typed id references the schema whose key it is. Built-in key types
+        // (int64, Guid, ...) are never inferred. A typed id that is the key of
+        // two schemas would make every field of that type ambiguous, so the
+        // model is refused rather than left without the reference.
+        let keyOwners =
             resolved.Values
             |> Seq.filter (fun s -> not (Scalar.isBuiltIn s.Key.ScalarType))
             |> Seq.groupBy (fun s -> s.Key.ScalarType)
-            |> Seq.choose (fun (t, owners) -> match List.ofSeq owners with [ owner ] -> Some(t, owner.Type) | _ -> None)
+            |> Seq.map (fun (t, owners) -> t, owners |> Seq.map (fun o -> o.Type) |> Seq.sortBy (fun o -> o.Name) |> List.ofSeq)
+            |> List.ofSeq
+
+        for t, owners in keyOwners do
+            match owners with
+            | _ :: _ :: _ ->
+                let names = owners |> List.map (fun o -> o.Name) |> String.concat " and "
+
+                errors.Add
+                    { Model = t.Name
+                      Property = None
+                      Message = $"is the key type of {names}; a typed id must be the key of one schema, so each field of type {t.Name} names one table. Give each schema its own key type" }
+            | _ -> ()
+
+        let keysOf =
+            keyOwners
+            |> List.choose (fun (t, owners) -> match owners with [ owner ] -> Some(t, owner) | _ -> None)
             |> dict
 
         for t in List.ofSeq resolved.Keys do

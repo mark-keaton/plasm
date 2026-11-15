@@ -36,7 +36,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 
 | Suite | What it proves | Result |
 |---|---|---|
-| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 337 / 337 pass (outline examples counted separately; 310 titles) |
+| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 338 / 338 pass (outline examples counted separately; 311 titles) |
 | `tests/Plasm.Tests`: `Translation.fs` | SQL-shape contracts (options, membership, `exists`, `List.exists`/`forall` over owned lists, pagination), unsupported-expression errors, model-configuration errors | 42 pass |
 | `tests/Plasm.Tests`: `CompileTime.fs` | Typed API acceptance and rejection, checked with FSharp.Compiler.Service against the real assemblies; each rejection pins its error code and has a passing control snippet | 15 pass |
 | `tests/Plasm.Tests`: `Properties.fs` (FsCheck, real database) | Predicate-order equivalence matching F# semantics; extending a query never alters it; an update records exactly the differing fields; the same aggregates for every batch size, with key-proportional command counts; owned lines keep their declared order per owner | 5 properties pass |
@@ -49,7 +49,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 | `koans/browser` | The browser koans (PGlite) | 119 scenarios pass |
 
 Run the library's tests with `dotnet test` from the repository root (Docker is
-required, or set `PLASM_TEST_PG`): 337 scenarios and 130 unit tests.
+required, or set `PLASM_TEST_PG`): 338 scenarios and 130 unit tests.
 
 ## Supported behaviour
 
