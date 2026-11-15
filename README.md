@@ -310,7 +310,7 @@ an existing server, set `PLASM_TEST_PG` to an admin connection string.
 ```sh
 dotnet build Plasm.slnx
 dotnet test tests/Plasm.Specs      # the 358 acceptance scenarios
-dotnet test tests/Plasm.Tests      # 130 unit, property, compile-time and Ecto-compatibility tests
+dotnet test tests/Plasm.Tests      # 128 unit, property, compile-time and Ecto-compatibility tests
 dotnet run -c Release --project benchmarks/Plasm.Benchmarks -- counts
 ```
 

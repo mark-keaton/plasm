@@ -19,13 +19,15 @@ let private gate = new SemaphoreSlim(1, 1)
 let mutable private n = 0
 
 let private prelude =
+    let annotations = typeof<Plasm.TableAttribute>.Assembly.Location
     let plasm = typeof<Plasm.Query>.Assembly.Location
     let postgres = typeof<Plasm.Postgres.PostgresProvider>.Assembly.Location
     let domain = typeof<Domain.Order>.Assembly.Location
 
     String.concat
         "\n"
-        [ $"#r @\"{plasm}\""
+        [ $"#r @\"{annotations}\""
+          $"#r @\"{plasm}\""
           $"#r @\"{postgres}\""
           $"#r @\"{domain}\""
           "open System"

@@ -15,6 +15,7 @@ module PgEnums =
         | Shipped
         | Delivered
 
+    [<Table "shipments">]
     type Shipment =
         { Id: ShipmentId
           Tracking: string
@@ -30,13 +31,11 @@ module PgEnums =
 
     let labels = [ Packed, "packed"; Shipped, "shipped"; Delivered, "delivered" ]
 
-    let shipments = schema<Shipment> "shipments" { identityKey (fun s -> s.Id) }
-
     let model =
-        Model.buildSchemasOrFail
+        Model.buildOrFail
             [ Scalar.wrap ShipmentId (fun (ShipmentId v) -> v)
               Scalar.enum labels |> Scalar.asPgEnum "shipment_status" ]
-            [ shipments ]
+            [ typeof<Shipment> ]
 
     /// The enum type and the table using it, with the given labels in order.
     let create (typeLabels: string list) =
@@ -67,7 +66,7 @@ type PgEnumSteps(w: World) =
 
     let all () =
         task {
-            let! r = repo().All(plasm { for s in PgEnums.shipments do orderBy s.Id })
+            let! r = repo().All(plasm { for s in stored<Shipment> do orderBy s.Id })
             return ok r
         }
 
@@ -101,7 +100,7 @@ type PgEnumSteps(w: World) =
     member _.ReadBack(status: string) =
         task {
             let id = (w.Get<Shipment> "inserted").Id
-            let! r = repo().All(plasm { for s in PgEnums.shipments do where (s.Id = id) })
+            let! r = repo().All(plasm { for s in stored<Shipment> do where (s.Id = id) })
             equal [ PgEnums.parse status ] (ok r |> List.map (fun s -> s.Status)) "status read back"
         }
         |> unit
@@ -111,7 +110,7 @@ type PgEnumSteps(w: World) =
         task {
             // The repo's data source loads the database's types on its first
             // connection; the type is then replaced, so its loaded types are stale.
-            let! r = repo().Count(plasm { for s in PgEnums.shipments do where (s.Tracking = "none") })
+            let! r = repo().Count(plasm { for s in stored<Shipment> do where (s.Tracking = "none") })
             ok r |> ignore
             do! recreate [ "packed"; "shipped"; "delivered" ]
         }
@@ -157,7 +156,7 @@ type PgEnumSteps(w: World) =
         task {
             let! rows = all ()
             equal [ "T-1", Some Packed; "T-2", None ] (rows |> List.map (fun s -> s.Tracking, s.PreviousStatus)) "previous statuses"
-            let! r = repo().All(plasm { for s in PgEnums.shipments do where (s.PreviousStatus = Some Packed) })
+            let! r = repo().All(plasm { for s in stored<Shipment> do where (s.PreviousStatus = Some Packed) })
             equal [ "T-1" ] (ok r |> List.map (fun s -> s.Tracking)) "filtered on the optional status"
         }
         |> unit
@@ -193,7 +192,7 @@ type PgEnumSteps(w: World) =
     [<StepDefinition("I bulk update the Packed Shipments to Shipped")>]
     member _.BulkUpdate() =
         task {
-            let packed = plasm { for s in PgEnums.shipments do where (s.Status = Packed) }
+            let packed = plasm { for s in stored<Shipment> do where (s.Status = Packed) }
             let! n = repo().Transact(Tx.execute (Bulk.update (packed, fun s -> { s with Status = Shipped; PreviousStatus = Some Packed })): Tx<_, unit>)
             equal 2 (ok n) "Shipments updated"
         }
@@ -232,7 +231,7 @@ type PgEnumSteps(w: World) =
     [<StepDefinition("I keep Shipments whose status is Shipped")>]
     member _.KeepShipped() =
         task {
-            let! r = repo().All(plasm { for s in PgEnums.shipments do where (s.Status = Shipped) })
+            let! r = repo().All(plasm { for s in stored<Shipment> do where (s.Status = Shipped) })
             w.Set("kept", ok r)
         }
         |> unit
@@ -255,13 +254,13 @@ type PgEnumSteps(w: World) =
                 match container with
                 | "list" ->
                     let xs = [ Packed; Delivered ]
-                    plasm { for s in PgEnums.shipments do where (List.contains s.Status xs) }, (fun (s: Shipment) -> List.contains s.Status xs)
+                    plasm { for s in stored<Shipment> do where (List.contains s.Status xs) }, (fun (s: Shipment) -> List.contains s.Status xs)
                 | "array" ->
                     let xs = [| Packed; Delivered |]
-                    plasm { for s in PgEnums.shipments do where (Array.contains s.Status xs) }, (fun s -> Array.contains s.Status xs)
+                    plasm { for s in stored<Shipment> do where (Array.contains s.Status xs) }, (fun s -> Array.contains s.Status xs)
                 | _ ->
                     let xs = set [ Packed; Delivered ]
-                    plasm { for s in PgEnums.shipments do where (xs.Contains s.Status) }, (fun s -> xs.Contains s.Status)
+                    plasm { for s in stored<Shipment> do where (xs.Contains s.Status) }, (fun s -> xs.Contains s.Status)
 
             let! r = repo().All query
             let! everyone = all ()
@@ -280,13 +279,13 @@ type PgEnumSteps(w: World) =
             let! sorted =
                 repo().All(
                     plasm {
-                        for s in PgEnums.shipments do
+                        for s in stored<Shipment> do
                             orderBy s.Status
                             thenBy s.Id
                     }
                 )
 
-            let! after = repo().All(plasm { for s in PgEnums.shipments do where (s.Status > Packed) })
+            let! after = repo().All(plasm { for s in stored<Shipment> do where (s.Status > Packed) })
             w.Set("sorted", ok sorted |> statuses)
             w.Set("after", ok after |> List.sortBy (fun s -> s.Id) |> statuses)
         }
@@ -304,7 +303,7 @@ type PgEnumSteps(w: World) =
     [<StepDefinition("I select the minimum and maximum status of the Shipments")>]
     member _.MinMax() =
         task {
-            let! r = repo().All(plasm { for s in PgEnums.shipments do select (Agg.min s.Status, Agg.max s.Status) })
+            let! r = repo().All(plasm { for s in stored<Shipment> do select (Agg.min s.Status, Agg.max s.Status) })
             w.Set("minMax", ok r)
         }
         |> unit
@@ -317,7 +316,7 @@ type PgEnumSteps(w: World) =
     member _.Prepared() =
         task {
             let withStatus =
-                Query.prepare (fun (status: Arg<ShipmentStatus>) -> plasm { for s in PgEnums.shipments do where (s.Status = status.Value) })
+                Query.prepare (fun (status: Arg<ShipmentStatus>) -> plasm { for s in stored<Shipment> do where (s.Status = status.Value) })
 
             let! r = repo().All(withStatus Delivered)
             w.Set("kept", ok r)
@@ -335,7 +334,7 @@ type PgEnumSteps(w: World) =
 
     [<StepDefinition("I explain a query that filters on a status")>]
     member _.Explain() =
-        w.Set("sql", (repo().Explain(plasm { for s in PgEnums.shipments do where (s.Status = Shipped) }) |> ok).Sql)
+        w.Set("sql", (repo().Explain(plasm { for s in stored<Shipment> do where (s.Status = Shipped) }) |> ok).Sql)
 
     [<StepDefinition("the parameter is cast to the enum type and the column is not")>]
     member _.CastOnParameter() =
@@ -411,7 +410,7 @@ type PgEnumSteps(w: World) =
     [<StepDefinition("I read the Shipments")>]
     member _.ReadAll() =
         task {
-            let! r = repo().All(plasm { for s in PgEnums.shipments do orderBy s.Id })
+            let! r = repo().All(plasm { for s in stored<Shipment> do orderBy s.Id })
             w.Set("read", r)
         }
         |> unit

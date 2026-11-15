@@ -101,6 +101,6 @@ Feature: An owned record is a plain field, loaded and written with its owner
 
   Rule: A record field is owned or refused
 
-    Scenario: A record field the schema does not own is refused at build, saying how to own it
-      When I build a model of Accounts without ownsOne
-      Then the model is refused for Settings, saying to declare ownsOne
+    Scenario: A stored record field that does not hold the owner's key is refused at build, saying how to own it
+      When I build a model of Accounts whose Settings do not hold the account's key
+      Then the model is refused for Settings, saying how to make it owned

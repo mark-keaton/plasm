@@ -11,33 +11,38 @@ module OwnedAccounts =
     type ProfileId = ProfileId of int64
     type SettingsId = SettingsId of int64
 
+    [<Table "owned_profiles">]
     type Profile =
         { Id: ProfileId
           Account: AccountId
           Bio: string }
 
+    [<Table "owned_settings">]
     type Settings =
         { Id: SettingsId
           Account: AccountId
           Theme: string }
 
+    [<Table "owned_accounts">]
     type Account =
         { Id: AccountId
           Name: string
           Profile: Profile option
           Settings: Settings }
 
-    let profiles = schema<Profile> "owned_profiles" { identityKey (fun p -> p.Id) }
-    let settings = schema<Settings> "owned_settings" { identityKey (fun s -> s.Id) }
+    let model = Model.buildOrFail [] [ typeof<Account> ]
 
-    let accounts =
-        schema<Account> "owned_accounts" {
-            identityKey (fun a -> a.Id)
-            ownsOptional (fun a -> a.Profile) (fun p -> p.Account)
-            ownsOne (fun a -> a.Settings) (fun s -> s.Account)
-        }
+    /// Settings that hold no account's key: stored, but not owned.
+    type LooseSettingsId = LooseSettingsId of int64
 
-    let model = Model.buildSchemasOrFail [] [ accounts; profiles; settings ]
+    [<Table "loose_settings">]
+    type LooseSettings = { Id: LooseSettingsId; Theme: string }
+
+    [<Table "loose_accounts">]
+    type LooseAccount =
+        { Id: AccountId
+          Name: string
+          Settings: LooseSettings }
 
     let tables =
         "drop table if exists owned_profiles; drop table if exists owned_settings; drop table if exists owned_accounts;
@@ -86,7 +91,7 @@ type OwnedOneSteps(w: World) =
 
     let readAll () =
         task {
-            let! r = repo().All(plasm { for a in accounts do orderBy a.Name })
+            let! r = repo().All(plasm { for a in stored<Account> do orderBy a.Name })
             return r
         }
 
@@ -105,7 +110,7 @@ type OwnedOneSteps(w: World) =
         }
         |> unit
 
-    let stored (table: string) (column: string) =
+    let storedValue (table: string) (column: string) =
         task {
             let (AccountId raw) = (w.Get<Account> "account").Id
             return! w.Db.Scalar<string>($"select coalesce(string_agg({column}, ', '), '') from {table} where account = {raw}")
@@ -185,8 +190,8 @@ type OwnedOneSteps(w: World) =
             let! r =
                 repo().All(
                     plasm {
-                        for a in accounts do
-                            where (exists (plasm { for p in profiles do where (p.Account = a.Id && p.Bio = bio) }))
+                        for a in stored<Account> do
+                            where (exists (plasm { for p in stored<Profile> do where (p.Account = a.Id && p.Bio = bio) }))
                     }
                 )
 
@@ -197,7 +202,7 @@ type OwnedOneSteps(w: World) =
     [<StepDefinition("^I keep the Accounts where Option.exists \\(fun p -> p.Bio = \"(\\w+)\"\\) over their profile$")>]
     member _.KeepByOption(bio: string) =
         task {
-            let! r = repo().All(plasm { for a in accounts do where (a.Profile |> Option.exists (fun p -> p.Bio = bio)) })
+            let! r = repo().All(plasm { for a in stored<Account> do where (a.Profile |> Option.exists (fun p -> p.Bio = bio)) })
             w.Set("kept", ok r |> List.map (fun a -> a.Name))
         }
         |> unit
@@ -205,7 +210,7 @@ type OwnedOneSteps(w: World) =
     [<StepDefinition("I keep the Accounts whose profile is None")>]
     member _.KeepWithout() =
         task {
-            let! r = repo().All(plasm { for a in accounts do where a.Profile.IsNone })
+            let! r = repo().All(plasm { for a in stored<Account> do where a.Profile.IsNone })
             w.Set("kept", ok r |> List.map (fun a -> a.Name))
         }
         |> unit
@@ -234,8 +239,8 @@ type OwnedOneSteps(w: World) =
     [<StepDefinition("^the profiles table holds \"(\\w+)\" and the settings table holds \"(\\w+)\" for that Account$")>]
     member _.Holds(bio: string, t: string) =
         task {
-            let! b = stored "owned_profiles" "bio"
-            let! s = stored "owned_settings" "theme"
+            let! b = storedValue "owned_profiles" "bio"
+            let! s = storedValue "owned_settings" "theme"
             equal bio b "stored bio"
             equal t s "stored theme"
         }
@@ -244,7 +249,7 @@ type OwnedOneSteps(w: World) =
     [<StepDefinition("^the profiles table holds \"(\\w+)\" for that Account$")>]
     member _.HoldsBio(bio: string) =
         task {
-            let! b = stored "owned_profiles" "bio"
+            let! b = storedValue "owned_profiles" "bio"
             equal bio b "stored bio"
         }
         |> unit
@@ -304,15 +309,13 @@ type OwnedOneSteps(w: World) =
         }
         |> unit
 
-    [<StepDefinition("I build a model of Accounts without ownsOne")>]
-    member _.WithoutOwnsOne() =
-        let bare = schema<Account> "owned_accounts" { identityKey (fun a -> a.Id); ownsOptional (fun a -> a.Profile) (fun p -> p.Account) }
-
-        match Model.buildSchemas [] [ bare; profiles; settings ] with
+    [<StepDefinition("I build a model of Accounts whose Settings do not hold the account's key")>]
+    member _.LooseSettings() =
+        match Model.build [] [ typeof<LooseAccount>; typeof<LooseSettings> ] with
         | Ok _ -> failwith "the model was built"
         | Error errors -> w.Set("accountRefusal", errors)
 
-    [<StepDefinition("^the model is refused for (\\w+), saying to declare ownsOne$")>]
-    member _.RefusedOwnsOne(field: string) =
+    [<StepDefinition("^the model is refused for (\\w+), saying how to make it owned$")>]
+    member _.RefusedNotOwned(field: string) =
         let errors = w.Get<ConfigError list> "accountRefusal"
-        check (errors |> List.exists (fun e -> e.Property = Some field && e.Message.Contains "ownsOne")) $"%A{errors}"
+        check (errors |> List.exists (fun e -> e.Property = Some field && e.Message.Contains "to make it owned")) $"%A{errors}"

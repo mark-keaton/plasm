@@ -11,22 +11,17 @@ module LinkedTags =
     type TagId = TagId of int64
     type CardId = CardId of int64
 
+    [<Table "tags">]
     type Tag = { Id: TagId; Name: string }
 
+    [<Table "cards">]
     type Card =
         { Id: CardId
           Title: string
+          [<JoinTable "card_tags"; OrderedBy(nameof the<Tag>.Name)>]
           Tags: Tag list }
 
-    let tags = schema<Tag> "tags" { identityKey (fun t -> t.Id) }
-
-    let cards =
-        schema<Card> "cards" {
-            identityKey (fun c -> c.Id)
-            linksOrderedBy (fun c -> c.Tags) "card_tags" "card_id" "tag_id" (fun t -> t.Name)
-        }
-
-    let model = Model.buildSchemasOrFail [] [ cards; tags ]
+    let model = Model.buildOrFail [] [ typeof<Card>; typeof<Tag> ]
 
     let tables =
         "drop table if exists card_tags; drop table if exists cards cascade; drop table if exists tags cascade;
@@ -50,7 +45,7 @@ type LinkedSteps(w: World) =
 
     let tagsNamed (ns: string list) =
         task {
-            let! r = repo().All(plasm { for t in tags do orderBy t.Name })
+            let! r = repo().All(plasm { for t in stored<Tag> do orderBy t.Name })
             let all = ok r
             return ns |> List.map (fun n -> all |> List.find (fun t -> t.Name = n))
         }
@@ -63,7 +58,7 @@ type LinkedSteps(w: World) =
 
     let readOne () =
         task {
-            let! r = repo().All(plasm { for c in cards do orderBy c.Id })
+            let! r = repo().All(plasm { for c in stored<Card> do orderBy c.Id })
             return ok r |> List.exactlyOne
         }
 
@@ -110,7 +105,7 @@ type LinkedSteps(w: World) =
     member _.Read() =
         task {
             w.MarkCommands()
-            let! r = repo().All(plasm { for c in cards do orderBy c.Id })
+            let! r = repo().All(plasm { for c in stored<Card> do orderBy c.Id })
             w.Set("cards", ok r)
         }
         |> unit
@@ -128,7 +123,7 @@ type LinkedSteps(w: World) =
     [<StepDefinition("I keep the cards where List.exists \\(fun t -> t.Name = \"bug\"\\) over their tags")>]
     member _.Exists() =
         task {
-            let! r = repo().All(plasm { for c in cards do where (List.exists (fun t -> t.Name = "bug") c.Tags) })
+            let! r = repo().All(plasm { for c in stored<Card> do where (List.exists (fun t -> t.Name = "bug") c.Tags) })
             w.Set("kept", ok r)
         }
         |> unit
@@ -136,7 +131,7 @@ type LinkedSteps(w: World) =
     [<StepDefinition("I keep the cards where List.forall \\(fun t -> t.Name <> \"bug\"\\) over their tags")>]
     member _.ForAll() =
         task {
-            let! r = repo().All(plasm { for c in cards do where (c.Tags |> List.forall (fun t -> t.Name <> "bug")) })
+            let! r = repo().All(plasm { for c in stored<Card> do where (c.Tags |> List.forall (fun t -> t.Name <> "bug")) })
             w.Set("kept", ok r)
         }
         |> unit

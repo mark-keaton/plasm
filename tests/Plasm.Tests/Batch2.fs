@@ -22,7 +22,7 @@ let private invalidQuery (r: Result<'a, TranslationError>) =
 [<Fact>]
 let ``countDistinct renders COUNT DISTINCT and sum is zero for no rows`` () =
     plasm {
-        for o in orders do
+        for o in stored<Order> do
             select (Agg.countDistinct o.CustomerId, Agg.sum o.Total)
     }
     |> projectionSql
@@ -38,7 +38,7 @@ let ``aggregates of domain types come back as the domain type`` () =
         let! r =
             db.Repo.One(
                 plasm {
-                    for o in orders do
+                    for o in stored<Order> do
                         select (Agg.min o.Id, Agg.max o.Id, Agg.max o.PlacedAt, Agg.min o.Status)
                 }
             )
@@ -49,7 +49,7 @@ let ``aggregates of domain types come back as the domain type`` () =
 [<Fact>]
 let ``nested aggregates are rejected`` () =
     plasm {
-        for o in orders do
+        for o in stored<Order> do
             select (Agg.max (Agg.sum o.Total))
     }
     |> offlineRepo.Explain
@@ -60,7 +60,7 @@ let ``nested aggregates are rejected`` () =
 [<Fact>]
 let ``a grouped query without select cannot be read as records`` () =
     plasm {
-        for o in orders do
+        for o in stored<Order> do
             groupBy o.CustomerId
     }
     |> explain
@@ -70,7 +70,7 @@ let ``a grouped query without select cannot be read as records`` () =
 [<Fact>]
 let ``ordering a grouped query by an ungrouped column is rejected`` () =
     plasm {
-        for o in orders do
+        for o in stored<Order> do
             groupBy o.CustomerId
             orderBy o.Total
             select (o.CustomerId, Agg.count ())
@@ -82,7 +82,7 @@ let ``ordering a grouped query by an ungrouped column is rejected`` () =
 [<Fact>]
 let ``paging groups appends the grouping keys as the tiebreaker`` () =
     plasm {
-        for o in orders do
+        for o in stored<Order> do
             groupBy (o.CustomerId, o.Status)
             orderByDescending (Agg.count ())
             take 10
@@ -103,8 +103,8 @@ let ``count and exists over joins, pages and groups`` () =
 
         let joined =
             plasm {
-                for o in orders do
-                    join c in customers on (o.CustomerId = Some c.Id)
+                for o in stored<Order> do
+                    join c in stored<Customer> on (o.CustomerId = Some c.Id)
                     where (c.Name = "Ada")
             }
 
@@ -113,14 +113,14 @@ let ``count and exists over joins, pages and groups`` () =
 
         let groups =
             plasm {
-                for o in orders do
+                for o in stored<Order> do
                     groupBy o.CustomerId
             }
 
         let! g = db.Repo.Count groups
         Assert.Equal(2L, ok g)
 
-        let! e = db.Repo.Exists(plasm { for o in orders do orderBy o.Id; skip 3 })
+        let! e = db.Repo.Exists(plasm { for o in stored<Order> do orderBy o.Id; skip 3 })
         Assert.False(ok e)
     }
 
@@ -137,8 +137,8 @@ let ``a bulk update can clear an optional field and filter through a relationshi
 
         let withPayments =
             plasm {
-                for o in orders do
-                    where (exists (plasm { for p in payments do where (p.OrderId = o.Id && p.Status = Succeeded) }))
+                for o in stored<Order> do
+                    where (exists (plasm { for p in stored<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) }))
             }
 
         let bulk = Bulk.update (withPayments, fun o -> { o with CancellationReason = None })
@@ -160,7 +160,7 @@ let ``a bulk delete blocked by a foreign key is a classified failure`` () =
         let! db = freshDefault ()
         let! o = Seed.order db None "draft" 1m (Seed.at 1)
         let! _ = Seed.payment db o 1m "pending" (Seed.at 1)
-        let! r = db.Repo.Transact(Tx.execute (Bulk.delete (Query.from orders)): Tx<_, unit>)
+        let! r = db.Repo.Transact(Tx.execute (Bulk.delete (Query.from (stored<Order>))): Tx<_, unit>)
 
         match r with
         | Error { Failure = TxFailure.Failed(DbError.Database f) } -> Assert.Equal(DbFailureKind.ForeignKeyViolation, f.Kind)
@@ -169,7 +169,7 @@ let ``a bulk delete blocked by a foreign key is a classified failure`` () =
 
 [<Fact>]
 let ``bulk writes reject versions, relationships and empty changes`` () =
-    let all = Query.from orders
+    let all = Query.from (stored<Order>)
 
     let message (b: BulkWrite<int>) = offlineRepo.Explain b |> invalidQuery
 
@@ -177,7 +177,7 @@ let ``bulk writes reject versions, relationships and empty changes`` () =
     Assert.Contains("owned or linked list", message (Bulk.update (all, fun o -> { o with Lines = [] })))
     Assert.Contains("must return a copy of the row", message (Bulk.update (all, fun o -> o)))
     Assert.Contains("assigns no field", message (Bulk.update (all, fun o -> { o with Total = o.Total })))
-    Assert.Contains("joins are not supported", message (Bulk.delete (plasm { for o in orders do join c in customers on (o.CustomerId = Some c.Id); where (c.Name = "x") })))
+    Assert.Contains("joins are not supported", message (Bulk.delete (plasm { for o in stored<Order> do join c in stored<Customer> on (o.CustomerId = Some c.Id); where (c.Name = "x") })))
 
 [<Fact>]
 let ``an empty bulk insert sends nothing`` () =
@@ -254,7 +254,7 @@ let ``a tuple with the wrong arity is a materialization error`` () =
 [<Fact>]
 let ``fragments can be projected and escape percent signs`` () =
     plasm {
-        for o in orders do
+        for o in stored<Order> do
             select (o.Id, Raw.fragment<int> "{0} %% 7" o.Total)
     }
     |> projectionSql
@@ -272,7 +272,7 @@ let ``prepared string patterns are escaped per call`` () =
         let named =
             Query.prepare (fun (prefix: Arg<string>) ->
                 plasm {
-                    for c in customers do
+                    for c in stored<Customer> do
                         where (c.Name.StartsWith prefix.Value)
                 })
 
@@ -292,7 +292,7 @@ let ``prepared queries run in transactions and with three arguments`` () =
         let between =
             Query.prepare3 (fun (lo: Arg<decimal>) (hi: Arg<decimal>) (status: Arg<OrderStatus>) ->
                 plasm {
-                    for o in orders do
+                    for o in stored<Order> do
                         where (o.Total >= lo.Value && o.Total <= hi.Value && o.Status = status.Value)
                 })
 
@@ -307,7 +307,7 @@ let ``prepared paging rejects negative counts when bound`` () =
     let page =
         Query.prepare (fun (n: Arg<int>) ->
             plasm {
-                for o in orders do
+                for o in stored<Order> do
                     orderBy o.Id
                     take n.Value
             })
@@ -319,7 +319,7 @@ let ``take accepts computed counts and rejects expressions of arguments`` () =
     let size, pageNo = 10, 3
 
     plasm {
-        for o in orders do
+        for o in stored<Order> do
             orderBy o.Id
             take (size * pageNo)
     }
@@ -330,7 +330,7 @@ let ``take accepts computed counts and rejects expressions of arguments`` () =
         Assert.Throws<InvalidOperationException>(fun () ->
             Query.prepare (fun (n: Arg<int>) ->
                 plasm {
-                    for o in orders do
+                    for o in stored<Order> do
                         orderBy o.Id
                         take (n.Value * 2)
                 })
@@ -348,7 +348,7 @@ let ``expressions of arguments are compiled into bound parameters`` () =
         let over =
             Query.prepare (fun (n: Arg<int>) ->
                 plasm {
-                    for o in orders do
+                    for o in stored<Order> do
                         where (o.Total > decimal (n.Value * 10))
                 })
 
@@ -359,17 +359,19 @@ let ``expressions of arguments are compiled into bound parameters`` () =
 
 // -- Batch 2b: many-to-many, schema check, sandbox -------------------------------
 
+module BlankJoin =
+    [<Table "articles">]
+    type ArticleBlankJoin =
+        { Id: ArticleId
+          Title: string
+          [<JoinTable "">]
+          Tags: Tag list }
+
 [<Fact>]
 let ``links requires a join table name`` () =
     // An empty join table name is a configuration error naming the list.
     let r =
-        Model.buildSchemas
-            Schemas.scalars
-            [ schema<Article> "articles" {
-                  identityKey (fun a -> a.Id)
-                  links (fun a -> a.Tags) "" "article_id" "tag_id"
-              }
-              Schemas.tags ]
+        Model.build Schemas.scalars [ typeof<BlankJoin.ArticleBlankJoin>; typeof<Tag> ]
 
     match r with
     | Error es -> Assert.Contains(es, fun e -> e.Property = Some "Tags" && e.Message.Contains "join table")
@@ -430,7 +432,7 @@ let ``a failed write inside a sandbox transaction step leaves the sandbox usable
                         )
 
                     Assert.True(Result.isError failed)
-                    let! all = repo.All(Query.from customers)
+                    let! all = repo.All(Query.from (stored<Customer>))
                     return ok all |> List.map (fun c -> c.Name)
                 })
 

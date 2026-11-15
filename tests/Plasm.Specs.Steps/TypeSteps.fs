@@ -10,6 +10,7 @@ open Plasm.TestDomain.Database
 /// A record with a field type that has no persistence mapping.
 type Address = { Street: string; City: string }
 
+[<Table "shipments">]
 type Shipment =
     { Id: int64
       Destination: Address
@@ -42,9 +43,9 @@ type TypeSteps(w: World) =
 
     [<StepDefinition("I attempt to compare Total with an incompatible value")>]
     member _.CompareIncompatible() =
-        w.Set("snippets", [ "let q = plasm { for o in orders do where (o.Total > \"100\") }", "FS0001"
-                            "let q = plasm { for o in orders do where (o.Total = Some 100m) }", "FS0001" ])
-        w.Set("control", "let q = plasm { for o in orders do where (o.Total > 100m) }")
+        w.Set("snippets", [ "let q = plasm { for o in stored<Order> do where (o.Total > \"100\") }", "FS0001"
+                            "let q = plasm { for o in stored<Order> do where (o.Total = Some 100m) }", "FS0001" ])
+        w.Set("control", "let q = plasm { for o in stored<Order> do where (o.Total > 100m) }")
 
     [<StepDefinition("the expression is rejected at compile time")>]
     member _.RejectedAtCompileTime() =
@@ -58,18 +59,15 @@ type TypeSteps(w: World) =
 
     // Scenario: Relationship loads are checked against the source type
 
-    [<StepDefinition("I attempt to declare that Orders own a relationship not defined for them")>]
+    [<StepDefinition("I attempt to order the lines an Order owns by a field they do not have")>]
     member _.OwnUndefined() =
-        let declare body = $"let s = schema<Order> \"orders\" {{ identityKey (fun o -> o.Id); {body} }}"
+        // What an Order owns is its field's type; the one name an owned list
+        // takes is the field it is ordered by, written with nameof.
+        let declare field =
+            $"[<Table \"orders\">]\ntype Ordered = {{ Id: OrderId; [<OrderedBy(nameof the<OrderLine>.{field})>] Lines: OrderLine list }}"
 
-        w.Set(
-            "snippets",
-            [ declare "owns (fun o -> o.Product) (fun l -> l.OrderId)", "FS0039"
-              declare "owns (fun o -> o.Total) (fun l -> l.OrderId)", "FS0001"
-              declare "owns (fun o -> o.Lines) (fun (p: Payment) -> p.OrderId)", "FS0001" ]
-        )
-
-        w.Set("control", declare "owns (fun o -> o.Lines) (fun l -> l.OrderId)")
+        w.Set("snippets", [ declare "Price", "FS0039" ])
+        w.Set("control", declare "UnitPrice")
 
     [<StepDefinition("the declaration is rejected at compile time")>]
     member _.OwnRejected() =
@@ -98,7 +96,7 @@ type TypeSteps(w: World) =
     [<StepDefinition("I read an Order without a CancellationReason")>]
     member _.ReadWithout() =
         task {
-            let! all = w.Repo.All(plasm { for o in Schemas.orders do orderBy o.Id })
+            let! all = w.Repo.All(plasm { for o in stored<Order> do orderBy o.Id })
             w.Set("orders", ok all)
         }
         |> unit
@@ -119,12 +117,12 @@ type TypeSteps(w: World) =
 
     [<StepDefinition("a model contains a type without a configured persistence mapping")>]
     member _.UnmappedType() =
-        w.Set("shipments", schema<Shipment> "shipments" { key (fun s -> s.Id) })
+        w.Set("shipments", typeof<Shipment>)
 
     [<StepDefinition("I validate the persistence configuration")>]
     member _.Validate() =
-        let shipments: Schema<Shipment> = w.Get "shipments"
-        w.Set("config", Model.buildSchemas Schemas.scalars (Schemas.all @ [ shipments ]))
+        let shipments: System.Type = w.Get "shipments"
+        w.Set("config", Model.build Schemas.scalars (Schemas.roots @ [ shipments ]))
 
     [<StepDefinition("configuration fails with the model and property identified")>]
     member _.ConfigFails() =

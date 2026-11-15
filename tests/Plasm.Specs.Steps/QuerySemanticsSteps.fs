@@ -27,7 +27,7 @@ type QuerySemanticsSteps(w: World) =
 
     let everyOrder () =
         task {
-            let! r = w.Repo.All(plasm { for o in Schemas.orders do orderBy o.Id })
+            let! r = w.Repo.All(plasm { for o in stored<Order> do orderBy o.Id })
             return ok r
         }
 
@@ -63,7 +63,7 @@ type QuerySemanticsSteps(w: World) =
     member _.NotForCustomer() =
         let ada: CustomerId = w.Get "ada"
 
-        compare "single" (plasm { for o in Schemas.orders do where (not (o.CustomerId = Some ada)) }) (fun o ->
+        compare "single" (plasm { for o in stored<Order> do where (not (o.CustomerId = Some ada)) }) (fun o ->
             not (o.CustomerId = Some ada))
         |> unit
 
@@ -85,16 +85,16 @@ type QuerySemanticsSteps(w: World) =
             let negated, different, predicate =
                 match field with
                 | "CustomerId" ->
-                    plasm { for o in Schemas.orders do where (not (o.CustomerId = Some ada)) },
-                    plasm { for o in Schemas.orders do where (o.CustomerId <> Some ada) },
+                    plasm { for o in stored<Order> do where (not (o.CustomerId = Some ada)) },
+                    plasm { for o in stored<Order> do where (o.CustomerId <> Some ada) },
                     (fun (o: Order) -> o.CustomerId <> Some ada)
                 | "CancellationReason" ->
-                    plasm { for o in Schemas.orders do where (not (o.CancellationReason = Some "late")) },
-                    plasm { for o in Schemas.orders do where (o.CancellationReason <> Some "late") },
+                    plasm { for o in stored<Order> do where (not (o.CancellationReason = Some "late")) },
+                    plasm { for o in stored<Order> do where (o.CancellationReason <> Some "late") },
                     (fun (o: Order) -> o.CancellationReason <> Some "late")
                 | "Status" ->
-                    plasm { for o in Schemas.orders do where (not (o.Status = Published)) },
-                    plasm { for o in Schemas.orders do where (o.Status <> Published) },
+                    plasm { for o in stored<Order> do where (not (o.Status = Published)) },
+                    plasm { for o in stored<Order> do where (o.Status <> Published) },
                     (fun (o: Order) -> o.Status <> Published)
                 | f -> failwithf "unknown field %s" f
 
@@ -119,7 +119,7 @@ type QuerySemanticsSteps(w: World) =
 
         compare
             "single"
-            (plasm { for o in Schemas.orders do where (not (o.CustomerId = Some ada && o.Status = Published)) })
+            (plasm { for o in stored<Order> do where (not (o.CustomerId = Some ada && o.Status = Published)) })
             (fun o -> not (o.CustomerId = Some ada && o.Status = Published))
         |> unit
 
@@ -132,14 +132,14 @@ type QuerySemanticsSteps(w: World) =
             match container with
             | "array" ->
                 let statuses = [| Published |]
-                plasm { for o in Schemas.orders do where (Array.contains o.Status statuses) }, (fun () -> statuses.[0] <- Draft)
+                plasm { for o in stored<Order> do where (Array.contains o.Status statuses) }, (fun () -> statuses.[0] <- Draft)
             | "reference" ->
                 let status = ref Published
-                plasm { for o in Schemas.orders do where (o.Status = status.Value) }, (fun () -> status.Value <- Draft)
+                plasm { for o in stored<Order> do where (o.Status = status.Value) }, (fun () -> status.Value <- Draft)
             | "ResizeArray" ->
                 let statuses = ResizeArray [ Published ]
 
-                plasm { for o in Schemas.orders do where (statuses.Contains o.Status) },
+                plasm { for o in stored<Order> do where (statuses.Contains o.Status) },
                 (fun () ->
                     statuses.Clear()
                     statuses.Add Draft)
@@ -171,7 +171,7 @@ type QuerySemanticsSteps(w: World) =
         task {
             let statuses = [ Published; Cancelled ]
             let ada: CustomerId = w.Get "ada"
-            let q = plasm { for o in Schemas.orders do where (List.contains o.Status statuses && o.CustomerId = Some ada) }
+            let q = plasm { for o in stored<Order> do where (List.contains o.Status statuses && o.CustomerId = Some ada) }
             let repo = w.Db.RepoWith()
             let! _ = repo.All q
             let! _ = repo.All q
@@ -184,7 +184,7 @@ type QuerySemanticsSteps(w: World) =
 
     [<StepDefinition("I explain a query that negates a comparison of a required field")>]
     member _.ExplainRequiredNot() =
-        w.Set("sql", (w.Repo.Explain(plasm { for o in Schemas.orders do where (not (o.Total > 15m)) }) |> ok).Sql)
+        w.Set("sql", (w.Repo.Explain(plasm { for o in stored<Order> do where (not (o.Total > 15m)) }) |> ok).Sql)
 
     [<StepDefinition("the SQL negates it with NOT, so an index on the field can still be used")>]
     member _.PlainNot() =
@@ -195,7 +195,7 @@ type QuerySemanticsSteps(w: World) =
     member _.Clock() =
         task {
             let repo = w.Db.RepoWith(includeParameterValues = true)
-            let q = plasm { for o in Schemas.orders do where (o.PlacedAt < System.DateTime.UtcNow) }
+            let q = plasm { for o in stored<Order> do where (o.PlacedAt < System.DateTime.UtcNow) }
             w.MarkCommands()
             let! _ = repo.All q
             // Diagnostics record times to the second.
@@ -219,10 +219,10 @@ type QuerySemanticsSteps(w: World) =
         let query, change =
             match container with
             | "array" ->
-                plasm { for o in Schemas.orders do where (Array.contains o.Status ModuleLevel.statuses) },
+                plasm { for o in stored<Order> do where (Array.contains o.Status ModuleLevel.statuses) },
                 (fun () -> ModuleLevel.statuses.[0] <- Draft)
             | _ ->
-                plasm { for o in Schemas.orders do where (ModuleLevel.statusList.Contains o.Status) },
+                plasm { for o in stored<Order> do where (ModuleLevel.statusList.Contains o.Status) },
                 (fun () ->
                     ModuleLevel.statusList.Clear()
                     ModuleLevel.statusList.Add Draft)
@@ -253,13 +253,13 @@ type QuerySemanticsSteps(w: World) =
             let query =
                 if direction = "ascending" then
                     plasm {
-                        for o in Schemas.orders do
+                        for o in stored<Order> do
                             orderBy o.Status
                             thenBy o.Id
                     }
                 else
                     plasm {
-                        for o in Schemas.orders do
+                        for o in stored<Order> do
                             orderByDescending o.Status
                             thenBy o.Id
                     }
@@ -286,10 +286,10 @@ type QuerySemanticsSteps(w: World) =
     member _.CompareStatus(comparison: string) =
         let query, predicate =
             match comparison with
-            | "<" -> plasm { for o in Schemas.orders do where (o.Status < Published) }, (fun (o: Order) -> o.Status < Published)
-            | "<=" -> plasm { for o in Schemas.orders do where (o.Status <= Published) }, (fun o -> o.Status <= Published)
-            | ">" -> plasm { for o in Schemas.orders do where (o.Status > Published) }, (fun o -> o.Status > Published)
-            | _ -> plasm { for o in Schemas.orders do where (o.Status >= Published) }, (fun o -> o.Status >= Published)
+            | "<" -> plasm { for o in stored<Order> do where (o.Status < Published) }, (fun (o: Order) -> o.Status < Published)
+            | "<=" -> plasm { for o in stored<Order> do where (o.Status <= Published) }, (fun o -> o.Status <= Published)
+            | ">" -> plasm { for o in stored<Order> do where (o.Status > Published) }, (fun o -> o.Status > Published)
+            | _ -> plasm { for o in stored<Order> do where (o.Status >= Published) }, (fun o -> o.Status >= Published)
 
         compare "single" query predicate |> unit
 
@@ -299,7 +299,7 @@ type QuerySemanticsSteps(w: World) =
             let before =
                 Query.prepare (fun (status: Arg<OrderStatus>) ->
                     plasm {
-                        for o in Schemas.orders do
+                        for o in stored<Order> do
                             where (o.Status < status.Value)
                             orderBy o.Id
                     })
@@ -316,7 +316,7 @@ type QuerySemanticsSteps(w: World) =
     [<StepDefinition("I select the minimum and maximum Status of the Orders")>]
     member _.MinMaxStatus() =
         task {
-            let! r = w.Repo.All(plasm { for o in Schemas.orders do select (Agg.min o.Status, Agg.max o.Status) })
+            let! r = w.Repo.All(plasm { for o in stored<Order> do select (Agg.min o.Status, Agg.max o.Status) })
             w.Set("minMax", ok r)
         }
         |> unit
@@ -327,7 +327,7 @@ type QuerySemanticsSteps(w: World) =
 
     [<StepDefinition("I explain a query that orders Orders by Status")>]
     member _.ExplainOrderByStatus() =
-        w.Set("sql", (w.Repo.Explain(plasm { for o in Schemas.orders do orderBy o.Status }) |> ok).Sql)
+        w.Set("sql", (w.Repo.Explain(plasm { for o in stored<Order> do orderBy o.Status }) |> ok).Sql)
 
     [<StepDefinition("the SQL orders by the position of each stored name in the declaration")>]
     member _.OrdersByPosition() =

@@ -36,7 +36,7 @@ type ErrorModelSteps(w: World) =
     member _.ReadThrough() =
         task {
             try
-                let! r = w.Get<Repo>("closedRepo").All(plasm { for c in Schemas.customers do orderBy c.Name })
+                let! r = w.Get<Repo>("closedRepo").All(plasm { for c in stored<Customer> do orderBy c.Name })
                 w.Set("closedRead", (Choice1Of2 r: Choice<_, exn>))
             with ex ->
                 w.Set("closedRead", (Choice2Of2 ex: Choice<Result<Customer list, DbError>, exn>))

@@ -18,7 +18,7 @@ let seedOrderWithLines (db: TestDb) n =
         let! p = Seed.product db "A"
         let! o = Seed.order db None "draft" 10m (Seed.at 1)
         let! ls = [ for i in 1..n -> Seed.line db o p i 1m ] |> Threading.Tasks.Task.WhenAll
-        let! r = db.Repo.All(Query.from orders)
+        let! r = db.Repo.All(Query.from (stored<Order>))
         return p, (ok r).Head, ls
     }
 
@@ -28,13 +28,13 @@ let seedOrderWithLines (db: TestDb) n =
 let ``One returns None, Some, or an error for several rows`` () =
     task {
         let! db = freshDefault ()
-        let! none = db.Repo.One(Query.from orders)
+        let! none = db.Repo.One(Query.from (stored<Order>))
         Assert.Equal(None, ok none)
         let! o = Seed.order db None "draft" 1m (Seed.at 1)
-        let! one = db.Repo.One(Query.from orders)
+        let! one = db.Repo.One(Query.from (stored<Order>))
         Assert.Equal(Some o, ok one |> Option.map (fun x -> x.Id))
         let! _ = Seed.order db None "draft" 1m (Seed.at 2)
-        let! many = db.Repo.One(Query.from orders)
+        let! many = db.Repo.One(Query.from (stored<Order>))
         Assert.True(Result.isError many)
     }
 
@@ -44,11 +44,11 @@ let ``projections read only projected columns and rebuild tuples, anonymous reco
         let! db = freshDefault ()
         let! o = Seed.order db None "draft" 10m (Seed.at 1)
         db.Recorder.Clear()
-        let! a = db.Repo.All(plasm { for x in orders do select (x.Id, x.Total) })
+        let! a = db.Repo.All(plasm { for x in stored<Order> do select (x.Id, x.Total) })
         Assert.Equal<(OrderId * decimal) list>([ o, 10m ], ok a)
         let sql = db.Recorder.Events.Head.Sql
         notContains "placed_at" sql
-        let! b = db.Repo.All(plasm { for x in orders do select {| Id = x.Id; Reason = x.CancellationReason; Double = x.Total * 2m; Tag = "k" |} })
+        let! b = db.Repo.All(plasm { for x in stored<Order> do select {| Id = x.Id; Reason = x.CancellationReason; Double = x.Total * 2m; Tag = "k" |} })
         let row = (ok b).Head
         Assert.Equal(o, row.Id)
         Assert.Equal(None, row.Reason)
@@ -63,7 +63,7 @@ let ``a persisted value rejected by its domain constructor is a materialization 
         let! p = Seed.product db "A"
         let! o = Seed.order db None "draft" 1m (Seed.at 1)
         let! _ = Seed.line db o p 0 1m
-        let! r = db.Repo.All(Query.from orderLines)
+        let! r = db.Repo.All(Query.from (stored<OrderLine>))
 
         match r with
         | Error(DbError.Materialization m) ->
@@ -77,7 +77,7 @@ let ``a persisted value rejected by its domain constructor is a materialization 
 let ``connection failures are classified as infrastructure failures`` () =
     task {
         let repo = Repo(Schemas.model, Postgres.connect "Host=127.0.0.1;Port=1;Timeout=2")
-        let! r = repo.All(Query.from orders)
+        let! r = repo.All(Query.from (stored<Order>))
 
         match r with
         | Error(DbError.Database f) -> Assert.Equal(DbFailureKind.ConnectionFailure, f.Kind)
@@ -100,7 +100,7 @@ let ``snapshot reads do not see writes committed between commands`` () =
                 (Seed.line db o p 1 1m).GetAwaiter().GetResult() |> ignore
 
         let repo = Repo(db.Model, db.Provider, { OnCommand = Some inject; IncludeParameterValues = false })
-        let q = Query.from orders
+        let q = Query.from (stored<Order>)
         let! snap = repo.All(q, ReadConsistency.Snapshot)
         Assert.Equal<OrderLine list>([], (ok snap).Head.Lines)
         injected <- false
@@ -115,7 +115,7 @@ let ``changing the primary key or the version is rejected before writing`` () =
     task {
         let! db = freshDefault ()
         let! o = Seed.order db None "draft" 1m (Seed.at 1)
-        let! all = db.Repo.All(Query.from orders)
+        let! all = db.Repo.All(Query.from (stored<Order>))
         let order = (ok all).Head
         let! a = db.Repo.Transact(order |> edit (fun x -> { x with Id = OrderId 99L }))
         let! b = db.Repo.Transact(order |> edit (fun x -> { x with Version = 7 }))
@@ -172,7 +172,7 @@ let ``an owned item with a key its owner did not have is refused`` () =
         let! p = Seed.product db "B"
         let! otherId = Seed.order db None "draft" 5m (Seed.at 2)
         let! _ = Seed.line db otherId p 4 1m
-        let! all = db.Repo.All(Query.from orders)
+        let! all = db.Repo.All(Query.from (stored<Order>))
         let other = ok all |> List.find (fun o -> o.Id = otherId)
         // A line of another Order, copied into this one: not this Order's to write.
         let stolen = List.exactlyOne other.Lines
@@ -204,7 +204,7 @@ let ``cancellation propagates to a blocked database command`` () =
     task {
         let! db = freshDefault ()
         let! o = Seed.order db None "draft" 1m (Seed.at 1)
-        let! all = db.Repo.All(Query.from orders)
+        let! all = db.Repo.All(Query.from (stored<Order>))
         use locker = new Npgsql.NpgsqlConnection(db.ConnectionString)
         do! locker.OpenAsync()
         use tx = locker.BeginTransaction()

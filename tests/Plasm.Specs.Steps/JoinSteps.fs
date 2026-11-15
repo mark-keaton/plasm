@@ -9,15 +9,15 @@ open Plasm.TestDomain.Database
 module Joins =
     let withCustomers =
         plasm {
-            for o in Schemas.orders do
-                join c in Schemas.customers on (o.CustomerId = Some c.Id)
+            for o in stored<Order> do
+                join c in stored<Customer> on (o.CustomerId = Some c.Id)
                 orderBy o.Id
         }
 
     let withOptionalCustomers =
         plasm {
-            for o in Schemas.orders do
-                leftJoin c in Schemas.customers on (o.CustomerId = Some c.Id)
+            for o in stored<Order> do
+                leftJoin c in stored<Customer> on (o.CustomerId = Some c.Id)
                 orderBy o.Id
         }
 
@@ -159,14 +159,14 @@ type JoinSteps(w: World) =
     member _.MismatchedKeys() =
         w.Set(
             "snippets",
-            [ "let q = plasm { for o in orders do join c in customers on (o.CustomerId = c.Id); orderBy o.Id }"
-              "let q = plasm { for o in orders do join c in customers on (o.Id = c.Id); orderBy o.Id }" ]
+            [ "let q = plasm { for o in stored<Order> do join c in stored<Customer> on (o.CustomerId = c.Id); orderBy o.Id }"
+              "let q = plasm { for o in stored<Order> do join c in stored<Customer> on (o.Id = c.Id); orderBy o.Id }" ]
         )
 
     [<StepDefinition("the join is rejected at compile time")>]
     member _.JoinRejected() =
         task {
-            do! compiles "let q = plasm { for o in orders do join c in customers on (o.CustomerId = Some c.Id); orderBy o.Id }"
+            do! compiles "let q = plasm { for o in stored<Order> do join c in stored<Customer> on (o.CustomerId = Some c.Id); orderBy o.Id }"
 
             for code in w.Get<string list> "snippets" do
                 do! rejected code
@@ -181,8 +181,8 @@ type JoinSteps(w: World) =
             let! pairs =
                 run (
                     plasm {
-                        for o in Schemas.orders do
-                            join c in Schemas.customers on (o.CustomerId = Some c.Id)
+                        for o in stored<Order> do
+                            join c in stored<Customer> on (o.CustomerId = Some c.Id)
                             where (c.Name = "Ada")
                     }
                 )
@@ -264,8 +264,8 @@ type JoinSteps(w: World) =
             let! rows =
                 run (
                     plasm {
-                        for o in Schemas.orders do
-                            join p in Schemas.payments on (o.Id = p.OrderId)
+                        for o in stored<Order> do
+                            join p in stored<Payment> on (o.Id = p.OrderId)
                             where (o.Id = target)
                     }
                 )
@@ -288,8 +288,8 @@ type JoinSteps(w: World) =
             let! orders =
                 run (
                     plasm {
-                        for o in Schemas.orders do
-                            where (o.Id = target && exists (plasm { for p in Schemas.payments do where (p.OrderId = o.Id && p.Status = Succeeded) }))
+                        for o in stored<Order> do
+                            where (o.Id = target && exists (plasm { for p in stored<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) }))
                     }
                 )
 
@@ -316,8 +316,8 @@ type JoinSteps(w: World) =
         task {
             let page n =
                 plasm {
-                    for o in Schemas.orders do
-                        join p in Schemas.payments on (o.Id = p.OrderId)
+                    for o in stored<Order> do
+                        join p in stored<Payment> on (o.Id = p.OrderId)
                         orderBy p.Status // every row ties
                         skip (n * 4)
                         take 4
@@ -350,8 +350,8 @@ type JoinSteps(w: World) =
             let! r =
                 w.Repo.All(
                     plasm {
-                        for o in Schemas.orders do
-                            join p in Schemas.payments on (o.Id = p.OrderId)
+                        for o in stored<Order> do
+                            join p in stored<Payment> on (o.Id = p.OrderId)
                             take 4
                     }
                 )
@@ -386,9 +386,9 @@ type JoinSteps(w: World) =
             let! rows =
                 run (
                     plasm {
-                        for o in Schemas.orders do
-                            join l in Schemas.orderLines on (o.Id = l.OrderId)
-                            join p in Schemas.products on (l.ProductId = p.Id)
+                        for o in stored<Order> do
+                            join l in stored<OrderLine> on (o.Id = l.OrderId)
+                            join p in stored<Product> on (l.ProductId = p.Id)
                             orderBy l.Id
                     }
                 )
@@ -424,8 +424,8 @@ type JoinSteps(w: World) =
             let! r =
                 w.Repo.All(
                     plasm {
-                        for o in Schemas.orders do
-                            leftJoin c in Schemas.customers on (o.CustomerId = Some c.Id)
+                        for o in stored<Order> do
+                            leftJoin c in stored<Customer> on (o.CustomerId = Some c.Id)
                             orderBy o.Id
                             select (o.Id, c |> Option.map (fun c -> c.Name))
                     }
@@ -488,8 +488,8 @@ type JoinSteps(w: World) =
             let! r =
                 w.Repo.All(
                     plasm {
-                        for o in Schemas.orders do
-                            join c in Schemas.customers on (Joins.customerKeyOf o = Some c.Id)
+                        for o in stored<Order> do
+                            join c in stored<Customer> on (Joins.customerKeyOf o = Some c.Id)
                             orderBy o.Id
                     }
                 )

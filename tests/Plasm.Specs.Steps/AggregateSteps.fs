@@ -12,7 +12,7 @@ type AggregateSteps(w: World) =
 
     let published =
         plasm {
-            for o in Schemas.orders do
+            for o in stored<Order> do
                 where (o.Status = Published)
         }
 
@@ -91,7 +91,7 @@ type AggregateSteps(w: World) =
             let! r =
                 w.Repo.Exists(
                     plasm {
-                        for o in Schemas.orders do
+                        for o in stored<Order> do
                             where (o.Status = s)
                     }
                 )
@@ -158,7 +158,7 @@ type AggregateSteps(w: World) =
             let! r =
                 w.Repo.One(
                     plasm {
-                        for o in Schemas.orders do
+                        for o in stored<Order> do
                             where (o.Total < 0m)
                             select (Agg.count (), Agg.sum o.Total, Agg.min o.Total, Agg.max o.Total, Agg.avg o.Total)
                     }
@@ -189,14 +189,14 @@ type AggregateSteps(w: World) =
     member _.BadAggregates() =
         w.Set(
             "snippets",
-            [ "let q = plasm { for c in customers do select (Agg.sum c.Name) }"
-              "let q = plasm { for o in orders do select (Agg.avg o.Id) }" ]
+            [ "let q = plasm { for c in stored<Customer> do select (Agg.sum c.Name) }"
+              "let q = plasm { for o in stored<Order> do select (Agg.avg o.Id) }" ]
         )
 
     [<StepDefinition("the aggregate is rejected at compile time")>]
     member _.AggregateRejected() =
         task {
-            let control = "let q = plasm { for o in orders do select (Agg.count (), Agg.sum o.Total, Agg.avg o.Total, Agg.max o.PlacedAt) }"
+            let control = "let q = plasm { for o in stored<Order> do select (Agg.count (), Agg.sum o.Total, Agg.avg o.Total, Agg.max o.PlacedAt) }"
             let! r = CompileCheck.check control
             check r.Compiles ("expected to compile:\n" + control + "\n" + String.concat "\n" r.Errors)
 
@@ -235,7 +235,7 @@ type AggregateSteps(w: World) =
             let! r =
                 w.Repo.All(
                     plasm {
-                        for o in Schemas.orders do
+                        for o in stored<Order> do
                             where o.CustomerId.IsSome
                             groupBy o.CustomerId
                             orderBy o.CustomerId
@@ -273,7 +273,7 @@ type AggregateSteps(w: World) =
             let! r =
                 w.Repo.All(
                     plasm {
-                        for o in Schemas.orders do
+                        for o in stored<Order> do
                             where o.CustomerId.IsSome
                             groupBy o.CustomerId
                             having (Agg.count () > 1L)
@@ -305,8 +305,8 @@ type AggregateSteps(w: World) =
             let! r =
                 w.Repo.All(
                     plasm {
-                        for o in Schemas.orders do
-                            join c in Schemas.customers on (o.CustomerId = Some c.Id)
+                        for o in stored<Order> do
+                            join c in stored<Customer> on (o.CustomerId = Some c.Id)
                             groupBy c.Name
                             orderByDescending (Agg.count ())
                             select (c.Name, Agg.count ())
@@ -336,7 +336,7 @@ type AggregateSteps(w: World) =
             let! r =
                 w.Repo.All(
                     plasm {
-                        for o in Schemas.orders do
+                        for o in stored<Order> do
                             groupBy o.CustomerId
                             select (o.CustomerId, o.Total)
                     }
@@ -359,7 +359,7 @@ type AggregateSteps(w: World) =
             let! r =
                 w.Repo.All(
                     plasm {
-                        for o in Schemas.orders do
+                        for o in stored<Order> do
                             where (Agg.count () > 1L)
                     }
                 )

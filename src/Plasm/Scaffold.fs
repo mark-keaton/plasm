@@ -3,15 +3,13 @@ namespace Plasm
 open System
 open System.Threading.Tasks
 
-/// F# source for a record and a schema that map one table, generated from the
-/// database catalogue by `repo.Scaffold`. Displays as the code itself.
+/// F# source for a record that says how one table stores it, generated from
+/// the database catalogue by `repo.Scaffold`. Displays as the code itself.
 [<StructuredFormatDisplay("{Display}")>]
 type Scaffold =
     { Table: string
       RecordName: string
-      /// The name of the schema value in the code (escaped if needed).
-      SchemaName: string
-      /// The record type and schema value, ready to paste or evaluate.
+      /// The record type, ready to paste or evaluate.
       Code: string }
 
     /// The code on its own lines, for F# Interactive.
@@ -88,9 +86,6 @@ module internal Scaffolding =
         elif word.EndsWith "s" && not (word.EndsWith "ss") then word.Substring(0, word.Length - 1)
         else word
 
-    let private camel (pascalName: string) =
-        string (Char.ToLowerInvariant pascalName.[0]) + pascalName.Substring 1
-
     let private generate (dialect: ISqlDialect) (table: string) (columns: Column list) =
         let fsharpType (c: Column) =
             candidates |> List.tryFind (fun (t, _) -> List.contains c.DataType (dialect.ColumnTypes t)) |> Option.map snd
@@ -102,14 +97,21 @@ module internal Scaffolding =
         else
 
         let recordName = pascal (singular table)
-        let schemaName = source (camel (pascal table))
+        let keys = mapped |> List.filter (fun c -> c.PrimaryKey)
+
+        // The key is the field named Id: the primary key column, or, without a
+        // single-column primary key, the first column for the reader to review.
+        let keyColumn =
+            match keys with
+            | [ k ] -> k
+            | _ -> List.head mapped
 
         // (property name, how it is written, F# type, column)
         let fields =
             mapped
             |> List.map (fun c ->
                 let t = (fsharpType c).Value
-                let name = pascal c.Name
+                let name = if c = keyColumn then "Id" else pascal c.Name
                 name, source name, (if c.Nullable then t + " option" else t), c)
 
         let comments =
@@ -123,45 +125,49 @@ module internal Scaffolding =
 
                 $"// {c.Name}: {c.DataType} has no F# type in this dialect, so it is left out.{consequence}")
 
-        let keys = mapped |> List.filter (fun c -> c.PrimaryKey)
-        let field (c: Column) = fields |> List.pick (fun (_, src, _, col) -> if col = c then Some src else None)
+        let integer (c: Column) =
+            match fsharpType c with
+            | Some("int16" | "int" | "int64") -> true
+            | _ -> false
 
-        let operations =
-            [ match keys with
-              | [ k ] when k.Identity -> $"identityKey (fun r -> r.{field k})"
-              | [ k ] -> $"key (fun r -> r.{field k})"
-              | _ ->
-                  let _, first, _, _ = List.head fields
-                  $"key (fun r -> r.{first}) // no single-column primary key: choose the key"
-              for name, src, _, c in fields do
-                  if Paths.snakeCase name <> c.Name then
-                      $"column (fun r -> r.{src}) \"{c.Name}\""
-
+        let notes =
+            [ if keys.Length <> 1 then
+                  $"// {keyColumn.Name} is the key only because {table} has no single-column primary key: choose the key, and name its field Id"
+              for name, _, _, c in fields do
                   if c.HasDefault && not c.Identity && not c.PrimaryKey then
-                      $"// {c.Name} has a default: add `generated (fun r -> r.{src})` to let the database set it" ]
+                      $"// {c.Name} has a default: mark {name} [<Generated>] to let the database set it" ]
+
+        let literal (text: string) = "\"" + text.Replace("\"", "\\\"") + "\""
+
+        let attributes (name: string) (c: Column) =
+            [ if Paths.snakeCase name <> c.Name then
+                  "Column " + literal c.Name
+              if c = keyColumn && integer c && not c.Identity then
+                  "Assigned" ]
 
         let record =
             fields
-            |> List.mapi (fun i (_, src, t, _) -> (if i = 0 then "    { " else "      ") + $"{src}: {t}")
+            |> List.mapi (fun i (name, src, t, c) ->
+                let attrs =
+                    match attributes name c with
+                    | [] -> ""
+                    | xs -> "[<" + String.concat "; " xs + ">] "
+
+                (if i = 0 then "    { " else "      ") + $"{attrs}{src}: {t}")
             |> String.concat "\n"
 
         let code =
             String.concat
                 "\n"
                 [ yield! comments
+                  yield! notes
+                  "[<Table " + literal table + ">]"
                   $"type {source recordName} ="
-                  record + " }"
-                  ""
-                  $"let {schemaName} ="
-                  $"    schema<{source recordName}> \"{table}\" {{"
-                  for op in operations do
-                      $"        {op}"
-                  "    }" ]
+                  record + " }" ]
 
         Ok
             { Table = table
               RecordName = recordName
-              SchemaName = schemaName
               Code = code }
 
     let run (table: string) (s: Execution.Session) : Task<Result<Scaffold, ScaffoldError>> =

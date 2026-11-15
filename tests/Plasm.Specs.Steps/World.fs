@@ -63,13 +63,13 @@ module Support =
 
     let published =
         plasm {
-            for o in Schemas.orders do
+            for o in stored<Order> do
                 where (o.Status = Published)
         }
 
     let successfulPayments =
         plasm {
-            for p in Schemas.payments do
+            for p in stored<Payment> do
                 where (p.Status = Succeeded)
                 orderBy p.CreatedAt
         }

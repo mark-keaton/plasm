@@ -14,6 +14,14 @@ type TableAttribute(name: string) =
     inherit Attribute()
     member _.Name = name
 
+/// The column a field is stored in, when it is not the field's name in snake
+/// case: for a table the application did not design, such as one scaffolded
+/// from an existing database.
+[<AttributeUsage(AttributeTargets.Property, AllowMultiple = false)>]
+type ColumnAttribute(name: string) =
+    inherit Attribute()
+    member _.Name = name
+
 /// The field's values are unique in the table. The database holds it with a
 /// unique constraint named <table>_<column>_key, and a duplicate comes back as
 /// the field's error.

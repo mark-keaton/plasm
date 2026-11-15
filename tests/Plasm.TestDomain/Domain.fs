@@ -34,13 +34,16 @@ type Quantity =
 
     static member unsafeOne = Quantity 1
 
+[<Table "customers">]
 type Customer =
     { Id: CustomerId
       Name: string
+      [<Unique>]
       Email: string }
 
 /// An Order owns its lines; its customer and its payments are other
 /// aggregates, referred to by id.
+[<Table "orders">]
 type Order =
     { Id: OrderId
       CustomerId: CustomerId option
@@ -48,21 +51,25 @@ type Order =
       Total: decimal
       CancellationReason: string option
       PlacedAt: DateTime
+      [<Version>]
       Version: int
       Lines: OrderLine list }
 
-and OrderLine =
+and [<Table "order_lines">] OrderLine =
     { Id: OrderLineId
       OrderId: OrderId
       ProductId: ProductId
       Quantity: Quantity
       UnitPrice: decimal }
 
+[<Table "products">]
 type Product =
     { Id: ProductId
+      [<Unique>]
       Sku: string
       Name: string }
 
+[<Table "payments">]
 type Payment =
     { Id: PaymentId
       OrderId: OrderId
@@ -74,12 +81,13 @@ type AccountId = AccountId of int64
 type ProfileId = ProfileId of int64
 
 /// An Account owns at most one Profile (the key is on the Profile).
+[<Table "accounts">]
 type Account =
     { Id: AccountId
       Name: string
       Profile: Profile option }
 
-and Profile =
+and [<Table "profiles">] Profile =
     { Id: ProfileId
       AccountId: AccountId
       Bio: string }
@@ -88,12 +96,14 @@ type ArticleId = ArticleId of int64
 type TagId = TagId of int64
 
 /// An Article links to shared Tags through article_tags.
+[<Table "articles">]
 type Article =
     { Id: ArticleId
       Title: string
+      [<JoinTable "article_tags">]
       Tags: Tag list }
 
-and Tag = { Id: TagId; Name: string }
+and [<Table "tags">] Tag = { Id: TagId; Name: string }
 
 let qty n =
     match Quantity.create n with
@@ -102,54 +112,17 @@ let qty n =
 
 module Schemas =
 
-    let customers =
-        schema<Customer> "customers" {
-            identityKey (fun c -> c.Id)
-            unique (fun c -> c.Email)
-        }
-
-    let orders =
-        schema<Order> "orders" {
-            identityKey (fun o -> o.Id)
-            version (fun o -> o.Version)
-            ownsOrderedBy (fun o -> o.Lines) (fun l -> l.OrderId) (fun l -> l.Id)
-        }
-
-    let orderLines = schema<OrderLine> "order_lines" { identityKey (fun l -> l.Id) }
-
-    let products =
-        schema<Product> "products" {
-            identityKey (fun p -> p.Id)
-            unique (fun p -> p.Sku)
-        }
-
-    let payments = schema<Payment> "payments" { identityKey (fun p -> p.Id) }
-
-    let articles =
-        schema<Article> "articles" {
-            identityKey (fun a -> a.Id)
-            linksOrderedBy (fun a -> a.Tags) "article_tags" "article_id" "tag_id" (fun t -> t.Id)
-        }
-
-    let tags = schema<Tag> "tags" { identityKey (fun t -> t.Id) }
-
-    let accounts =
-        schema<Account> "accounts" {
-            identityKey (fun a -> a.Id)
-            ownsOptional (fun a -> a.Profile) (fun p -> p.AccountId)
-        }
-
-    let profiles = schema<Profile> "profiles" { identityKey (fun p -> p.Id) }
-
     /// Every scalar is stored by convention: the ids are single-case unions,
     /// Quantity has a create function, and the statuses are fieldless unions
     /// stored as their names in snake_case.
     let scalars: ScalarMapping list = []
 
-    let all: ISchema list =
-        [ customers; orders; orderLines; products; payments; articles; tags; accounts; profiles ]
+    /// The records that are not owned; an Order's lines and an Account's
+    /// profile come with them.
+    let roots =
+        [ typeof<Customer>; typeof<Order>; typeof<Product>; typeof<Payment>; typeof<Article>; typeof<Tag>; typeof<Account> ]
 
-    let model = Model.buildSchemasOrFail scalars all
+    let model = Model.buildOrFail scalars roots
 
 /// Values used to build records before insert (generated fields are ignored).
 module New =

@@ -12,7 +12,7 @@ module Loads =
     let successfulPaymentsOf =
         Query.prepare (fun (ids: Arg<OrderId list>) ->
             plasm {
-                for p in Schemas.payments do
+                for p in stored<Payment> do
                     where (List.contains p.OrderId ids.Value && p.Status = Succeeded)
                     orderBy p.CreatedAt
             })
@@ -21,7 +21,7 @@ module Loads =
 [<Binding>]
 type LoadingSteps(w: World) =
 
-    let byId (id: OrderId) = plasm { for o in Schemas.orders do where (o.Id = id) }
+    let byId (id: OrderId) = plasm { for o in stored<Order> do where (o.Id = id) }
 
     let loadOrders (q: Query<Order>) =
         task {
@@ -83,7 +83,7 @@ type LoadingSteps(w: World) =
             let id: OrderId = w.Get "id"
             w.MarkCommands()
             let! os = loadOrders (byId id)
-            let! ps = w.Repo.All(plasm { for p in Schemas.payments do where (p.OrderId = id) })
+            let! ps = w.Repo.All(plasm { for p in stored<Payment> do where (p.OrderId = id) })
             w.Set("order", List.exactlyOne os)
             w.Set("orderPayments", ok ps)
         }
@@ -132,7 +132,7 @@ type LoadingSteps(w: World) =
     member _.ReadWithLines() =
         task {
             w.MarkCommands()
-            let! os = loadOrders (Query.from Schemas.orders)
+            let! os = loadOrders (Query.from (stored<Order>))
             w.Set("orders", os)
         }
         |> unit
@@ -175,7 +175,7 @@ type LoadingSteps(w: World) =
             w.Set(
                 "page",
                 plasm {
-                    for o in Schemas.orders do
+                    for o in stored<Order> do
                         orderBy o.PlacedAt
                         take 20
                 }
@@ -210,7 +210,7 @@ type LoadingSteps(w: World) =
             let! ids =
                 w.Repo.All(
                     plasm {
-                        for o in Schemas.orders do
+                        for o in stored<Order> do
                             orderBy o.PlacedAt
                             take 20
                             select o.Id
@@ -236,8 +236,8 @@ type LoadingSteps(w: World) =
             let! os =
                 loadOrders (
                     plasm {
-                        for o in Schemas.orders do
-                            where (exists (plasm { for p in Schemas.payments do where (p.OrderId = o.Id && p.Status = Succeeded) }))
+                        for o in stored<Order> do
+                            where (exists (plasm { for p in stored<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) }))
                     }
                 )
 
@@ -275,7 +275,7 @@ type LoadingSteps(w: World) =
     [<StepDefinition("I use it for the Payments of a page of Orders")>]
     member _.UseForPage() =
         task {
-            let! orders = loadOrders (plasm { for o in Schemas.orders do orderBy o.Id })
+            let! orders = loadOrders (plasm { for o in stored<Order> do orderBy o.Id })
             w.MarkCommands()
             let! ps = w.Repo.All(Loads.successfulPaymentsOf (orders |> List.map (fun o -> o.Id)))
             w.Set("orders", orders)
@@ -315,7 +315,7 @@ type LoadingSteps(w: World) =
                     let! _ = Seed.line w.Db id p k 1m
                     ()
 
-            let q = plasm { for o in Schemas.orders do orderBy o.Id }
+            let q = plasm { for o in stored<Order> do orderBy o.Id }
             let limited = w.Db.RepoWith(options = { MaxKeysPerCommand = 3 })
 
             w.Pending <-

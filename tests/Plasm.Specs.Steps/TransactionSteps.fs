@@ -142,7 +142,7 @@ type TransactionSteps(w: World) =
     member _.ReadWithVersion() =
         task {
             let! id = Seed.order w.Db None "draft" 10m (Seed.at 1)
-            let! r = w.Repo.One(plasm { for o in Schemas.orders do where (o.Id = id) })
+            let! r = w.Repo.One(plasm { for o in stored<Order> do where (o.Id = id) })
             let o = (ok r).Value
             equal 1 o.Version "read version"
             w.Set("order", o)
@@ -226,7 +226,7 @@ type TransactionSteps(w: World) =
                                     cmd.ExecuteNonQuery() |> ignore) }
                 )
 
-            let q = Query.from Schemas.orders
+            let q = Query.from (stored<Order>)
             let! snapshot = repoInterleaved().All(q, ReadConsistency.Snapshot)
             let! independent = repoInterleaved().All(q, ReadConsistency.Independent)
             w.Set("snapshot", ok snapshot)
@@ -249,7 +249,7 @@ type TransactionSteps(w: World) =
                 Repo(w.Db.Model, LimitedProvider(w.Db.Provider), { RepoOptions.Default with OnCommand = Some w.Db.Recorder.Record })
 
             w.MarkCommands()
-            let! r = repo.All(Query.from Schemas.orders, ReadConsistency.Snapshot)
+            let! r = repo.All(Query.from (stored<Order>), ReadConsistency.Snapshot)
 
             match r with
             | Error(DbError.Translation(TranslationError.UnsupportedByProvider(op, _))) -> equal "snapshot reads" op "operation"

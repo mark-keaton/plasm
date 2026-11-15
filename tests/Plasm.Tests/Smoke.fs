@@ -23,7 +23,7 @@ let ``milestone page with nested batched loads`` () =
 
         let page =
             plasm {
-                for o in Schemas.orders do
+                for o in stored<Order> do
                     where (o.Status = Published)
                     orderByDescending o.PlacedAt
                     take 20
@@ -33,7 +33,7 @@ let ``milestone page with nested batched loads`` () =
         let paymentsOf =
             Query.prepare (fun (ids: Arg<OrderId list>) ->
                 plasm {
-                    for p in Schemas.payments do
+                    for p in stored<Payment> do
                         where (List.contains p.OrderId ids.Value && p.Status = Succeeded)
                         orderBy p.CreatedAt
                 })

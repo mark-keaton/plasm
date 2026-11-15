@@ -23,7 +23,7 @@ type ObservabilitySteps(w: World) =
             let! p = Seed.product w.Db "SKU"
             let! _ = Seed.line w.Db id p 1 10m
             // An Order owns its OrderLines: reading Orders loads them.
-            let q = plasm { for o in Schemas.orders do where (o.Total > 5m) }
+            let q = plasm { for o in stored<Order> do where (o.Total > 5m) }
             w.MarkCommands()
             let! r = w.Repo.All q
             ok r |> ignore
@@ -63,7 +63,7 @@ type ObservabilitySteps(w: World) =
     member _.Executing() =
         task {
             let! id = Seed.order w.Db None "draft" 10m (Seed.at 1)
-            let! r = w.Repo.One(plasm { for o in Schemas.orders do where (o.Id = id) })
+            let! r = w.Repo.One(plasm { for o in stored<Order> do where (o.Id = id) })
             let order = (ok r).Value
             // Another session holds the row lock, so the update blocks in the database.
             let blocker = new NpgsqlConnection(w.Db.ConnectionString)
@@ -142,7 +142,7 @@ type ObservabilitySteps(w: World) =
     member _.ConnectionFails() =
         task {
             let repo = Repo(w.Db.Model, Postgres.connect "Host=127.0.0.1;Port=1;Timeout=3;Database=none;Username=x;Password=y")
-            let! read = repo.All(Query.from Schemas.orders)
+            let! read = repo.All(Query.from (stored<Order>))
             let! write = repo.Transact(Tx.insert (New.order None Draft 1m): Tx<_, unit>)
             w.Set("read", read)
             w.Set("write", write)

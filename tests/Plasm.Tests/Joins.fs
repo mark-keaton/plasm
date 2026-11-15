@@ -13,8 +13,8 @@ let private projectionSql (p: Projection<'R>) = (ok (offlineRepo.Explain p)).Sql
 [<Fact>]
 let ``inner join renders an ON condition from both key selectors`` () =
     plasm {
-        for o in orders do
-            join c in customers on (o.CustomerId = Some c.Id)
+        for o in stored<Order> do
+            join c in stored<Customer> on (o.CustomerId = Some c.Id)
             orderBy o.Id
     }
     |> sqlOf
@@ -24,8 +24,8 @@ let ``inner join renders an ON condition from both key selectors`` () =
 let ``a joined query selects every column of every source`` () =
     let sql =
         plasm {
-            for o in orders do
-                leftJoin c in customers on (o.CustomerId = Some c.Id)
+            for o in stored<Order> do
+                leftJoin c in stored<Customer> on (o.CustomerId = Some c.Id)
                 orderBy o.Id
         }
         |> sqlOf
@@ -37,8 +37,8 @@ let ``a joined query selects every column of every source`` () =
 [<Fact>]
 let ``composite keys compare pairwise`` () =
     plasm {
-        for l in orderLines do
-            join p in payments on ((l.OrderId, l.UnitPrice) = (p.OrderId, p.Amount))
+        for l in stored<OrderLine> do
+            join p in stored<Payment> on ((l.OrderId, l.UnitPrice) = (p.OrderId, p.Amount))
             orderBy l.Id
     }
     |> sqlOf
@@ -48,9 +48,9 @@ let ``composite keys compare pairwise`` () =
 let ``filters written before a join take the root record`` () =
     let sql =
         plasm {
-            for o in orders do
+            for o in stored<Order> do
                 where (o.Total > 5m)
-                join c in customers on (o.CustomerId = Some c.Id)
+                join c in stored<Customer> on (o.CustomerId = Some c.Id)
                 where (c.Name = "Ada")
         }
         |> sqlOf
@@ -60,8 +60,8 @@ let ``filters written before a join take the root record`` () =
 [<Fact>]
 let ``Option.forall over a left-joined source keeps unmatched rows`` () =
     plasm {
-        for o in orders do
-            leftJoin c in customers on (o.CustomerId = Some c.Id)
+        for o in stored<Order> do
+            leftJoin c in stored<Customer> on (o.CustomerId = Some c.Id)
             where (c |> Option.forall (fun c -> c.Name = "Ada"))
     }
     |> sqlOf
@@ -71,8 +71,8 @@ let ``Option.forall over a left-joined source keeps unmatched rows`` () =
 let ``comparing a left-joined source with None tests its key`` () =
     let sql =
         plasm {
-            for o in orders do
-                leftJoin c in customers on (o.CustomerId = Some c.Id)
+            for o in stored<Order> do
+                leftJoin c in stored<Customer> on (o.CustomerId = Some c.Id)
                 where (c <> None)
         }
         |> sqlOf
@@ -82,8 +82,8 @@ let ``comparing a left-joined source with None tests its key`` () =
 [<Fact>]
 let ``ordering by a left-joined column puts missing rows first, like F# options`` () =
     plasm {
-        for o in orders do
-            leftJoin c in customers on (o.CustomerId = Some c.Id)
+        for o in stored<Order> do
+            leftJoin c in stored<Customer> on (o.CustomerId = Some c.Id)
             orderBy (c |> Option.map (fun c -> c.Name))
     }
     |> sqlOf
@@ -92,8 +92,8 @@ let ``ordering by a left-joined column puts missing rows first, like F# options`
 [<Fact>]
 let ``a left-joined field equal to Some value compares the present value`` () =
     plasm {
-        for o in orders do
-            leftJoin c in customers on (o.CustomerId = Some c.Id)
+        for o in stored<Order> do
+            leftJoin c in stored<Customer> on (o.CustomerId = Some c.Id)
             where ((c |> Option.map (fun c -> c.Name)) = Some "Ada")
     }
     |> sqlOf
@@ -103,8 +103,8 @@ let ``a left-joined field equal to Some value compares the present value`` () =
 let ``projections over joins read only the projected columns`` () =
     let sql =
         plasm {
-            for o in orders do
-                join c in customers on (o.CustomerId = Some c.Id)
+            for o in stored<Order> do
+                join c in stored<Customer> on (o.CustomerId = Some c.Id)
                 orderBy o.Id
                 select {| Order = o.Id; Customer = c.Name |}
         }
@@ -117,8 +117,8 @@ let ``projections over joins read only the projected columns`` () =
 let ``Option.map over an optional field is rejected in favour of Option.bind`` () =
     let r =
         plasm {
-            for c in customers do
-                leftJoin o in orders on (Some c.Id = o.CustomerId)
+            for c in stored<Customer> do
+                leftJoin o in stored<Order> on (Some c.Id = o.CustomerId)
                 where ((o |> Option.map (fun o -> o.CancellationReason)) = Some(Some "late"))
         }
         |> explain
@@ -131,8 +131,8 @@ let ``Option.map over an optional field is rejected in favour of Option.bind`` (
 let ``a left-joined source compared with a value is rejected`` () =
     let r =
         plasm {
-            for o in orders do
-                leftJoin c in customers on (o.CustomerId = Some c.Id)
+            for o in stored<Order> do
+                leftJoin c in stored<Customer> on (o.CustomerId = Some c.Id)
                 where (c = Some { Id = CustomerId 1L; Name = "Ada"; Email = "a" })
         }
         |> explain
@@ -145,9 +145,9 @@ let ``a left-joined source compared with a value is rejected`` () =
 let ``relationship predicates work on the root of a joined query`` () =
     let sql =
         plasm {
-            for o in orders do
-                leftJoin c in customers on (o.CustomerId = Some c.Id)
-                where (not (exists (plasm { for p in payments do where (p.OrderId = o.Id && p.Status = Succeeded) })))
+            for o in stored<Order> do
+                leftJoin c in stored<Customer> on (o.CustomerId = Some c.Id)
+                where (not (exists (plasm { for p in stored<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) })))
                 orderBy o.PlacedAt
                 select (o.Id, o.Total, c |> Option.map (fun c -> c.Email))
         }

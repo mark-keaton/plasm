@@ -11,26 +11,26 @@ module OwnedInvoices =
     type InvoiceId = InvoiceId of int64
     type LineId = LineId of int64
 
+    [<Table "invoice_lines">]
     type Line =
         { Id: LineId
           Invoice: InvoiceId
           Item: string
           Amount: decimal }
 
+    [<Table "invoices">]
     type Invoice =
         { Id: InvoiceId
           Number: string
           Lines: Line list }
 
-    let lines = schema<Line> "invoice_lines" { identityKey (fun l -> l.Id) }
+    let model = Model.buildOrFail [] [ typeof<Invoice> ]
 
-    let invoices =
-        schema<Invoice> "invoices" {
-            identityKey (fun i -> i.Id)
-            owns (fun i -> i.Lines) (fun l -> l.Invoice)
-        }
+    /// Lines that name no table, so a list of them cannot be stored.
+    type BareLine = { Item: string; Amount: decimal }
 
-    let model = Model.buildSchemasOrFail [] [ invoices; lines ]
+    [<Table "invoices">]
+    type BareInvoice = { Id: InvoiceId; Lines: BareLine list }
 
     let tables =
         "drop table if exists invoice_lines; drop table if exists invoices;
@@ -74,7 +74,7 @@ type OwnedSteps(w: World) =
 
     let readAll () =
         task {
-            let! r = repo().All(plasm { for i in invoices do orderBy i.Id })
+            let! r = repo().All(plasm { for i in stored<Invoice> do orderBy i.Id })
             return ok r
         }
 
@@ -84,7 +84,7 @@ type OwnedSteps(w: World) =
             return List.exactlyOne all
         }
 
-    let stored (id: InvoiceId) =
+    let storedLines (id: InvoiceId) =
         task {
             let (InvoiceId raw) = id
             let! text = w.Db.Scalar<string>($"select coalesce(string_agg(item || ' ' || trim(to_char(amount, 'FM9999990.##')), ', ' order by id), '') from invoice_lines where invoice = {raw}")
@@ -153,8 +153,8 @@ type OwnedSteps(w: World) =
             let! r =
                 repo().All(
                     plasm {
-                        for i in invoices do
-                            join l in lines on (i.Id = l.Invoice)
+                        for i in stored<Invoice> do
+                            join l in stored<Line> on (i.Id = l.Invoice)
                             select (i, l)
                     }
                 )
@@ -185,7 +185,7 @@ type OwnedSteps(w: World) =
     member _.Holds(text: string) =
         task {
             let expected = parse text |> List.map (fun l -> $"{l.Item} {l.Amount}") |> String.concat ", "
-            let! text = stored (w.Get<Invoice> "invoice").Id
+            let! text = storedLines (w.Get<Invoice> "invoice").Id
             equal expected text "stored lines"
         }
         |> unit
@@ -278,8 +278,8 @@ type OwnedSteps(w: World) =
         }
         |> unit
 
-    [<StepDefinition("I build a model of Invoices without owns")>]
-    member _.WithoutOwns() =
-        match Model.buildSchemas [] [ schema<Invoice> "invoices" { identityKey (fun i -> i.Id) }; lines ] with
+    [<StepDefinition("I build a model of Invoices whose lines name no table")>]
+    member _.UnstoredLines() =
+        match Model.build [] [ typeof<BareInvoice> ] with
         | Ok _ -> failwith "the model was built"
         | Error errors -> w.Set("refusal", errors)

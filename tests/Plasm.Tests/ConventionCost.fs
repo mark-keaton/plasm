@@ -11,7 +11,7 @@ open Plasm.TestDomain.Domain.Schemas
 
 /// The same model with the mappings written out, as before conventions.
 let registered =
-    Model.buildSchemasOrFail
+    Model.buildOrFail
         [ Scalar.wrap CustomerId (fun (CustomerId v) -> v)
           Scalar.wrap OrderId (fun (OrderId v) -> v)
           Scalar.wrap ProductId (fun (ProductId v) -> v)
@@ -24,7 +24,7 @@ let registered =
           Scalar.tryWrap Quantity.create (fun (q: Quantity) -> q.Value)
           Scalar.enum [ Draft, "draft"; Published, "published"; Cancelled, "cancelled" ]
           Scalar.enum [ Pending, "pending"; Succeeded, "succeeded"; Failed, "failed" ] ]
-        Schemas.all
+        Schemas.roots
 
 let rows = 20_000
 

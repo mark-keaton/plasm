@@ -21,7 +21,7 @@ type ReadingSteps(w: World) =
     let result () = w.Get<Result<Order option, DbError>> "one"
 
     [<StepDefinition("I read One of a query ordered by total, descending, taking 1")>]
-    member _.Largest() = read (plasm { for o in Schemas.orders do orderByDescending o.Total; take 1 })
+    member _.Largest() = read (plasm { for o in stored<Order> do orderByDescending o.Total; take 1 })
 
     [<StepDefinition("the Order with the largest total is returned")>]
     member _.LargestReturned() =
@@ -30,13 +30,13 @@ type ReadingSteps(w: World) =
         | other -> failwithf "expected the largest Order, got %A" other
 
     [<StepDefinition("I read One of a query that matches no Order")>]
-    member _.NoMatch() = read (plasm { for o in Schemas.orders do where (o.Total > 1000m) })
+    member _.NoMatch() = read (plasm { for o in stored<Order> do where (o.Total > 1000m) })
 
     [<StepDefinition("None is returned")>]
     member _.NoneReturned() = equal (Ok None) (result ()) "result"
 
     [<StepDefinition("I read One of a query that matches several Orders")>]
-    member _.Several() = read (plasm { for o in Schemas.orders do where (o.Status = Published) })
+    member _.Several() = read (plasm { for o in stored<Order> do where (o.Status = Published) })
 
     [<StepDefinition("the read returns an error saying more than one row matched")>]
     member _.TooMany() = equal (Error DbError.MoreThanOneRow) (result ()) "result"
@@ -51,7 +51,7 @@ type ReadingSteps(w: World) =
     member _.Twice() =
         task {
             let repo = w.Db.RepoWith()
-            let q = plasm { for o in Schemas.orders do where (o.Total > 35m) }
+            let q = plasm { for o in stored<Order> do where (o.Total > 35m) }
             let! a = repo.One q
             let! b = repo.One q
             ok a |> ignore

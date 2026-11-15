@@ -54,7 +54,7 @@ Feature: Predictable functional persistence for F#
       Then the expression is rejected at compile time
 
     Scenario: Owned relationships are checked against the source type
-      When I attempt to declare that Orders own a relationship not defined for them
+      When I attempt to order the lines an Order owns by a field they do not have
       Then the declaration is rejected at compile time
 
     Scenario: Nullable values remain explicit

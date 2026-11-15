@@ -12,13 +12,13 @@ type BulkSteps(w: World) =
 
     let drafts =
         plasm {
-            for o in Schemas.orders do
+            for o in stored<Order> do
                 where (o.Status = Draft)
         }
 
     let publishedOrders =
         plasm {
-            for o in Schemas.orders do
+            for o in stored<Order> do
                 where (o.Status = Published)
         }
 
@@ -121,7 +121,7 @@ type BulkSteps(w: World) =
 
             let byId =
                 plasm {
-                    for o in Schemas.orders do
+                    for o in stored<Order> do
                         where (o.Id = id)
                 }
 
@@ -169,7 +169,7 @@ type BulkSteps(w: World) =
     [<StepDefinition("only the published Orders remain")>]
     member _.OnlyPublished() =
         task {
-            let! rest = w.Repo.All(plasm { for o in Schemas.orders do orderBy o.Id })
+            let! rest = w.Repo.All(plasm { for o in stored<Order> do orderBy o.Id })
             equal (w.Get<OrderId list> "published") (ok rest |> List.map (fun o -> o.Id)) "remaining orders"
         }
         |> unit
@@ -180,7 +180,7 @@ type BulkSteps(w: World) =
     member _.Violates() =
         task {
             // Totals must be >= 0; the draft with total 1 would become -1.
-            let all = plasm { for o in Schemas.orders do where (o.Total < 100m) }
+            let all = plasm { for o in stored<Order> do where (o.Total < 100m) }
             let! r = w.Repo.Transact(Tx.execute (Bulk.update (all, fun o -> { o with Total = o.Total - 2m })): Tx<_, unit>)
             w.Set("bulkResult", r)
         }
@@ -212,7 +212,7 @@ type BulkSteps(w: World) =
 
             let firstTwo =
                 plasm {
-                    for o in Schemas.orders do
+                    for o in stored<Order> do
                         orderBy o.Id
                         take 2
                 }

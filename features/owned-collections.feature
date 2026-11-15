@@ -72,6 +72,6 @@ Feature: An owned collection is a plain list, loaded and written with its owner
 
   Rule: A list field is owned or refused
 
-    Scenario: A list field the schema does not own is refused at build
-      When I build a model of Invoices without owns
-      Then the model is refused for that field, saying a list must be owned
+    Scenario: A list of records that are not stored is refused at build
+      When I build a model of Invoices whose lines name no table
+      Then the model is refused for that field, saying which names no table

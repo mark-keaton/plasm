@@ -32,6 +32,7 @@ module Conventions =
         | Normal
         | VeryHigh
 
+    [<Table "tickets">]
     type Ticket =
         { Id: TicketId
           Code: Code
@@ -43,6 +44,7 @@ module Conventions =
     /// without bypassing the domain.
     type Secret = private Secret of string
 
+    [<Table "locked">]
     type Locked = { Id: TicketId; Secret: Secret }
 
     /// A create function in a member and another in the type's module.
@@ -54,9 +56,8 @@ module Conventions =
     module Twice =
         let create (text: string) : Result<Twice, string> = Ok(Twice text)
 
+    [<Table "doubled">]
     type Doubled = { Id: TicketId; Twice: Twice }
-
-    let tickets = schema<Ticket> "tickets" { identityKey (fun t -> t.Id) }
 
     let table =
         "drop table if exists tickets;
@@ -102,7 +103,7 @@ type ConventionSteps(w: World) =
 
     let all () =
         task {
-            let! r = repo().All(plasm { for t in tickets do orderBy t.Id })
+            let! r = repo().All(plasm { for t in stored<Ticket> do orderBy t.Id })
             return r
         }
 
@@ -116,12 +117,12 @@ type ConventionSteps(w: World) =
 
     [<StepDefinition("Tickets in a model built with no scalar mappings")>]
     member _.NoMappings() =
-        let model = Model.buildSchemasOrFail [] [ tickets ]
+        let model = Model.buildOrFail [] [ typeof<Ticket> ]
         w.Set("ticketRepo", w.Db.RepoWith(model = model))
 
     [<StepDefinition("^Tickets in a model built with the mapping Scalar\\.enum \\[ Low, \"lo\"; Normal, \"mid\"; VeryHigh, \"hi\" \\]$")>]
     member _.Override() =
-        let model = Model.buildSchemasOrFail [ Scalar.enum [ Low, "lo"; Normal, "mid"; VeryHigh, "hi" ] ] [ tickets ]
+        let model = Model.buildOrFail [ Scalar.enum [ Low, "lo"; Normal, "mid"; VeryHigh, "hi" ] ] [ typeof<Ticket> ]
         w.Set("ticketRepo", w.Db.RepoWith(model = model))
 
     [<StepDefinition("I insert a Ticket with code \"(.*)\"")>]
@@ -188,7 +189,7 @@ type ConventionSteps(w: World) =
     member _.KeepCode(code: string) =
         task {
             let wanted = Code code
-            let! r = repo().All(plasm { for t in tickets do where (t.Code = wanted) })
+            let! r = repo().All(plasm { for t in stored<Ticket> do where (t.Code = wanted) })
             w.Set("kept", ok r)
         }
         |> unit
@@ -220,11 +221,11 @@ type ConventionSteps(w: World) =
 
     [<StepDefinition("I build a model of a record with a field of a private wrapper type without create")>]
     member _.BuildPrivate() =
-        refusal (fun () -> Model.buildSchemas [] [ schema<Locked> "locked" { identityKey (fun l -> l.Id) } ])
+        refusal (fun () -> Model.build [] [ typeof<Locked> ])
 
     [<StepDefinition("I build a model of a record with a field of a type with a create function in a member and in its module")>]
     member _.BuildTwice() =
-        refusal (fun () -> Model.buildSchemas [] [ schema<Doubled> "doubled" { identityKey (fun d -> d.Id) } ])
+        refusal (fun () -> Model.build [] [ typeof<Doubled> ])
 
     [<StepDefinition("the model is refused for that field, saying (.*)")>]
     member _.Refused(saying: string) =
@@ -247,7 +248,7 @@ type ConventionSteps(w: World) =
     [<StepDefinition("I order the Tickets by priority")>]
     member _.OrderByPriority() =
         task {
-            let! r = repo().All(plasm { for t in tickets do orderBy t.Priority })
+            let! r = repo().All(plasm { for t in stored<Ticket> do orderBy t.Priority })
             w.Set("ordered", ok r |> List.map (fun t -> t.Priority))
         }
         |> unit

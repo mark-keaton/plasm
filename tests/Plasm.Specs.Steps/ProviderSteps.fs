@@ -45,7 +45,7 @@ type ProviderSteps(w: World) =
 
     let explain (q: Query<'T>) = (repo().Explain q |> ok)
 
-    let stored = { New.order None Published 10m with Id = OrderId 1L; Version = 1 }
+    let storedOrder = { New.order None Published 10m with Id = OrderId 1L; Version = 1 }
 
     [<StepDefinition("a test dialect without array parameters, upserts, RETURNING or row locking, with its own null-safe comparison and string length")>]
     member _.TestDialect() =
@@ -53,7 +53,7 @@ type ProviderSteps(w: World) =
 
     [<StepDefinition("I explain a query for Orders, which own their Lines, with the test dialect")>]
     member _.ExplainLoads() =
-        let plan = explain (Query.from Schemas.orders)
+        let plan = explain (Query.from (stored<Order>))
         w.Set("sql", (plan.Loads |> List.head).Sql)
 
     [<StepDefinition("the load command matches keys with an IN list of parameters")>]
@@ -64,7 +64,7 @@ type ProviderSteps(w: World) =
     [<StepDefinition("I explain a query comparing an optional field with <> with the test dialect")>]
     member _.ExplainNullSafe() =
         let reason = Some "late"
-        w.Set("sql", (explain (plasm { for o in Schemas.orders do where (o.CancellationReason <> reason) })).Sql)
+        w.Set("sql", (explain (plasm { for o in stored<Order> do where (o.CancellationReason <> reason) })).Sql)
 
     [<StepDefinition("the comparison uses the dialect's null-safe operator")>]
     member _.NullSafe() =
@@ -73,7 +73,7 @@ type ProviderSteps(w: World) =
 
     [<StepDefinition("I explain a query filtering on the length of a name with the test dialect")>]
     member _.ExplainLength() =
-        w.Set("sql", (explain (plasm { for c in Schemas.customers do where (c.Name.Length > 3) })).Sql)
+        w.Set("sql", (explain (plasm { for c in stored<Customer> do where (c.Name.Length > 3) })).Sql)
 
     [<StepDefinition("the length uses the dialect's function name")>]
     member _.Length() =
@@ -105,7 +105,7 @@ type ProviderSteps(w: World) =
                             | other -> failwithf "expected an unsupported insert, got %A" other
                     | "deleting an Order and its Lines" ->
                         // Deleting an owner deletes every line it has, read FOR UPDATE.
-                        let! x = r.Transact(Tx.delete stored: Tx<Order, unit>)
+                        let! x = r.Transact(Tx.delete storedOrder: Tx<Order, unit>)
 
                         return
                             match x with

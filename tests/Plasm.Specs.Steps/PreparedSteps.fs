@@ -20,7 +20,7 @@ type PreparedSteps(w: World) =
             builds.Value <- builds.Value + 1
 
             plasm {
-                for o in Schemas.orders do
+                for o in stored<Order> do
                     where (o.CustomerId = Some customer.Value)
                     orderBy o.Id
             })
@@ -101,12 +101,12 @@ type PreparedSteps(w: World) =
             let paymentsWith =
                 Query.prepare2 (fun (status: Arg<PaymentStatus>) (ids: Arg<OrderId list>) ->
                     plasm {
-                        for p in Schemas.payments do
+                        for p in stored<Payment> do
                             where (p.Status = status.Value && List.contains p.OrderId ids.Value)
                     })
 
             try
-                let! held = w.Repo.All(plasm { for o in Schemas.orders do orderBy o.Id })
+                let! held = w.Repo.All(plasm { for o in stored<Order> do orderBy o.Id })
                 let held = ok held
                 let! ps = w.Repo.All(paymentsWith Succeeded (held |> List.map (fun o -> o.Id)))
                 let byOrder = ok ps |> List.groupBy (fun p -> p.OrderId) |> Map.ofList
@@ -198,7 +198,7 @@ type PreparedSteps(w: World) =
         let q =
             Query.prepare2 (fun (customer: Arg<CustomerId option>) (statuses: Arg<OrderStatus list>) ->
                 plasm {
-                    for o in Schemas.orders do
+                    for o in stored<Order> do
                         where (o.CustomerId = customer.Value && List.contains o.Status statuses.Value)
                         orderBy o.Id
                 })
@@ -241,7 +241,7 @@ type PreparedSteps(w: World) =
             let page =
                 Query.prepare2 (fun (size: Arg<int>) (offset: Arg<int>) ->
                     plasm {
-                        for o in Schemas.orders do
+                        for o in stored<Order> do
                             orderBy o.PlacedAt
                             take size.Value
                             skip offset.Value
@@ -270,7 +270,7 @@ type PreparedSteps(w: World) =
             let ordersOfCustomer =
                 Query.prepare (fun (customer: Arg<CustomerId>) ->
                     plasm {
-                        for o in Schemas.orders do
+                        for o in stored<Order> do
                             where (o.CustomerId = Some customer.Value)
                             orderBy o.Id
                     })
@@ -319,7 +319,7 @@ type PreparedSteps(w: World) =
                     let doubled = minimum.Value * 2m
 
                     plasm {
-                        for o in Schemas.orders do
+                        for o in stored<Order> do
                             where (o.Total > doubled)
                     })
                 |> ignore)
@@ -331,7 +331,7 @@ type PreparedSteps(w: World) =
             (fun () ->
                 Query.prepare (fun (factor: Arg<decimal>) ->
                     plasm {
-                        for o in Schemas.orders do
+                        for o in stored<Order> do
                             orderBy (o.Total * factor.Value)
                     })
                 |> ignore)

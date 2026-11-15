@@ -89,7 +89,8 @@ type FsiSession() =
 type FsiSteps(w: World) =
 
     let assemblies =
-        [ typeof<Plasm.Query>.Assembly.Location
+        [ typeof<Plasm.TableAttribute>.Assembly.Location
+          typeof<Plasm.Query>.Assembly.Location
           typeof<Plasm.Postgres.PostgresProvider>.Assembly.Location
           typeof<Npgsql.NpgsqlConnection>.Assembly.Location ]
 
@@ -142,7 +143,7 @@ type FsiSteps(w: World) =
 
     let names (repo: string) =
         fsi().Value<string>(
-            $"match {repo}.All(plasm {{ for c in Schemas.customers do orderBy c.Name }}) |> wait with Ok cs -> cs |> List.map (fun c -> c.Name) |> String.concat \"|\" | Error e -> failwithf \"%%A\" e"
+            $"match {repo}.All(plasm {{ for c in stored<Customer> do orderBy c.Name }}) |> wait with Ok cs -> cs |> List.map (fun c -> c.Name) |> String.concat \"|\" | Error e -> failwithf \"%%A\" e"
         )
         |> fun (s: string) -> s.Split('|', StringSplitOptions.RemoveEmptyEntries) |> List.ofArray
 
@@ -172,8 +173,8 @@ type FsiSteps(w: World) =
         )
 
         w.Set(
-            "schemaName",
-            fsi().Value<string>($"match repo.Scaffold \"{table}\" |> wait with Ok s -> s.SchemaName | Error e -> failwithf \"%%A\" e")
+            "recordName",
+            fsi().Value<string>($"match repo.Scaffold \"{table}\" |> wait with Ok s -> s.RecordName | Error e -> failwithf \"%%A\" e")
         )
 
     let code () = w.Get<string> "scaffold"
@@ -222,7 +223,7 @@ type FsiSteps(w: World) =
     member _.QueryPublished() =
         markCommands ()
 
-        fsi().Run "let q = plasm { for o in Schemas.orders do where (o.Status = Published && o.CustomerId = Some (CustomerId 42L)) }"
+        fsi().Run "let q = plasm { for o in stored<Order> do where (o.Status = Published && o.CustomerId = Some (CustomerId 42L)) }"
         |> display
 
     [<StepDefinition("the session displays the SQL with each parameter and its value")>]
@@ -240,7 +241,7 @@ type FsiSteps(w: World) =
     [<StepDefinition("I evaluate a query for Orders, which own their Lines")>]
     member _.QueryWithLoads() =
         markCommands ()
-        fsi().Run "let q = plasm { for o in Schemas.orders do where (o.Total > 0m) }" |> display
+        fsi().Run "let q = plasm { for o in stored<Order> do where (o.Total > 0m) }" |> display
 
     [<StepDefinition("the session displays the main command and one command for each load, in execution order")>]
     member _.DisplaysLoads() =
@@ -253,7 +254,7 @@ type FsiSteps(w: World) =
     member _.Untranslatable() =
         markCommands ()
         fsi().Run "let shout (s: string) = s.ToUpperInvariant() + \"!\"" |> ignore
-        fsi().Run "let q = plasm { for c in Schemas.customers do where (shout c.Name = \"ADA!\") }" |> display
+        fsi().Run "let q = plasm { for c in stored<Customer> do where (shout c.Name = \"ADA!\") }" |> display
 
     [<StepDefinition("the session displays the translation error with the expression identified")>]
     member _.DisplaysTranslationError() =
@@ -271,7 +272,7 @@ type FsiSteps(w: World) =
 
     [<StepDefinition("I evaluate a read of Customers through the interactive helpers")>]
     member _.ReadCustomers() =
-        fsi().Run "repo.All(plasm { for c in Schemas.customers do orderBy c.Name }) |> wait" |> display
+        fsi().Run "repo.All(plasm { for c in stored<Customer> do orderBy c.Name }) |> wait" |> display
 
     [<StepDefinition("the session displays the Customers, not a task")>]
     member _.DisplaysCustomers() =
@@ -302,7 +303,7 @@ type FsiSteps(w: World) =
 
     [<StepDefinition("a query for Customers evaluated in the session")>]
     member _.EarlierQuery() =
-        fsi().Run "let earlier = plasm { for c in Schemas.customers do where (c.Name = \"Ada\") }" |> ignore
+        fsi().Run "let earlier = plasm { for c in stored<Customer> do where (c.Name = \"Ada\") }" |> ignore
 
     [<StepDefinition("I redefine the Customer record in a later submission and re-evaluate the mappings")>]
     member _.Redefine() = mappings ()
@@ -333,7 +334,7 @@ type FsiSteps(w: World) =
         w.Set(
             "newDefinition",
             fsi().Value<string>(
-                "match repo.All(plasm { for c in Schemas.customers do orderBy c.Name }) |> wait with Ok cs -> sprintf \"%d %b\" cs.Length (cs.GetType().GetGenericArguments().[0] = typeof<Customer>) | Error e -> sprintf \"%A\" e"
+                "match repo.All(plasm { for c in stored<Customer> do orderBy c.Name }) |> wait with Ok cs -> sprintf \"%d %b\" cs.Length (cs.GetType().GetGenericArguments().[0] = typeof<Customer>) | Error e -> sprintf \"%A\" e"
             )
         )
 
@@ -378,7 +379,7 @@ type FsiSteps(w: World) =
 
     [<StepDefinition("using the closed playground fails with an explanation instead of a connection error")>]
     member _.ClosedFails() =
-        let s = fsi().Run "pg.All(plasm { for c in Schemas.customers do orderBy c.Name }) |> wait"
+        let s = fsi().Run "pg.All(plasm { for c in stored<Customer> do orderBy c.Name }) |> wait"
         contains "RepositoryClosed" s.Output
         contains "playground was closed" s.Output
         contains "repo.Playground()" s.Output
@@ -404,25 +405,24 @@ type FsiSteps(w: World) =
     [<StepDefinition("I scaffold the \"customers\" table")>]
     member _.ScaffoldCustomers() = scaffold "customers"
 
-    [<StepDefinition("the session displays an F# record and a schema for it")>]
+    [<StepDefinition("the session displays an F# record that names its table")>]
     member _.DisplaysScaffold() =
         let out = displayed ()
-        contains "type Customer =" out
+        contains "[<Table \"customers\">]\ntype Customer =" out
         contains "Email: string" out
-        contains "schema<Customer> \"customers\"" out
+        lacks "schema<" out
 
-    [<StepDefinition("evaluating them in the session succeeds")>]
+    [<StepDefinition("evaluating it in the session succeeds")>]
     [<StepDefinition("evaluating the scaffolded code in the session succeeds")>]
     member _.EvaluateScaffold() = fsi().Run(code ()) |> ignore
 
-    [<StepDefinition("the schema check reports no problems for them")>]
     [<StepDefinition("the schema check reports no problems for it")>]
     member _.ScaffoldChecks() =
-        let name = w.Get<string> "schemaName"
+        let name = w.Get<string> "recordName"
 
         let issues =
             fsi().Value<string>(
-                $"match Repo(Model.buildSchemasOrFail [] [ {name} ], Plasm.Postgres.Postgres.connect @\"{w.Db.ConnectionString};Pooling=false\").CheckSchema() |> wait with Ok [] -> \"none\" | other -> sprintf \"%%A\" other"
+                $"match Repo(Model.buildOrFail [] [ typeof<``{name}``> ], Plasm.Postgres.Postgres.connect @\"{w.Db.ConnectionString};Pooling=false\").CheckSchema() |> wait with Ok [] -> \"none\" | other -> sprintf \"%%A\" other"
             )
 
         equal "none" issues "schema check of the scaffolded mapping"
@@ -437,10 +437,10 @@ type FsiSteps(w: World) =
         contains "Note: string option" (code ())
         contains "Label: string\n" (code ())
 
-    [<StepDefinition("the generated key is declared as the identity key")>]
+    [<StepDefinition("the generated key is the record's Id, generated by the database")>]
     member _.IdentityKey() =
-        contains "Id: int64" (code ())
-        contains "identityKey (fun r -> r.Id)" (code ())
+        contains "{ Id: int64" (code ())
+        lacks "Assigned" (code ())
 
     [<StepDefinition("the unsupported column is left out with a comment naming its database type")>]
     member _.UnsupportedColumn() =
@@ -452,7 +452,7 @@ type FsiSteps(w: World) =
         markCommands ()
 
         fsi().Run
-            "let ordersOf = Query.prepare (fun (c: Arg<CustomerId>) -> plasm { for o in Schemas.orders do where (o.CustomerId = Some c.Value) })"
+            "let ordersOf = Query.prepare (fun (c: Arg<CustomerId>) -> plasm { for o in stored<Order> do where (o.CustomerId = Some c.Value) })"
         |> ignore
 
         fsi().Run "let q = ordersOf (CustomerId 42L)" |> display
@@ -465,7 +465,7 @@ type FsiSteps(w: World) =
 
     [<StepDefinition("I evaluate a query and display it")>]
     member _.DisplayOnly() =
-        fsi().Run "let shown = plasm { for c in Schemas.customers do where (c.Name = \"Ada\") }" |> display
+        fsi().Run "let shown = plasm { for c in stored<Customer> do where (c.Name = \"Ada\") }" |> display
         contains "SELECT" (displayed ())
 
     [<StepDefinition("no repository has planned it")>]
@@ -495,7 +495,7 @@ type FsiSteps(w: World) =
 
     [<StepDefinition("the next use of the playground reports that its changes were lost")>]
     member _.ReportsLost() =
-        let out = (fsi().Run "pg.All(plasm { for c in Schemas.customers do orderBy c.Name }) |> wait").Output
+        let out = (fsi().Run "pg.All(plasm { for c in stored<Customer> do orderBy c.Name }) |> wait").Output
         contains "ConnectionFailure" out
         contains "changes were discarded" out
 
@@ -531,26 +531,25 @@ type FsiSteps(w: World) =
 
 /// A record mapped only by the display scenarios, so no other repository in the
 /// test process can describe its queries.
+[<Table "customers">]
 type DisplayProbe = { Id: int64; Name: string; Email: string }
 
 /// Feature: Using Plasm from F# Interactive (compiled-code display scenarios)
 [<Binding>]
 type CompiledDisplaySteps(w: World) =
 
-    let probes = schema<DisplayProbe> "customers" { identityKey (fun c -> c.Id) }
-
     [<StepDefinition("a repository that does not include parameter values in diagnostics")>]
     member _.Hidden() =
-        w.Set("displayRepo", Repo(Model.buildSchemasOrFail [] [ probes ], w.Db.Provider))
+        w.Set("displayRepo", Repo(Model.buildOrFail [] [ typeof<DisplayProbe> ], w.Db.Provider))
 
     [<StepDefinition("a repository that includes parameter values in diagnostics")>]
     member _.Shown() =
-        w.Set("displayRepo", Repo(Model.buildSchemasOrFail [] [ probes ], w.Db.Provider, { RepoOptions.Default with IncludeParameterValues = true }))
+        w.Set("displayRepo", Repo(Model.buildOrFail [] [ typeof<DisplayProbe> ], w.Db.Provider, { RepoOptions.Default with IncludeParameterValues = true }))
 
     [<StepDefinition("compiled code formats a query with %A")>]
     member _.Format() =
         let secret = "s3cr3t-token"
-        let q = plasm { for c in probes do where (c.Name = secret) }
+        let q = plasm { for c in stored<DisplayProbe> do where (c.Name = secret) }
         w.Set("formatted", sprintf "%A" q)
         // Keep the repository alive until after formatting.
         System.GC.KeepAlive(w.Get<Repo> "displayRepo")

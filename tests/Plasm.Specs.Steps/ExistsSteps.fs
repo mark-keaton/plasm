@@ -7,11 +7,13 @@ open Plasm
 type OrderId = OrderId of int64
 type PaymentId = PaymentId of int64
 
+[<Table "exists_orders">]
 type Order =
     { Id: OrderId
       Number: string
       Total: decimal }
 
+[<Table "exists_payments">]
 type Payment =
     { Id: PaymentId
       Order: OrderId
@@ -19,10 +21,7 @@ type Payment =
       Succeeded: bool }
 
 module Schemas =
-    let orders = schema<Order> "exists_orders" { identityKey (fun o -> o.Id) }
-    let payments = schema<Payment> "exists_payments" { identityKey (fun p -> p.Id) }
-
-    let model = Model.buildSchemasOrFail [] [ orders; payments ]
+    let model = Model.buildOrFail [] [ typeof<Order>; typeof<Payment> ]
 
     let tables =
         "drop table if exists exists_payments; drop table if exists exists_orders;
@@ -39,16 +38,16 @@ open Schemas
 module ExistsGood =
     let paid =
         plasm {
-            for o in orders do
-                where (exists (plasm { for p in payments do where (p.Order = o.Id && p.Succeeded) }))
+            for o in stored<Order> do
+                where (exists (plasm { for p in stored<Payment> do where (p.Order = o.Id && p.Succeeded) }))
                 orderBy o.Number
         }
 
     let paidAtLeast =
         Query.prepare (fun (least: Arg<decimal>) ->
             plasm {
-                for o in orders do
-                    where (exists (plasm { for p in payments do where (p.Order = o.Id && p.Amount >= least.Value) }))
+                for o in stored<Order> do
+                    where (exists (plasm { for p in stored<Payment> do where (p.Order = o.Id && p.Amount >= least.Value) }))
                     orderBy o.Number
             })
 
@@ -56,8 +55,8 @@ module ExistsBad =
     // String.Normalize has no SQL translation.
     let untranslatable =
         plasm {
-            for o in orders do
-                where (exists (plasm { for p in payments do where (p.Order = o.Id && o.Number.Normalize() = "A") }))
+            for o in stored<Order> do
+                where (exists (plasm { for p in stored<Payment> do where (p.Order = o.Id && o.Number.Normalize() = "A") }))
         }
 
 namespace Plasm.Specs
@@ -132,8 +131,8 @@ type ExistsSteps(w: World) =
     member _.Unpaid() =
         read (
             plasm {
-                for o in orders do
-                    where (not (exists (plasm { for p in payments do where (p.Order = o.Id && p.Succeeded) })))
+                for o in stored<Order> do
+                    where (not (exists (plasm { for p in stored<Payment> do where (p.Order = o.Id && p.Succeeded) })))
                     orderBy o.Number
             }
         )
@@ -142,8 +141,8 @@ type ExistsSteps(w: World) =
     member _.LargeOrPaid() =
         read (
             plasm {
-                for o in orders do
-                    where (o.Total > 100m || exists (plasm { for p in payments do where (p.Order = o.Id) }))
+                for o in stored<Order> do
+                    where (o.Total > 100m || exists (plasm { for p in stored<Payment> do where (p.Order = o.Id) }))
                     orderBy o.Number
             }
         )
@@ -155,8 +154,8 @@ type ExistsSteps(w: World) =
     member _.Paged() =
         read (
             plasm {
-                for o in orders do
-                    where (exists (plasm { for p in payments do where (p.Order = o.Id); orderBy p.Amount; take 1 }))
+                for o in stored<Order> do
+                    where (exists (plasm { for p in stored<Payment> do where (p.Order = o.Id); orderBy p.Amount; take 1 }))
             }
         )
 

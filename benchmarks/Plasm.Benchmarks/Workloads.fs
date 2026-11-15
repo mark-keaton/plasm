@@ -50,7 +50,7 @@ let database: Lazy<Task<TestDb>> =
 /// Published orders, newest first: the lines come with them.
 let plasmPage (n: int) =
     plasm {
-        for o in Schemas.orders do
+        for o in stored<Order> do
             where (o.Status = Published)
             orderByDescending o.PlacedAt
             thenBy o.Id
@@ -61,7 +61,7 @@ let plasmPage (n: int) =
 let succeededPaymentsOf =
     Query.prepare (fun (orders: Arg<OrderId list>) ->
         plasm {
-            for p in Schemas.payments do
+            for p in stored<Payment> do
                 where (List.contains p.OrderId orders.Value && p.Status = Succeeded)
                 orderBy p.CreatedAt
         })
@@ -70,21 +70,21 @@ let siblingOrderId = 1L
 
 /// One order and all its payments, the queries built for each call.
 let plasmSiblingQueries (id: OrderId) =
-    plasm { for o in Schemas.orders do where (o.Id = id) },
+    plasm { for o in stored<Order> do where (o.Id = id) },
     plasm {
-        for p in Schemas.payments do
+        for p in stored<Payment> do
             where (p.OrderId = id)
             orderBy p.Id
     }
 
 /// The same two queries, prepared once: each call only binds the key.
 let orderById =
-    Query.prepare (fun (id: Arg<OrderId>) -> plasm { for o in Schemas.orders do where (o.Id = id.Value) })
+    Query.prepare (fun (id: Arg<OrderId>) -> plasm { for o in stored<Order> do where (o.Id = id.Value) })
 
 let paymentsOfOrder =
     Query.prepare (fun (id: Arg<OrderId>) ->
         plasm {
-            for p in Schemas.payments do
+            for p in stored<Payment> do
                 where (p.OrderId = id.Value)
                 orderBy p.Id
         })

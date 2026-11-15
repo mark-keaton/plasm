@@ -187,7 +187,10 @@ module internal Derive =
                     { Type = t
                       Table = table.Value
                       Key = Some(key.Value, keyGenerated key.Value)
-                      Columns = Map.empty
+                      Columns =
+                        fields t
+                        |> Array.choose (fun p -> attr<ColumnAttribute> p |> Option.map (fun c -> p.Name, c.Name))
+                        |> Map.ofArray
                       Version = Array.tryHead versions
                       Generated = named has<GeneratedAttribute>
                       Unique = named has<UniqueAttribute>

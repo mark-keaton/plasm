@@ -7,6 +7,7 @@ open Plasm.TestDomain.Domain
 
 /// A second record keyed by CustomerId, for the shared-key scenario.
 module SharedKey =
+    [<Table "suppliers">]
     type Supplier = { Id: CustomerId; Name: string }
 
 /// Feature: Database constraints are stated once, in the model
@@ -109,8 +110,7 @@ type ConstraintSteps(w: World) =
 
     [<StepDefinition("^I build a model in which Customers and Suppliers both have a CustomerId key$")>]
     member _.SharedKey() =
-        let suppliers = schema<SharedKey.Supplier> "suppliers" { identityKey (fun s -> s.Id) }
-        w.Set("sharedKeyModel", Model.buildSchemas [] [ Schemas.customers; suppliers ])
+        w.Set("sharedKeyModel", Model.build [] [ typeof<Customer>; typeof<SharedKey.Supplier> ])
 
     [<StepDefinition("^the model is refused, naming CustomerId and both schemas$")>]
     member _.SharedKeyRefused() =

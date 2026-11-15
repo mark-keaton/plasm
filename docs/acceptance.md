@@ -33,7 +33,7 @@ host that generates the tests) binds to F# step definitions in
 
 ```sh
 dotnet test tests/Plasm.Specs          # 358 scenarios (outline examples counted separately)
-dotnet test tests/Plasm.Tests          # 130 unit, property, compile-time and Ecto-compatibility tests
+dotnet test tests/Plasm.Tests          # 128 unit, property, compile-time and Ecto-compatibility tests
 ```
 
 ## Summary
@@ -75,7 +75,7 @@ describe the one style; "Reworded" means only words changed.
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
 | Querying a mapped property uses its declared type | Implemented and verified | `TypeSteps.fs` | CompileTime.fs; Translation.fs (Model.build errors) | Compile-time checks with FSharp.Compiler.Service against the real assemblies. Note that `o.Total = 100` legitimately compiles, because F# implicitly converts int to decimal losslessly. |
-| Owned relationships are checked against the source type | Implemented and verified | `TypeSteps.fs` | CompileTime.fs; Translation.fs (Model.build errors) | Rewritten (one style, step a1): with no load requests, the `owns` declaration is what is checked. |
+| Owned relationships are checked against the source type | Implemented and verified | `TypeSteps.fs` | CompileTime.fs; Translation.fs (Model.build errors) | Rewritten (one style, step a1): with no load requests, the `owns` declaration is what is checked. Rewritten again (stored records, step b): what a record owns is its field's type; the one name an owned list takes, its `[<OrderedBy(nameof the<OrderLine>.UnitPrice)>]` field, is FS0039 when misspelt. |
 | Nullable values remain explicit | Implemented and verified | `TypeSteps.fs` | CompileTime.fs; Translation.fs (Model.build errors) |  |
 | Unsupported model representations fail during configuration | Implemented and verified | `TypeSteps.fs` | CompileTime.fs; Translation.fs (Model.build errors) |  |
 
@@ -401,7 +401,7 @@ describe the one style; "Reworded" means only words changed.
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| Scaffolding a table prints a record and schema that match the database | Implemented and verified | `FsiSteps.fs` |  | `repo.Scaffold table` reads `information_schema` only. |
+| Scaffolding a table prints a record that says how the table stores it | Implemented and verified | `FsiSteps.fs` |  | `repo.Scaffold table` reads `information_schema` only. Since stored records, step b: a `[<Table>]` record whose key field is `Id`, with `[<Column>]` where a column is not its field's snake case and `[<Assigned>]` on an integer key the database does not generate; no schema value. |
 | Scaffolding maps nullable columns, keys and unknown types explicitly | Implemented and verified | `FsiSteps.fs` |  |  |
 | Names that are not F# identifiers are escaped | Implemented and verified | `FsiSteps.fs` |  | Double backticks for keywords and names that are not identifiers; `column` for names that do not round-trip. |
 | A table with no mappable columns is reported | Implemented and verified | `FsiSteps.fs` |  | New `ScaffoldError` (`TableNotFound`, `NoMappableColumns`, `Failed`). |
@@ -726,7 +726,7 @@ describe the one style; "Reworded" means only words changed.
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| A list field the schema does not own is refused at build | Implemented and verified | `OwnedSteps.fs` |  |  |
+| A list of records that are not stored is refused at build | Implemented and verified | `OwnedSteps.fs` |  | Rewritten (stored records, step b): was "A list field the schema does not own". |
 
 ### owned-records.feature: An owned record is always loaded
 
@@ -760,7 +760,7 @@ describe the one style; "Reworded" means only words changed.
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| A record field the schema does not own is refused at build, saying how to own it | Implemented and verified | `OwnedOneSteps.fs` |  | Before, the message asked for a scalar mapping. |
+| A stored record field that does not hold the owner's key is refused at build, saying how to own it | Implemented and verified | `OwnedOneSteps.fs` |  | Before, the message asked for a scalar mapping. Rewritten (stored records, step b): was "A record field the schema does not own"; the message says to hold its id or give it a field of the owner's key type. |
 
 ### linked-collections.feature: A linked list is always loaded
 

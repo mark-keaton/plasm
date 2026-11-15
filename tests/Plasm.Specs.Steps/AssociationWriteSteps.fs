@@ -11,7 +11,7 @@ type AssociationWriteSteps(w: World) =
 
     let readOrder (id: OrderId) =
         task {
-            let! r = w.Repo.One(plasm { for o in Schemas.orders do where (o.Id = id) })
+            let! r = w.Repo.One(plasm { for o in stored<Order> do where (o.Id = id) })
             return (ok r).Value
         }
 
