@@ -39,6 +39,7 @@
     <Compile Include="ReadingSteps.fs" />
     <Compile Include="PgEnumSteps.fs" />
     <Compile Include="ConventionSteps.fs" />
+    <Compile Include="ExistsSteps.fs" />
     <Compile Include="DdlSteps.fs" />
   </ItemGroup>
   <ItemGroup>

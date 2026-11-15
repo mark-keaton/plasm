@@ -159,9 +159,12 @@ let isRawCall (mi: Reflection.MethodInfo) = mi.DeclaringType.FullName = "Plasm.R
 /// Does `e` mention a query row variable (or an aggregate or SQL fragment,
 /// which are SQL by definition)? Allocation-free walk; row variables are bound
 /// by the translator, never inside the expression, so shadowing does not arise.
+let isExistsCall (mi: Reflection.MethodInfo) =
+    mi.Name = "exists" && mi.DeclaringType.FullName = "Plasm.QueryBuilderInstance"
+
 let rec private mentions (ctx: Ctx) (e: Expr) =
     match e with
-    | Call(None, mi, _) when isAggCall mi || isRawCall mi -> true
+    | Call(None, mi, _) when isAggCall mi || isRawCall mi || isExistsCall mi -> true
     | ExprShape.ShapeVar v -> ctx.Vars.ContainsKey v || ctx.Spaces.ContainsKey v
     | ExprShape.ShapeLambda(_, b) -> mentions ctx b
     | ExprShape.ShapeCombination(_, args) -> List.exists (mentions ctx) args
@@ -630,6 +633,7 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
         scalar ctx e
     else
         match e with
+        | Call(None, mi, [ q ]) when isExistsCall mi -> existsQuery ctx e q
         | IfThenElse(a, b, Bool false) -> Sql.Binary("AND", predicate ctx a, predicate ctx b)
         | IfThenElse(a, Bool true, b) -> Sql.Binary("OR", predicate ctx a, predicate ctx b)
         | SpecificCall <@ not @> (_, _, [ a ]) ->
@@ -1048,6 +1052,80 @@ and relationship ctx (whole: Expr) (pv: Var) (body: Expr) (assoc: Expr) (all: bo
 
         if all then Sql.Not(Sql.Exists sub) else Sql.Exists sub
     | _ -> fail whole "Rel.any / Rel.all must be applied directly to a relationship field of the query row"
+
+/// `exists (plasm { ... })`: the inner query, rebuilt from its builder calls
+/// (its conditions may read the outer rows, so it cannot be evaluated), becomes
+/// a correlated EXISTS.
+and existsQuery ctx (whole: Expr) (q: Expr) : Sql.Expr =
+    let inner = innerQuery ctx whole q
+
+    let refuse () =
+        fail whole "an exists query is a condition only: it cannot page, order, join, group or load"
+
+    if inner.Paged || not inner.Orders.IsEmpty || not inner.Joins.IsEmpty || not inner.GroupBy.IsEmpty || not inner.Havings.IsEmpty || not inner.Loads.IsEmpty || inner.Template.IsSome then
+        refuse ()
+
+    match inner.Problems with
+    | p :: _ -> fail whole p
+    | [] -> ()
+
+    let target =
+        match ctx.Model.Schema inner.Root with
+        | Ok s -> s
+        | Error err -> raise (TranslationFailure err)
+
+    let alias = ctx.Fresh()
+
+    let binding =
+        { Alias = alias
+          Schema = target
+          Optional = false }
+
+    let wheres =
+        inner.Wheres
+        |> List.map (fun lambda ->
+            match normalize lambda with
+            | Lambda(v, body) -> predicate { ctx with Vars = ctx.Vars.Add(v, binding) } body
+            | other -> fail other "expected a lambda")
+
+    Sql.Exists { Sql.select (Sql.Table(target.Table, alias)) with Where = wheres }
+
+/// Rebuilds a query written inside a condition by running its builder calls,
+/// keeping each quoted argument as it is (it may read the outer rows).
+and innerQuery ctx (whole: Expr) (q: Expr) : QueryDef =
+    let rec build (e: Expr) : obj =
+        match e with
+        | Call(Some _, mi, args) when mi.DeclaringType = typeof<QueryBuilder> ->
+            let ps = mi.GetParameters()
+
+            let values =
+                args
+                |> List.mapi (fun i a ->
+                    let pt = ps.[i].ParameterType
+
+                    match a with
+                    | _ when mi.Name = "For" && i = 0 && pt.IsGenericType && pt.GetGenericTypeDefinition() = typedefof<Schema<_>> -> null
+                    | _ when mi.Name = "For" && i = 1 -> null
+                    | _ when typeof<ICheckable>.IsAssignableFrom pt || (pt.IsGenericType && pt.GetGenericTypeDefinition() = typedefof<Query<_>>) -> build a
+                    | QuoteTyped x | QuoteRaw x when typeof<Expr>.IsAssignableFrom pt ->
+                        if pt = typeof<Expr> then
+                            box x
+                        else
+                            typeof<Expr>.GetMethod("Cast").MakeGenericMethod(pt.GetGenericArguments().[0]).Invoke(null, [| x |])
+                    | _ when isRowDependent ctx a -> fail a "an exists query can read the outer row only in its conditions"
+                    | _ -> evaluate ctx a)
+                |> Array.ofList
+
+            try
+                mi.Invoke(QueryBuilder(), values)
+            with :? Reflection.TargetInvocationException as ex when not (isNull ex.InnerException) ->
+                fail e $"the exists query could not be built: {Err.describeExn ex.InnerException}"
+        | _ when isRowDependent ctx e -> fail e "exists takes a query written in place, plasm { for x in source do where (...) }"
+        | _ -> evaluate ctx e
+
+    match build q with
+    | :? ICheckable as c -> c.Def
+    | _ -> fail whole "exists takes a query"
 
 // ---------------------------------------------------------------------------
 // Query-level translation

@@ -557,6 +557,18 @@ the same guarantee more exhaustively.
 | Deleting an Invoice deletes its lines | Implemented and verified | `OwnedSteps.fs` |  | Items that own lists of their own delete them in turn. |
 | A list field the schema does not own is refused at build | Implemented and verified | `OwnedSteps.fs` |  |  |
 
+### query-exists.feature
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Orders with a succeeded payment | Implemented and verified | `ExistsSteps.fs` |  | One style, gap G1: `exists (plasm { ... })` (in `QueryBuilderInstance`). The translator rebuilds the inner query from its builder calls (`innerQuery`), keeping each quoted condition as it is, and translates it as a correlated `EXISTS` in the same command. It replaces `Rel.any`/`Rel.exists` for records in other aggregates. |
+| Orders without a succeeded payment | Implemented and verified | `ExistsSteps.fs` |  | `NOT EXISTS`. |
+| An exists inside a larger condition | Implemented and verified | `ExistsSteps.fs` |  | Inside `||` and `&&`. |
+| The inner query takes a prepared argument too | Implemented and verified | `ExistsSteps.fs` |  | The outer row and an `Arg` in the same inner condition. |
+| A module's queries that use exists are checked | Implemented and verified | `ExistsSteps.fs` |  | `repo.CheckQueries` translates the inner query with the outer one. |
+| An inner query that cannot be translated is reported | Implemented and verified | `ExistsSteps.fs` |  |  |
+| An inner query that pages is refused | Implemented and verified | `ExistsSteps.fs` |  | A condition only: no take/skip, ordering, joins, grouping or loads. |
+
 ### union-fields.feature
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |

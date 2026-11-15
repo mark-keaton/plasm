@@ -672,6 +672,13 @@ module QueryBuilderInstance =
     /// The query computation expression.
     let plasm = QueryBuilder()
 
+    /// Inside a query's condition: true when `query` finds a row. The inner
+    /// query may read the outer row's fields and a prepared query's arguments;
+    /// it becomes a correlated `EXISTS` in the same command.
+    /// `where (exists (plasm { for p in payments do where (p.Order = o.Id) }))`
+    let exists (_query: Query<'T>) : bool =
+        invalidOp "exists is only meaningful inside a query's condition, where it becomes SQL"
+
 /// The query a read of one row runs (Repo.One, Tx.one).
 module internal OneRow =
 
