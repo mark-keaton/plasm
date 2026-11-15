@@ -1,5 +1,5 @@
-/// Lesson 09: About relationships.
-module Plasm.Koans.Lessons.L09_Relationships
+/// Lesson 09: About aggregates and references.
+module Plasm.Koans.Lessons.L09_AggregatesAndReferences
 
 open Plasm
 open Plasm.Koans
@@ -7,162 +7,226 @@ open Plasm.Koans.Shop
 
 let private byId (orders: Order list) (id: int64) = orders |> List.find (fun o -> o.Id = OrderId id)
 
+/// The payments of the orders whose ids it is given: one prepared query
+/// (lesson 19 goes deeper), whatever the number of orders.
+let private paymentsOf =
+    Query.prepare (fun (ids: Arg<OrderId list>) ->
+        plasm {
+            for p in Db.payments do
+                where (List.contains p.OrderId ids.Value)
+                orderBy p.Id
+        })
+
 let lesson =
     Lesson.make
-        "About relationships"
+        "About aggregates and references"
         [ Koan.Task(
-              "Preloading a belongs-to",
+              "An order is read with its lines",
               fun repo ->
                   task {
-                      // A relationship links records: each Order belongs to a Customer
-                      // (belongsTo in Db.orders, through the CustomerId field).
-                      // A relationship field is an Assoc: NotLoaded, or Loaded with its value.
-                      // preload asks the query to load it. byId, at the top of this lesson,
-                      // finds the Order with a given id in a list.
-                      let! orders = repo.All(plasm { for o in Db.orders do preload o.Customer })
-                      let order = byId (ok orders) 3L
-                      // An Order's Customer is optional, so the loaded value is an option.
-                      order.Customer |> Assoc.map (Option.map (fun c -> c.Name)) |> shouldBe __
-                  }
-          )
-
-          Koan.Task(
-              "Preloading a has-many",
-              fun repo ->
-                  task {
-                      // An Order has many OrderLines (hasMany in Db.orders): Lines is a list.
-                      let! orders = repo.All(plasm { for o in Db.orders do preload o.Lines })
+                      // An aggregate is a record together with the records it owns. An
+                      // Order owns its OrderLines: Db.orders says
+                      // ownsOrderedBy (fun o -> o.Lines) (fun l -> l.OrderId) (fun l -> l.Id).
+                      // Whenever an order is read, its Lines are read with it.
+                      // byId, at the top of this lesson, finds the Order with an id in a list.
+                      let! orders = repo.All(Query.from Db.orders)
                       let order = byId (ok orders) 1L
-                      order.Lines |> Assoc.map List.length |> shouldBe __
-                      // Payments was not asked for.
-                      order.Payments |> shouldBe __
+                      order.Lines.Length |> shouldBe __
                   }
           )
 
           Koan.Task(
-              "An Order without a Customer is kept",
+              "Lines come in the order the schema names",
               fun repo ->
                   task {
-                      // Order 4 has no customer. Loading Customers does not drop it.
-                      let! orders = repo.All(plasm { for o in Db.orders do preload o.Customer })
-                      (ok orders).Length |> shouldBe __
-                      (byId (ok orders) 4L).Customer |> shouldBe __
+                      // ownsOrderedBy's last function is the order the lines are read in:
+                      // here their key, l.Id, so the order they were written in.
+                      let! orders = repo.All(Query.from Db.orders)
+                      (byId (ok orders) 1L).Lines |> List.map (fun l -> l.Id) |> shouldBe __
                   }
           )
 
           Koan.Task(
-              "Reading a loaded relationship",
+              "No lines is an empty list",
               fun repo ->
                   task {
-                      let! orders = repo.All(plasm { for o in Db.orders do preload o.Lines })
-                      let order = byId (ok orders) 2L
-                      // Assoc.get takes the value out of Loaded. It never queries: on a
-                      // NotLoaded relationship it fails, saying the relationship was not loaded.
-                      let lines = order.Lines |> Assoc.get
-                      lines.Head.UnitPrice |> shouldBe __
+                      // Order 4 has no lines. An owned list is always read, so an empty
+                      // list means there are none: never "not read yet".
+                      let! orders = repo.All(Query.from Db.orders)
+                      (byId (ok orders) 4L).Lines |> shouldBe __
                   }
           )
 
           Koan.Task(
-              "Not loaded is not empty",
+              "Every order's lines come in one more command",
               fun repo ->
                   task {
-                      let! plain = repo.All(Query.from Db.orders)
-                      (byId (ok plain) 1L).Lines |> shouldBe __
-
-                      // Order 4 has no lines: once loaded, that is an empty list.
-                      let! loaded = repo.All(plasm { for o in Db.orders do preload o.Lines })
-                      (byId (ok loaded) 4L).Lines |> shouldBe __
-                  }
-          )
-
-          Koan.Task(
-              "Reading a field never queries",
-              fun repo ->
-                  task {
+                      // Four orders: one command reads them, and one more reads the lines
+                      // of all four. Reading o.Lines afterwards never queries.
                       let! orders = repo.All(Query.from Db.orders)
 
                       for o in ok orders do
-                          for _ in 1..3 do
-                              o.Lines |> ignore
+                          o.Lines |> ignore
 
                       (commands ()).Length |> shouldBe __
                   }
           )
 
           Koan.Task(
-              "Loads are batched across parents",
+              "A page of orders reads only its lines",
               fun repo ->
                   task {
-                      // Four Orders, and their Lines.
-                      let! _ = repo.All(plasm { for o in Db.orders do preload o.Lines })
+                      // take 2 keeps the first two orders. Their lines are read with them,
+                      // and only theirs: the second command asks for the lines of two orders.
+                      let! page = repo.All(plasm { for o in Db.orders do orderBy o.Id; take 2 })
+                      ok page |> List.collect (fun o -> o.Lines) |> List.length |> shouldBe __
                       (commands ()).Length |> shouldBe __
                   }
           )
 
           Koan.Task(
-              "Siblings load separately",
+              "A customer is referred to by id",
               fun repo ->
                   task {
-                      let! orders = repo.All(plasm { for o in Db.orders do preload o.Lines; preload o.Payments })
-                      let first = byId (ok orders) 1L
-                      (commands ()).Length |> shouldBe __
-                      (first.Lines |> Assoc.get |> List.length, first.Payments |> Assoc.get |> List.length) |> shouldBe __
-                  }
-          )
-
-          Koan.Task(
-              "Loads nest",
-              fun repo ->
-                  task {
-                      let lines = plasm { for l in Db.orderLines do orderBy l.Id; preload l.Product }
-                      let! orders = repo.All(plasm { for o in Db.orders do preload o.Lines lines })
-                      let firstLine = (byId (ok orders) 1L).Lines |> Assoc.get |> List.head
-                      (firstLine.Product |> Assoc.get).Name |> shouldBe __
-                      (commands ()).Length |> shouldBe __
-                  }
-          )
-
-          Koan.Task(
-              "A child filter filters children",
-              fun repo ->
-                  task {
-                      let succeeded = plasm { for p in Db.payments do where (p.Status = Succeeded) }
-                      let! orders = repo.All(plasm { for o in Db.orders do preload o.Payments succeeded })
-                      (ok orders).Length |> shouldBe __
-                      (byId (ok orders) 3L).Payments |> Assoc.get |> List.length |> shouldBe __
-                  }
-          )
-
-          Koan.Task(
-              "Filtering parents through children",
-              fun repo ->
-                  task {
-                      // Order 3 has two payments, one of them succeeded.
-                      let paid = plasm { for o in Db.orders do where (Rel.any (fun p -> p.Status = Succeeded) o.Payments); orderBy o.Id }
-                      let! orders = repo.All paid
-                      ok orders |> List.map (fun o -> o.Id) |> shouldBe __
-                  }
-          )
-
-          Koan.Task(
-              "At most n per parent",
-              fun repo ->
-                  task {
-                      let latest = plasm { for p in Db.payments do orderByDescending p.CreatedAt; limitPerParent 1 }
-                      let! orders = repo.All(plasm { for o in Db.orders do preload o.Payments latest })
-                      (byId (ok orders) 3L).Payments |> Assoc.get |> List.map (fun p -> p.Status) |> shouldBe __
-                  }
-          )
-
-          Koan.Task(
-              "Loading onto values you hold",
-              fun repo ->
-                  task {
+                      // A Customer is an aggregate of its own, so an Order holds only its
+                      // CustomerId. Because CustomerId is the key type of Db.customers,
+                      // Plasm knows the field refers to a customer.
+                      // To reach the customer, ask for it with a query.
                       let! orders = repo.All(Query.from Db.orders)
-                      let originals = ok orders
-                      let! withLines = repo.Preload(plasm { for o in Db.orders do preload o.Lines }, originals)
-                      (byId originals 1L).Lines |> shouldBe __
-                      (byId (ok withLines) 1L).Lines |> Assoc.get |> List.length |> shouldBe __
+                      let customerId = (byId (ok orders) 3L).CustomerId
+                      customerId |> shouldBe __
+                      let id = customerId.Value
+                      let! customer = repo.One(plasm { for c in Db.customers do where (c.Id = id) })
+                      (ok customer).Value.Name |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "A join reads both aggregates' fields",
+              fun repo ->
+                  task {
+                      // A join pairs each order with its customer in one command, and
+                      // select picks the fields to read. Order 4 has no customer, so an
+                      // inner join leaves it out. (Lesson 14 goes deeper.)
+                      let! rows =
+                          repo.All(
+                              plasm {
+                                  for o in Db.orders do
+                                      join c in Db.customers on (o.CustomerId = Some c.Id)
+                                      orderBy o.Id
+                                      select (o.Id, c.Name)
+                              }
+                          )
+
+                      ok rows |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "A whole order cannot come from a join",
+              fun repo ->
+                  task {
+                      // A whole Order is always read with its lines, which a join does not
+                      // read. So selecting the whole order from a join is refused before
+                      // anything is sent: select its fields, or query Db.orders itself.
+                      let! rows =
+                          repo.All(
+                              plasm {
+                                  for o in Db.orders do
+                                      join c in Db.customers on (o.CustomerId = Some c.Id)
+                                      select (o, c.Name)
+                              }
+                          )
+
+                      Result.isError rows |> shouldBe __
+                      (commands ()).Length |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Filtering orders by their lines",
+              fun repo ->
+                  task {
+                      // List.exists over an owned list is a filter the database runs:
+                      // the orders with a line for product 2 (the Gadget), each once.
+                      let gadgets =
+                          plasm {
+                              for o in Db.orders do
+                                  where (o.Lines |> List.exists (fun l -> l.ProductId = ProductId 2L))
+                                  orderBy o.Id
+                          }
+
+                      let! rows = repo.All gadgets
+                      ok rows |> List.map (fun o -> o.Id) |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Every line passes, as F# reads it",
+              fun repo ->
+                  task {
+                      // List.forall keeps the orders whose every line passes. As in F#,
+                      // an order with no lines passes: there is no line that fails.
+                      let tenOrMore =
+                          plasm {
+                              for o in Db.orders do
+                                  where (o.Lines |> List.forall (fun l -> l.UnitPrice >= 10m))
+                                  orderBy o.Id
+                          }
+
+                      let! rows = repo.All tenOrMore
+                      ok rows |> List.map (fun o -> o.Id) |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Orders with a succeeded payment",
+              fun repo ->
+                  task {
+                      // A Payment is another aggregate: it refers to its order by OrderId.
+                      // exists (an inner query) inside a where asks whether any payment
+                      // matches this order, in the same command.
+                      let paid =
+                          plasm {
+                              for o in Db.orders do
+                                  where (exists (plasm { for p in Db.payments do where (p.OrderId = o.Id && p.Status = Succeeded) }))
+                                  orderBy o.Id
+                          }
+
+                      let! rows = repo.All paid
+                      ok rows |> List.map (fun o -> o.Id) |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Orders without a succeeded payment",
+              fun repo ->
+                  task {
+                      // not (exists ...) keeps the orders no succeeded payment refers to.
+                      let unpaid =
+                          plasm {
+                              for o in Db.orders do
+                                  where (not (exists (plasm { for p in Db.payments do where (p.OrderId = o.Id && p.Status = Succeeded) })))
+                                  orderBy o.Id
+                          }
+
+                      let! rows = repo.All unpaid
+                      ok rows |> List.map (fun o -> o.Id) |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Another aggregate's records, for a page of orders",
+              fun repo ->
+                  task {
+                      // To show each order with its payments, read the orders, then the
+                      // payments of all of them with one more query (paymentsOf, at the
+                      // top of this lesson), and group them in F#.
+                      let! orders = repo.All(plasm { for o in Db.orders do orderBy o.Id })
+                      let ids = ok orders |> List.map (fun o -> o.Id)
+                      let! payments = repo.All(paymentsOf ids)
+                      let byOrder = ok payments |> List.countBy (fun p -> p.OrderId)
+                      byOrder |> shouldBe __
+                      (commands ()).Length |> shouldBe __
                   }
           ) ]

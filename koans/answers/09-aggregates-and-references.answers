@@ -1,33 +1,30 @@
-# Preloading a belongs-to
-Loaded(Some "Bob")
-# Preloading a has-many
-Loaded 2
-NotLoaded
-# An Order without a Customer is kept
-4
-Loaded None
-# Reading a loaded relationship
-2.50m
-# Not loaded is not empty
-NotLoaded
-Loaded []
-# Reading a field never queries
-1
-# Loads are batched across parents
+# An order is read with its lines
 2
-# Siblings load separately
+# Lines come in the order the schema names
+[ OrderLineId 1L; OrderLineId 2L ]
+# No lines is an empty list
+[]
+# Every order's lines come in one more command
+2
+# A page of orders reads only its lines
 3
-(2, 1)
-# Loads nest
-"Widget"
-3
-# A child filter filters children
-4
-1
-# Filtering parents through children
+2
+# A customer is referred to by id
+Some(CustomerId 2L)
+"Bob"
+# A join reads both aggregates' fields
+[ (OrderId 1L, "Ada"); (OrderId 2L, "Ada"); (OrderId 3L, "Bob") ]
+# A whole order cannot come from a join
+true
+0
+# Filtering orders by their lines
 [ OrderId 1L; OrderId 3L ]
-# At most n per parent
-[ Succeeded ]
-# Loading onto values you hold
-NotLoaded
-2
+# Every line passes, as F# reads it
+[ OrderId 1L; OrderId 3L; OrderId 4L ]
+# Orders with a succeeded payment
+[ OrderId 1L; OrderId 3L ]
+# Orders without a succeeded payment
+[ OrderId 2L; OrderId 4L ]
+# Another aggregate's records, for a page of orders
+[ (OrderId 1L, 1); (OrderId 3L, 2) ]
+3

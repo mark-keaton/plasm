@@ -1,7 +1,7 @@
 # Lesson 09 of the Plasm Koans. Each row is one koan: what the learner discovers,
 # and the acceptance scenario of Plasm it teaches (feature: scenario).
-Feature: About relationships
-  Relationships are loaded only when asked, in batched commands, and never by reading a field.
+Feature: About aggregates and references
+  An aggregate is a record with the records it owns, read whole: an Order is always read with its lines, in one more command for any number of orders. Other aggregates are referred to by id and reached with a query, a join, an exists, or a second query.
 
   Prerequisites: lesson 08.
 
@@ -14,17 +14,17 @@ Feature: About relationships
     And it teaches the acceptance scenario "<teaches>"
 
     Examples:
-      | koan                                | the learner discovers                                                                  | teaches                                                            |
-      | Preloading a belongs-to             | preload o.Customer fills each Order's Customer with Loaded (Some customer)             | core: Relationship loading batches across parents                  |
-      | Preloading a has-many               | preload o.Lines fills Lines with a list, and leaves Payments, not asked for, NotLoaded | core: Unloaded and empty relationships are distinguishable         |
-      | An Order without a Customer is kept | loading an optional belongs-to keeps the Order, with Loaded None                       | elegance: Optional relationships preserve parent rows              |
-      | Reading a loaded relationship       | Assoc.get takes the value out of Loaded, without touching the database                 | core: Reading a relationship never triggers hidden database access |
-      | Not loaded is not empty             | Assoc distinguishes NotLoaded from Loaded []                                           | core: Unloaded and empty relationships are distinguishable         |
-      | Reading a field never queries       | a NotLoaded relationship stays NotLoaded however often it is read                      | core: Reading a relationship never triggers hidden database access |
-      | Loads are batched across parents    | preloading Lines for many Orders sends one command, not one per Order                  | core: Relationship loading batches across parents                  |
-      | Siblings load separately            | Lines and Payments load in their own commands, with no cartesian product               | core: Sibling collections load without a cartesian product         |
-      | Loads nest                          | a child query can preload its own relationships                                        | core: Nested loads compose                                         |
-      | A child filter filters children     | filtering the loaded Payments does not remove any Order                                | core: A child filter does not implicitly filter parents            |
-      | Filtering parents through children  | Rel.any keeps each matching Order once                                                 | elegance: Relationship filtering does not duplicate parents        |
-      | At most n per parent                | limitPerParent keeps the latest Payments of each Order, not of all Orders              | core: Per-parent limits preserve their stated meaning              |
-      | Loading onto values you hold        | repo.Preload returns new values and leaves the originals unloaded                      | core: Loading onto existing values preserves the originals         |
+      | koan                                              | the learner discovers                                                                                      | teaches                                                               |
+      | An order is read with its lines                   | an Order owns its lines: reading an order always reads its Lines, a plain list                             | owned-collections: Reading an invoice reads its lines                 |
+      | Lines come in the order the schema names          | ownsOrderedBy reads the lines in the order of the field it names, here their key                           | owned-collections: Reading an invoice reads its lines                 |
+      | No lines is an empty list                         | an order without lines reads with []: an owned list is never left unread                                   | owned-collections: An invoice without lines reads with an empty list  |
+      | Every order's lines come in one more command      | four orders and all their lines take two commands, and reading Lines sends nothing                         | owned-collections: Every invoice's lines are read in one more command |
+      | A page of orders reads only its lines             | with take 2, only the lines of those two orders are read                                                   | elegance: Database work remains bounded by the requested page         |
+      | A customer is referred to by id                   | an Order holds its customer's CustomerId, a reference to Db.customers; a query reaches the customer        | constraints: A typed id references the schema whose key it is         |
+      | A join reads both aggregates' fields              | a join pairs orders with their customers in one command; an order without a customer is left out           | joins: An inner join returns matching pairs                           |
+      | A whole order cannot come from a join             | selecting a whole Order from a join is refused before anything is sent, because its lines are read with it | owned-collections: A whole Invoice cannot be selected from a join     |
+      | Filtering orders by their lines                   | List.exists over o.Lines is run by the database, and keeps each matching order once                        | linked-collections: Cards are kept by their tags, as F# reads a list  |
+      | Every line passes, as F# reads it                 | List.forall over o.Lines keeps an order with no lines, as F# would                                         | linked-collections: Cards whose every tag passes, as F# reads a list  |
+      | Orders with a succeeded payment                   | exists (an inner query over Db.payments) reaches another aggregate inside a where                          | query-exists: Orders with a succeeded payment                         |
+      | Orders without a succeeded payment                | not (exists ...) keeps the orders no matching payment refers to                                            | query-exists: Orders without a succeeded payment                      |
+      | Another aggregate's records, for a page of orders | the payments of many orders come from one more query with List.contains, grouped in F#                     | elegance: Larger parent sets do not cause N+1 behavior                |
