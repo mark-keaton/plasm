@@ -94,7 +94,7 @@ type RunningSteps(w: BrowserWorld) =
         }
 
     [<StepDefinition("the koans page has finished loading")>]
-    member _.Loaded() =
+    member _.PageReady() =
         task {
             let! page = openKoans ()
             w.Page <- page
