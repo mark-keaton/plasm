@@ -2,6 +2,8 @@
 
 *Researched 2026-11-13. Versions: Microsoft.EntityFrameworkCore 11.0.0 (GA 2026-11-10; 10.0.x is the LTS line, supported to 2028-11-10); Npgsql.EntityFrameworkCore.PostgreSQL latest stable 10.0.3 (2026-07-10), 11.0.0-rc.3 (2026-10-28), so the PostgreSQL provider is still behind EF 11 GA; EntityFrameworkCore.FSharp 10.0.0 (2026-10-27).*
 
+*Plasm-side statements corrected 2026-11-14 for the one style (`docs/status.md`): relationships, preloads, public changesets, validation, pipeline queries and repository writes were removed. Where the original text described them, it now describes what replaced them. The EF Core findings are unchanged.*
+
 **Evidence labels.**
 - **[probe]**: verified by running F# code. Sources: `scratchpad/efprobe/Program.fs` and `scratchpad/effsprobe/Program.fs`, with output in `scratchpad/efprobe/probe-output.txt`. The probes used EF Core 11.0.0-rc.3 and Npgsql EF 11.0.0-rc.3 on .NET 11 and PostgreSQL 18.4, and checked SQL with `ToQueryString()` plus a throwaway database.
 - **[docs]** / **[issue]**: taken from the cited source.
@@ -96,7 +98,7 @@ mb.Entity<Order>().Property(fun o -> o.Status)
 **Plasm:**
 - Options are native, including on keys and in joins (`leftJoin` gives `'T option`).
 - `= None` → `IS NULL`; option-to-option equality → `IS NOT DISTINCT FROM`. `.IsSome`, `.Value`, `Option.map` and `Option.bind` to a field all translate.
-- `Assoc<'T> = NotLoaded | Loaded of 'T` keeps "not loaded" apart from `Loaded None` and `Loaded []`.
+- Nothing is ever "not loaded": what a record owns (`owns`, `ownsOptional`) or links is a plain field, always loaded with it, so `None` and `[]` mean none.
 
 ## 3. Relationships and loading
 
@@ -132,10 +134,10 @@ ctx.Orders.AsNoTracking()
   - before EF 10, non-unique ordering with Skip/Take could return **wrong data** (EF 10 fixed the ordering)
   - reference navigations joined into every split query (#29182, pruned in EF 11)
 - Split queries re-join the parent query into each child query rather than sending a key list [docs SQL].
-- `AsNoTracking` materialises one Product object per line (`docs/benchmarks.md`: 10,000 Product instances vs Plasm's 200). `AsNoTrackingWithIdentityResolution` fixes that.
+- `AsNoTracking` materialises one Product object per line (measured 2026-11-12, when Plasm's benchmark still loaded products: 10,000 instances against Plasm's 200). `AsNoTrackingWithIdentityResolution` fixes that. In the one style a line refers to its product by id, so the current benchmark no longer reads products.
 
 **Filtered include:**
-- `Where`/`OrderBy`/`Skip`/`Take` inside `Include` (EF 5+). `Take` inside a filtered include is per parent [docs; unverified here]. This is the same semantics Plasm offers as `limitPerParent`. Plasm instead rejects `take` in a load query.
+- `Where`/`OrderBy`/`Skip`/`Take` inside `Include` (EF 5+). `Take` inside a filtered include is per parent [docs; unverified here]. Plasm has no per-parent limit: an owned list always loads whole, and the latest few rows per parent is hand-written SQL.
 
 **Lazy loading:**
 - Proxies need `virtual` navigations with backing fields. F# explicit fields get an `@` suffix that EF can't discover: dotnet/efcore #12923, open since 2018, `area-F#`.
@@ -143,7 +145,7 @@ ctx.Orders.AsNoTracking()
 - Not realistic for records.
 
 **Explicit loading:**
-- `ctx.Entry(o).Collection(...).LoadAsync()` needs tracking. Plasm's `repo.Preload` works on any values and returns new values.
+- `ctx.Entry(o).Collection(...).LoadAsync()` needs tracking. Plasm has no explicit loading: another aggregate is read by a query of its own (for a page of parents, a prepared query with `List.contains` over their ids).
 
 ## 4. Writes, change tracking, transactions, concurrency
 
@@ -163,9 +165,9 @@ ctx.Orders.AsNoTracking()
 - **Validation:** none. EF Core does not run DataAnnotations validation on save. Nothing like a changeset.
 
 **Plasm:**
-- Changesets with validations, `cast` with permitted fields, and constraint-to-field error mapping.
-- Explicit `putChildren` / `replaceChildren` with `ReplaceScope` and `OnReplace`.
-- `transaction { }` with named steps; an integer version column.
+- No validation either, on purpose: the domain's constructors validate, and constraints with PostgreSQL's default names come back as field errors.
+- `Tx.update (original, changed)` writes only the columns that differ, and what the record owns by difference (ownership is the removal policy).
+- `transaction { }` with typed steps; concurrency by an integer version column or by the original record's columns.
 - Plasm lacks:
   - `xmin`-style tokens
   - belongs-to and has-one writes through the parent
@@ -217,7 +219,7 @@ with :? DbUpdateException as e ->
 
 - **EntityFrameworkCore.Exceptions.PostgreSQL** 10.0.1 (2026-05-24) gives typed subclasses of `DbUpdateException`: `UniqueConstraintException`, `ReferenceConstraintException`, `CannotInsertNullException`, `MaxLengthExceededException`, `NumericOverflowException`. Constraint properties are only filled for indexes in the EF model.
 - No `Result`-returning API exists. F# users wrap calls themselves.
-- **Plasm:** `Result<_, WriteError>` with `Invalid` (field errors), `Stale`, and `Failed` with a classified `DbFailureKind`. It names the failed transaction step, and treats `MoreThanOneRow` and `RepositoryClosed` as values.
+- **Plasm:** a transaction returns `Result<_, TransactionError<'E>>` with `TxFailure.Rejected` (the transaction's own reason), `InvalidChanges` (field errors), `Conflict`, and `Failed` with a classified `DbFailureKind`. It says where the failed step is written, and treats `MoreThanOneRow` and `RepositoryClosed` as values.
 
 ## 7. F# query translation
 
@@ -307,10 +309,10 @@ The gap list for an EF Core replacement. Plasm status is from `docs/status.md` (
 
 **Modelling**
 8. Inheritance: TPH, TPT, TPC.
-9. Owned and complex types (table splitting, value objects across several columns, optional complex types, structs) and JSON columns (`ToJson`, query into JSON, `ExecuteUpdate` on JSON). Plasm has no embedded types or JSON columns.
+9. Owned and complex types (table splitting, value objects across several columns, optional complex types, structs) and JSON columns (`ToJson`, query into JSON, `ExecuteUpdate` on JSON). Plasm's owned records live in their own tables; it has no embedded types or JSON columns.
 10. Composite primary and foreign keys, alternate keys, shadow properties, backing fields, property access modes.
 11. Primitive collections as columns, queryable (PostgreSQL arrays: `= ANY`, `@>`). Plasm rejects collections as columns.
-12. Many-to-many with payload or skip navigations, and has-through equivalents. Plasm has plain many-to-many only.
+12. Many-to-many with payload or skip navigations, and has-through equivalents. Plasm has plain linked lists (`links`) only.
 13. Keyless entities, views, table-valued and user-defined function mapping (`HasDbFunction`), stored-procedure mapping for inserts, updates and deletes, raw SQL entity sources composable with LINQ (`FromSql(...).Where(...).Include(...)`). Plasm's `repo.Sql` is not composable.
 14. Value generation: sequences, HiLo, identity options, computed columns, defaults, `ValueGeneratedOnAddOrUpdate`.
 15. Concurrency tokens of any type, including PostgreSQL `xmin` without a schema column. Plasm has an integer version only.
@@ -325,15 +327,15 @@ The gap list for an EF Core replacement. Plasm status is from `docs/status.md` (
 
 **Querying**
 19. Set operations (`Union`, `Concat`, `Except`, `Intersect`) and `Distinct`. Subqueries in projections, including **nested collections projected into DTOs** (`Select(fun o -> {| o.Id; Lines = o.Lines.Select(...) |})`). `GroupBy` final operator. `MaxBy`/`MinBy` (EF 11). Right and full joins (EF 10 and 11 operators). Non-equi joins, `SelectMany`, correlated subqueries.
-20. Eager loading combined with joins and projections. A choice of single-query JOIN loading or split loading, per query or globally. Plasm always batches and cannot preload on a joined query.
-21. Identity resolution (`AsNoTrackingWithIdentityResolution`, the tracked identity map). Plasm shares instances within a load, which is a partial equivalent.
+20. Eager loading combined with joins and projections. A choice of single-query JOIN loading or split loading, per query or globally. Plasm always batches, always loads what a record owns, and lets no query choose what to load.
+21. Identity resolution (`AsNoTrackingWithIdentityResolution`, the tracked identity map).
 22. Lazy loading (proxies, `ILazyLoader`), explicit loading through `Entry`.
 23. Streaming with `AsAsyncEnumerable`. Plasm has no streaming.
-24. Compiled queries (`EF.CompileAsyncQuery`), parameter-mode control for collections (`EF.Constant`, `EF.Parameter`, `UseParameterizedCollectionMode`). Plasm has `Query.prepare`, but no prepared projections yet.
+24. Compiled queries (`EF.CompileAsyncQuery`), parameter-mode control for collections (`EF.Constant`, `EF.Parameter`, `UseParameterizedCollectionMode`). Plasm has `Query.prepare`, with prepared projections for one and two arguments.
 25. A large, provider-extensible method-translation catalogue: date and time parts, math, string functions, `EF.Functions.*`, user-mapped functions. Plasm translates a fixed subset (comparisons, `StartsWith`/`EndsWith`/`Contains`, `ToLower`/`ToUpper`/`Trim`/`Length`) plus `Raw.fragment`.
 
 **Writing**
-26. A unit of work across arbitrary entity types in one `SaveChanges`, with statement batching, FK fix-up, and graph inserts or updates at any depth. That covers belongs-to and has-one writes and nested children. Plasm writes `hasMany` children only; nested inserts are unexercised.
+26. A unit of work across arbitrary entity types in one `SaveChanges`, with statement batching, FK fix-up, and graph inserts or updates at any depth. That covers belongs-to and has-one writes and nested children. Plasm writes an aggregate with what it owns and links; another aggregate is written by its own step.
 27. Cascade delete and delete-orphans configuration, and `DeleteBehavior` in the model and the DDL.
 28. Bulk `ExecuteUpdate`/`ExecuteDelete` over navigations or joins (`UPDATE ... FROM`). Plasm's bulk writes reject joins and lack `RETURNING` from bulk updates.
 29. Conflict-resolution APIs (`GetDatabaseValues`, `Reload`, `OriginalValues`), `SaveChanges` events and interceptors (auditing).
@@ -345,34 +347,33 @@ The gap list for an EF Core replacement. Plasm status is from `docs/status.md` (
 ## What Plasm does that EF Core does not
 
 1. **Plain immutable F# records.** No `[<CLIMutable>]`, F# `list` children, options without an add-on. In EF, records without CLIMutable fail (#34357 **[probe]**), F# lists fail to materialise **[probe]**, and options need EFCore.FSharp.
-2. **`Assoc<'T>` = `NotLoaded | Loaded of 'T`.** EF uses `null` for a not-loaded reference and for a not-included collection **[probe]**, the same as "none". Plasm also never queries on access, so there is no lazy-loading trap.
+2. **Nothing is left unloaded.** EF uses `null` for a not-loaded reference and for a not-included collection **[probe]**, the same as "none". In Plasm what a record owns or links is a plain field, always loaded, and nothing queries on access, so there is no lazy-loading trap.
 3. **Captured values are always parameters.** EF from F# inlines them as constants unless you write `EF.Parameter` **[probe]** (fsharp #12841, by design).
 4. **Idiomatic F# translates:**
    - `.IsSome`, `.Value`, `Option.map` / `Option.bind` to a field
    - `List.contains` / `Seq.contains` over F# lists
-   - `Rel.any` / `Rel.all` / `Rel.exists`
+   - `exists (plasm { ... })`, and `List.exists` / `List.forall` over owned and linked lists
    - left-joined sources as `'T option`
 
    EF fails on `List.contains`, `Option.map`, union patterns and out-of-order anonymous records **[probe]**.
-5. **Batched loading by key.** One `= ANY(@keys)` command per relationship, each distinct related row fetched and materialised once and shared (200 vs 10,000 Product instances), and a sibling-safe cartesian-free default with no mode to choose. Plasm also fetches parent pages first. `docs/benchmarks.md` reports 2.1× faster than EF split query at 1,000 parents. That is Plasm's own benchmark.
-6. **Loading onto existing values without tracking** (`repo.Preload`, returns new values). Load-conflict detection (`LoadConflict`, `replacePreload`) and `take` in a load query rejected as ambiguous.
-7. **Changesets.** Pure validation, `cast` with permitted fields from external input, constraint-to-field error mapping, "unmentioned fields are never written". EF `Update` on a detached record writes every column **[probe]**, and EF has no validation.
-8. **Immutable updates as values.** `Changeset.edit (fun o -> { o with ... })` versus EF's identity-map conflict on `{ o with }` **[probe]** (#11457).
-9. **Results, not exceptions.** `WriteError.Invalid | Stale | Failed` with a classified `DbFailureKind`, plus `DbError.MoreThanOneRow` and `RepositoryClosed`. EF throws `DbUpdateException` wrapping `PostgresException` **[probe]**.
+5. **Batched loading by key.** One `= ANY(@keys)` command per owned or linked list, a cartesian-free default with no mode to choose, and parent pages fetched first. In Plasm's own benchmark (`docs/benchmarks.md`) a page of 1,000 orders with their lines and payments took 14.5 ms against 21 ms for EF split query.
+6. **The application's own records, read whole.** Types state what they can (wrappers, `create` functions, unions with fields stored across columns, typed ids as references); the schema states the rest once.
+7. **Writes by difference.** Constraint-to-field error mapping by PostgreSQL's default names, and "only what differs is written". EF `Update` on a detached record writes every column **[probe]**.
+8. **Immutable updates as values.** `Tx.update (order, { order with ... })` versus EF's identity-map conflict on `{ o with }` **[probe]** (#11457).
+9. **Results, not exceptions.** `TxFailure.Rejected | InvalidChanges | Conflict | Failed` with a classified `DbFailureKind`, plus `DbError.MoreThanOneRow` and `RepositoryClosed`. EF throws `DbUpdateException` wrapping `PostgresException` **[probe]**.
 10. **Transactions as values.** `transaction { }` with typed steps, failures that say where the step is written and carry the transaction's own error type (`TxFailure<'E>`), and explicit retry policy. `Tx.run` cannot commit or roll back.
-11. **Explicit child-replacement policy** (`ReplaceScope`, `OnReplace.Reject` by default) instead of tracking-dependent orphan handling.
+11. **Ownership as the removal policy.** An owned item left out of its owner is deleted, an item of another owner or listed twice is refused, and a linked record is never written through its owner, instead of tracking-dependent orphan handling.
 12. **Typed aggregates with F# semantics.** `Agg.sum` of nothing is 0, `min`/`max`/`avg` return options, `avg` requires `DivideByInt`. EF's `Max` over an empty set of non-nullable values throws [unverified for EF 11].
 13. **`repo.CheckSchema()`** against the live catalogue. EF compares against its migration snapshot only [unverified].
 14. **Test sandbox** (rolled back, savepoint per operation, nesting) as a first-class API.
 15. **F# Interactive.** Queries display their SQL and parameters, `Playground`, `Scaffold`, and a `RedefinedType` explanation. EF in FSI works but has none of these [unverified].
 16. **Typed raw-SQL fragments inside typed queries** (`Raw.fragment` with literal-only format strings). EF has `FromSql` only at the root, plus function mapping.
-17. **Domain scalars with validating constructors** (`Scalar.tryWrap`), where unknown stored values are errors, not exceptions or silent defaults.
+17. **Domain scalars with validating constructors** (a `create` function, found by convention), where refused stored values are errors, not exceptions or silent defaults.
 18. **Every public union qualified, and FSharp.Core 8 compatibility.** EFCore.FSharp requires FSharp.Core ≥ 10.0.102.
 
 **Parity worth noting** (no Plasm advantage):
 - Two-valued `not` over nullable columns: EF also emits `<> 3 OR IS NULL` **[probe]**.
 - `FormattableString` raw SQL.
-- Per-parent limits in filtered includes.
 - Prepared or compiled queries.
 - Bulk update and delete.
 

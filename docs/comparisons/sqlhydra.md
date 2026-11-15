@@ -2,7 +2,7 @@
 
 *Researched 2026-11-13. SqlHydra state: **v5.1.1** (SqlHydra.Query and SqlHydra.Cli, published to NuGet 2026-10-19), repo HEAD `551e1b5` (2026-10-19).
 Sources: GitHub repo https://github.com/JordanMarr/SqlHydra (README, `src/`, `docs/writing-extensions.md`, git history, issues via the GitHub REST API), NuGet https://www.nuget.org/packages/SqlHydra.Query and https://www.nuget.org/packages/SqlHydra.Cli.
-Plasm state: `README.md` and `docs/status.md` as of 2026-11-12 (0.1.0-alpha, unpublished).
+Plasm state: `README.md` and `docs/status.md` as of 2026-11-12 (0.1.0-alpha, unpublished); Plasm-side statements corrected 2026-11-14 for the one style (relationships, preloads, public changesets, validation and repository writes were removed). The findings about SqlHydra are unchanged.
 "Not verified" means I read the code or docs but did not run it.*
 
 ## What SqlHydra is
@@ -15,7 +15,7 @@ Two packages:
 The author calls it "a strongly typed query library rather than an ORM" and deliberately has no ORM features ([#80](https://github.com/JordanMarr/SqlHydra/issues/80), JordanMarr, 2024-01-10). That framing sets up most of the comparison:
 
 - **SqlHydra:** database-first, generated types, SQL-shaped queries.
-- **Plasm:** model-first, hand-written domain records, a relationship model with batched preloading, changesets and Result-based errors.
+- **Plasm:** model-first, the application's own domain records, aggregates that own and link records and are loaded and written whole, typed transactions and Result-based errors.
 
 In v4.0 (April 2026) SqlHydra replaced its SqlKata dependency with its own IR and SQL emitters (commits `c890a56`/`c43e199`, 2026-04-04). Its only runtime dependency is now FastExpressionCompiler (`src/SqlHydra.Query/SqlHydra.Query.fsproj`). It targets netstandard2.0 and net8/9/10.
 
@@ -146,11 +146,9 @@ let byOrder = lines |> List.groupBy _.OrderId |> Map.ofList   // assemble yourse
 
 **Plasm:**
 
-- `hasMany`, `belongsTo`, `hasOne` and `manyToMany` are declared in the schema.
-- `preload` (nested, filtered, ordered, `limitPerParent` via a window function) sends one `= ANY(@keys)` command per relationship per batch of keys, with configurable `MaxKeysPerCommand`.
-- `Assoc` is `NotLoaded | Loaded`, so nothing loads lazily.
-- `Rel.any`/`all`/`exists` compile to correlated EXISTS.
-- `repo.Preload` loads onto existing values.
+- `owns` / `ownsOptional` / `ownsOne` and `links` are declared in the schema; the fields are plain values.
+- What a record owns or links is loaded with every read of it, one `= ANY(@keys)` command per list per batch of keys, with configurable `MaxKeysPerCommand`. Nothing loads lazily, and nothing is left unloaded.
+- Other aggregates are referred to by typed id and reached by joins, `exists (plasm { ... })` (a correlated EXISTS) or a second prepared query; `List.exists`/`forall` over owned and linked lists also compile to EXISTS.
 
 This is Plasm's main advantage.
 
@@ -196,12 +194,12 @@ ctx.CommitTransaction()          // failwith "No transaction was started." if no
 
 **Plasm:**
 
-- Changesets (pure validation, `edit` diffs only changed fields).
-- Version-column optimistic concurrency (`WriteError.Stale`).
-- `transaction { }` values with named steps, `RetryPolicy` for serialisation failures, and savepoints in sandboxes.
+- `Tx.update (original, changed)` writes only the columns that differ; no validation layer either (the domain's constructors validate).
+- Optimistic concurrency by a version column or by the original record's columns (`TxFailure.Conflict`).
+- `transaction { }` values with typed steps, `RetryPolicy` for serialisation failures, and savepoints in sandboxes.
 - `Bulk.insert` split above 65,000 parameters in one transaction.
 - `Bulk.update`/`delete`/`upsert`/`insertMissing`.
-- `putChildren`/`replaceChildren` with explicit scope, and `putLinks` for many-to-many.
+- Owned rows written with their owner by difference, and links as the new set.
 - Plasm lacks `RETURNING` from bulk updates, `INSERT ... SELECT`, and `UPDATE ... FROM`. SqlHydra has `returning` on update and delete, and `fromSelect`.
 
 ## 5. Schema and migrations
@@ -244,7 +242,7 @@ ctx.CommitTransaction()          // failwith "No transaction was started." if no
 
 **Plasm:**
 
-- `Result` values: `WriteError.Invalid` (per-field changeset errors), `Stale`, and `Failed` with a classified `DbFailureKind` (`UniqueViolation`, ...) and constraint mapping onto fields.
+- `Result` values: transactions fail with `TxFailure.Rejected` (the domain's reason), `InvalidChanges` (per-field errors, from constraints with PostgreSQL's default names), `Conflict`, and `Failed` with a classified `DbFailureKind` (`UniqueViolation`, ...).
 - `DbError.MoreThanOneRow`; `TranslationError.UnsupportedExpression`/`UnsupportedByProvider` naming the expression.
 
 ## 7. Database support and quality
@@ -344,17 +342,16 @@ That is three major versions in about nine months. It is active, but expect brea
 
 ## What Plasm does that SqlHydra does not
 
-- **A relationship model:** `hasMany`/`belongsTo`/`hasOne`/`manyToMany`, with batched, nested, filtered `preload` (one `= ANY` command per relationship per key batch, `limitPerParent`, merge and conflict detection, `repo.Preload` onto existing values). SqlHydra has none by design (#80); you write the second query and the grouping yourself.
-- **Relationship predicates:** `Rel.any`/`all`/`exists` as correlated EXISTS without writing the subquery.
-- **Domain types in the model:** fieldless unions (`Scalar.enum`), single-case wrappers (`Scalar.wrap`), validated wrappers (`tryWrap`), and typed keys that stop `CustomerId` and `OrderId` being mixed. SqlHydra maps only primitives, options and .NET enums.
-- **Errors as values:** `Result` with classified failures (`UniqueViolation` and others), constraint-to-field mapping, `Stale`, and per-field validation errors. SqlHydra throws provider exceptions.
-- **Changesets:** pure validation, writing only changed fields, child replacement with explicit scope and removal policy.
-- **Optimistic concurrency** via a version column.
-- **Transactions as values:** named typed steps, retry policy, errors that name the step.
+- **Aggregates:** `owns`/`ownsOptional`/`ownsOne`/`links`, loaded whole in batches (one `= ANY` command per list per key batch) and written by difference. SqlHydra has no model of related rows by design (#80); you write the second query and the grouping yourself.
+- **Predicates over other aggregates and owned lists:** `exists (plasm { ... })` and `List.exists`/`forall` as correlated EXISTS.
+- **Domain types in the model, by convention:** fieldless unions, unions with fields across columns, single-case wrappers, types with a `create` function, and typed keys that stop `CustomerId` and `OrderId` being mixed. SqlHydra maps only primitives, options and .NET enums.
+- **Errors as values:** `Result` with classified failures (`UniqueViolation` and others), constraint-to-field mapping, `Conflict`, and the domain's own rejections. SqlHydra throws provider exceptions.
+- **Writes by difference:** only changed columns, and owned rows by key; ownership is the removal policy.
+- **Optimistic concurrency** via a version column, or by the original record's columns.
+- **Transactions as values:** typed steps, retry policy, errors that say where the step is written.
 - **Automatic batch splitting** above PostgreSQL's parameter limit, in one transaction.
 - **Typed aggregates:** `min`/`max`/`avg` return options by type, and `sum` needs `+`/`Zero`. In SqlHydra you add `Some` by hand to avoid a NULL cast failure.
 - **A runtime schema check** (`repo.CheckSchema`) and a **rolled-back test sandbox** and **FSI playground**; queries display their SQL in FSI.
-- **`limitPerParent`** (per-parent top-N in one command).
 
 ## Could not verify
 

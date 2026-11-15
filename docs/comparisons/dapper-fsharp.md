@@ -1,6 +1,6 @@
 # Dapper.FSharp compared with Plasm
 
-Researched 2026-11-13. Dapper.FSharp **4.10.0** (NuGet, 2026-04-01; depends on Dapper >= 2.1.72 and FSharp.Core >= 10.1.201; targets net6.0 to net10.0). Repository at commit `a83c9d5` (master, 2026-04-01). Plasm as of `docs/status.md` dated 2026-11-12.
+Researched 2026-11-13. Dapper.FSharp **4.10.0** (NuGet, 2026-04-01; depends on Dapper >= 2.1.72 and FSharp.Core >= 10.1.201; targets net6.0 to net10.0). Repository at commit `a83c9d5` (master, 2026-04-01). Plasm as of `docs/status.md` dated 2026-11-12; Plasm-side statements corrected 2026-11-14 for the one style (relationships, preloads, public changesets, validation and repository writes were removed). The findings about Dapper.FSharp are unchanged.
 
 Sources: [README](https://github.com/Dzoukr/Dapper.FSharp/blob/master/README.md), [src](https://github.com/Dzoukr/Dapper.FSharp/tree/master/src/Dapper.FSharp), [NuGet](https://www.nuget.org/packages/Dapper.FSharp), [issues](https://github.com/Dzoukr/Dapper.FSharp/issues).
 
@@ -45,7 +45,7 @@ Sources: [README](https://github.com/Dzoukr/Dapper.FSharp/blob/master/README.md)
 - There is no subquery, `EXISTS`, `UNION` or CTE support ([#101](https://github.com/Dzoukr/Dapper.FSharp/issues/101) union closed).
 
 **Plasm**
-- `hasMany`, `belongsTo`, `hasOne` and `manyToMany` are declared in the schema. `preload` runs one batched `= ANY(@keys)` command per relationship level, with filtered, ordered, `limitPerParent` and nested child queries. Results are immutable records with `Assoc<...>` fields. A page with Lines→Product and Payments takes 4 commands at any parent count, and shared targets are materialised once. `Rel.any`, `Rel.all` and `Rel.exists` compile to correlated `EXISTS`. Joins are explicit flat tuples, with left-joined records as options, just like Dapper.FSharp's, but with no fixed arity limit stated and with composite keys.
+- What a record owns (`owns`, `ownsOptional`, `ownsOne`) or links to through a join table (`links`) is declared in the schema and is a plain field, always loaded: one batched `= ANY(@keys)` command per list per level. Other aggregates are referred to by typed id and reached by joins, `exists (plasm { ... })` or a second query; a page of orders with their lines and their payments takes 3 commands at any parent count. `List.exists` / `List.forall` over owned and linked lists compile to correlated `EXISTS`. Joins are explicit flat tuples, with left-joined records as options, just like Dapper.FSharp's, but with no fixed arity limit stated and with composite keys.
 
 **Verdict:** this is the dimension that matters most for the stated goal ("as easy as AsSplitQuery"), and Dapper.FSharp has nothing comparable. Its joins are on a par with Plasm's `join` / `leftJoin` for flat reads.
 
@@ -60,7 +60,7 @@ Sources: [README](https://github.com/Dzoukr/Dapper.FSharp/blob/master/README.md)
 - **Transactions:** pass an `IDbTransaction` as the optional `trans` argument to each call ([#85](https://github.com/Dzoukr/Dapper.FSharp/issues/85), [#17](https://github.com/Dzoukr/Dapper.FSharp/issues/17)). You manage begin, commit, rollback and isolation with ADO.NET. There is no transaction abstraction, retry or optimistic concurrency, and no validation.
 
 **Plasm**
-- Changesets carry pure validation, constraint mapping (unique, foreign key, check) and an integer version for optimistic concurrency (`WriteError.Stale`). `putChildren` / `replaceChildren` write children, and `putLinks` writes many-to-many links. `transaction { }` with `Tx.*` steps provides isolation levels and an opt-in `RetryPolicy`, and the connection and transaction are not exposed to steps. Bulk `update`, `delete`, `insert` (split above 65,000 parameters in one transaction), `upsert` and `insertMissing` are supported. Generated keys are handled through `identityKey` / `generated` with `RETURNING`.
+- Every write is a step of a typed transaction: `Tx.insert`, `Tx.update (original, changed)` (only the columns that differ; owned rows by difference; links as the new set) and `Tx.delete`. Plasm validates no input (the domain's constructors do); constraints with PostgreSQL's default names (unique, foreign key, check) come back as field errors; concurrency is checked by a version field or by the original record's columns (`TxFailure.Conflict`). `transaction { }` provides isolation levels and an opt-in `RetryPolicy`, and the connection and transaction are not exposed to steps. Bulk `update`, `delete`, `insert` (split above 65,000 parameters in one transaction), `upsert` and `insertMissing` are supported. Generated keys are handled through `identityKey` / `generated` with `RETURNING`.
 
 **Verdict:** Plasm is far richer. Dapper.FSharp is honest, explicit CRUD where you own the transaction.
 
@@ -73,7 +73,7 @@ Sources: [README](https://github.com/Dzoukr/Dapper.FSharp/blob/master/README.md)
 ## 6. Errors: exceptions or values
 
 **Dapper.FSharp:** exceptions throughout. Methods return `Task<seq<'T>>` / `Task<int>`, and database errors surface as provider exceptions (`PostgresException`). Unsupported expressions in a CE throw `NotImplementedException` at runtime. Examples: the README warns against using `|>` inside queries "unless you like exceptions", and after the F# 10 compiler changed expression shapes, joined queries threw `NotImplementedException` from `visitWhere` until 4.10.0 ([#111](https://github.com/Dzoukr/Dapper.FSharp/issues/111), fixed 2026-04-01). Materialisation mismatches are Dapper exceptions (#96). Nothing is a `Result`.
-**Plasm:** expected failures are values: `Result` with `WriteError.Invalid | Stale | Failed | Materialization | Translation`, `DbError` with a classified `DbFailureKind`, `DbError.MoreThanOneRow`, and typed `TxFailure<'E>`. Exceptions are reserved for programming errors and cancellation.
+**Plasm:** expected failures are values: `Result` with `DbError` (a classified `DbFailureKind`, `Materialization`, `Translation`, `MoreThanOneRow`) for reads, and `TransactionError<'E>` with a typed `TxFailure<'E>` (`Rejected | InvalidChanges | Conflict | Failed | Misused`) for transactions. Exceptions are reserved for programming errors and cancellation.
 **Verdict:** Plasm matches the F# Result idiom. Dapper.FSharp matches plain .NET style.
 
 ## 7. Database support
@@ -121,13 +121,13 @@ Roughly, MSSQL and PostgreSQL get the most attention. All four cover the same ba
 
 ## What Plasm does that Dapper.FSharp does not
 
-- **Relationship model and batched preloading** (`hasMany` / `belongsTo` / `hasOne` / `manyToMany`, nested, filtered, `limitPerParent`), with constant command count, no cartesian product and shared targets. Dapper.FSharp has only flat join tuples, and you avoid N+1 by hand.
-- **Unions as domain scalars** (`Scalar.enum`, `Scalar.wrap`, `Scalar.tryWrap`) with validation. Dapper.FSharp has none (#100 open) and its CE reportedly bypasses user union type handlers (#88).
+- **Aggregates loaded whole** (`owns` / `ownsOptional` / `ownsOne` / `links`, at every level), with constant command count and no cartesian product. Dapper.FSharp has only flat join tuples, and you avoid N+1 by hand.
+- **Unions and domain types as scalars** by convention (wrappers, `create` functions, fieldless unions, unions with fields across columns), with `Scalar.*` overrides. Dapper.FSharp has none (#100 open) and its CE reportedly bypasses user union type handlers (#88).
 - **Result-valued errors** with classified database failures, versus exceptions.
-- **Changesets**: validation, constraint mapping, optimistic concurrency, child and link writes.
+- **Writes by difference**: constraint-to-field mapping, optimistic concurrency, owned rows and links written with their owner.
 - **Transactions as values** (`transaction { }`, isolation, retry policy), test **sandbox** and FSI **playground**.
 - **Bulk update, delete and upsert** (`ON CONFLICT`), computed assignments, and parameter-limit splitting. Dapper.FSharp has no PG upsert (#22 declined).
-- **Richer typed predicates**: `IS NOT DISTINCT FROM` option equality, `.IsSome` / `.Value`, `Rel.any` / `all` / `exists` (`EXISTS` subqueries), string functions, and `Contains` as `= ANY`. Its aggregates are typed (Dapper.FSharp's take strings), and its result types follow the query (Dapper.FSharp's are a free type argument).
+- **Richer typed predicates**: `IS NOT DISTINCT FROM` option equality, `.IsSome` / `.Value`, `exists (plasm { ... })` and `List.exists` / `forall` (`EXISTS` subqueries), string functions, and `Contains` as `= ANY`. Its aggregates are typed (Dapper.FSharp's take strings), and its result types follow the query (Dapper.FSharp's are a free type argument).
 - **Prepared queries**, `Raw.fragment`, and a type-checked interpolated `repo.Sql`.
 - **Schema check, scaffold and snake_case mapping** with per-field overrides (Dapper.FSharp: names must equal columns, #21 and #97 declined).
 - **Diagnostics callback with timing, and cancellation to the server.** Dapper.FSharp has a log function (SQL plus parameters) and a `CancellationToken`, but no timing.

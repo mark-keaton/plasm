@@ -1,6 +1,6 @@
 # SQLProvider vs Plasm
 
-*Researched 2026-11-13. SQLProvider at commit `37927f4` (master, 2026-11-13), NuGet `SQLProvider` 1.5.31 (published 2026-11-13). Plasm as described in `README.md` and `docs/status.md` (as of 2026-11-12).*
+*Researched 2026-11-13. SQLProvider at commit `37927f4` (master, 2026-11-13), NuGet `SQLProvider` 1.5.31 (published 2026-11-13). Plasm as described in `README.md` and `docs/status.md` (as of 2026-11-12); Plasm-side statements corrected 2026-11-14 for the one style (relationships, preloads, public changesets, validation and repository writes were removed). The findings about SQLProvider are unchanged.*
 
 Evidence key: **[doc]** the project's docs say so; **[src]** I read it in the source; **[issue]** taken from the issue tracker; **[inferred]** my reading of the source, not run; **[unverified]** not checked.
 
@@ -54,7 +54,7 @@ SQLProvider (https://github.com/fsprojects/SQLProvider) is an *erasing F# type p
 
 **Plasm**
 
-- `hasMany`/`belongsTo`/`hasOne`/`manyToMany` declared in the schema. `preload` loads each level with batched `= ANY(@keys)` commands, with filtered/ordered/`limitPerParent`/nested child queries. Command count is constant in the number of parents (4 commands for the README page at 20, 100 and 1,000 parents). Identical targets are materialised once. `Assoc<_>` makes "not loaded" explicit in the type (status.md, benchmarks section).
+- What a record owns (`owns`/`ownsOptional`/`ownsOne`) or links (`links`) is declared in the schema, is a plain field, and is loaded with every read of the record, each level with batched `= ANY(@keys)` commands. Command count is constant in the number of parents (3 commands for a page of orders with their lines and their payments, at 20, 100 and 1,000 orders; `docs/benchmarks.md`). Nothing is lazy and nothing is left unloaded; other aggregates are reached by joins, `exists` or a second query.
 
 **Verdict:** this is Plasm's main advantage. SQLProvider gives you lazy navigation (an N+1 trap) and joins. Its docs tell you to do the batching yourself.
 
@@ -76,7 +76,7 @@ SQLProvider (https://github.com/fsprojects/SQLProvider) is an *erasing F# type p
 
 **Plasm**
 
-- Immutable records; `Changeset` values with pure validation, constraint mapping (unique/FK/check → field errors), an integer `version` for optimistic concurrency (`WriteError.Stale`), child writes with `putChildren`/`replaceChildren`. Also `Tx` steps with typed `TxFailure<'E>`, `Bulk.update/delete/insert/upsert` (multi-row, split above 65,000 parameters in one transaction), and an explicit repo with no ambient tracked state.
+- Immutable records; every write a typed transaction step (`Tx.insert`, `Tx.update (original, changed)`, `Tx.delete`) that writes only what differs, owned rows by difference; constraint mapping by default names (unique/FK/check → field errors); optimistic concurrency by a `version` field or the original record's columns (`TxFailure.Conflict`); no validation layer (the domain's constructors validate). Also `Bulk.update/delete/insert/upsert` (multi-row, split above 65,000 parameters in one transaction), and an explicit repo with no ambient tracked state.
 
 **Verdict:** SQLProvider's model is EF-style unit-of-work on mutable proxies, with ambient `TransactionScope`. Plasm's is explicit values and results. SQLProvider's typed ``Create(...)`` (compile-time required columns) is something Plasm checks only at run time (`Changeset.check`/`CheckSchema`).
 
@@ -109,7 +109,7 @@ SQLProvider (https://github.com/fsprojects/SQLProvider) is an *erasing F# type p
 
 **SQLProvider:** exceptions throughout. Query translation problems are run-time exceptions (the query compiles because it is a LINQ expression, e.g. "IN / NOT IN sub-queries with a projection computed in .NET ... fail with an error", 1.5.30). DB errors come back as driver exceptions from `SubmitUpdates`, read-only misuse is `failwith "Context is readonly"`, and type mismatches show up as `InvalidCastException` (#838, #869) **[src, release notes]**. There are no Result-returning APIs. `Seq.tryHeadAsync` returns an option for "no row" (docs `async.fsx`). Design-time errors are compiler errors (FS3033 etc.) with the provider's message.
 
-**Plasm:** `Result` values with typed unions (`WriteError.Invalid/Stale/Failed`, `DbError`, `TranslationError.UnsupportedExpression/UnsupportedByProvider`, `TxFailure<'E>`), classified `DbFailureKind`. Exceptions only for programming errors found before database work, and cancellation (status.md "Failures").
+**Plasm:** `Result` values with typed unions (`DbError`, `TranslationError.UnsupportedExpression/UnsupportedByProvider`, and `TxFailure<'E>`: `Rejected/InvalidChanges/Conflict/Failed/Misused`), classified `DbFailureKind`. Exceptions only for programming errors found before database work, and cancellation (status.md "Failures").
 
 ## 7. Database support (evidence of state per provider)
 
@@ -174,15 +174,15 @@ Download counts per package (`SQLProvider.Oracle` 8,659, `.Firebird` 8,694, `.Du
 
 ## What Plasm does that SQLProvider does not
 
-- **Your own immutable records** as entities, with `Assoc<_>` making loaded/not-loaded explicit.
-- **Union mapping** (`Scalar.enum`), single-case wrappers and validating constructors (`Scalar.wrap`/`tryWrap`) on columns. SQLProvider has none (#392, open since 2017).
+- **Your own immutable records** as entities, with what they own or link as plain fields, always loaded.
+- **Union mapping** (fieldless unions, and unions with fields across columns), single-case wrappers and validating `create` functions on columns, by convention. SQLProvider has none (#392, open since 2017).
 - **Options by construction**, with `IS NOT DISTINCT FROM` semantics and left joins as `'T option`. SQLProvider defaults to no options and returns `null` for left-joined entities.
-- **Batched relationship loading (`preload`)**: nested, filtered, `limitPerParent`, constant command count, no cartesian product, shared instances. SQLProvider has lazy navigation (N+1 outside queries), joins, and "do it yourself and group in memory" advice.
-- **Changesets**: pure validation, field-level errors, constraint→error mapping, **optimistic concurrency** (`version`, `WriteError.Stale`), and child/many-to-many link writes. SQLProvider has mutable proxies, no validation, and no concurrency tokens.
+- **Batched loading of whole aggregates**: every level, constant command count, no cartesian product. SQLProvider has lazy navigation (N+1 outside queries), joins, and "do it yourself and group in memory" advice.
+- **Writes by difference**: field-level errors from constraints, **optimistic concurrency** (`version`, or the original record's columns), and owned rows and links written with their owner. SQLProvider has mutable proxies and no concurrency tokens.
 - **Results, not exceptions**, with classified failures and typed transaction steps.
 - **Set-based bulk writes** (`Bulk.update` with computed assignments, multi-row insert/upsert split over the parameter limit). SQLProvider writes one statement per entity.
 - **No database needed to build**, so there's no design-time assembly loading, IDE schema cache or schema file. CI only needs a database for tests.
 - **Prepared queries**, a rolled-back test sandbox (`repo.Sandbox`), an FSI playground, and typed interpolated raw SQL (`FormattableString` only).
 - **Explicit transactions on the repo**, not ambient `TransactionScope` with a Serializable default.
 
-**Caveat both ways:** Plasm's advantages are verified by its own test suite (405 tests) but have had no production use and no published release. SQLProvider's weaknesses above come from docs, source reading and issues, not from running it. The PostgreSQL-enum column skip and the partial-failure `_State` behaviour are inferred from source and should be confirmed with a run before anyone relies on them.
+**Caveat both ways:** Plasm's advantages are verified by its own test suite (337 scenarios and 130 unit tests) but have had no production use and no published release. SQLProvider's weaknesses above come from docs, source reading and issues, not from running it. The PostgreSQL-enum column skip and the partial-failure `_State` behaviour are inferred from source and should be confirmed with a run before anyone relies on them.

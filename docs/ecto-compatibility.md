@@ -4,47 +4,34 @@
 Outcomes and failure semantics are compared, not SQL text. Each test is named
 `ecto: <original test name>` or `ecto (deliberate difference): ...` and cites its source.
 
+Since 2026-11-14 Plasm has one style (`docs/status.md`). Ecto's preloads,
+changeset validations and `cast` have no counterpart any more, so the cases that
+tested them were removed; they stay in the table below, marked removed, with
+the reason. What remains (14 tests) is Ecto's repository and `Multi` behaviour,
+expressed as typed transactions: every write is a `Tx.insert`, `Tx.update`
+or `Tx.delete` step run by `repo.Transact`.
+
 | Ecto source | Case | Outcome |
 |---|---|---|
-| preload.exs | preload has_many | Same: children assembled per parent, input order kept, parent without children gets `Loaded []`, unloaded is `NotLoaded` |
-| preload.exs | preload has_many multiple times | Same: duplicates in the input and re-preloading give no duplicated children |
-| preload.exs | preload belongs_to | Same |
-| preload.exs | preload belongs_to with shared parent | Same; one batched query for the shared key |
-| preload.exs | preload empty | Same: no command issued |
-| preload.exs | preload has_many with no associated entries | Same (`Loaded []`) |
-| preload.exs | preload belongs_to with no associated entry / has_one with no associated entries | Same: `Loaded None`, and no command when there are no keys |
-| preload.exs | preload has_many (optional foreign key) | Same |
-| preload.exs | preload with query | Same: filter and order applied in SQL |
-| preload.exs | preload nested | Same |
-| preload.exs | preload nested via custom query | Same |
-| preload.exs | preload many assocs | Same |
-| preload.exs | preload skips already loaded (cardinality one/many) | **Deliberate difference**: `Repo.Preload` always reloads requested relationships. An explicit load request is authoritative, so results never silently mix stale and fresh data. |
-| query.ex docs | limit in a preload query | **Deliberate difference**: Ecto applies it globally across all parents (a documented trap). Plasm rejects `take`/`skip` in a load query as ambiguous before any command, and offers `limitPerParent` (window function) instead. |
-| preload.exs | through / many_to_many / embeds / prefixes / functions | Not applicable: not implemented |
-| repo.exs | insert, update and delete | Same |
-| repo.exs | insert and update with empty changeset | Same: an empty update is a no-op that issues no command and never reports stale |
-| repo.exs | insert and update with changeset read after writes | Same: generated id returned in a new value, submitted value unchanged |
-| repo.exs | optimistic locking in update/delete operations | Same outcome (`Stale` instead of `StaleEntryError`). Versioning is declared on the schema rather than per changeset. |
-| repo.exs | unique constraint | Deliberately different (strict design, step 4): Ecto needs `unique_constraint` on each changeset. Plasm maps a constraint with PostgreSQL's default name (`customers_email_key`) to its field with nothing declared, "has already been taken"; any other name stays a database failure (`Failed` with `UniqueViolation`) |
+| preload.exs | preload has_many, multiple times, belongs_to, with shared parent, empty, with no associated entries, optional foreign key, with query, nested, nested via custom query, many assocs | Removed (one style, step a1; `preload` itself left in step a2). What a record owns is always loaded with it, one batched command per list (owned-collections.feature); another aggregate is reached by a join or a second query |
+| preload.exs | preload skips already loaded (cardinality one/many) | Removed with `repo.Preload` (it was a deliberate difference: Plasm always reloaded what was asked for) |
+| query.ex docs | limit in a preload query | Removed with `limitPerParent` (it was a deliberate difference: Plasm rejected `take` in a load query). The latest few rows per parent is hand-written SQL |
+| preload.exs | through / many_to_many / embeds / prefixes / functions | Not applicable. Shared records through a join table are a linked list (`links`), always loaded |
+| repo.exs | insert, update and delete | Same, as `Tx.insert`, `Tx.update` and `Tx.delete` steps |
+| repo.exs | insert and update with empty changeset | Same: `Tx.update (order, order)` changes nothing, issues no command and is never a conflict |
+| repo.exs | insert and update with changeset read after writes | Same: the generated id is returned in a new value; the submitted value is unchanged |
+| repo.exs | optimistic locking in update/delete operations | Same outcome (`TxFailure.Conflict` instead of `StaleEntryError`). Versioning is declared on the schema; a record without a version field is checked by every column of the record read |
+| repo.exs | unique constraint | Deliberately different (strict design, step 4): Ecto needs `unique_constraint` on each changeset. Plasm maps a constraint with PostgreSQL's default name (`customers_email_key`) to its field with nothing declared, "has already been taken", as `TxFailure.InvalidChanges`; any other name stays a database failure (`TxFailure.Failed` with `UniqueViolation`) |
 | repo.exs | foreign key constraint | Same pattern (`<table>_<column>_fkey`, "does not exist") |
-| repo.exs | invalid changeset is not written | Removed (one style): Plasm validates no input; the domain's constructors do |
-| changeset_test.exs | cast/4: with valid string keys | Removed (one style): Plasm validates no input; the domain's constructors do |
-| changeset_test.exs | cast/4 permitted fields | Removed (one style): Plasm validates no input; the domain's constructors do |
-| changeset_test.exs | cast/4: with empty values | Removed (one style): Plasm validates no input; the domain's constructors do |
-| changeset_test.exs | cast type error | Removed (one style): Plasm validates no input; the domain's constructors do |
-| changeset_test.exs | change/2 with a struct | Same: values equal to the data are not changes (via `Changeset.edit`) |
-| changeset_test.exs | put_change/3 and delete_change/2 | Removed (one style): Plasm validates no input; the domain's constructors do |
-| changeset_test.exs | fetch_change/2 | Removed (one style): Plasm validates no input; the domain's constructors do |
-| changeset_test.exs | validate_required/3 | Removed (one style): Plasm validates no input; the domain's constructors do |
-| changeset_test.exs | validate_length/3 with string | Removed (one style): Plasm validates no input; the domain's constructors do |
-| changeset_test.exs | validate_number/3 | Removed (one style): Plasm validates no input; the domain's constructors do |
-| changeset_test.exs | validate_inclusion/3 | Removed (one style): Plasm validates no input; the domain's constructors do |
-| changeset_test.exs | validate_format/4 | Removed (one style): Plasm validates no input; the domain's constructors do |
-| changeset_test.exs | validations only check changes on update | Removed (one style): Plasm validates no input; the domain's constructors do |
+| repo.exs | invalid changeset is not written | Removed (one style, step b): Plasm validates no input; the domain's constructors do. A change the database refuses is covered by the `Multi` case below |
+| changeset_test.exs | cast/4: with valid string keys; cast/4 permitted fields; cast/4: with empty values; cast type error | Removed (one style, step b): `cast` is gone; the application parses external input into domain values |
+| changeset_test.exs | put_change/3 and delete_change/2; fetch_change/2 | Removed (one style, step b): `set`, `clear` and `tryGetChange` are gone; a change is a record built with `{ x with ... }` |
+| changeset_test.exs | validate_required/3, validate_length/3 with string, validate_number/3, validate_inclusion/3, validate_format/4, validations only check changes on update | Removed (one style, step b): Plasm validates no input; the domain's constructors do |
+| changeset_test.exs | change/2 with a struct | Same: values equal to the data are not changes. Tested on the internal changeset that `Tx.update` builds |
 | multi_test.exs | new (empty multi) | Same: succeeds; Plasm issues no command at all |
 | multi_test.exs | insert/update changeset, insert fun | Same; dependencies are typed `let!` bindings instead of a changes map |
-| multi_test.exs | error | Same: failure identifies the step; earlier steps rolled back and listed as `RolledBack` |
-| multi_test.exs | invalid changeset in a multi | Same: failed step plus its errors and changeset |
-| multi_test.exs | run with fun | Same (`Tx.run` with the transaction's connection) |
+| multi_test.exs | error | Same: the failure identifies the step (by file and line); earlier steps are rolled back and listed as `RolledBack` |
+| multi_test.exs | invalid changeset in a multi | Same outcome: the step whose insert the database refuses (`orders_total_check`) fails with `TxFailure.InvalidChanges` and its field errors, and nothing is written |
+| multi_test.exs | run with fun | Same (`Tx.run`, with commands enlisted in the transaction) |
 | multi_test.exs | all queryable | Same (`Tx.all`) |
 | query semantics | comparison with nil | **Deliberate difference**: Ecto raises on `== nil` and requires `is_nil/1`. In Plasm `= None` is `IS NULL` and `<> Some x` includes NULL rows (`IS DISTINCT FROM`), matching F# equality. |
