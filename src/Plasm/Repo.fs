@@ -91,7 +91,7 @@ type QueryProblem =
 /// A repository: where Plasm meets the database. Made from a model (the
 /// record types it can store) and a provider (the database connection), as in
 /// `Repo(model, Postgres.connect connectionString)`. It runs queries (All, One,
-/// Count) and writes (Insert, Update, Delete), each returning a Result. It is
+/// Count) and transactions (Transact), each returning a Result. It is
 /// the explicit boundary where descriptions are executed: every member performs
 /// database work; nothing else in the library does.
 type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
@@ -260,7 +260,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                     return Ok(rows |> List.map unbox<'R>)
             })
 
-    /// Counts the rows a query matches (ignoring relationship loads) with one
+    /// Counts the rows a query matches (what they own is not read) with one
     /// command that transfers a single row. A page counts the rows of the page;
     /// a grouped query counts its groups.
     member _.Count(query: Query<'T>, ?cancellationToken: CancellationToken) : Task<Result<int64, DbError>> =

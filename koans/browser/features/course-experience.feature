@@ -205,7 +205,7 @@ Feature: Walking the path in the browser
 
     Scenario: The compiler lists what can follow repo.
       When the learner asks what can follow "repo." in the koan "Every koan is given a repo"
-      Then the completions include All, One, Count, Insert and Explain
+      Then the completions include All, One, Count, Transact and Explain
       And each completion says what it is
 
     Scenario: Typing repo. offers what can follow it

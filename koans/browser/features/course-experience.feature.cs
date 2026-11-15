@@ -1315,7 +1315,7 @@ namespace Plasm.Koans.Browser.Specs.Features
                         "", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 208
-      await testRunner.ThenAsync("the completions include All, One, Count, Insert and Explain", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+      await testRunner.ThenAsync("the completions include All, One, Count, Transact and Explain", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 209
       await testRunner.AndAsync("each completion says what it is", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
