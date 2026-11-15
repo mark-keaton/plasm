@@ -22,32 +22,32 @@ type Refusal =
 /// value, so the application can check them all before it serves anything.
 module Queries =
 
-    let boardsByName = plasm { for b in boards do orderBy b.Name }
+    let boardsByName = plasm { for b in stored<Board> do orderBy b.Name }
 
     /// (board, stage, number of cards), one row per stage a board has cards in.
     let cardCounts =
         plasm {
-            for c in cards do
+            for c in stored<Card> do
                 groupBy (c.Board, kind c)
                 select (c.Board, kind c, Agg.count ())
         }
 
     let boardBySlug =
-        Query.prepare (fun (slug: Arg<Slug>) -> plasm { for b in boards do where (b.Slug = slug.Value) })
+        Query.prepare (fun (slug: Arg<Slug>) -> plasm { for b in stored<Board> do where (b.Slug = slug.Value) })
 
     let boardById =
-        Query.prepare (fun (id: Arg<BoardId>) -> plasm { for b in boards do where (b.Id = id.Value) })
+        Query.prepare (fun (id: Arg<BoardId>) -> plasm { for b in stored<Board> do where (b.Id = id.Value) })
 
     /// A card, and with it its comments and labels, as every query of cards.
     let cardById =
-        Query.prepare (fun (id: Arg<CardId>) -> plasm { for c in cards do where (c.Id = id.Value) })
+        Query.prepare (fun (id: Arg<CardId>) -> plasm { for c in stored<Card> do where (c.Id = id.Value) })
 
     /// A board's cards, oldest first: three commands (cards, comments,
     /// labels), however many cards there are.
     let cardsOn =
         Query.prepare (fun (board: Arg<BoardId>) ->
             plasm {
-                for c in cards do
+                for c in stored<Card> do
                     where (c.Board = board.Value)
                     orderBy c.Created
             })
@@ -56,7 +56,7 @@ module Queries =
     let cardsOnLabelled =
         Query.prepare2 (fun (board: Arg<BoardId>) (label: Arg<Label>) ->
             plasm {
-                for c in cards do
+                for c in stored<Card> do
                     where (c.Board = board.Value && (c.Labels |> List.exists (fun l -> l.Name = label.Value)))
                     orderBy c.Created
             })
@@ -64,14 +64,14 @@ module Queries =
     let inProgressOn =
         Query.prepare (fun (board: Arg<BoardId>) ->
             plasm {
-                for c in cards do
+                for c in stored<Card> do
                     where (c.Board = board.Value && c.Stage.IsDoing)
             })
 
     let doneOn =
         Query.prepare (fun (board: Arg<BoardId>) ->
             plasm {
-                for c in cards do
+                for c in stored<Card> do
                     where (c.Board = board.Value && c.Stage.IsDone)
             })
 
@@ -81,7 +81,7 @@ module Queries =
     let finishedOn =
         Query.prepare3 (fun (board: Arg<BoardId>) (before: Arg<int>) (size: Arg<int>) ->
             plasm {
-                for c in cards do
+                for c in stored<Card> do
                     where (c.Board = board.Value && c.Stage.IsDone)
                     orderByDescending c.FinishedAt
                     skip before.Value
@@ -92,21 +92,21 @@ module Queries =
     let workOf =
         Query.prepare (fun (person: Arg<Person>) ->
             plasm {
-                for c in cards do
-                    join b in boards on (c.Board = b.Id)
+                for c in stored<Card> do
+                    join b in stored<Board> on (c.Board = b.Id)
                     where (c.Assignee = Some person.Value)
                     orderBy c.Since
                     select (b.Slug, b.Name, c.Id, c.Title, c.Since)
             })
 
     let accountNamed =
-        Query.prepare (fun (name: Arg<Person>) -> plasm { for a in accounts do where (a.Name = name.Value) })
+        Query.prepare (fun (name: Arg<Person>) -> plasm { for a in stored<Account> do where (a.Name = name.Value) })
 
     /// The stored labels among `names`.
     let labelsNamed =
         Query.prepare (fun (names: Arg<Label list>) ->
             plasm {
-                for l in labels do
+                for l in stored<Tag> do
                     where (List.contains l.Name names.Value)
             })
 

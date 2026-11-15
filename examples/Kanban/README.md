@@ -9,10 +9,11 @@ a project shared by both.
 ## What depends on what
 
 ```
-src/Shared   Domain.fs   types and rules; references FSharp.Core and nothing else
+src/Shared   Domain.fs   types and rules, and on each stored record the few
+                         storage facts its types cannot say; references
+                         FSharp.Core and Plasm's attribute classes
              Api.fs      the contract between server and browser
-src/Server   Db.fs         what the domain's types cannot say about storage: tables,
-                           keys, what is unique, what a card owns
+src/Server   Db.fs         which records are stored, and the server's own Account
              Workflows.fs  queries and transactions, as values
              Service.fs    the API: parse input, run a workflow, map the outcome
              Database.fs   migrations (DbUp), the repository, the start-up checks
@@ -22,18 +23,22 @@ src/Client   App.fs      the Elmish application
 features/    the acceptance scenarios (Reqnroll), run against real PostgreSQL
 ```
 
-There is one model. The records Plasm reads and writes are the domain's own:
-`schema<Card> "cards"` is declared over `Kanban.Card` from `Domain.fs`, and
-there is no second set of row records and no code that converts between the
-two.
+There is one model, declared once. The records Plasm reads and writes are the
+domain's own, and how `Kanban.Card` is stored is read from `Kanban.Card`:
+`[<Table "cards">]` on the type, `[<Version>]` and `[<OrderedBy ...>]` on the
+fields that need them. The key is the field named `Id`; references, owned
+comments and linked labels follow from the fields' types. There is no second
+set of row records, no separate schema declaration, and no code that converts
+between two shapes.
 
 `Domain.fs` is compiled twice: for .NET, where the server decides with it and
 stores its records, and to JavaScript, where the browser validates forms with
 the same constructors and puts a refusal into words with the same
-`DomainError.describe`. That it compiles to JavaScript at all is the proof
-that it depends on no persistence library.
+`DomainError.describe`. The only thing it takes from Plasm is attribute
+classes, which Fable compiles from source like the domain itself.
 
-Plasm appears in three files. `Db.fs` is 71 lines. `Workflows.fs` describes
+On the server, `Db.fs` lists the stored records to build the model.
+`Workflows.fs` describes
 each change as read, decide, write, where "decide" is a function from
 `Domain.fs` and what is read and written is a `Card`: a write is
 `Tx.insert card` or `Tx.update (card, changed)`, and Plasm writes the
@@ -84,14 +89,15 @@ dotnet test --project tests/Kanban.Specs
   matches on it without a cast. Invalid input by field, a refusal by the
   domain, a missing board, a stale copy, a unique slug and an unreachable
   database each reach the client as their own case of `ApiError`.
-- **Constraints stated once.** `unique (fun b -> b.Slug)` is in the schema. A
+- **Constraints stated once.** `[<Unique>]` is on `Board.Slug`. A
   violation comes back as an error on that field; no constraint's name is
   written in the code. That a card's `Board` references a board is inferred
   from its type, `BoardId`.
 - **What a card owns.** A card's comments are a plain `Comment list`, read
-  with the card and written by changing the list (`ownsOrderedBy`). Its
-  labels are shared rows that exist once: the card holds a plain `Tag list`,
-  and changing it writes only rows of `card_labels` (`linksOrderedBy`).
+  with the card and written by changing the list. They are the card's own
+  because a `Comment` holds a `CardId`. Its labels are shared rows that exist
+  once: the card holds a plain `Tag list`, a `Tag` holds no `CardId`, and
+  changing the list writes only rows of `card_labels` (`[<JoinTable>]`).
   `Bulk.insertMissing` stores the labels not yet known.
 - **Aggregates refer to each other by id.** A board has no list of cards; a
   board's cards are a query, narrowed to a label with `List.exists` over the

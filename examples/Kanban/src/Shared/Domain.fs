@@ -1,13 +1,15 @@
 // The domain: boards of cards that move from the backlog, through work in
 // progress, to done.
 //
-// Nothing here knows how it is stored or served. The file references no
-// package, and it is compiled twice: for .NET (the server decides with it,
-// and stores these very records) and to JavaScript by Fable (the client
-// validates input with it).
+// These records are what the server stores. The few facts about storage
+// that their types cannot say are attributes on them: the table, what is
+// unique, what a list is ordered by. The attributes are all this file takes
+// from Plasm, and it is compiled twice: for .NET (the server decides with it)
+// and to JavaScript by Fable (the client validates input with it).
 namespace Kanban
 
 open System
+open Plasm
 
 type BoardId = BoardId of Guid
 type CardId = CardId of Guid
@@ -123,12 +125,15 @@ type Stage =
     | Doing of assignee: Person * since: DateTimeOffset
     | Done of resolution: Resolution * at: DateTimeOffset
 
+[<Table "boards">]
 type Board =
     { Id: BoardId
+      [<Unique>]
       Slug: Slug
       Name: Title
       WipLimit: WipLimit }
 
+[<Table "comments">]
 type Comment =
     { Id: CommentId
       Card: CardId
@@ -137,20 +142,28 @@ type Comment =
       At: DateTimeOffset }
 
 /// A label as cards share it: it exists once, whichever cards carry it.
-type Tag = { Id: LabelId; Name: Label }
+[<Table "labels">]
+type Tag =
+    { Id: LabelId
+      [<Unique>]
+      Name: Label }
 
 /// A card, whole: its comments belong to it, oldest first, and its labels
 /// are the ones it carries, in alphabetical order.
+[<Table "cards">]
 type Card =
     { Id: CardId
       Board: BoardId
       Title: Title
       Stage: Stage
+      [<OrderedBy(nameof the<Comment>.At)>]
       Comments: Comment list
+      [<JoinTable("card_labels", "card_id", "label_id"); OrderedBy(nameof the<Tag>.Name)>]
       Labels: Tag list
       Created: DateTimeOffset
       /// How many times the card has been written. Someone changing a card
       /// says which version they saw.
+      [<Version>]
       Version: int }
 
     // Each stage's facts by name. [<ReflectedDefinition>] keeps the definition
