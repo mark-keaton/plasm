@@ -121,7 +121,25 @@ Plasm and EF split query now read the same rows in the same number of commands.
 EF single query multiplies lines by succeeded payments per order (10 × 3 = 30
 rows per order), and in the siblings case the full 10 × 10 cross product.
 
-### Time and allocations (BenchmarkDotNet, mean of 10 iterations)
+### Time and allocations after the convention fix (`counts`, commit dc6832f)
+
+Re-measured after scalar conventions were compiled once per type and the row
+reader stopped allocating a list per field (findings 1 and 2 below). Medians
+from `counts` mode on the same shared machine; the BenchmarkDotNet run below
+was not repeated.
+
+| Workload | Plasm | EF single | EF split |
+|---|---:|---:|---:|
+| page 20 | 1.98 ms / 242 KB | 3.55 ms / 509 KB | 4.08 ms / 247 KB |
+| page 100 | 3.91 ms / 935 KB | 18.13 ms / 2,216 KB | 12.36 ms / 815 KB |
+| page 1000 | 14.54 ms / 8,781 KB | 66.30 ms / 21,409 KB | 21.03 ms / 7,670 KB |
+| siblings, built per call | 0.69 ms / 342 KB | 0.39 ms / 133 KB | 0.45 ms / 97 KB |
+| siblings, prepared | 0.38 ms / 74 KB | | |
+
+At 1,000 orders Plasm now allocates about 15% more than EF split query and is
+faster on this run, against 4× slower and 9× more allocation before the fix.
+
+### Time and allocations before the convention fix (BenchmarkDotNet, mean of 10 iterations)
 
 | Workload | Variant | Mean | Allocated | vs Plasm (time) |
 |---|---|---:|---:|---:|
@@ -189,15 +207,19 @@ to see one database state across commands.
   rows grow with the product of the collection sizes.
 - **No cartesian product.** On the siblings workload, Plasm and EF split query
   each transfer 21 rows; EF single query transfers 100.
-- **Materialisation is now Plasm's bottleneck.** With the same rows, Plasm is
-  about 4× slower than EF split query at 1,000 orders and allocates about 9×
-  more. The cost is per row read, not in the SQL; see the finding below.
+- **Materialisation was Plasm's bottleneck, and is fixed.** Before the fix,
+  with the same rows, Plasm was about 4× slower than EF split query at 1,000
+  orders and allocated about 9× more, all of it per row read. After it, Plasm
+  allocates about 15% more than EF split query (findings 1 and 2).
 - **Prepared queries** cut the per-call cost of the siblings read from 719 µs
   and 406 KB to 510 µs and 138 KB, level with EF single query.
 
 ## Plasm performance findings
 
-1. **Scalars read by convention are slow.** *Open.* The test domain registers
+1. **Scalars read by convention were slow.** *Fixed in dc6832f*: each
+   conversion is compiled to a delegate once per type, and
+   `tests/Plasm.Tests/ConventionCost.fs` checks that a value read by convention
+   allocates no more than one read through a registered mapping. The test domain registers
    no scalar mappings; its ids, `Quantity` and statuses are stored by
    convention. As a diagnostic, the page workload was run once more with the
    same schemas and registered mappings (`Scalar.wrap` for the ids,
@@ -219,7 +241,9 @@ to see one database state across commands.
    `PreComputeUnionConstructor`, which allocates an argument array per value.
    Compiling these conversions to delegates once per type should bring the
    convention numbers to the registered ones.
-2. **Per-field allocation in the row reader.** *Open.* `Execution.readEntity`
+2. **Per-field allocation in the row reader.** *Fixed in dc6832f*: a field
+   stored in one column is read directly; only a union across columns builds a
+   list. `Execution.readEntity`
    builds an F# list of column values for every field of every row, which is
    needed only for unions stored across columns. Even with registered mappings,
    Plasm allocates 2.6× more than EF split query at 1,000 orders.
