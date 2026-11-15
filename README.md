@@ -1,129 +1,147 @@
 # Plasm
 
-Persistence for F# that follows F#'s semantics: immutable records, typed
-composable queries, explicit changesets, batched relationship loading, and
-explicit effects. Its design comes from [Ecto](https://github.com/elixir-ecto/ecto).
+Persistence for F# over PostgreSQL. Plasm stores your domain's own immutable
+records, reads them with typed queries written as `plasm { }` expressions, and
+writes them in typed transactions. Its design comes from
+[Ecto](https://github.com/elixir-ecto/ecto).
 
-> **Status: experimental first delivery, not production-ready.** PostgreSQL only.
+> **Status: experimental, not production-ready.** PostgreSQL only.
 > See [`docs/status.md`](docs/status.md) for what is verified and what is missing.
 
 ## How to build an application with Plasm
 
-Store your domain's own records. Write each fact about the data once, in the
-type if F# can say it there:
+There is one way. Store the domain's own records and write each fact about the
+data once, in the type if F# can say it there:
 
-- **Types.** A single-case wrapper is stored as its value. A `create` function
-  checks every value that is read. A union with fields is spread over columns.
-  A typed id is a reference.
-- **The schema.** It states only what the types cannot: the key, `unique`
-  fields, and what a record `owns` (its own child rows) or `links` (shared rows
-  through a join table). Owned and linked lists are plain lists, always loaded
-  and written with their owner.
-- **Business transactions.** Write them as `Tx<'T, 'E>` values with your own
-  error type.
-- **Start-up or a test.** Check queries with `repo.CheckQueries` and the
-  schema with `repo.CheckSchema`. `repo.Ddl()` prints the tables the model
-  expects.
+- **Types.** A single-case wrapper (`OrderId of int64`) is stored as its value.
+  A type with a `create` function is read back through it, so a stored value
+  the domain refuses is an error, never a value. A fieldless union is stored as
+  its case name; a union with fields is spread over columns. A typed id is a
+  reference to the schema whose key it is. Registered `Scalar.*` mappings
+  override these conventions.
+- **The schema** states only what the types cannot: the key, `unique` fields,
+  and what a record owns. `owns` / `ownsOrderedBy` declare a list of the
+  record's own rows, `ownsOptional` / `ownsOne` a single owned record, and
+  `links` / `linksOrderedBy` a list of shared records through a join table.
+  What a record owns or links is a plain field. It is always read with its
+  owner, in one batched command per list, and written with it by difference.
+- **Other aggregates** are referred to by id and reached by queries: joins,
+  `exists (plasm { ... })`, or a second prepared query.
+- **Writes** are steps of a typed transaction, `Tx<'T, 'E>`, with your own
+  error type, run by `repo.Transact`. Plasm validates no input: the domain's
+  constructors do. A constraint with PostgreSQL's default name comes back as
+  the field's error.
+- **At start-up or in a test**, `repo.CheckQueries` translates every query
+  value an assembly defines, `repo.CheckSchema` compares the model with the
+  database, and `repo.Ddl()` prints the tables the model expects.
 
-```fsharp
-type Stage =
-    | Backlog
-    | Doing of assignee: Person * since: DateTimeOffset
-    | Done of resolution: Resolution * at: DateTimeOffset
-
-type Card =
-    { Id: CardId; Board: BoardId; Title: Title; Stage: Stage
-      Comments: Comment list; Labels: Tag list; Created: DateTimeOffset; Version: int }
-
-let cards =
-    schema<Card> "cards" {
-        key (fun c -> c.Id)
-        version (fun c -> c.Version)
-        ownsOrderedBy (fun c -> c.Comments) (fun m -> m.Card) (fun m -> m.At)
-        linksOrderedBy (fun c -> c.Labels) "card_labels" "card_id" "label_id" (fun l -> l.Name)
-    }
-
-let addCard slug (create: Board -> Card) : Tx<Card, Refusal> =
-    transaction {
-        let! board = Tx.one (Queries.boardBySlug slug) |> Tx.orReject (Missing "board")
-        return! Tx.insert (create board)
-    }
-```
-
-[`examples/Kanban`](examples/Kanban) is the reference application in this
-style. Its domain (`src/Shared/Domain.fs`) references no package and also
-compiles to JavaScript with Fable. Its storage (`src/Server/Db.fs`) is five
-short schemas. The shape it sends over the wire (`src/Shared/Api.fs`) is the
-application's own: Plasm does not serialize.
-
-Plasm also supports an older row-record style: `Assoc<'T>` fields loaded with
-`preload`, and changesets. It is fully supported and specified, but it is not the
-recommended way to start an application. Use it when the stored rows really
-are a different shape from the domain, or when relationships should load only
-on request. The overview below and the koans are written mostly in this
-style.
+The example below is taken from [`examples/Plasm.Examples`](examples/Plasm.Examples)
+(`Model.fs`, `Queries.fs`, `Writes.fs`), shortened:
 
 ```fsharp
+open System
 open Plasm
 
-// Records stay ordinary immutable F# records. Relationships say whether they are loaded.
+type CustomerId = CustomerId of int64
+type OrderId = OrderId of int64
+type ProductId = ProductId of int64
+type OrderLineId = OrderLineId of int64
+type PaymentId = PaymentId of int64
+
+/// Only valid quantities exist; the database cannot smuggle in a zero.
+type Quantity =
+    private
+    | Quantity of int
+    member q.Value = let (Quantity v) = q in v
+    static member create(v: int) : Result<Quantity, string> =
+        if v > 0 then Ok(Quantity v) else Error $"quantity must be positive, got {v}"
+
+type OrderStatus =
+    | Draft
+    | Published
+    | Cancelled of reason: string       // stored in status and status_reason
+
+type PaymentStatus = Pending | Succeeded | Failed
+
+type Customer = { Id: CustomerId; Name: string; Email: string }
+
+/// An order owns its lines. Its customer and its payments are other
+/// aggregates, referred to by id.
 type Order =
-    { Id: OrderId; CustomerId: CustomerId option; Status: OrderStatus; Total: decimal
-      CancellationReason: string option; PlacedAt: DateTime; Version: int
-      Customer: Assoc<Customer option>; Lines: Assoc<OrderLine list>; Payments: Assoc<Payment list> }
+    { Id: OrderId; CustomerId: CustomerId option; Status: OrderStatus
+      Total: decimal; PlacedAt: DateTime; Version: int; Lines: OrderLine list }
 
-let orders =
-    schema<Order> "orders" {
-        identityKey (fun o -> o.Id)
-        version (fun o -> o.Version)
-        belongsTo (fun o -> o.Customer) (fun o -> o.CustomerId)
-        hasMany (fun o -> o.Lines) (fun l -> l.OrderId)
-        hasMany (fun o -> o.Payments) (fun p -> p.OrderId)
-    }
+and OrderLine =
+    { Id: OrderLineId; OrderId: OrderId; ProductId: ProductId
+      Quantity: Quantity; UnitPrice: decimal }
 
-// Queries are values. Reusable parts are ordinary functions.
-let successfulPayments = plasm { for p in payments do where (p.Status = Succeeded); orderBy p.CreatedAt }
-let linesWithProducts = plasm { for l in orderLines do preload l.Product }
+type Payment =
+    { Id: PaymentId; OrderId: OrderId; Amount: decimal
+      Status: PaymentStatus; CreatedAt: DateTime }
 
-let page customer =
+module Db =
+    let customers =
+        schema<Customer> "customers" {
+            identityKey (fun c -> c.Id)
+            unique (fun c -> c.Email)
+        }
+
+    let orders =
+        schema<Order> "orders" {
+            identityKey (fun o -> o.Id)
+            version (fun o -> o.Version)
+            ownsOrderedBy (fun o -> o.Lines) (fun l -> l.OrderId) (fun l -> l.Id)
+        }
+
+    let orderLines = schema<OrderLine> "order_lines" { identityKey (fun l -> l.Id) }
+    let payments = schema<Payment> "payments" { identityKey (fun p -> p.Id) }
+    // products omitted here; see Model.fs
+
+    let model = Model.buildOrFail [] [ customers; products; orders; orderLines; payments ]
+
+// Queries are values. Every Order read comes with its lines.
+let published = plasm { for o in Db.orders do where (o.Status = Published) }
+
+let unpaid (q: Query<Order>) =
     plasm {
-        for o in orders do
-            where (o.CustomerId = Some customer)
-            orderByDescending o.PlacedAt
-            take 20
-            preload o.Lines linesWithProducts
-            preload o.Payments successfulPayments
+        for o in q do
+            where (not (exists (plasm { for p in Db.payments do where (p.OrderId = o.Id && p.Status = Succeeded) })))
     }
 
-// Execution is explicit: four batched commands, assembled into immutable values.
-let! result = repo.All(page customerId)
+let withProduct (product: ProductId) =
+    plasm { for o in Db.orders do where (o.Lines |> List.exists (fun l -> l.ProductId = product)) }
 
-// Joins are explicit: one command, typed rows. A left-joined record is an option.
-let unpaidWithCustomer =
-    plasm {
-        for o in orders do
-            leftJoin c in customers on (o.CustomerId = Some c.Id)
-            where (not (o.Payments |> Rel.any (fun p -> p.Status = Succeeded)))
-            orderBy o.PlacedAt
-            select (o.Id, o.Total, c |> Option.map (fun c -> c.Email))
+// Built and planned once; each call binds its argument.
+let orderById = Query.prepare (fun (id: Arg<OrderId>) -> plasm { for o in Db.orders do where (o.Id = id.Value) })
+
+// Payments are their own aggregate: read for a page of orders by a second query.
+let succeededPaymentsOf =
+    Query.prepare (fun (orders: Arg<OrderId list>) ->
+        plasm { for p in Db.payments do where (List.contains p.OrderId orders.Value && p.Status = Succeeded) })
+
+// Writes: read what the decision needs, let the domain decide, write what it decided.
+type Refusal =
+    | Domain of OrderError                 // the domain's own reasons (see Model.fs)
+    | Missing of what: string
+
+let changeOrder id seen (decide: Order -> Result<Order, OrderError>) : Tx<Order, Refusal> =
+    transaction {
+        let! order = Tx.one (orderById id) |> Tx.orReject (Missing "order")
+        let! changed = decide order |> Tx.ofResult Domain
+        return! Tx.update (order, changed, expectVersion = seen)   // only what differs, lines by difference
     }
 
-// Changes are values. Plasm validates nothing: a constraint the database
-// enforces comes back as the field's error.
-let cs = order |> Changeset.edit (fun o -> { o with Status = Cancelled })
-
-match! repo.Update cs with
-| Ok updated -> ...
-| Error(WriteError.Invalid cs) -> cs.Errors      // structured, per field
-| Error(WriteError.Stale _) -> ...               // optimistic concurrency
-| Error(WriteError.Failed f) -> f.Kind           // classified infrastructure failure
+match! repo.Transact(changeOrder id seen (Order.cancel "changed my mind")) with
+| Ok order -> ...
+| Error { Failure = TxFailure.Rejected reason } -> ...            // a Refusal
+| Error { Failure = TxFailure.InvalidChanges(entity, errors) } -> ... // constraints, per field
+| Error { Failure = TxFailure.Conflict entity } -> ...             // a stale copy
+| Error e -> printfn "%O" e                                       // what failed, then where
 ```
 
-Counts, aggregates, set-based writes, hand-written SQL and prepared queries
-use the same values:
+Counts, aggregates, set-based writes and hand-written SQL use the same values:
 
 ```fsharp
-// Grouped summaries, computed by the database
 plasm {
     for o in Db.orders do
         join c in Db.customers on (o.CustomerId = Some c.Id)
@@ -132,25 +150,48 @@ plasm {
         select (c.Name, Agg.count (), Agg.sum o.Total)
 }
 
-let! n = repo.Count published                                     // int64
-let! _ = repo.Execute(Bulk.update (drafts, fun o -> { o with Status = Cancelled }))
-let! _ = repo.Execute(Bulk.upsert (products, (fun p -> p.Sku), fun current incoming -> { current with Name = incoming.Name }))
+let! n = repo.Count published                                       // int64, one row transferred
 let! rows = repo.Sql<string * int>($"SELECT name, count(*) FROM customers WHERE name <> {excluded} GROUP BY name")
 
-// Built and planned once; each call binds parameters
-let ordersOf = Query.prepare (fun (c: Arg<CustomerId>) ->
-    plasm { for o in Db.orders do where (o.CustomerId = Some c.Value) })
-let! orders = repo.All(ordersOf customerId)
+// Set-based writes and hand-written commands are transaction steps too.
+let expire : Tx<int, Refusal> =
+    transaction {
+        let! n = Tx.execute (Bulk.update (plasm { for o in Db.orders do where (o.Status = Draft) }, fun o -> { o with Status = Cancelled "expired" }))
+        let! _ = Tx.executeSql $"DELETE FROM carts WHERE created < {cutoff}"
+        return n
+    }
 
-// Many-to-many through a join table; links are written, tags are not
-let! _ = repo.Update(Changeset.update article |> Changeset.putLinks ((fun a -> a.Tags), [ fsharp; sql ]))
-
-// At start-up: does the model match the database?
-let! issues = repo.CheckSchema()
-
-// In tests: everything inside is rolled back
-do! repo.Sandbox(fun repo -> task { ... })
+let! issues = repo.CheckSchema()                                    // at start-up: does the model match the database?
+let problems = repo.CheckQueries(typeof<Order>.Assembly, "Shop")    // every query value translates
+printfn "%s" (repo.Ddl())                                           // the tables, constraints and indexes the model expects
+do! repo.Sandbox(fun repo -> task { ... })                          // in tests: everything inside is rolled back
 ```
+
+[`examples/Kanban`](examples/Kanban) is the reference application: a small
+kanban board in the shape of a SAFE-stack application. Its domain
+(`src/Shared/Domain.fs`) references no package and also compiles to JavaScript
+with Fable. Its storage (`src/Server/Db.fs`) is five short schemas over the
+domain's own records, and `src/Server/Workflows.fs` holds its queries and
+transactions. The shape it sends over the wire is the application's own: Plasm
+does not serialize.
+
+### What changed (2026-11-14)
+
+Plasm used to offer a second style, with row records whose relationships were
+`Assoc<'T>` fields loaded on request. It was removed. What replaced each part:
+
+| Removed | Instead |
+|---|---|
+| `Assoc<'T>`, `NotLoaded`/`Loaded`, `hasMany`/`hasOne`/`belongsTo`/`manyToMany`, the `Assoc` and `Rel` modules | `owns`, `ownsOptional`/`ownsOne` and `links` (plain fields, always loaded); typed ids as references; `exists (plasm { ... })`, `List.exists`/`forall` and `Option.exists`/`IsSome`/`IsNone` in queries |
+| `preload`, `replacePreload`, `repo.Preload` | an aggregate loads whole; other aggregates are read by a join or a second query |
+| `limitPerParent` | the latest few rows per parent is a report: hand-written SQL |
+| `Changeset` (now internal), `putChildren`/`replaceChildren`/`putLinks`/`addLinks`/`removeLinks`, `ReplaceScope`, `OnReplace` | `Tx.update (original, changed)`: what a record owns or links is written by difference |
+| `Changeset.validate*`, `cast`, `castWith`, `set`, `clear`, `forKey`, `getField`, `tryGetChange`, `addError` | the domain's constructors; constraints come back as field errors |
+| the pipeline `Query.where`/`select`/... functions | `plasm { }` |
+| `repo.Insert`/`Update`/`Delete`/`Execute`/`ExecuteSql`, `WriteError`, `Tx.write` | `repo.Transact` with `Tx.insert`, `Tx.update`, `Tx.delete`, `Tx.execute`, `Tx.executeSql` |
+
+`docs/status.md` lists each step with its commit, and the scenarios that left
+the original specification.
 
 ### In F# Interactive
 
@@ -160,21 +201,23 @@ open Plasm
 open Plasm.Postgres
 open Plasm.Interactive               // wait: show a result, not a task
 
-let repo = Repo(model, Postgres.connect connectionString)
+let repo = Repo(Db.model, Postgres.connect connectionString)
 
-repo.Scaffold "customers" |> wait    // prints a record and schema for the table
-let q = plasm { for c in customers do where (c.Name.StartsWith "A") }
-q                                    // displays its SQL and parameter values; no database access
+printfn "%s" (repo.Ddl())            // the tables the model expects; Plasm never runs them
+repo.Scaffold "payments" |> wait     // prints a record and schema for the table
+let q = plasm { for o in Db.orders do where (o.Status = Published) }
+q                                    // displays its SQL, with the command that reads the lines; no database access
 repo.All q |> wait                   // Ok [ ... ]
 
 let pg = repo.Playground()           // changes last across submissions, never committed
-pg.Insert(Changeset.insert ada) |> wait
+pg.Transact(Tx.insert { Id = CustomerId 0L; Name = "Ada"; Email = "ada@example.com" }: Tx<Customer, unit>) |> wait
 pg.Reset()                           // roll everything back; pg.Close() ends it
 ```
 
 No setup call is needed: queries display themselves. A query built before you
 redefined one of its types explains that it must be re-evaluated instead of
-failing with an unmapped type.
+failing with an unmapped type. [`examples/fsi-tour.fsx`](examples/fsi-tour.fsx)
+is a session to send a submission at a time.
 
 [`examples/Plasm.Examples`](examples/Plasm.Examples) has a runnable tour:
 `dotnet run --project examples/Plasm.Examples`.
@@ -182,10 +225,15 @@ failing with an unmapped type.
 ## Learn Plasm: the koans
 
 `koans/` is an interactive course in the style of Ruby Koans: 22 lessons and
-217 koans, each a small exercise with a blank (`__`) to fill in, run against a
+223 koans, each a small exercise with a blank (`__`) to fill in, run against a
 real PostgreSQL database inside a sandbox, so every koan starts from the same
-data. It starts with no Plasm at all (the F# the course uses), then the shop's
-data, what a repo is and the promises Plasm keeps, before the library itself;
+data. It teaches the one style. It starts with no Plasm at all (the F# the
+course uses), then what a repo is, the shop's data and the promises Plasm
+keeps; then reading (records and schemas, query values, filters, aggregates
+and references), writing (constructors and constraints, writes, writing an
+aggregate, transactions), more queries (joins, grouping, links and owned
+records, bulk writes, hand-written SQL, prepared queries) and living with it
+(failures, testing, unions with fields).
 [`koans/CURRICULUM.md`](koans/CURRICULUM.md) has the plan. In the browser
 version, each koan opens with what it is given: the tables it reads, with their
 starting rows, and the definitions it uses.
@@ -206,46 +254,53 @@ koan cell until it shows ✔. The notebook is generated from the lessons
 (`dotnet run --project koans/Plasm.Koans -- --notebook koans/notebook/plasm-koans.ipynb`),
 and it is checked cell by cell both in a hosted F# Interactive session and in
 a real .NET Interactive kernel (`dotnet-repl`, a local tool: `dotnet tool
-restore`), as shipped and with the reference answers. What each koan teaches is specified in
-`koans/features/lessons/*.feature`, each tracing to an acceptance scenario of
-Plasm; `koans/Plasm.Koans.Specs` checks that every koan passes with its
-reference answer (`koans/answers/`) and stops at its blank as shipped.
+restore`), as shipped and with the reference answers. What each koan teaches
+is specified in `koans/features/lessons/*.feature`, each tracing to an
+acceptance scenario of Plasm; `koans/Plasm.Koans.Specs` checks that every koan
+passes with its reference answer (`koans/answers/`) and stops at its blank as
+shipped (248 checks), and `koans/browser` checks the browser version (119
+scenarios).
 
 ## What it guarantees
 
-- **No hidden database access.** `Assoc` is `NotLoaded | Loaded of 'T`, and
-  reading it never queries.
+- **No hidden database access.** What a record owns or links is read with it,
+  as a plain field. Nothing is loaded lazily, and nothing is left unloaded.
 - **Nothing runs client-side by accident.** A predicate that cannot be
   translated fails with the expression named.
-- **No N+1 queries and no cartesian products.** Each relationship is one command
-  per batch of parent keys (`= ANY(@keys)`). Parent pages are selected before
-  children are loaded.
-- **Limits mean what they say.** `limitPerParent` is per parent, and `take` in a
-  load query is rejected as ambiguous.
-- **Typed throughout.** Comparing `o.Total` with a string, loading a field that
-  isn't a relationship, or mixing `CustomerId` with `OrderId` are compile errors.
-- **Partial data cannot destroy data.** Unmentioned fields are never written,
-  updates from projections touch only the stated fields, and child replacement
-  needs an explicit scope and removal policy.
-- **Transactions are values,** with named, typed steps, explicit retries, and
-  errors that name the failed step.
+- **No N+1 queries and no cartesian products.** Each owned or linked list is
+  one command per batch of owner keys (`= ANY(@keys)`), however many owners
+  are read. A page of owners is selected before what they own is read.
+- **Typed throughout.** Comparing `o.Total` with a string, owning a field the
+  record does not have, or mixing `CustomerId` with `OrderId` are compile
+  errors.
+- **Partial data cannot destroy data.** `Tx.update (original, changed)`
+  writes only the columns that differ, and what the record owns by difference
+  from what was read. A projection is not a record and cannot be written back.
+  An owned item that belongs to another owner, or that is listed twice, is
+  refused.
+- **Concurrency is checked.** By a version field, or, for a record without
+  one, by every column of the record the change was made from, in the same
+  command.
+- **Transactions are values,** with typed steps, explicit retries, and
+  failures that say what failed and the file and line of the step.
 
 ## Repository
 
 | Path | Contents |
 |---|---|
-| `src/Plasm` | Core: schemas, model, query CE and translation, planner, changesets, transactions, repo |
+| `src/Plasm` | Core: schemas, model, query CE and translation, planner, writes, transactions, repo |
 | `src/Plasm.Postgres` | PostgreSQL provider (Npgsql) |
+| `src/Plasm.PGlite` | Experimental provider for PGlite (PostgreSQL in WebAssembly), used by the browser koans; not packaged |
 | `features/` | The acceptance specification (Gherkin), executed by Reqnroll |
 | `tests/Plasm.Specs`, `tests/Plasm.Specs.Steps` | Reqnroll host (C#, generated) and F# step definitions |
 | `tests/Plasm.Tests` | Translation, compile-time, property-based, Ecto-compatibility and behaviour tests |
 | `tests/Plasm.TestDomain` | Shared test domain, PostgreSQL fixture (Testcontainers) and compile checker |
 | `examples/Plasm.Examples` | Runnable API tour |
-| `examples/Kanban` | A SAFE-style application (ASP.NET Core, Fable, Elmish) with a plain F# domain at its centre and Plasm behind it; its own solution and scenarios, see its README |
-| `koans/` | The Plasm Koans: lessons, runner, reference answers, and their own specifications |
+| `examples/Kanban` | The reference application (ASP.NET Core, Fable, Elmish) with a plain F# domain at its centre and Plasm behind it; its own solution and scenarios, see its README |
+| `koans/` | The Plasm Koans: lessons, runner, reference answers, browser version, and their own specifications |
 | `website/` | Static library website (landing page and worked examples, each with a toggle to the SQL Plasm generated for it); no build step: `python3 -m http.server -d website`. Regenerate the captured SQL with `dotnet run --project examples/Plasm.Examples -- sql` |
 | `benchmarks/` | Plasm vs EF Core 11 (single and split query) |
-| `docs/` | [ADR](docs/adr/0001-architecture.md), [acceptance](docs/acceptance.md), [status](docs/status.md), [benchmarks](docs/benchmarks.md), [Ecto compatibility](docs/ecto-compatibility.md) |
+| `docs/` | [ADR](docs/adr/0001-architecture.md), [acceptance](docs/acceptance.md), [status](docs/status.md), [benchmarks](docs/benchmarks.md), [comparison](docs/comparison.md), [Ecto compatibility](docs/ecto-compatibility.md) |
 
 ## Building and testing
 
@@ -254,8 +309,8 @@ an existing server, set `PLASM_TEST_PG` to an admin connection string.
 
 ```sh
 dotnet build Plasm.slnx
-dotnet test tests/Plasm.Specs      # the 229 acceptance scenarios
-dotnet test tests/Plasm.Tests      # unit, property, compile-time and Ecto-compatibility tests
+dotnet test tests/Plasm.Specs      # the 337 acceptance scenarios
+dotnet test tests/Plasm.Tests      # 130 unit, property, compile-time and Ecto-compatibility tests
 dotnet run -c Release --project benchmarks/Plasm.Benchmarks -- counts
 ```
 
