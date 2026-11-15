@@ -32,7 +32,7 @@ let ``accepts a typical filtered, ordered, paged query`` () =
         """
 let page (customer: CustomerId) =
     plasm {
-        for o in stored<Order> do
+        for o in tableOf<Order> do
         where (o.CustomerId = Some customer && o.Status = Published && o.Total > 10m)
         orderByDescending o.PlacedAt
         thenBy o.Id
@@ -45,16 +45,16 @@ let page (customer: CustomerId) =
 let ``accepts queries that reach other aggregates`` () =
     accepts
         """
-let paid = plasm { for o in stored<Order> do where (exists (plasm { for p in stored<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) })) }
-let big = plasm { for o in stored<Order> do where (o.Lines |> List.exists (fun l -> l.UnitPrice > 10m)) }
-let paymentsOf = Query.prepare (fun (ids: Arg<OrderId list>) -> plasm { for p in stored<Payment> do where (List.contains p.OrderId ids.Value) })
+let paid = plasm { for o in tableOf<Order> do where (exists (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) })) }
+let big = plasm { for o in tableOf<Order> do where (o.Lines |> List.exists (fun l -> l.UnitPrice > 10m)) }
+let paymentsOf = Query.prepare (fun (ids: Arg<OrderId list>) -> plasm { for p in tableOf<Payment> do where (List.contains p.OrderId ids.Value) })
 """
 [<Fact>]
 let ``accepts projections to tuples and anonymous records`` () =
     accepts
         """
-let a : Projection<OrderId * decimal> = plasm { for o in stored<Order> do select (o.Id, o.Total) }
-let b = plasm { for o in stored<Order> do where (o.Total > 0m); select {| Id = o.Id; Reason = o.CancellationReason |} }
+let a : Projection<OrderId * decimal> = plasm { for o in tableOf<Order> do select (o.Id, o.Total) }
+let b = plasm { for o in tableOf<Order> do where (o.Total > 0m); select {| Id = o.Id; Reason = o.CancellationReason |} }
 """
 
 [<Fact>]
@@ -81,16 +81,16 @@ let place (o: Order) (l: OrderLine) =
 [<Fact>]
 let ``rejects comparing a decimal column with a string`` () =
     rejects
-        "let q = plasm { for o in stored<Order> do where (o.Total > 100m) }"
-        "let q = plasm { for o in stored<Order> do where (o.Total > \"100\") }"
+        "let q = plasm { for o in tableOf<Order> do where (o.Total > 100m) }"
+        "let q = plasm { for o in tableOf<Order> do where (o.Total > \"100\") }"
         "FS0001"
         "string"
 
 [<Fact>]
 let ``rejects comparing a CustomerId with an OrderId`` () =
     rejects
-        "let q = plasm { for o in stored<Order> do where (o.CustomerId = Some (CustomerId 1L)) }"
-        "let q = plasm { for o in stored<Order> do where (o.CustomerId = Some (OrderId 1L)) }"
+        "let q = plasm { for o in tableOf<Order> do where (o.CustomerId = Some (CustomerId 1L)) }"
+        "let q = plasm { for o in tableOf<Order> do where (o.CustomerId = Some (OrderId 1L)) }"
         "FS0001"
         "OrderId"
 
@@ -104,15 +104,15 @@ let ``rejects ordering an owned list by a field its records do not have`` () =
 [<Fact>]
 let ``rejects an exists query compared with a value`` () =
     rejects
-        "let q = plasm { for o in stored<Order> do where (exists (plasm { for p in stored<Payment> do where (p.OrderId = o.Id) })) }"
-        "let q = plasm { for o in stored<Order> do where (exists (plasm { for p in stored<Payment> do where (p.OrderId = o.Id) }) = 1) }"
+        "let q = plasm { for o in tableOf<Order> do where (exists (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })) }"
+        "let q = plasm { for o in tableOf<Order> do where (exists (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) }) = 1) }"
         "FS0001"
         "bool"
 [<Fact>]
 let ``rejects where after select`` () =
     rejects
-        "let q = plasm { for o in stored<Order> do where (o.Total > 1m); select o.Id }"
-        "let q = plasm { for o in stored<Order> do select o.Id; where (o.Total > 1m) }"
+        "let q = plasm { for o in tableOf<Order> do where (o.Total > 1m); select o.Id }"
+        "let q = plasm { for o in tableOf<Order> do select o.Id; where (o.Total > 1m) }"
         "FS0193"
         "Projection<OrderId>"
 
@@ -126,14 +126,14 @@ let ``rejects an update of two different records`` () =
 [<Fact>]
 let ``rejects List.exists over a field that is not a list`` () =
     rejects
-        "let q = plasm { for o in stored<Order> do where (o.Lines |> List.exists (fun l -> l.UnitPrice > 1m)) }"
-        "let q = plasm { for o in stored<Order> do where (o.Total |> List.exists (fun l -> l > 1m)) }"
+        "let q = plasm { for o in tableOf<Order> do where (o.Lines |> List.exists (fun l -> l.UnitPrice > 1m)) }"
+        "let q = plasm { for o in tableOf<Order> do where (o.Total |> List.exists (fun l -> l > 1m)) }"
         "FS0001"
         "list"
 [<Fact>]
 let ``rejects a nested join-style for (joins are not silently ignored)`` () =
     rejects
-        "let q = plasm { for o in stored<Order> do where (o.Total > 1m) }"
-        "let q = plasm { for o in stored<Order> do for p in stored<Payment> do where (p.Amount > 1m) }"
+        "let q = plasm { for o in tableOf<Order> do where (o.Total > 1m) }"
+        "let q = plasm { for o in tableOf<Order> do for p in tableOf<Payment> do where (p.Amount > 1m) }"
         "FS0041"
         "For"

@@ -123,7 +123,7 @@ type UnionFieldSteps(w: World) =
 
     let all () =
         task {
-            let! r = repo().All(plasm { for c in stored<Card> do orderBy c.Id })
+            let! r = repo().All(plasm { for c in tableOf<Card> do orderBy c.Id })
             return r
         }
 
@@ -259,16 +259,16 @@ type UnionFieldSteps(w: World) =
         |> unit
 
     [<StepDefinition("I keep the Cards whose Stage.IsDoing")>]
-    member _.IsDoing() = keep (plasm { for c in stored<Card> do where c.Stage.IsDoing }) |> unit
+    member _.IsDoing() = keep (plasm { for c in tableOf<Card> do where c.Stage.IsDoing }) |> unit
 
     [<StepDefinition("I keep the Cards whose Stage is Backlog")>]
-    member _.IsBacklog() = keep (plasm { for c in stored<Card> do where (c.Stage = Backlog) }) |> unit
+    member _.IsBacklog() = keep (plasm { for c in tableOf<Card> do where (c.Stage = Backlog) }) |> unit
 
     [<StepDefinition("I keep the Cards that are Doing by Ada, written as a match")>]
     member _.MatchDoing() =
         keep (
             plasm {
-                for c in stored<Card> do
+                for c in tableOf<Card> do
                     where (
                         match c.Stage with
                         | Doing(who, _) -> who = ada
@@ -282,7 +282,7 @@ type UnionFieldSteps(w: World) =
     member _.MatchDropped(reason: string) =
         keep (
             plasm {
-                for c in stored<Card> do
+                for c in tableOf<Card> do
                     where (
                         match c.Stage with
                         | Done(Dropped r, _) -> r = reason
@@ -293,12 +293,12 @@ type UnionFieldSteps(w: World) =
         |> unit
 
     [<StepDefinition("I keep the Cards whose Assignee is Some Ada, through the member Card.Assignee")>]
-    member _.ThroughMember() = keep (plasm { for c in stored<Card> do where (c.Assignee = Some ada) }) |> unit
+    member _.ThroughMember() = keep (plasm { for c in tableOf<Card> do where (c.Assignee = Some ada) }) |> unit
 
     [<StepDefinition("I keep the Cards whose Stage equals the value Doing \\(Ada, since\\)")>]
     member _.WholeValue() =
         let value = Doing(ada, since)
-        keep (plasm { for c in stored<Card> do where (c.Stage = value) }) |> unit
+        keep (plasm { for c in tableOf<Card> do where (c.Stage = value) }) |> unit
 
     [<StepDefinition("^only the Card (.+) is returned$")>]
     member _.Only(text: string) = equal [ stage text ] (w.Get<Stage list> "kept") "stages"
@@ -311,7 +311,7 @@ type UnionFieldSteps(w: World) =
     [<StepDefinition("I select the title, Card.Assignee and Card.Since of the Cards that Ada is doing")>]
     member _.SelectMembers() =
         task {
-            let! r = repo().All(plasm { for c in stored<Card> do where c.Stage.IsDoing; select (c.Title, c.Assignee, c.Since) })
+            let! r = repo().All(plasm { for c in tableOf<Card> do where c.Stage.IsDoing; select (c.Title, c.Assignee, c.Since) })
             w.Set("selected", ok r)
         }
         |> unit
@@ -326,7 +326,7 @@ type UnionFieldSteps(w: World) =
             let! r =
                 repo().All(
                     plasm {
-                        for c in stored<Card> do
+                        for c in tableOf<Card> do
                             groupBy c.Phase
                             orderBy c.Phase
                             select (c.Phase, Agg.count ())
@@ -343,7 +343,7 @@ type UnionFieldSteps(w: World) =
             let! r =
                 repo().All(
                     plasm {
-                        for c in stored<Card> do
+                        for c in tableOf<Card> do
                             groupBy c.PhaseName
                             select (c.PhaseName, Agg.count ())
                     }
@@ -363,7 +363,7 @@ type UnionFieldSteps(w: World) =
     [<StepDefinition("I bulk update every Card back to Backlog")>]
     member _.BulkBacklog() =
         task {
-            let! r = repo().Transact(Tx.execute (Bulk.update (Query.from (stored<Card>), fun c -> { c with Stage = Backlog })): Tx<_, unit>)
+            let! r = repo().Transact(Tx.execute (Bulk.update (Query.from (tableOf<Card>), fun c -> { c with Stage = Backlog })): Tx<_, unit>)
             ok r |> ignore
         }
         |> unit

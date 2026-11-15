@@ -73,7 +73,7 @@ Feature: Walking the path in the browser
       Then it names the F# topic it teaches, without a link
 
     Scenario: Code is coloured as F#
-      When the learner opens the koan "A record needs nothing from Plasm"
+      When the learner opens the koan "A stored record is still plain F#"
       Then its keywords, type names, strings, numbers and comments are coloured
 
     Scenario: Colouring follows the learner's edits

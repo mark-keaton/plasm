@@ -16,7 +16,7 @@ type SandboxSteps(w: World) =
 
     let names (repo: Repo) =
         task {
-            let! r = repo.All(plasm { for c in stored<Customer> do orderBy c.Name })
+            let! r = repo.All(plasm { for c in tableOf<Customer> do orderBy c.Name })
             return ok r |> List.map (fun c -> c.Name)
         }
 
@@ -185,9 +185,9 @@ type SandboxSteps(w: World) =
 
                         let! r = insert repo "Ada"
                         ok r |> ignore
-                        let a = repo.Count(Query.from (stored<Order>))
+                        let a = repo.Count(Query.from (tableOf<Order>))
                         let b = names repo
-                        let c = repo.Exists(Query.from (stored<Customer>))
+                        let c = repo.Exists(Query.from (tableOf<Customer>))
                         let! n = a
                         let! seen = b
                         let! any = c

@@ -100,7 +100,7 @@ let lesson =
               "A fragment inside a typed query",
               fun repo ->
                   task {
-                      let startingWithA = plasm { for c in Db.customers do where (Raw.fragment<bool> "{0} ILIKE {1}" (c.Name, "a%")) }
+                      let startingWithA = plasm { for c in tableOf<Customer> do where (Raw.fragment<bool> "{0} ILIKE {1}" (c.Name, "a%")) }
                       let! rows = repo.All startingWithA
                       ok rows |> List.map (fun c -> c.Name) |> shouldBe __
                   }

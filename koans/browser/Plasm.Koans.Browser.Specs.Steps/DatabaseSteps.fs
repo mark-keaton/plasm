@@ -11,10 +11,10 @@ open Plasm.Koans.Browser.Specs.Site
 module Snippets =
     let queries =
         """    task {
-        let! joined = repo.All(plasm { for o in Db.orders do join c in Db.customers on (o.CustomerId = Some c.Id); orderBy o.Id; select (o.Id, c.Name) })
-        let! totals = repo.All(plasm { for o in Db.orders do groupBy o.CustomerId; orderBy o.CustomerId; select (o.CustomerId, Agg.count (), Agg.sum o.Total) })
-        let! loaded = repo.All(plasm { for o in Db.orders do orderBy o.Id })
-        let paymentsOf = Query.prepare (fun (ids: Arg<OrderId list>) -> plasm { for p in Db.payments do where (List.contains p.OrderId ids.Value); orderBy p.Id })
+        let! joined = repo.All(plasm { for o in tableOf<Order> do join c in tableOf<Customer> on (o.CustomerId = Some c.Id); orderBy o.Id; select (o.Id, c.Name) })
+        let! totals = repo.All(plasm { for o in tableOf<Order> do groupBy o.CustomerId; orderBy o.CustomerId; select (o.CustomerId, Agg.count (), Agg.sum o.Total) })
+        let! loaded = repo.All(plasm { for o in tableOf<Order> do orderBy o.Id })
+        let paymentsOf = Query.prepare (fun (ids: Arg<OrderId list>) -> plasm { for p in tableOf<Payment> do where (List.contains p.OrderId ids.Value); orderBy p.Id })
         let pairs = match joined with Ok rows -> rows | Error e -> failwithf "%A" e
         let orders = match loaded with Ok os -> os | Error e -> failwithf "%A" e
         let! payments = repo.All(paymentsOf (orders |> List.map (fun o -> o.Id)))
@@ -52,17 +52,17 @@ module Snippets =
             repo.Sandbox(fun r ->
                 task {
                     let! _ = r.Transact(Tx.insert (New.customer "Eve" "eve@example.com"): Tx<Customer, unit>)
-                    let! n = r.Count(Query.from Db.customers)
+                    let! n = r.Count(Query.from (tableOf<Customer>))
                     return n
                 })
-        let! after = repo.Count(Query.from Db.customers)
+        let! after = repo.Count(Query.from (tableOf<Customer>))
         let step = match t with Error e -> sprintf "failed at %s, rolled back %A" e.Step.Action (e.RolledBack |> List.map (fun s -> s.Action)) | Ok _ -> "committed"
         return sprintf "%s; inside the sandbox %A; afterwards %A" step inside after
     }"""
 
     let overlapping =
         """    task {
-        let reads = [ for s in [ Published; Draft; Cancelled; Published ] -> repo.Count(plasm { for o in Db.orders do where (o.Status = s) }) ]
+        let reads = [ for s in [ Published; Draft; Cancelled; Published ] -> repo.Count(plasm { for o in tableOf<Order> do where (o.Status = s) }) ]
         let! counts = Task.WhenAll reads
         return sprintf "%A" (counts |> Array.map (function Ok n -> n | Error e -> failwithf "%A" e))
     }"""
@@ -72,7 +72,7 @@ module Snippets =
         let placed = DateTime(2026, 3, 4, 5, 6, 7, 891, DateTimeKind.Utc)
         let! o = repo.Transact(Tx.insert { New.order (Some(CustomerId 2L)) Cancelled 12345.67m with PlacedAt = placed; CancellationReason = Some "naïve ✓ 'quoted'" }: Tx<Order, unit>)
         let o = match o with Ok o -> o | Error e -> failwithf "%A" e
-        let! back = repo.One(plasm { for x in Db.orders do where (x.Id = o.Id) })
+        let! back = repo.One(plasm { for x in tableOf<Order> do where (x.Id = o.Id) })
         let back = match back with Ok(Some b) -> { b with Id = OrderId 0L } | other -> failwithf "%A" other
         let ids = [| 1L; 3L |]
         let! raw = repo.Sql<decimal * DateTime * string option * CustomerId option * bool>($"SELECT total, placed_at, cancellation_reason, customer_id, total > 50 FROM orders WHERE id = any({ids}) ORDER BY id")
@@ -83,12 +83,12 @@ module Snippets =
     let readsAndWrites =
         """    task {
         let adaEmail = email "ada@example.com"
-        let! ada = repo.One(plasm { for c in Db.customers do where (c.Email = adaEmail) })
+        let! ada = repo.One(plasm { for c in tableOf<Customer> do where (c.Email = adaEmail) })
         let ada = match ada with Ok(Some a) -> a | other -> failwithf "%A" other
         let! _ = repo.Transact(Tx.update (ada, { ada with Name = "Ada L." }): Tx<Customer, unit>)
         let! _ = repo.Transact(Tx.insert (New.product "SPROCKET" "Sprocket"): Tx<Product, unit>)
-        let! _ = repo.Transact(Tx.execute (Bulk.update (plasm { for o in Db.orders do where (o.Status = Draft) }, fun o -> { o with Total = o.Total + 1m })): Tx<int, unit>)
-        let! _ = repo.Count(plasm { for o in Db.orders do where (exists (plasm { for p in Db.payments do where (p.OrderId = o.Id && p.Status = Succeeded) })) })
+        let! _ = repo.Transact(Tx.execute (Bulk.update (plasm { for o in tableOf<Order> do where (o.Status = Draft) }, fun o -> { o with Total = o.Total + 1m })): Tx<int, unit>)
+        let! _ = repo.Count(plasm { for o in tableOf<Order> do where (exists (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) })) })
         return "done"
     }"""
 
@@ -108,7 +108,7 @@ module Snippets =
                             })
                     return ()
                 })
-        let! seen = repo.Count(plasm { for c in Db.customers do where (c.Name = "Pia") })
+        let! seen = repo.Count(plasm { for c in tableOf<Customer> do where (c.Name = "Pia") })
         let readDone = started.ElapsedMilliseconds
         let! t = tx
         let! _ = repo.Transact(Tx.executeSql $"delete from customers where name = 'Pia'": Tx<int, unit>)

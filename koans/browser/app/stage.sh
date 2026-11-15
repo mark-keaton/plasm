@@ -19,12 +19,12 @@ mkdir -p "$site/refs"
 cp ~/.dotnet/packs/Microsoft.NETCore.App.Ref/11.0.0/ref/net11.0/*.dll "$site/refs/"
 # The compiler references what the page runs: FSharp.Core, Plasm and the koans' runtime.
 # (Published assemblies carry a content hash: <name>.<hash>.dll.)
-for dll in FSharp.Core Plasm Plasm.Koans.Core; do
+for dll in FSharp.Core Plasm.Annotations Plasm Plasm.Koans.Core; do
   file=$(ls "$site/_framework" | grep -E "^${dll//./\\.}\.[a-z0-9]+\.dll$")
   cp "$site/_framework/$file" "$site/refs/$dll.dll"
 done
 # Their doc comments, for the editor's hover (the compiler reads <name>.xml).
-cp "$root/src/Plasm/bin/Release/net11.0/Plasm.xml" "$root/koans/Plasm.Koans.Core/bin/Release/net11.0/Plasm.Koans.Core.xml" "$site/refs/"
+cp "$root/src/Plasm/bin/Release/net11.0/Plasm.xml" "$root/src/Plasm.Annotations/bin/Release/net11.0/Plasm.Annotations.xml" "$root/koans/Plasm.Koans.Core/bin/Release/net11.0/Plasm.Koans.Core.xml" "$site/refs/"
 (cd "$site/refs" && ls *.dll *.xml > list.txt)
 dotnet run --project "$root/koans/Plasm.Koans" -- --course "$site/course.json" > /dev/null
 # Plasm's acceptance specification, which each koan links to.

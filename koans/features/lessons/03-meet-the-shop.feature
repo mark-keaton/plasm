@@ -15,7 +15,7 @@ Feature: Meet the shop
 
     Examples:
       | koan                              | the learner discovers                                                                                | teaches                                                                  |
-      | The shop has three customers      | repo.All(Query.from Db.customers) reads every customer, each as a Customer record                    | core: Querying a mapped property uses its declared type                  |
+      | The shop has three customers      | repo.All(Query.from (tableOf<Customer>)) reads every customer, each as a Customer record                    | core: Querying a mapped property uses its declared type                  |
       | Counting rows                     | repo.Count counts a table's rows without reading them                                                | aggregates: Counting a filtered query                                    |
       | The database numbers the rows     | the database gives each row a key in the order the starting data inserts it, so Bob is CustomerId 2L | elegance: Domain scalar wrappers preserve their meaning                  |
       | An order belongs to a customer    | an order's CustomerId names the customer who placed it; Ada has placed two orders                    | core: Client-side processing is an explicit boundary                     |

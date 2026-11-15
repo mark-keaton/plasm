@@ -334,7 +334,7 @@ type CourseSteps(w: BrowserWorld) =
     member this.Coloured() =
         task {
             let! tokens = this.Tokens()
-            let comment = tokens |> Set.exists (fun (c, t) -> c = "c" && t.StartsWith "// Product is a plain F# record")
+            let comment = tokens |> Set.exists (fun (c, t) -> c = "c" && t.StartsWith "// Product is an ordinary immutable F# record")
 
             for expected in [ "k", "let"; "k", "with"; "t", "ProductId"; "s", "\"WIDGET\""; "n", "1L" ] do
                 check (tokens.Contains expected) $"%A{expected} is not coloured; the editor shows %A{tokens}"

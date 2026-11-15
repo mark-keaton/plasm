@@ -7,7 +7,7 @@ open Plasm.Koans.Shop
 
 let private customers (repo: Repo) =
     task {
-        let! n = repo.Count(Query.from Db.customers)
+        let! n = repo.Count(Query.from (tableOf<Customer>))
         return ok n
     }
 

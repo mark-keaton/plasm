@@ -9,7 +9,7 @@ open Plasm.Koans.Shop
 let private ordersOf =
     Query.prepare (fun (customer: Arg<CustomerId>) ->
         plasm {
-            for o in Db.orders do
+            for o in tableOf<Order> do
                 where (o.CustomerId = Some customer.Value)
                 orderBy o.Id
         })
@@ -17,7 +17,7 @@ let private ordersOf =
 /// A prepared query: built once, then called with a SKU to give the query for that SKU.
 /// An Arg<string> stands for the value given at each call; `.Value` reads it inside the query.
 let private productsWithSku =
-    Query.prepare (fun (sku: Arg<string>) -> plasm { for p in Db.products do where (p.Sku = sku.Value) })
+    Query.prepare (fun (sku: Arg<string>) -> plasm { for p in tableOf<Product> do where (p.Sku = sku.Value) })
 
 let private names (r: Result<Product list, DbError>) = ok r |> List.map (fun p -> p.Name)
 
@@ -81,7 +81,7 @@ let lesson =
                       let page =
                           Query.prepare2 (fun (size: Arg<int>) (offset: Arg<int>) ->
                               plasm {
-                                  for o in Db.orders do
+                                  for o in tableOf<Order> do
                                       orderBy o.Id
                                       skip offset.Value
                                       take size.Value
@@ -109,7 +109,7 @@ let lesson =
                       try
                           Query.prepare (fun (customer: Arg<CustomerId>) ->
                               let id = customer.Value // read while the query is being built
-                              plasm { for o in Db.orders do where (o.CustomerId = Some id) })
+                              plasm { for o in tableOf<Order> do where (o.CustomerId = Some id) })
                           |> ignore
 
                           false
@@ -128,8 +128,8 @@ let lesson =
                       let paidAtLeast =
                           Query.prepare (fun (least: Arg<decimal>) ->
                               plasm {
-                                  for o in Db.orders do
-                                      where (exists (plasm { for p in Db.payments do where (p.OrderId = o.Id && p.Amount >= least.Value) }))
+                                  for o in tableOf<Order> do
+                                      where (exists (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id && p.Amount >= least.Value) }))
                                       orderBy o.Id
                               })
 

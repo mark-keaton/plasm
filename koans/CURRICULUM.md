@@ -7,8 +7,10 @@ meet a word, a value or a rule the page has not shown them.
 The course teaches the one way Plasm builds an application. The shop's records
 are the application's own: ids, validated values (`Email`, `Quantity`) and
 fieldless unions are stored by convention, with no mappings. An aggregate holds
-what it owns as plain fields (`owns`, `ownsOptional`), and shared records
-through a join table (`links`); they are always read and written with it.
+what it owns as plain fields (records holding its key), and shared records
+through a join table (`[<JoinTable>]`); they are always read and written with it.
+Each stored record names its table (`[<Table>]`); everything else follows from
+its types.
 Other aggregates are referred to by id and reached by queries (`plasm { }`,
 joins, `exists`). Plasm validates no input: the domain's constructors do, and
 the database's constraints come back as field errors. Every write is a step of a
@@ -26,7 +28,7 @@ the reference application in the same style.
 3. **Simple before clever.** Within a lesson the gentlest koans come first: the
    plain form of a thing before its edge cases.
 4. **Comments name new words.** The first time a koan uses a word (repo,
-   schema, aggregate, transaction, sandbox), its comment says what it is in one line.
+   model, aggregate, transaction, sandbox), its comment says what it is in one line.
 5. **Real data, real database.** Koans run against the koans database in a
    sandbox; nothing is mocked. The starting data is in
    `Plasm.Koans.Core/KoansData.fs` and is the same for every koan.
@@ -55,7 +57,7 @@ the reference application in the same style.
 
 | # | Lesson | What it is for |
 |---|---|---|
-| 05 | Records and schemas | Records need nothing from Plasm; a schema names the table and key; ids, validated values and fieldless unions are stored by convention; a stored value the domain refuses is a read error; a model reports every mistake at once. |
+| 05 | Stored records | A stored record is still plain F#; it names its table, and its key is its field named Id; ids, validated values and fieldless unions are stored by convention; a stored value the domain refuses is a read error; a model reports every mistake at once, and a list of records that are not stored is refused. |
 | 06 | Query values | A query is a value: `Query.from`, `plasm { }`, composing, captured values as parameters. |
 | 07 | Filters and ordering | `where` and `orderBy` with F#'s meaning, including options and negation. |
 | 08 | Reading | `All`, `One`, `Count`, `Exists`, and where the database work ends. |

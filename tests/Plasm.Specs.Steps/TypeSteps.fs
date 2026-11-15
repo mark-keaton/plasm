@@ -43,9 +43,9 @@ type TypeSteps(w: World) =
 
     [<StepDefinition("I attempt to compare Total with an incompatible value")>]
     member _.CompareIncompatible() =
-        w.Set("snippets", [ "let q = plasm { for o in stored<Order> do where (o.Total > \"100\") }", "FS0001"
-                            "let q = plasm { for o in stored<Order> do where (o.Total = Some 100m) }", "FS0001" ])
-        w.Set("control", "let q = plasm { for o in stored<Order> do where (o.Total > 100m) }")
+        w.Set("snippets", [ "let q = plasm { for o in tableOf<Order> do where (o.Total > \"100\") }", "FS0001"
+                            "let q = plasm { for o in tableOf<Order> do where (o.Total = Some 100m) }", "FS0001" ])
+        w.Set("control", "let q = plasm { for o in tableOf<Order> do where (o.Total > 100m) }")
 
     [<StepDefinition("the expression is rejected at compile time")>]
     member _.RejectedAtCompileTime() =
@@ -96,7 +96,7 @@ type TypeSteps(w: World) =
     [<StepDefinition("I read an Order without a CancellationReason")>]
     member _.ReadWithout() =
         task {
-            let! all = w.Repo.All(plasm { for o in stored<Order> do orderBy o.Id })
+            let! all = w.Repo.All(plasm { for o in tableOf<Order> do orderBy o.Id })
             w.Set("orders", ok all)
         }
         |> unit

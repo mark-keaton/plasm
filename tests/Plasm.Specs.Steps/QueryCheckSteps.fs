@@ -7,26 +7,26 @@ open Plasm.TestDomain.Domain
 open Plasm.TestDomain.Domain.Schemas
 
 module Good =
-    let everyone = Query.from (stored<Customer>)
+    let everyone = Query.from (tableOf<Customer>)
 
-    let byName = Query.prepare (fun (name: Arg<string>) -> plasm { for c in stored<Customer> do where (c.Name = name.Value) })
+    let byName = Query.prepare (fun (name: Arg<string>) -> plasm { for c in tableOf<Customer> do where (c.Name = name.Value) })
 
-    let paid = plasm { for o in stored<Order> do where (exists (plasm { for p in stored<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) })) }
+    let paid = plasm { for o in tableOf<Order> do where (exists (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) })) }
 
 module Bad =
     // String.Normalize has no SQL translation.
-    let normalized = plasm { for c in stored<Customer> do where (c.Name.Normalize() = "ada") }
+    let normalized = plasm { for c in tableOf<Customer> do where (c.Name.Normalize() = "ada") }
 
 module GoodProjection =
-    let namesOf = Query.prepare (fun (name: Arg<string>) -> plasm { for c in stored<Customer> do where (c.Name = name.Value); select c.Name })
+    let namesOf = Query.prepare (fun (name: Arg<string>) -> plasm { for c in tableOf<Customer> do where (c.Name = name.Value); select c.Name })
 
 module BadProjection =
     let normalizedNames =
-        Query.prepare (fun (name: Arg<string>) -> plasm { for c in stored<Customer> do where (c.Name.Normalize() = name.Value); select c.Name })
+        Query.prepare (fun (name: Arg<string>) -> plasm { for c in tableOf<Customer> do where (c.Name.Normalize() = name.Value); select c.Name })
 
 module BadPrepared =
     let normalizedNamed =
-        Query.prepare (fun (name: Arg<string>) -> plasm { for c in stored<Customer> do where (c.Name.Normalize() = name.Value) })
+        Query.prepare (fun (name: Arg<string>) -> plasm { for c in tableOf<Customer> do where (c.Name.Normalize() = name.Value) })
 
 namespace Plasm.Specs
 

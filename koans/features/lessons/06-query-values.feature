@@ -15,7 +15,7 @@ Feature: About query values
 
     Examples:
       | koan                              | the learner discovers                                                         | teaches                                                    |
-      | Query.from reads every row        | Query.from Db.customers is the plainest query: every Customer                 | core: Constructing a query performs no database operations |
+      | Query.from reads every row        | Query.from (tableOf<Customer>) is the plainest query: every Customer                 | core: Constructing a query performs no database operations |
       | A where keeps the matching rows   | one where clause keeps only the rows for which its condition is true          | core: Reusable filters compose                             |
       | An orderBy sorts the rows         | orderBy sorts the rows by a field, smallest first, in the database            | query-semantics: The ordering is done by the database      |
       | take keeps the first rows         | take n keeps the first n rows of an ordered query                             | elegance: Pagination requires stable ordering              |

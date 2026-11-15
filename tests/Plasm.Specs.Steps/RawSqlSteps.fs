@@ -158,7 +158,7 @@ type RawSqlSteps(w: World) =
             let! r =
                 w.Repo.All(
                     plasm {
-                        for c in stored<Customer> do
+                        for c in tableOf<Customer> do
                             where (Raw.fragment<bool> "{0} ILIKE {1}" (c.Name, pattern))
                     }
                 )
@@ -178,12 +178,12 @@ type RawSqlSteps(w: World) =
 
     [<StepDefinition("I attempt to build a fragment from a runtime string")>]
     member _.RuntimeFragment() =
-        w.Set("fragmentSnippet", "let sql = \"{0} ILIKE 'a%%'\"\nlet q = plasm { for c in stored<Customer> do where (Raw.fragment<bool> sql c.Name) }")
+        w.Set("fragmentSnippet", "let sql = \"{0} ILIKE 'a%%'\"\nlet q = plasm { for c in tableOf<Customer> do where (Raw.fragment<bool> sql c.Name) }")
 
     [<StepDefinition("the fragment is rejected at compile time")>]
     member _.FragmentRejected() =
         task {
-            let control = "let q = plasm { for c in stored<Customer> do where (Raw.fragment<bool> \"{0} ILIKE {1}\" (c.Name, \"a%\")) }"
+            let control = "let q = plasm { for c in tableOf<Customer> do where (Raw.fragment<bool> \"{0} ILIKE {1}\" (c.Name, \"a%\")) }"
             let! r = CompileCheck.check control
             check r.Compiles ("expected to compile:\n" + control + "\n" + String.concat "\n" r.Errors)
             let code: string = w.Get "fragmentSnippet"

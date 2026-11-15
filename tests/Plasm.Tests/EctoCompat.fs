@@ -16,7 +16,7 @@ open Plasm.Tests.Helpers
 
 let allOrders (db: TestDb) =
     task {
-        let! r = db.Repo.All(plasm { for o in stored<Order> do orderBy o.Id })
+        let! r = db.Repo.All(plasm { for o in tableOf<Order> do orderBy o.Id })
         return ok r
     }
 
@@ -267,7 +267,7 @@ let ``ecto: all queryable`` () =
         let tx =
             transaction {
                 let! _ = Tx.insert order0
-                let! seen = Tx.all (Query.from (stored<Order>))
+                let! seen = Tx.all (Query.from (tableOf<Order>))
                 return seen.Length
             }
 
@@ -287,8 +287,8 @@ let ``ecto (deliberate difference): comparing with None means IS NULL`` () =
         let! a = Seed.order db None "draft" 1m (Seed.at 1)
         let! b = Seed.order db None "draft" 2m (Seed.at 2)
         let! _ = db.Exec("update orders set cancellation_reason = 'late' where id = @i", [ "i", box (let (OrderId v) = b in v) ])
-        let! r = db.Repo.All(plasm { for o in stored<Order> do where (o.CancellationReason = None) })
+        let! r = db.Repo.All(plasm { for o in tableOf<Order> do where (o.CancellationReason = None) })
         Assert.Equal<OrderId list>([ a ], ok r |> List.map (fun o -> o.Id))
-        let! r2 = db.Repo.All(plasm { for o in stored<Order> do where (o.CancellationReason <> Some "late") })
+        let! r2 = db.Repo.All(plasm { for o in tableOf<Order> do where (o.CancellationReason <> Some "late") })
         Assert.Equal<OrderId list>([ a ], ok r2 |> List.map (fun o -> o.Id))
     }

@@ -103,7 +103,7 @@ type ConventionSteps(w: World) =
 
     let all () =
         task {
-            let! r = repo().All(plasm { for t in stored<Ticket> do orderBy t.Id })
+            let! r = repo().All(plasm { for t in tableOf<Ticket> do orderBy t.Id })
             return r
         }
 
@@ -189,7 +189,7 @@ type ConventionSteps(w: World) =
     member _.KeepCode(code: string) =
         task {
             let wanted = Code code
-            let! r = repo().All(plasm { for t in stored<Ticket> do where (t.Code = wanted) })
+            let! r = repo().All(plasm { for t in tableOf<Ticket> do where (t.Code = wanted) })
             w.Set("kept", ok r)
         }
         |> unit
@@ -248,7 +248,7 @@ type ConventionSteps(w: World) =
     [<StepDefinition("I order the Tickets by priority")>]
     member _.OrderByPriority() =
         task {
-            let! r = repo().All(plasm { for t in stored<Ticket> do orderBy t.Priority })
+            let! r = repo().All(plasm { for t in tableOf<Ticket> do orderBy t.Priority })
             w.Set("ordered", ok r |> List.map (fun t -> t.Priority))
         }
         |> unit

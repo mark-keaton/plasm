@@ -143,7 +143,7 @@ type FsiSteps(w: World) =
 
     let names (repo: string) =
         fsi().Value<string>(
-            $"match {repo}.All(plasm {{ for c in stored<Customer> do orderBy c.Name }}) |> wait with Ok cs -> cs |> List.map (fun c -> c.Name) |> String.concat \"|\" | Error e -> failwithf \"%%A\" e"
+            $"match {repo}.All(plasm {{ for c in tableOf<Customer> do orderBy c.Name }}) |> wait with Ok cs -> cs |> List.map (fun c -> c.Name) |> String.concat \"|\" | Error e -> failwithf \"%%A\" e"
         )
         |> fun (s: string) -> s.Split('|', StringSplitOptions.RemoveEmptyEntries) |> List.ofArray
 
@@ -223,7 +223,7 @@ type FsiSteps(w: World) =
     member _.QueryPublished() =
         markCommands ()
 
-        fsi().Run "let q = plasm { for o in stored<Order> do where (o.Status = Published && o.CustomerId = Some (CustomerId 42L)) }"
+        fsi().Run "let q = plasm { for o in tableOf<Order> do where (o.Status = Published && o.CustomerId = Some (CustomerId 42L)) }"
         |> display
 
     [<StepDefinition("the session displays the SQL with each parameter and its value")>]
@@ -241,7 +241,7 @@ type FsiSteps(w: World) =
     [<StepDefinition("I evaluate a query for Orders, which own their Lines")>]
     member _.QueryWithLoads() =
         markCommands ()
-        fsi().Run "let q = plasm { for o in stored<Order> do where (o.Total > 0m) }" |> display
+        fsi().Run "let q = plasm { for o in tableOf<Order> do where (o.Total > 0m) }" |> display
 
     [<StepDefinition("the session displays the main command and one command for each load, in execution order")>]
     member _.DisplaysLoads() =
@@ -254,7 +254,7 @@ type FsiSteps(w: World) =
     member _.Untranslatable() =
         markCommands ()
         fsi().Run "let shout (s: string) = s.ToUpperInvariant() + \"!\"" |> ignore
-        fsi().Run "let q = plasm { for c in stored<Customer> do where (shout c.Name = \"ADA!\") }" |> display
+        fsi().Run "let q = plasm { for c in tableOf<Customer> do where (shout c.Name = \"ADA!\") }" |> display
 
     [<StepDefinition("the session displays the translation error with the expression identified")>]
     member _.DisplaysTranslationError() =
@@ -272,7 +272,7 @@ type FsiSteps(w: World) =
 
     [<StepDefinition("I evaluate a read of Customers through the interactive helpers")>]
     member _.ReadCustomers() =
-        fsi().Run "repo.All(plasm { for c in stored<Customer> do orderBy c.Name }) |> wait" |> display
+        fsi().Run "repo.All(plasm { for c in tableOf<Customer> do orderBy c.Name }) |> wait" |> display
 
     [<StepDefinition("the session displays the Customers, not a task")>]
     member _.DisplaysCustomers() =
@@ -303,7 +303,7 @@ type FsiSteps(w: World) =
 
     [<StepDefinition("a query for Customers evaluated in the session")>]
     member _.EarlierQuery() =
-        fsi().Run "let earlier = plasm { for c in stored<Customer> do where (c.Name = \"Ada\") }" |> ignore
+        fsi().Run "let earlier = plasm { for c in tableOf<Customer> do where (c.Name = \"Ada\") }" |> ignore
 
     [<StepDefinition("I redefine the Customer record in a later submission and re-evaluate the mappings")>]
     member _.Redefine() = mappings ()
@@ -334,7 +334,7 @@ type FsiSteps(w: World) =
         w.Set(
             "newDefinition",
             fsi().Value<string>(
-                "match repo.All(plasm { for c in stored<Customer> do orderBy c.Name }) |> wait with Ok cs -> sprintf \"%d %b\" cs.Length (cs.GetType().GetGenericArguments().[0] = typeof<Customer>) | Error e -> sprintf \"%A\" e"
+                "match repo.All(plasm { for c in tableOf<Customer> do orderBy c.Name }) |> wait with Ok cs -> sprintf \"%d %b\" cs.Length (cs.GetType().GetGenericArguments().[0] = typeof<Customer>) | Error e -> sprintf \"%A\" e"
             )
         )
 
@@ -379,7 +379,7 @@ type FsiSteps(w: World) =
 
     [<StepDefinition("using the closed playground fails with an explanation instead of a connection error")>]
     member _.ClosedFails() =
-        let s = fsi().Run "pg.All(plasm { for c in stored<Customer> do orderBy c.Name }) |> wait"
+        let s = fsi().Run "pg.All(plasm { for c in tableOf<Customer> do orderBy c.Name }) |> wait"
         contains "RepositoryClosed" s.Output
         contains "playground was closed" s.Output
         contains "repo.Playground()" s.Output
@@ -452,7 +452,7 @@ type FsiSteps(w: World) =
         markCommands ()
 
         fsi().Run
-            "let ordersOf = Query.prepare (fun (c: Arg<CustomerId>) -> plasm { for o in stored<Order> do where (o.CustomerId = Some c.Value) })"
+            "let ordersOf = Query.prepare (fun (c: Arg<CustomerId>) -> plasm { for o in tableOf<Order> do where (o.CustomerId = Some c.Value) })"
         |> ignore
 
         fsi().Run "let q = ordersOf (CustomerId 42L)" |> display
@@ -465,7 +465,7 @@ type FsiSteps(w: World) =
 
     [<StepDefinition("I evaluate a query and display it")>]
     member _.DisplayOnly() =
-        fsi().Run "let shown = plasm { for c in stored<Customer> do where (c.Name = \"Ada\") }" |> display
+        fsi().Run "let shown = plasm { for c in tableOf<Customer> do where (c.Name = \"Ada\") }" |> display
         contains "SELECT" (displayed ())
 
     [<StepDefinition("no repository has planned it")>]
@@ -495,7 +495,7 @@ type FsiSteps(w: World) =
 
     [<StepDefinition("the next use of the playground reports that its changes were lost")>]
     member _.ReportsLost() =
-        let out = (fsi().Run "pg.All(plasm { for c in stored<Customer> do orderBy c.Name }) |> wait").Output
+        let out = (fsi().Run "pg.All(plasm { for c in tableOf<Customer> do orderBy c.Name }) |> wait").Output
         contains "ConnectionFailure" out
         contains "changes were discarded" out
 
@@ -549,7 +549,7 @@ type CompiledDisplaySteps(w: World) =
     [<StepDefinition("compiled code formats a query with %A")>]
     member _.Format() =
         let secret = "s3cr3t-token"
-        let q = plasm { for c in stored<DisplayProbe> do where (c.Name = secret) }
+        let q = plasm { for c in tableOf<DisplayProbe> do where (c.Name = secret) }
         w.Set("formatted", sprintf "%A" q)
         // Keep the repository alive until after formatting.
         System.GC.KeepAlive(w.Get<Repo> "displayRepo")

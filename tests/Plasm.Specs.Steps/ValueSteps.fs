@@ -14,7 +14,7 @@ type ValueSteps(w: World) =
     [<StepDefinition("I construct a query for Orders")>]
     member _.ConstructQuery() =
         w.MarkCommands()
-        w.Set("query", plasm { for o in stored<Order> do where (o.Total > 0m) })
+        w.Set("query", plasm { for o in tableOf<Order> do where (o.Total > 0m) })
 
     [<StepDefinition("add filters, sorting, projections, and relationship loads")>]
     member _.AddEverything() =
@@ -145,7 +145,7 @@ type ValueSteps(w: World) =
         task {
             let! c = Seed.customer w.Db "Ada" "ada@example.com"
             let! id = Seed.order w.Db (Some c) "draft" 10m (Seed.at 1)
-            let! o = w.Repo.One(plasm { for o in stored<Order> do where (o.Id = id) })
+            let! o = w.Repo.One(plasm { for o in tableOf<Order> do where (o.Id = id) })
             w.Set("order", (ok o).Value)
         }
         |> unit

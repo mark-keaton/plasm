@@ -41,7 +41,7 @@ type EleganceSteps(w: World) =
 
     [<StepDefinition("I configure its persistence mapping")>]
     member _.Configure() =
-        check (List.contains typeof<Order> w.Db.Model.Types) "Order is mapped by stored<Order>"
+        check (List.contains typeof<Order> w.Db.Model.Types) "Order is mapped by tableOf<Order>"
 
     [<StepDefinition("I do not need to add public setters")>]
     member _.NoSetters() =
@@ -78,8 +78,8 @@ type EleganceSteps(w: World) =
     [<StepDefinition("those identifiers remain distinct at compile time")>]
     member _.DistinctAtCompileTime() =
         task {
-            do! compiles "let q (id: OrderId) = plasm { for o in stored<Order> do where (o.Id = id) }"
-            do! rejected "let q (id: CustomerId) = plasm { for o in stored<Order> do where (o.Id = id) }"
+            do! compiles "let q (id: OrderId) = plasm { for o in tableOf<Order> do where (o.Id = id) }"
+            do! rejected "let q (id: CustomerId) = plasm { for o in tableOf<Order> do where (o.Id = id) }"
             do! compiles "let c (o: Order) (c: CustomerId) : Tx<Order, unit> = Tx.update (o, { o with CustomerId = Some c })"
             do! rejected "let c (o: Order) (i: OrderId) : Tx<Order, unit> = Tx.update (o, { o with CustomerId = Some i })"
         }
@@ -91,7 +91,7 @@ type EleganceSteps(w: World) =
             let id: OrderId = w.Get "id"
             let repo = w.Db.RepoWith(includeParameterValues = true)
             w.MarkCommands()
-            let! r = repo.All(plasm { for o in stored<Order> do where (o.Id = id) })
+            let! r = repo.All(plasm { for o in tableOf<Order> do where (o.Id = id) })
             equal [ id ] (ok r |> List.map (fun o -> o.Id)) "found by wrapped id"
             let (OrderId raw) = id
             equal [ Some(string raw) ] (w.CommandsSinceMark.Head.Parameters |> List.map snd) "parameter is the int64 value"
@@ -114,7 +114,7 @@ type EleganceSteps(w: World) =
     [<StepDefinition("the library materializes the record")>]
     member _.Materialize() =
         task {
-            let! r = w.Repo.All(plasm { for l in stored<OrderLine> do orderBy l.Id })
+            let! r = w.Repo.All(plasm { for l in tableOf<OrderLine> do orderBy l.Id })
             w.Set("result", r)
         }
         |> unit
@@ -157,8 +157,8 @@ type EleganceSteps(w: World) =
         task {
             let q =
                 plasm {
-                    for o in stored<Order> do
-                        where (exists (plasm { for p in stored<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) }))
+                    for o in tableOf<Order> do
+                        where (exists (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) }))
                         orderBy o.Id
                 }
 
@@ -195,8 +195,8 @@ type EleganceSteps(w: World) =
             let! rows =
                 w.Repo.All(
                     plasm {
-                        for o in stored<Order> do
-                            leftJoin c in stored<Customer> on (o.CustomerId = Some c.Id)
+                        for o in tableOf<Order> do
+                            leftJoin c in tableOf<Customer> on (o.CustomerId = Some c.Id)
                             orderBy o.Id
                             select (o.Id, c |> Option.map (fun c -> c.Name))
                     }
@@ -230,7 +230,7 @@ type EleganceSteps(w: World) =
     member _.EqualNone() =
         task {
             w.MarkCommands()
-            let! os = all (plasm { for o in stored<Order> do where (o.CancellationReason = None) })
+            let! os = all (plasm { for o in tableOf<Order> do where (o.CancellationReason = None) })
             w.Set("orders", os)
         }
         |> unit
@@ -254,7 +254,7 @@ type EleganceSteps(w: World) =
             let! _ = Seed.order w.Db None "draft" 1m (Seed.at 1)
             let ids: OrderId list = []
             w.MarkCommands()
-            let! r = w.Repo.All(plasm { for o in stored<Order> do where (List.contains o.Id ids) })
+            let! r = w.Repo.All(plasm { for o in tableOf<Order> do where (List.contains o.Id ids) })
             w.Set("result", r)
         }
         |> unit
@@ -278,7 +278,7 @@ type EleganceSteps(w: World) =
                 ()
 
             w.MarkCommands()
-            let! r = w.Repo.All(plasm { for o in stored<Order> do take 3 })
+            let! r = w.Repo.All(plasm { for o in tableOf<Order> do take 3 })
             w.Set("unordered", r)
         }
         |> unit
@@ -293,7 +293,7 @@ type EleganceSteps(w: World) =
     member _.UniqueOrdering() =
         task {
             // Ordering by a non-unique column gets the primary key as a tiebreaker.
-            let page n = plasm { for o in stored<Order> do orderBy o.Status; skip (n * 3); take 3 }
+            let page n = plasm { for o in tableOf<Order> do orderBy o.Status; skip (n * 3); take 3 }
             let plan = w.Repo.Explain(page 0) |> ok
             check (plan.Sql.Contains "ORDER BY (CASE \"t0\".\"status\" WHEN 'draft' THEN 0 WHEN 'published' THEN 1 WHEN 'cancelled' THEN 2 END) ASC, \"t0\".\"id\" ASC") plan.Sql
             let! p0 = all (page 0)
@@ -326,7 +326,7 @@ type EleganceSteps(w: World) =
         task {
             let isPublished (q: Query<Order>) = plasm { for o in q do where (o.Status = Published) }
             let isLarge (q: Query<Order>) = plasm { for o in q do where (o.Total > 5m) }
-            let baseQ = plasm { for o in stored<Order> do orderBy o.Id }
+            let baseQ = plasm { for o in tableOf<Order> do orderBy o.Id }
             let! a = all (baseQ |> isPublished |> isLarge)
             let! b = all (baseQ |> isLarge |> isPublished)
             w.Set("a", a)
@@ -358,7 +358,7 @@ type EleganceSteps(w: World) =
             // Each function's query reads Orders, and so the OrderLines they own.
             let a (q: Query<Order>) = plasm { for o in q do where (o.Total > 0m) }
             let b (q: Query<Order>) = plasm { for o in q do where (o.Status = Published) }
-            let q = plasm { for o in stored<Order> do orderBy o.Id } |> a |> b
+            let q = plasm { for o in tableOf<Order> do orderBy o.Id } |> a |> b
             w.Set("plan", w.Repo.Explain q |> ok)
             w.MarkCommands()
             let! os = all q
@@ -404,7 +404,7 @@ type EleganceSteps(w: World) =
             let! r =
                 w.Repo.All(
                     plasm {
-                        for o in stored<Order> do
+                        for o in tableOf<Order> do
                             where (o.Id = id)
                             select {| Id = o.Id; Status = o.Status; Version = o.Version |}
                     }
@@ -421,7 +421,7 @@ type EleganceSteps(w: World) =
 
             // A projection is not a record: an update from it says which rows
             // and which fields, and nothing else.
-            let byId = plasm { for o in stored<Order> do where (o.Id = s.Id) }
+            let byId = plasm { for o in tableOf<Order> do where (o.Id = s.Id) }
             w.MarkCommands()
             let! r = w.Repo.Transact(Tx.execute (Bulk.update (byId, fun o -> { o with Status = Published })): Tx<int, unit>)
             equal 1 (ok r) "rows updated"
@@ -455,7 +455,7 @@ type EleganceSteps(w: World) =
             let! p = Seed.product w.Db "SKU"
             let! id = Seed.order w.Db None "draft" 1m (Seed.at 1)
             let! _ = Seed.line w.Db id p 1 1m
-            let! r = w.Repo.One(Query.from (stored<Order>))
+            let! r = w.Repo.One(Query.from (tableOf<Order>))
             let order = (ok r).Value
             let line = List.exactlyOne order.Lines
             w.Set("original", order)
@@ -544,7 +544,7 @@ type EleganceSteps(w: World) =
             let run n =
                 task {
                     w.MarkCommands()
-                    let! os = all (plasm { for o in stored<Order> do orderBy o.Id; take n })
+                    let! os = all (plasm { for o in tableOf<Order> do orderBy o.Id; take n })
                     equal n os.Length "parents"
                     return (commandsOn "order_lines" w.CommandsSinceMark).Length
                 }
@@ -587,7 +587,7 @@ type EleganceSteps(w: World) =
             let! r =
                 repo.All(
                     plasm {
-                        for o in stored<Order> do
+                        for o in tableOf<Order> do
                             orderByDescending o.PlacedAt
                             take 20
                     }
@@ -623,7 +623,7 @@ type EleganceSteps(w: World) =
 
             let tx =
                 transaction {
-                    let! os = Tx.all (plasm { for o in stored<Order> do where (o.Id = id) })
+                    let! os = Tx.all (plasm { for o in tableOf<Order> do where (o.Id = id) })
                     reads.Value <- reads.Value + 1
                     let order = List.exactlyOne os
 

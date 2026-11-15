@@ -74,7 +74,7 @@ type OwnedSteps(w: World) =
 
     let readAll () =
         task {
-            let! r = repo().All(plasm { for i in stored<Invoice> do orderBy i.Id })
+            let! r = repo().All(plasm { for i in tableOf<Invoice> do orderBy i.Id })
             return ok r
         }
 
@@ -153,8 +153,8 @@ type OwnedSteps(w: World) =
             let! r =
                 repo().All(
                     plasm {
-                        for i in stored<Invoice> do
-                            join l in stored<Line> on (i.Id = l.Invoice)
+                        for i in tableOf<Invoice> do
+                            join l in tableOf<Line> on (i.Id = l.Invoice)
                             select (i, l)
                     }
                 )

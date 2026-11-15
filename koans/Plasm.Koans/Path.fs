@@ -8,7 +8,7 @@ let lessons: Lesson list =
       L02_WhatARepoIs.lesson
       L03_MeetTheShop.lesson
       L04_PlasmsPromises.lesson
-      L05_RecordsAndSchemas.lesson
+      L05_StoredRecords.lesson
       L06_QueryValues.lesson
       L07_FiltersAndOrdering.lesson
       L08_Reading.lesson

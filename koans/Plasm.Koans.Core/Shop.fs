@@ -1,7 +1,11 @@
 /// The koans' shop: Customers, Orders (with their OrderLines), Products,
 /// Payments, Articles (linked to Tags), Accounts (with their Profiles) and
-/// Deliveries. Ordinary F# records, the application's own; how they are stored
-/// lives in Db.
+/// Deliveries. Ordinary F# records, the application's own. Each names its
+/// table with [<Table>], and everything else about how it is stored follows
+/// from its types: the key is the field named Id, a column is named after its
+/// field in snake_case, an id is stored as the number it wraps, a Quantity or
+/// an Email as its value (read back through its `create`), and OrderStatus or
+/// PaymentStatus as its case name ('draft', 'published').
 module Plasm.Koans.Shop
 
 open System
@@ -53,12 +57,16 @@ type Email =
 
 /// A customer. Customers are referred to by id: an order holds a CustomerId,
 /// not the customer.
+[<Table "customers">]
 type Customer =
     { Id: CustomerId
       Name: string
+      [<Unique>]
       Email: Email }
 
-/// One line of an order: its own row in order_lines, owned by the order.
+/// One line of an order: its own row in order_lines. It holds its order's
+/// key (OrderId), so the order owns it.
+[<Table "order_lines">]
 type OrderLine =
     { Id: OrderLineId
       OrderId: OrderId
@@ -67,7 +75,9 @@ type OrderLine =
       UnitPrice: decimal }
 
 /// An order: an aggregate holding its lines, which are read and written with
-/// it. Its customer is another aggregate, referred to by id.
+/// it, in the order of their key. Its customer is another aggregate, referred
+/// to by id. Version is checked and incremented by every change.
+[<Table "orders">]
 type Order =
     { Id: OrderId
       CustomerId: CustomerId option
@@ -75,15 +85,21 @@ type Order =
       Total: decimal
       CancellationReason: string option
       PlacedAt: DateTime
+      [<Version>]
       Version: int
       Lines: OrderLine list }
 
+[<Table "products">]
 type Product =
     { Id: ProductId
+      [<Unique>]
       Sku: string
       Name: string }
 
-/// A payment for an order: an aggregate of its own, referring to its order by id.
+/// A payment for an order: an aggregate of its own, referring to its order by
+/// id. It holds an OrderId, but no Order has a list of payments, so no order
+/// owns it.
+[<Table "payments">]
 type Payment =
     { Id: PaymentId
       OrderId: OrderId
@@ -94,13 +110,16 @@ type Payment =
 type AccountId = AccountId of int64
 type ProfileId = ProfileId of int64
 
-/// An account's profile: its own row in profiles, owned by the account.
+/// An account's profile: its own row in profiles. It holds its account's key,
+/// so the account owns it.
+[<Table "profiles">]
 type Profile =
     { Id: ProfileId
       AccountId: AccountId
       Bio: string }
 
 /// An account, which owns at most one profile.
+[<Table "accounts">]
 type Account =
     { Id: AccountId
       Name: string
@@ -110,12 +129,16 @@ type ArticleId = ArticleId of int64
 type TagId = TagId of int64
 
 /// A tag: shared by the articles that link to it.
+[<Table "tags">]
 type Tag = { Id: TagId; Name: string }
 
-/// An article, linked to shared tags through the article_tags table.
+/// An article, linked to shared tags: a tag holds no article's key, so the
+/// links are rows of the article_tags table, and the tags stay shared.
+[<Table "articles">]
 type Article =
     { Id: ArticleId
       Title: string
+      [<JoinTable "article_tags">]
       Tags: Tag list }
 
 type DeliveryId = DeliveryId of int64
@@ -129,6 +152,7 @@ type DeliveryStage =
 
 /// An Order's delivery. Its members are the domain's own vocabulary;
 /// [<ReflectedDefinition>] lets a query use them, translated to SQL.
+[<Table "deliveries">]
 type Delivery =
     { Id: DeliveryId
       OrderId: OrderId
@@ -159,72 +183,32 @@ let email s =
     | Ok e -> e
     | Error e -> failwith e
 
-/// Schemas and the model. Everything else follows from the records' types:
-/// a column is named after its field, an id is stored as the number it wraps,
-/// a Quantity or an Email as its value (read back through its `create`), and
-/// OrderStatus or PaymentStatus as its case name ('draft', 'published').
+/// The model: the records that are not owned. An order's lines and an
+/// account's profile come with their owner.
 module Db =
 
-    let customers =
-        schema<Customer> "customers" {
-            identityKey (fun c -> c.Id)
-            unique (fun c -> c.Email)
-        }
-
-    /// An order is read and written whole: its lines are its own rows, in
-    /// the order of their key.
-    let orders =
-        schema<Order> "orders" {
-            identityKey (fun o -> o.Id)
-            version (fun o -> o.Version)
-            ownsOrderedBy (fun o -> o.Lines) (fun l -> l.OrderId) (fun l -> l.Id)
-        }
-
-    let orderLines = schema<OrderLine> "order_lines" { identityKey (fun l -> l.Id) }
-
-    let products =
-        schema<Product> "products" {
-            identityKey (fun p -> p.Id)
-            unique (fun p -> p.Sku)
-        }
-
-    let payments = schema<Payment> "payments" { identityKey (fun p -> p.Id) }
-
-    /// An article owns only its links to tags (rows of article_tags); the
-    /// tags themselves are shared.
-    let articles =
-        schema<Article> "articles" {
-            identityKey (fun a -> a.Id)
-            links (fun a -> a.Tags) "article_tags" "article_id" "tag_id"
-        }
-
-    let tags = schema<Tag> "tags" { identityKey (fun t -> t.Id) }
-
-    let accounts =
-        schema<Account> "accounts" {
-            identityKey (fun a -> a.Id)
-            ownsOptional (fun a -> a.Profile) (fun p -> p.AccountId)
-        }
-
-    let profiles = schema<Profile> "profiles" { identityKey (fun p -> p.Id) }
-
-    let deliveries = schema<Delivery> "deliveries" { identityKey (fun d -> d.Id) }
-
-    let schemas: ISchema list =
-        [ customers; orders; orderLines; products; payments; articles; tags; accounts; profiles; deliveries ]
-
-    let model = Model.buildSchemasOrFail [] schemas
+    let model =
+        Model.buildOrFail
+            []
+            [ typeof<Customer>
+              typeof<Order>
+              typeof<Product>
+              typeof<Payment>
+              typeof<Article>
+              typeof<Tag>
+              typeof<Account>
+              typeof<Delivery> ]
 
 /// The shop's queries: values, so `repo.CheckQueries` can check them all.
 module Queries =
 
-    let drafts = plasm { for o in Db.orders do where (o.Status = Draft) }
+    let drafts = plasm { for o in tableOf<Order> do where (o.Status = Draft) }
 
     /// A customer's orders, oldest first.
     let ordersOf =
         Query.prepare (fun (customer: Arg<CustomerId>) ->
             plasm {
-                for o in Db.orders do
+                for o in tableOf<Order> do
                     where (o.CustomerId = Some customer.Value)
                     orderBy o.Id
             })
@@ -235,7 +219,7 @@ module Mistakes =
 
     let shout (s: string) = s.ToUpperInvariant() + "!"
 
-    let shouting = plasm { for c in Db.customers do where (shout c.Name = "ADA!") }
+    let shouting = plasm { for c in tableOf<Customer> do where (shout c.Name = "ADA!") }
 
 /// Values used to build records before insert (generated fields are ignored).
 module New =

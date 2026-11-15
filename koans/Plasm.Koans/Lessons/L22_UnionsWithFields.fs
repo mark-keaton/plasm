@@ -6,7 +6,7 @@ open Plasm.Koans
 open Plasm.Koans.Shop
 
 let private deliveryOf (order: int64) =
-    plasm { for d in Db.deliveries do where (d.OrderId = OrderId order) }
+    plasm { for d in tableOf<Delivery> do where (d.OrderId = OrderId order) }
 
 let private orderIds (q: Query<Delivery>) (repo: Repo) =
     task {
@@ -36,7 +36,7 @@ let lesson =
                       // Matching on a case becomes `stage = 'delivered'`.
                       let delivered =
                           plasm {
-                              for d in Db.deliveries do
+                              for d in tableOf<Delivery> do
                                   where (
                                       match d.Stage with
                                       | Delivered _ -> true
@@ -56,7 +56,7 @@ let lesson =
                       // A case's field is its own column, so a match can test it.
                       let bySwift =
                           plasm {
-                              for d in Db.deliveries do
+                              for d in tableOf<Delivery> do
                                   where (
                                       match d.Stage with
                                       | InTransit carrier -> carrier = "Swift"
@@ -76,7 +76,7 @@ let lesson =
                       // Delivery.Carrier is written in the domain, marked
                       // [<ReflectedDefinition>]. Plasm reads its definition and
                       // translates it, so the query says what the domain says.
-                      let carried = plasm { for d in Db.deliveries do where (d.Carrier = Some "Swift") }
+                      let carried = plasm { for d in tableOf<Delivery> do where (d.Carrier = Some "Swift") }
                       let! ids = orderIds carried repo
                       ids |> shouldBe __
                   }
@@ -87,7 +87,7 @@ let lesson =
               fun repo ->
                   task {
                       // Comparing with a case compares the case and each of its fields.
-                      let signedByAda = plasm { for d in Db.deliveries do where (d.Stage = Delivered "Ada") }
+                      let signedByAda = plasm { for d in tableOf<Delivery> do where (d.Stage = Delivered "Ada") }
                       let! ids = orderIds signedByAda repo
                       ids |> shouldBe __
                   }
@@ -100,7 +100,7 @@ let lesson =
                       // StageName is the domain's member too; grouping by it groups by case.
                       let byStage =
                           plasm {
-                              for d in Db.deliveries do
+                              for d in tableOf<Delivery> do
                                   groupBy d.StageName
                                   select (d.StageName, Agg.count ())
                           }
@@ -132,7 +132,7 @@ let lesson =
                       // DeliveryStage, so reading it is an error naming the field.
                       let lose: Tx<int, unit> = Tx.executeSql ($"update deliveries set stage = 'lost' where order_id = {2L}")
                       let! _ = repo.Transact lose
-                      let! rows = repo.All(Query.from Db.deliveries)
+                      let! rows = repo.All(Query.from (tableOf<Delivery>))
 
                       let refused =
                           match rows with

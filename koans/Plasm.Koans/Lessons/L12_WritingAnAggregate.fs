@@ -7,14 +7,14 @@ open Plasm.Koans.Shop
 
 let private order (repo: Repo) (id: OrderId) =
     task {
-        let! o = repo.One(plasm { for o in Db.orders do where (o.Id = id) })
+        let! o = repo.One(plasm { for o in tableOf<Order> do where (o.Id = id) })
         return (ok o).Value
     }
 
 /// How many lines an order has in the database.
 let private linesOf (repo: Repo) (id: OrderId) =
     task {
-        let! n = repo.Count(plasm { for l in Db.orderLines do where (l.OrderId = id) })
+        let! n = repo.Count(plasm { for l in tableOf<OrderLine> do where (l.OrderId = id) })
         return ok n
     }
 
@@ -34,9 +34,9 @@ let lesson =
                       // An order owns its lines, so one Tx.insert writes the order and
                       // then its lines, in one transaction.
                       let! _ = repo.Transact(Tx.insert cysOrder: Tx<Order, unit>)
-                      let! orders = repo.Count(Query.from Db.orders)
+                      let! orders = repo.Count(Query.from (tableOf<Order>))
                       ok orders |> shouldBe __
-                      let! lines = repo.Count(Query.from Db.orderLines)
+                      let! lines = repo.Count(Query.from (tableOf<OrderLine>))
                       ok lines |> shouldBe __
                   }
           )
@@ -105,8 +105,8 @@ let lesson =
                       let! o = order repo (OrderId 1L)
                       let first = List.head o.Lines
                       let changed = { o with Lines = [ { first with UnitPrice = 9m }; New.line (ProductId 3L) 1 2.5m ] }
-                      let! stored = repo.Transact(Tx.update (o, changed): Tx<Order, unit>)
-                      let lines = (ok stored).Lines
+                      let! saved = repo.Transact(Tx.update (o, changed): Tx<Order, unit>)
+                      let lines = (ok saved).Lines
                       lines.Head.Id |> shouldBe __
                       lines.Head.UnitPrice |> shouldBe __
                   }
@@ -135,7 +135,7 @@ let lesson =
                       let! o = order repo (OrderId 1L)
                       let noGadgets = { o with Lines = o.Lines |> List.filter (fun l -> l.ProductId <> ProductId 2L) }
                       let! _ = repo.Transact(Tx.update (o, noGadgets): Tx<Order, unit>)
-                      let! left = repo.All(plasm { for l in Db.orderLines do where (l.OrderId = OrderId 1L) })
+                      let! left = repo.All(plasm { for l in tableOf<OrderLine> do where (l.OrderId = OrderId 1L) })
                       ok left |> List.map (fun l -> l.ProductId) |> shouldBe __
                   }
           )
@@ -154,7 +154,7 @@ let lesson =
                       | TxFailure.InvalidChanges(_, errors) -> errors |> List.map (fun e -> e.Field) |> shouldBe __
                       | other -> failwithf "expected invalid changes, got %A" other
 
-                      let! orders = repo.Count(Query.from Db.orders)
+                      let! orders = repo.Count(Query.from (tableOf<Order>))
                       ok orders |> shouldBe __
                   }
           )

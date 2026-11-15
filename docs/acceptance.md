@@ -838,7 +838,7 @@ describe the one style; "Reworded" means only words changed.
 | A version field checks the record a change was made from | Implemented and verified | `StoredSteps.fs` |  | `[<Version>]`. |
 | A generated field is filled by the database | Implemented and verified | `StoredSteps.fs` |  | `[<Generated>]`; `repo.Ddl()` cannot print the column's default, so the step adds it. |
 | A field marked as no reference refers to nothing | Implemented and verified | `StoredSteps.fs` |  | `[<NotReference>]` on a BoardId option: no reference is inferred and no foreign key printed. |
-| A query reads a stored record by its type | Implemented and verified | `StoredSteps.fs` |  | `for c in stored<Card> do`. |
+| A query reads a stored record by its type | Implemented and verified | `StoredSteps.fs` |  | `for c in tableOf<Card> do`. |
 
 ### stored-records.feature: What the types leave ambiguous is refused
 

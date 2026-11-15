@@ -1,6 +1,6 @@
 # An order is read with its lines
 2
-# Lines come in the order the schema names
+# Lines come in the order of their key
 [ OrderLineId 1L; OrderLineId 2L ]
 # No lines is an empty list
 []

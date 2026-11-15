@@ -48,7 +48,7 @@ let applyPred (p: Pred) (q: Query<Order>) : Query<Order> =
         plasm { for o in q do where (o.CustomerId = c) }
     | NoCustomer -> plasm { for o in q do where (o.CustomerId = None) }
     | HasSucceededPayment ->
-        plasm { for o in q do where (exists (plasm { for p in stored<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) })) }
+        plasm { for o in q do where (exists (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) })) }
     | HasLineAbove a ->
         let a = decimal (abs a % 30)
         plasm { for o in q do where (o.Lines |> List.exists (fun l -> l.UnitPrice > a)) }
@@ -106,8 +106,8 @@ let private seeded =
                         let! _ = Seed.line db o product (j + 1) (decimal ((i * 11 + j * 5) % 30))
                         ()
 
-                let! all = db.Repo.All(Query.from (stored<Order>))
-                let! ps = db.Repo.All(Query.from (stored<Payment>))
+                let! all = db.Repo.All(Query.from (tableOf<Order>))
+                let! ps = db.Repo.All(Query.from (tableOf<Payment>))
                 let paid = ok ps |> List.filter (fun p -> p.Status = Succeeded) |> List.map (fun p -> p.OrderId) |> Set.ofList
                 return db, ok all, paid
             }
@@ -118,8 +118,8 @@ let ids (os: Order list) = os |> List.map (fun o -> o.Id) |> List.sort
 [<Property(MaxTest = 30)>]
 let ``composing two predicates in either order returns the same rows, matching F# semantics`` (a: Pred) (b: Pred) =
     let db, all, paid = seeded.Force()
-    let ab = Query.from (stored<Order>) |> applyPred a |> applyPred b
-    let ba = Query.from (stored<Order>) |> applyPred b |> applyPred a
+    let ab = Query.from (tableOf<Order>) |> applyPred a |> applyPred b
+    let ba = Query.from (tableOf<Order>) |> applyPred b |> applyPred a
     let r1 = ids (ok (run (db.Repo.All ab)))
     let r2 = ids (ok (run (db.Repo.All ba)))
     let expected = all |> List.filter (fun o -> evalPred paid a o && evalPred paid b o) |> ids
@@ -145,7 +145,7 @@ let extend (q: Query<Order>) (e: Extension) =
 
 [<Property(MaxTest = 100)>]
 let ``extending a query never changes the original`` (baseOps: Extension list) (more: Extension list) =
-    let baseQ = baseOps |> List.truncate 4 |> List.fold extend (Query.from (stored<Order>))
+    let baseQ = baseOps |> List.truncate 4 |> List.fold extend (Query.from (tableOf<Order>))
     let before = baseQ.FilterCount, explain baseQ |> Result.map (fun p -> p.Sql, p.LoadPaths)
     let derived = more |> List.truncate 4 |> List.fold extend baseQ
     ignore derived
@@ -213,7 +213,7 @@ let ``batched loading assembles the same aggregates for every batch size with ke
                     let! _ = Seed.line db o products.[(i + j) % products.Length] (j + 1) 1m
                     ()
 
-            let q = plasm { for o in stored<Order> do orderBy o.Id }
+            let q = plasm { for o in tableOf<Order> do orderBy o.Id }
 
             let results =
                 [ for b in batchSizes ->
@@ -252,12 +252,12 @@ let ``owned lines keep their declared order within each parent`` (prices: int li
                 ()
 
             let repo = db.RepoWith(options = { MaxKeysPerCommand = batch.Get % 4 + 1 })
-            let! r = repo.All(Query.from (stored<Order>))
+            let! r = repo.All(Query.from (tableOf<Order>))
 
             return
                 ok r
                 |> List.forall (fun o ->
-                    // stored<Order> declares ownsOrderedBy ... (fun l -> l.Id).
+                    // tableOf<Order> declares ownsOrderedBy ... (fun l -> l.Id).
                     o.Lines = List.sortBy (fun l -> l.Id) o.Lines && o.Lines |> List.forall (fun l -> l.OrderId = o.Id))
         }
     )

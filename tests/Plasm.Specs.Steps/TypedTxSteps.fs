@@ -31,7 +31,7 @@ type TypedTxSteps(w: World) =
         | Ok v -> failwithf "expected the transaction to fail, it gave %A" v
 
     let named (name: string) =
-        plasm { for c in stored<Customer> do where (c.Name = name) }
+        plasm { for c in tableOf<Customer> do where (c.Name = name) }
 
     let refusal (case: string) (text: string) =
         match case with
@@ -171,7 +171,7 @@ let reason (e: TransactionError<Refusal>) =
     member _.Count() =
         task {
             w.MarkCommands()
-            let! _ = transact (Tx.count (Query.from (stored<Customer>)))
+            let! _ = transact (Tx.count (Query.from (tableOf<Customer>)))
             ()
         }
         |> unit
@@ -196,7 +196,7 @@ let reason (e: TransactionError<Refusal>) =
 let readBack (name: string) : Tx<Customer option, string> =
     transaction {
         let! _ = Tx.insert (New.customer name "x@example.com")
-        return! Tx.one (plasm { for c in stored<Customer> do where (c.Name = name) })
+        return! Tx.one (plasm { for c in tableOf<Customer> do where (c.Name = name) })
     }
 """
         |> unit
@@ -225,7 +225,7 @@ let readBack (name: string) : Tx<Customer option, string> =
     [<StepDefinition("the Customer is stored with the name \"(.*)\"")>]
     member _.StoredName(name: string) =
         task {
-            let! r = w.Repo.All(Query.from (stored<Customer>))
+            let! r = w.Repo.All(Query.from (tableOf<Customer>))
             equal [ name ] (ok r |> List.map (fun c -> c.Name)) "names"
         }
         |> unit
@@ -259,7 +259,7 @@ let readBack (name: string) : Tx<Customer option, string> =
             | TxFailure.Conflict _ -> ()
             | other -> failwithf "expected a conflict, got %A" other
 
-            let! r = w.Repo.All(Query.from (stored<Order>))
+            let! r = w.Repo.All(Query.from (tableOf<Order>))
             equal [ 11m ] (ok r |> List.map (fun o -> o.Total)) "totals"
         }
         |> unit
@@ -282,7 +282,7 @@ let readBack (name: string) : Tx<Customer option, string> =
     [<StepDefinition("no Customer is stored")>]
     member _.NoCustomer() =
         task {
-            let! r = w.Repo.All(Query.from (stored<Customer>))
+            let! r = w.Repo.All(Query.from (tableOf<Customer>))
             equal [] (ok r) "customers"
         }
         |> unit

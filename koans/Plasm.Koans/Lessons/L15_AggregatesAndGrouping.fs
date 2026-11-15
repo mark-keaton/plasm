@@ -14,7 +14,7 @@ let lesson =
                   task {
                       // An aggregate summarises many rows as one value, computed by the database.
                       // Agg.count () is the number of rows; One reads the single row it gives.
-                      let! n = repo.One(plasm { for o in Db.orders do where (o.Status = Published); select (Agg.count ()) })
+                      let! n = repo.One(plasm { for o in tableOf<Order> do where (o.Status = Published); select (Agg.count ()) })
                       (ok n).Value |> shouldBe __
                   }
           )
@@ -24,7 +24,7 @@ let lesson =
               fun repo ->
                   task {
                       // Agg.sum adds up a column over the rows the query matches.
-                      let! total = repo.One(plasm { for o in Db.orders do where (o.Status = Published); select (Agg.sum o.Total) })
+                      let! total = repo.One(plasm { for o in tableOf<Order> do where (o.Status = Published); select (Agg.sum o.Total) })
                       (ok total).Value |> shouldBe __
                   }
           )
@@ -34,7 +34,7 @@ let lesson =
               fun repo ->
                   task {
                       // Agg.max is the largest value: an option, because there might be no rows.
-                      let! largest = repo.One(plasm { for o in Db.orders do select (Agg.max o.Total) })
+                      let! largest = repo.One(plasm { for o in tableOf<Order> do select (Agg.max o.Total) })
                       (ok largest).Value |> shouldBe __
                   }
           )
@@ -46,7 +46,7 @@ let lesson =
                       // groupBy puts rows with the same key in one group; select gives one row per group.
                       let linesPerOrder =
                           plasm {
-                              for l in Db.orderLines do
+                              for l in tableOf<OrderLine> do
                                   groupBy l.OrderId
                                   orderBy l.OrderId
                                   select (l.OrderId, Agg.count ())
@@ -61,7 +61,7 @@ let lesson =
               "Counting a page counts the page",
               fun repo ->
                   task {
-                      let! n = repo.Count(plasm { for o in Db.orders do orderBy o.Id; take 2 })
+                      let! n = repo.Count(plasm { for o in tableOf<Order> do orderBy o.Id; take 2 })
                       ok n |> shouldBe __
                   }
           )
@@ -70,7 +70,7 @@ let lesson =
               "Sum and average are typed",
               fun repo ->
                   task {
-                      let! totals = repo.One(plasm { for o in Db.orders do select (Agg.sum o.Total, Agg.avg o.Total) })
+                      let! totals = repo.One(plasm { for o in tableOf<Order> do select (Agg.sum o.Total, Agg.avg o.Total) })
                       // The four totals are 30.00, 12.50, 99.00 and 5.00.
                       (ok totals).Value |> shouldBe __
                   }
@@ -80,7 +80,7 @@ let lesson =
               "No rows is explicit",
               fun repo ->
                   task {
-                      let! r = repo.One(plasm { for o in Db.orders do where (o.Total > 1000m); select (Agg.sum o.Total, Agg.max o.Total) })
+                      let! r = repo.One(plasm { for o in tableOf<Order> do where (o.Total > 1000m); select (Agg.sum o.Total, Agg.max o.Total) })
                       (ok r).Value |> shouldBe __
                   }
           )
@@ -91,7 +91,7 @@ let lesson =
                   task {
                       let perCustomer =
                           plasm {
-                              for o in Db.orders do
+                              for o in tableOf<Order> do
                                   groupBy o.CustomerId
                                   orderBy o.CustomerId
                                   select (o.CustomerId, Agg.count ())
@@ -108,7 +108,7 @@ let lesson =
                   task {
                       let repeat =
                           plasm {
-                              for o in Db.orders do
+                              for o in tableOf<Order> do
                                   groupBy o.CustomerId
                                   having (Agg.count () > 1L)
                                   select (o.CustomerId, Agg.count ())
@@ -124,7 +124,7 @@ let lesson =
               fun repo ->
                   task {
                       // Status is neither grouped nor aggregated.
-                      let wrong = plasm { for o in Db.orders do groupBy o.CustomerId; select (o.Status, Agg.count ()) }
+                      let wrong = plasm { for o in tableOf<Order> do groupBy o.CustomerId; select (o.Status, Agg.count ()) }
                       let! r = repo.All wrong
                       Result.isError r |> shouldBe __
                       (commands ()).Length |> shouldBe __

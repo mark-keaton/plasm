@@ -277,6 +277,7 @@ let generate (bin: string) : string =
         Code
             [ $"#I \"{bin}\""
               "#r \"Microsoft.Extensions.Logging.Abstractions.dll\""
+              "#r \"Plasm.Annotations.dll\""
               "#r \"Plasm.dll\""
               "#r \"Plasm.Postgres.dll\""
               "#r \"Npgsql.dll\""

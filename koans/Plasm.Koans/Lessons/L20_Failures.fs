@@ -22,7 +22,7 @@ let lesson =
               fun repo ->
                   task {
                       // Every repository call returns a Result: Ok with the value, or Error with what went wrong.
-                      let! r = repo.One(plasm { for c in Db.customers do where (c.Name = "Zed") })
+                      let! r = repo.One(plasm { for c in tableOf<Customer> do where (c.Name = "Zed") })
                       r |> shouldBe __
                   }
           )
@@ -31,7 +31,7 @@ let lesson =
               "A failure is an Error you can match on",
               fun repo ->
                   task {
-                      // customers.email is unique (see the schema), and Ada already has this email.
+                      // customers.email is unique ([<Unique>] in Shop.fs), and Ada already has this email.
                       let! r = repo.Transact(Tx.insert (New.customer "Ada again" "ada@example.com"): Tx<Customer, unit>)
 
                       let outcome =
@@ -95,7 +95,7 @@ let lesson =
                               Task.FromResult())
 
                       // The sandbox has ended; its repository returns an error rather than throwing.
-                      let! r = kept.Value.All(Query.from Db.customers)
+                      let! r = kept.Value.All(Query.from (tableOf<Customer>))
 
                       match r with
                       | Error(DbError.Database f) -> f.Kind |> shouldBe __
@@ -120,7 +120,7 @@ let lesson =
                   task {
                       let lose: Tx<int, unit> = Tx.executeSql $"update orders set status = 'lost' where id = 1"
                       let! _ = repo.Transact lose
-                      let! r = repo.All(Query.from Db.orders)
+                      let! r = repo.All(Query.from (tableOf<Order>))
 
                       match r with
                       | Error(DbError.Materialization m) -> (m.Model, m.Property) |> shouldBe __
@@ -145,7 +145,7 @@ let lesson =
               "Too many rows is about the data",
               fun repo ->
                   task {
-                      let! r = repo.One(plasm { for o in Db.orders do where (o.Status = Published) })
+                      let! r = repo.One(plasm { for o in tableOf<Order> do where (o.Status = Published) })
                       r |> shouldBe __
                   }
           )

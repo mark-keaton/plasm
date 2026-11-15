@@ -19,10 +19,10 @@ module internal Derive =
 
     let private has<'A when 'A :> Attribute> (m: MemberInfo) = (attr<'A> m).IsSome
 
-    let tableOf (t: Type) = attr<TableAttribute> t |> Option.map (fun a -> a.Name)
+    let tableName (t: Type) = attr<TableAttribute> t |> Option.map (fun a -> a.Name)
 
     /// A record that names its table.
-    let isStored (t: Type) = FSharpType.IsRecord(t, true) && (tableOf t).IsSome
+    let isStored (t: Type) = FSharpType.IsRecord(t, true) && (tableName t).IsSome
 
     let fields (t: Type) = FSharpType.GetRecordFields(t, true)
 
@@ -101,7 +101,7 @@ module internal Derive =
             err None "is not a record, and only records are stored"
             Error(List.ofSeq errors)
         else
-            let table = tableOf t
+            let table = tableName t
 
             if table.IsNone then
                 err None $"names no table: say where it is stored with [<Table \"{snake t.Name}s\">]"
@@ -253,16 +253,16 @@ module internal Derive =
 [<AutoOpen>]
 module StoredExtensions =
 
-    /// The records of type `'T`, as a query source: `for c in stored<Card> do`.
+    /// The records of type `'T`, as a query source: `for c in tableOf<Card> do`.
     /// What is stored, and where, is read from `'T` (see Model.build).
-    let stored<'T> : Schema<'T> =
+    let tableOf<'T> : Schema<'T> =
         match Derive.cached typeof<'T> with
         | Ok d -> Schema<'T>(d)
         | Error _ ->
             // Reported by Model.build; a query only needs the type.
             Schema<'T>(
                 { Type = typeof<'T>
-                  Table = defaultArg (Derive.tableOf typeof<'T>) ""
+                  Table = defaultArg (Derive.tableName typeof<'T>) ""
                   Key = None
                   Columns = Map.empty
                   Version = None

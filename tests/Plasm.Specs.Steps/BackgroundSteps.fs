@@ -39,7 +39,7 @@ type BackgroundSteps(w: World) =
 
     [<StepDefinition("an Order owns its OrderLines")>]
     member _.OrderOwnsLines() =
-        let plan = w.Repo.Explain(Query.from (stored<Order>)) |> ok
+        let plan = w.Repo.Explain(Query.from (tableOf<Order>)) |> ok
         check (plan.Loads |> List.exists (fun l -> l.Path = "Lines")) "an Order's OrderLines are loaded with it"
 
     [<StepDefinition("a Payment refers to its Order by id")>]

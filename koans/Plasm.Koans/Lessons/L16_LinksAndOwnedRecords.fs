@@ -9,13 +9,13 @@ let private names (tags: Tag list) = tags |> List.map (fun t -> t.Name)
 
 let private article (repo: Repo) (id: int64) =
     task {
-        let! a = repo.One(plasm { for a in Db.articles do where (a.Id = ArticleId id) })
+        let! a = repo.One(plasm { for a in tableOf<Article> do where (a.Id = ArticleId id) })
         return (ok a).Value
     }
 
 let private account (repo: Repo) (name: string) =
     task {
-        let! a = repo.One(plasm { for a in Db.accounts do where (a.Name = name) })
+        let! a = repo.One(plasm { for a in tableOf<Account> do where (a.Name = name) })
         return (ok a).Value
     }
 
@@ -39,7 +39,7 @@ let lesson =
                   task {
                       // A Tag is shared: many articles can link to the same one. An article
                       // does not own its tags, only its links to them: rows of the
-                      // article_tags table (Db.articles says links ... "article_tags").
+                      // article_tags table (tableOf<Article> says links ... "article_tags").
                       // The tags are read with the article, in the order of their key.
                       // In the starting data, article 2 ('Deep dive') links to tags 1 and 3.
                       let! deepDive = article repo 2L
@@ -63,7 +63,7 @@ let lesson =
                   task {
                       // One command reads the articles, and one more reads the tags of
                       // all of them, through the join table.
-                      let! articles = repo.All(plasm { for a in Db.articles do orderBy a.Id })
+                      let! articles = repo.All(plasm { for a in tableOf<Article> do orderBy a.Id })
                       (ok articles).Head.Tags |> names |> shouldBe __
                       (commands ()).Length |> shouldBe __
                   }
@@ -77,7 +77,7 @@ let lesson =
                       // keeping each matching article once.
                       let fsharp =
                           plasm {
-                              for a in Db.articles do
+                              for a in tableOf<Article> do
                                   where (a.Tags |> List.exists (fun t -> t.Name = "fsharp"))
                                   orderBy a.Id
                           }
@@ -96,7 +96,7 @@ let lesson =
                       let! intro = article repo 1L
                       let! updated = repo.Transact(Tx.update (intro, { intro with Tags = [ tag 4L "ops" ] }): Tx<Article, unit>)
                       (ok updated).Tags |> names |> shouldBe __
-                      let! tags = repo.Count(Query.from Db.tags)
+                      let! tags = repo.Count(Query.from (tableOf<Tag>))
                       ok tags |> shouldBe __
                   }
           )
@@ -149,7 +149,7 @@ let lesson =
                       let! _ = repo.Transact(Tx.delete intro: Tx<Article, unit>)
                       let! links = repo.Sql<int64>($"select count(*) from article_tags")
                       ok links |> shouldBe __
-                      let! tags = repo.Count(Query.from Db.tags)
+                      let! tags = repo.Count(Query.from (tableOf<Tag>))
                       ok tags |> shouldBe __
                   }
           )
@@ -158,8 +158,8 @@ let lesson =
               "An account's profile is an option",
               fun repo ->
                   task {
-                      // An Account owns at most one Profile: its own row in profiles
-                      // (Db.accounts says ownsOptional (fun a -> a.Profile) (fun p -> p.AccountId)).
+                      // An Account owns at most one Profile: its own row in profiles. A
+                      // Profile holds its account's key (AccountId), so the account owns it.
                       // It is read with the account, as an option.
                       let! ada = account repo "ada"
                       ada.Profile |> Option.map (fun p -> p.Bio) |> shouldBe __
@@ -184,7 +184,7 @@ let lesson =
                       let! bob = account repo "bob"
                       let profile = { Id = ProfileId 0L; AccountId = bob.Id; Bio = "Builds things" }
                       let! _ = repo.Transact(Tx.update (bob, { bob with Profile = Some profile }): Tx<Account, unit>)
-                      let! profiles = repo.Count(Query.from Db.profiles)
+                      let! profiles = repo.Count(Query.from (tableOf<Profile>))
                       ok profiles |> shouldBe __
                   }
           )
@@ -196,7 +196,7 @@ let lesson =
                       // Changing Some to None deletes the profile row.
                       let! ada = account repo "ada"
                       let! _ = repo.Transact(Tx.update (ada, { ada with Profile = None }): Tx<Account, unit>)
-                      let! profiles = repo.Count(Query.from Db.profiles)
+                      let! profiles = repo.Count(Query.from (tableOf<Profile>))
                       ok profiles |> shouldBe __
                   }
           )
@@ -209,8 +209,8 @@ let lesson =
                       // profile of this account exists that says it.
                       let writers =
                           plasm {
-                              for a in Db.accounts do
-                                  where (exists (plasm { for p in Db.profiles do where (p.AccountId = a.Id && p.Bio.Contains "compiler") }))
+                              for a in tableOf<Account> do
+                                  where (exists (plasm { for p in tableOf<Profile> do where (p.AccountId = a.Id && p.Bio.Contains "compiler") }))
                           }
 
                       let! rows = repo.All writers

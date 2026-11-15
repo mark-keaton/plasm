@@ -37,7 +37,7 @@ type ConcurrencySteps(w: World) =
     let readNote (author: string option) =
         task {
             let! inserted = repo().Transact(Tx.insert { Id = NoteId 0L; Text = "first"; Author = author }: Tx<_, unit>)
-            let! stored = repo().One(plasm { for n in stored<Note> do where (n.Id = (ok inserted).Id) })
+            let! stored = repo().One(plasm { for n in tableOf<Note> do where (n.Id = (ok inserted).Id) })
             w.Set("note", (ok stored).Value)
         }
 
@@ -83,7 +83,7 @@ type ConcurrencySteps(w: World) =
         task {
             // A change by key alone is a bulk update: it names rows, not a record read.
             let id = (read ()).Id
-            let! r = repo().Transact(Tx.execute (Bulk.update (plasm { for n in stored<Note> do where (n.Id = id) }, fun n -> { n with Text = "mine" })): Tx<int, unit>)
+            let! r = repo().Transact(Tx.execute (Bulk.update (plasm { for n in tableOf<Note> do where (n.Id = id) }, fun n -> { n with Text = "mine" })): Tx<int, unit>)
 
             match r with
             | Ok 1 -> w.Set("noteWrite", (Ok() : Result<unit, string * bool>))

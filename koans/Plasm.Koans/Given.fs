@@ -8,7 +8,7 @@ open System
 open System.IO
 open System.Text.RegularExpressions
 
-/// A definition the learner may need: a type, a function or a schema.
+/// A definition the learner may need: a type or a function.
 type Definition =
     { Name: string
       /// Where it is defined: "Shop.fs" or "this lesson".
@@ -18,7 +18,7 @@ type Definition =
       Fields: string list
       /// For a union, its case names.
       Cases: string list
-      /// For a schema, its table.
+      /// For a stored record, its table ([<Table "...">]).
       Table: string option
       /// For a record, the record each list or option field holds (what an
       /// aggregate owns or links to, read with it).
@@ -38,7 +38,7 @@ let private fieldPattern = Regex(@"(?:^|\{|;)\s*(\w+)\s*:")
 let private fieldsOf (line: string) =
     fieldPattern.Matches line |> Seq.map (fun m -> m.Groups.[1].Value) |> List.ofSeq
 let private caseLine = Regex(@"^\s*\|\s*(\w+)")
-let private schemaCall = Regex("schema<(\\w+)> \"(\\w+)\"")
+let private tableAttribute = Regex("\\[<Table \"(\\w+)\">\\]")
 let private heldField = Regex(@"(\w+)\s*:\s*(\w+) (?:list|option)\b")
 
 /// Splits source into declarations, each with the doc comment above it.
@@ -62,10 +62,10 @@ let parse (source: string) (lines: string[]) : Definition list =
               elif currentModule.IsSome && letInModule.IsMatch l then
                   yield i, Some(currentModule.Value + "." + letInModule.Match(l).Groups.[1].Value) ]
 
-    // A declaration's doc comment belongs to it.
+    // A declaration's doc comment and attributes belong to it.
     let firstLine i =
         let mutable j = i
-        while j > 0 && lines.[j - 1].TrimStart().StartsWith "///" do
+        while j > 0 && (lines.[j - 1].TrimStart().StartsWith "///" || lines.[j - 1].TrimStart().StartsWith "[<") do
             j <- j - 1
         j
 
@@ -85,7 +85,7 @@ let parse (source: string) (lines: string[]) : Definition list =
 
             let indent = code |> List.filter (String.IsNullOrWhiteSpace >> not) |> List.map (fun l -> l.Length - l.TrimStart().Length) |> List.min
             let code = code |> List.map (fun l -> if l.Length >= indent then l.Substring indent else l.TrimStart())
-            let body = code |> List.filter (fun l -> not (l.TrimStart().StartsWith "///"))
+            let body = code |> List.filter (fun l -> not (l.TrimStart().StartsWith "///" || l.TrimStart().StartsWith "[<"))
             let isRecord = body.Head.Contains "= {" || (body.Length > 1 && body.[1].TrimStart().StartsWith "{")
 
             { Name = name
@@ -93,7 +93,7 @@ let parse (source: string) (lines: string[]) : Definition list =
               Code = code
               Fields = if isRecord then body |> List.collect fieldsOf else []
               Cases = if isRecord || not (typeStart.IsMatch body.Head) then [] else body |> List.tail |> List.choose (fun l -> let m = caseLine.Match l in if m.Success then Some m.Groups.[1].Value else None)
-              Table = (let m = schemaCall.Match(String.concat "\n" code) in if m.Success then Some m.Groups.[2].Value else None)
+              Table = (let m = tableAttribute.Match(String.concat "\n" code) in if m.Success then Some m.Groups.[1].Value else None)
               Holds = heldField.Matches(String.concat "\n" code) |> Seq.map (fun m -> m.Groups.[1].Value, m.Groups.[2].Value) |> List.ofSeq }))
 
 let private mentions (text: string) (name: string) =
@@ -107,9 +107,9 @@ let private stringWords (code: string) =
 let tables: string list =
     Regex.Matches(KoansData.schema, @"create table (\w+)") |> Seq.map (fun m -> m.Groups.[1].Value) |> List.ofSeq
 
-/// Join tables, by the schema that names them (links ... "article_tags").
+/// Join tables, by the record whose linked list names them ([<JoinTable "article_tags">]).
 let private joinTables (d: Definition) =
-    Regex.Matches(String.concat "\n" d.Code, "links(?:OrderedBy)? \\([^)]*\\) \"(\\w+)\"") |> Seq.map (fun m -> m.Groups.[1].Value) |> List.ofSeq
+    Regex.Matches(String.concat "\n" d.Code, "\\[<JoinTable\\(?\"(\\w+)\"") |> Seq.map (fun m -> m.Groups.[1].Value) |> List.ofSeq
 
 let private memberLine = Regex(@"^\s*member \w+\.(\w+)")
 
@@ -131,52 +131,38 @@ let forKoan (shop: Definition list) (helpers: Definition list) (body: string) : 
     let byName = shop |> List.map (fun d -> d.Name, d) |> Map.ofList
     let records = shop |> List.filter (fun d -> not d.Fields.IsEmpty)
 
-    // A schema's table, following a schema defined through a helper (Db.orders = ordersWith ...).
-    let rec tableOf (d: Definition) =
-        match d.Table with
-        | Some t -> Some t
-        | None ->
-            shop
-            |> List.tryFind (fun o -> o.Name <> d.Name && o.Name.StartsWith "Db." && mentions (String.concat "\n" d.Code) (o.Name.Substring 3))
-            |> Option.bind tableOf
+    // The stored record of a name, with its table.
+    let storedRecord (record: string) =
+        byName.TryFind record |> Option.bind (fun d -> d.Table |> Option.map (fun t -> d, t))
 
     let recordOfTable table =
-        shop
-        |> List.tryPick (fun d -> if d.Table = Some table then Some(schemaCall.Match(String.concat "\n" d.Code).Groups.[1].Value) else None)
+        records |> List.tryPick (fun d -> if d.Table = Some table then Some d.Name else None)
 
-    let schemas = shop |> List.filter (fun d -> d.Name.StartsWith "Db.")
-    let usedSchemas = schemas |> List.filter (fun d -> mentions body d.Name)
+    // The records the koan reads as a query source (tableOf<Order>).
+    let sources =
+        records |> List.filter (fun d -> d.Table.IsSome && body.Contains $"tableOf<{d.Name}>")
 
     let words = stringWords body
 
-    // The schema storing a record, with its table.
-    let schemaOf (record: string) =
-        shop |> List.tryPick (fun d -> if d.Name.StartsWith "Db." && d.Table.IsSome && (schemaCall.Match(String.concat "\n" d.Code).Groups.[1].Value = record) then Some(d, d.Table.Value) else None)
-
     // What a record holds (its owned or linked records), read whenever it is.
     let heldBy (record: string) =
-        byName.TryFind record |> Option.map (fun r -> r.Holds |> List.choose (snd >> schemaOf)) |> Option.defaultValue []
+        byName.TryFind record |> Option.map (fun r -> r.Holds |> List.choose (snd >> storedRecord)) |> Option.defaultValue []
 
-    // Records reached through a field the koan reads (o.Lines, a.Tags).
-    // (the owner's schema, which names any join table, and the held table)
+    // Records reached through a field the koan reads (o.Lines, a.Tags):
+    // (the owner, which names any join table, and the held table).
     let viaFields =
         records
-        |> List.collect (fun r -> r.Holds |> List.map (fun h -> r.Name, h))
+        |> List.collect (fun r -> r.Holds |> List.map (fun h -> r, h))
         |> List.filter (fun (_, (field, _)) -> Regex.IsMatch(body, @"\." + field + @"\b"))
-        |> List.choose (fun (owner, (_, target)) ->
-            match schemaOf owner, schemaOf target with
-            | Some(o, _), Some(_, t) -> Some(o, t)
-            | _ -> None)
+        |> List.choose (fun (owner, (_, target)) -> storedRecord target |> Option.map (fun (_, t) -> owner, t))
 
     let used =
         set [
-            for d in usedSchemas do
-                match tableOf d with
-                | Some t -> yield t
-                | None -> ()
+            for d in sources do
+                yield d.Table.Value
                 yield! joinTables d
 
-                for _, t in heldBy (schemaCall.Match(String.concat "\n" d.Code).Groups.[1].Value) do
+                for _, t in heldBy d.Name do
                     yield t
             for t in tables do
                 if words.Contains t then yield t
@@ -196,14 +182,10 @@ let forKoan (shop: Definition list) (helpers: Definition list) (body: string) : 
 
     let tableRecords = usedTables |> List.choose recordOfTable |> List.choose byName.TryFind
 
-    // A schema defined through a private helper shows the helper too.
-    let helpersOf (d: Definition) =
-        schemas |> List.filter (fun o -> o.Name <> d.Name && d.Table.IsNone && mentions (String.concat "\n" d.Code) (o.Name.Substring 3))
-
     let chosen =
         let types = named |> List.filter (fun d -> not (d.Name.Contains "."))
         let dbs = named |> List.filter (fun d -> d.Name.Contains ".")
-        types @ tableRecords @ dbs @ (dbs |> List.collect helpersOf) @ (helpers |> List.filter (fun h -> mentions body h.Name))
+        types @ tableRecords @ dbs @ (helpers |> List.filter (fun h -> mentions body h.Name))
         |> List.distinctBy (fun d -> d.Source, d.Name)
 
     { Tables = usedTables

@@ -38,16 +38,16 @@ open Schemas
 module ExistsGood =
     let paid =
         plasm {
-            for o in stored<Order> do
-                where (exists (plasm { for p in stored<Payment> do where (p.Order = o.Id && p.Succeeded) }))
+            for o in tableOf<Order> do
+                where (exists (plasm { for p in tableOf<Payment> do where (p.Order = o.Id && p.Succeeded) }))
                 orderBy o.Number
         }
 
     let paidAtLeast =
         Query.prepare (fun (least: Arg<decimal>) ->
             plasm {
-                for o in stored<Order> do
-                    where (exists (plasm { for p in stored<Payment> do where (p.Order = o.Id && p.Amount >= least.Value) }))
+                for o in tableOf<Order> do
+                    where (exists (plasm { for p in tableOf<Payment> do where (p.Order = o.Id && p.Amount >= least.Value) }))
                     orderBy o.Number
             })
 
@@ -55,8 +55,8 @@ module ExistsBad =
     // String.Normalize has no SQL translation.
     let untranslatable =
         plasm {
-            for o in stored<Order> do
-                where (exists (plasm { for p in stored<Payment> do where (p.Order = o.Id && o.Number.Normalize() = "A") }))
+            for o in tableOf<Order> do
+                where (exists (plasm { for p in tableOf<Payment> do where (p.Order = o.Id && o.Number.Normalize() = "A") }))
         }
 
 namespace Plasm.Specs
@@ -131,8 +131,8 @@ type ExistsSteps(w: World) =
     member _.Unpaid() =
         read (
             plasm {
-                for o in stored<Order> do
-                    where (not (exists (plasm { for p in stored<Payment> do where (p.Order = o.Id && p.Succeeded) })))
+                for o in tableOf<Order> do
+                    where (not (exists (plasm { for p in tableOf<Payment> do where (p.Order = o.Id && p.Succeeded) })))
                     orderBy o.Number
             }
         )
@@ -141,8 +141,8 @@ type ExistsSteps(w: World) =
     member _.LargeOrPaid() =
         read (
             plasm {
-                for o in stored<Order> do
-                    where (o.Total > 100m || exists (plasm { for p in stored<Payment> do where (p.Order = o.Id) }))
+                for o in tableOf<Order> do
+                    where (o.Total > 100m || exists (plasm { for p in tableOf<Payment> do where (p.Order = o.Id) }))
                     orderBy o.Number
             }
         )
@@ -154,8 +154,8 @@ type ExistsSteps(w: World) =
     member _.Paged() =
         read (
             plasm {
-                for o in stored<Order> do
-                    where (exists (plasm { for p in stored<Payment> do where (p.Order = o.Id); orderBy p.Amount; take 1 }))
+                for o in tableOf<Order> do
+                    where (exists (plasm { for p in tableOf<Payment> do where (p.Order = o.Id); orderBy p.Amount; take 1 }))
             }
         )
 

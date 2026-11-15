@@ -16,8 +16,8 @@ let lesson =
                       // Every OrderLine has a ProductId, so every line finds its Product.
                       let linesWithProducts =
                           plasm {
-                              for l in Db.orderLines do
-                                  join p in Db.products on (l.ProductId = p.Id)
+                              for l in tableOf<OrderLine> do
+                                  join p in tableOf<Product> on (l.ProductId = p.Id)
                                   orderBy l.Id
                           }
 
@@ -33,8 +33,8 @@ let lesson =
                       // select can name fields from either side of the join.
                       let orderOne =
                           plasm {
-                              for l in Db.orderLines do
-                                  join p in Db.products on (l.ProductId = p.Id)
+                              for l in tableOf<OrderLine> do
+                                  join p in tableOf<Product> on (l.ProductId = p.Id)
                                   where (l.OrderId = OrderId 1L)
                                   orderBy l.Id
                                   select (p.Name, l.UnitPrice)
@@ -52,8 +52,8 @@ let lesson =
                       // A join gives one row for each matching pair, so an Order appears once per Payment.
                       let paid =
                           plasm {
-                              for o in Db.orders do
-                                  join p in Db.payments on (o.Id = p.OrderId)
+                              for o in tableOf<Order> do
+                                  join p in tableOf<Payment> on (o.Id = p.OrderId)
                                   orderBy p.Id
                           }
 
@@ -69,8 +69,8 @@ let lesson =
                       // leftJoin keeps rows with no match; the other side is an option, None when missing.
                       let fourth =
                           plasm {
-                              for o in Db.orders do
-                                  leftJoin c in Db.customers on (o.CustomerId = Some c.Id)
+                              for o in tableOf<Order> do
+                                  leftJoin c in tableOf<Customer> on (o.CustomerId = Some c.Id)
                                   where (o.Id = OrderId 4L)
                                   select (o.Id, c)
                           }
@@ -87,8 +87,8 @@ let lesson =
                   task {
                       let pairs =
                           plasm {
-                              for o in Db.orders do
-                                  join c in Db.customers on (o.CustomerId = Some c.Id)
+                              for o in tableOf<Order> do
+                                  join c in tableOf<Customer> on (o.CustomerId = Some c.Id)
                                   orderBy o.Id
                                   select (o.Id, c)
                           }
@@ -107,8 +107,8 @@ let lesson =
                   task {
                       let all =
                           plasm {
-                              for o in Db.orders do
-                                  leftJoin c in Db.customers on (o.CustomerId = Some c.Id)
+                              for o in tableOf<Order> do
+                                  leftJoin c in tableOf<Customer> on (o.CustomerId = Some c.Id)
                                   orderBy o.Id
                                   select (o.Id, c)
                           }
@@ -125,8 +125,8 @@ let lesson =
                       // The keys must have the same type: an optional CustomerId on the Order side.
                       let pairs =
                           plasm {
-                              for o in Db.orders do
-                                  join c in Db.customers on (o.CustomerId = __)
+                              for o in tableOf<Order> do
+                                  join c in tableOf<Customer> on (o.CustomerId = __)
                                   orderBy o.Id
                           }
 
@@ -141,8 +141,8 @@ let lesson =
                   task {
                       let adas =
                           plasm {
-                              for o in Db.orders do
-                                  join c in Db.customers on (o.CustomerId = Some c.Id)
+                              for o in tableOf<Order> do
+                                  join c in tableOf<Customer> on (o.CustomerId = Some c.Id)
                                   where (c.Name = "Ada")
                                   orderBy o.Id
                                   select o.Id
@@ -158,7 +158,7 @@ let lesson =
               "Joined queries compose",
               fun repo ->
                   task {
-                      let withCustomers = plasm { for o in Db.orders do join c in Db.customers on (o.CustomerId = Some c.Id); orderBy o.Id }
+                      let withCustomers = plasm { for o in tableOf<Order> do join c in tableOf<Customer> on (o.CustomerId = Some c.Id); orderBy o.Id }
                       let large (q: Query<Order * Customer>) = plasm { for (o, c) in q do where (o.Total > 20m); select c.Name }
                       let! rows = repo.All(large withCustomers)
                       ok rows |> shouldBe __

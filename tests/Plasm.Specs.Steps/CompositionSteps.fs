@@ -10,7 +10,7 @@ module Filters =
     let withOutstandingBalance (q: Query<Order>) =
         plasm {
             for o in q do
-                where (not (exists (plasm { for p in stored<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) })))
+                where (not (exists (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) })))
         }
 
     /// An ordinary F# function the translator cannot see into.
@@ -45,7 +45,7 @@ type CompositionSteps(w: World) =
     member _.ApplyBoth() =
         task {
             let q =
-                plasm { for o in stored<Order> do orderBy o.Id }
+                plasm { for o in tableOf<Order> do orderBy o.Id }
                 |> forCustomer (w.Get "c1")
                 |> Filters.withOutstandingBalance
 
@@ -84,7 +84,7 @@ type CompositionSteps(w: World) =
             let name: string = w.Get "name"
             let repo = w.Db.RepoWith(includeParameterValues = true)
             w.MarkCommands()
-            let! r = repo.All(plasm { for c in stored<Customer> do where (c.Name = name) })
+            let! r = repo.All(plasm { for c in tableOf<Customer> do where (c.Name = name) })
             w.Set("customers", ok r)
         }
         |> unit
@@ -112,7 +112,7 @@ type CompositionSteps(w: World) =
     member _.Untranslatable() =
         task {
             let! _ = Seed.order w.Db None "published" 10m (Seed.at 1)
-            w.Set("query", plasm { for o in stored<Order> do where (Filters.isRound o.Total) })
+            w.Set("query", plasm { for o in tableOf<Order> do where (Filters.isRound o.Total) })
         }
         |> unit
 
@@ -145,7 +145,7 @@ type CompositionSteps(w: World) =
         task {
             let! _ = Seed.order w.Db None "published" 10m (Seed.at 1)
             let! _ = Seed.order w.Db None "published" 25m (Seed.at 2)
-            let! r = w.Repo.All(plasm { for o in stored<Order> do orderBy o.Id })
+            let! r = w.Repo.All(plasm { for o in tableOf<Order> do orderBy o.Id })
             w.Set("orders", ok r)
         }
         |> unit
@@ -174,7 +174,7 @@ type CompositionSteps(w: World) =
 
             let projection =
                 plasm {
-                    for o in stored<Order> do
+                    for o in tableOf<Order> do
                         orderBy o.Id
                         select (o.Id, o.Total)
                 }

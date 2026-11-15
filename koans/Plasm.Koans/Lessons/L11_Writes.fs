@@ -7,7 +7,7 @@ open Plasm.Koans.Shop
 
 let private order (repo: Repo) (id: int64) =
     task {
-        let! o = repo.One(plasm { for o in Db.orders do where (o.Id = OrderId id) })
+        let! o = repo.One(plasm { for o in tableOf<Order> do where (o.Id = OrderId id) })
         return (ok o).Value
     }
 
@@ -30,9 +30,9 @@ let lesson =
                       // says the transaction gives a Customer and has no reasons of its
                       // own to fail (unit); a single step needs to be told that.
                       let addDan: Tx<Customer, unit> = Tx.insert (New.customer "Dan" "dan@example.com")
-                      let! stored = repo.Transact addDan
-                      (ok stored).Name |> shouldBe __
-                      let! n = repo.Count(Query.from Db.customers)
+                      let! saved = repo.Transact addDan
+                      (ok saved).Name |> shouldBe __
+                      let! n = repo.Count(Query.from (tableOf<Customer>))
                       ok n |> shouldBe __
                   }
           )
@@ -41,10 +41,10 @@ let lesson =
               "An insert assigns the key",
               fun repo ->
                   task {
-                      let! stored = repo.Transact(Tx.insert (New.customer "Dan" "dan@example.com"): Tx<Customer, unit>)
+                      let! saved = repo.Transact(Tx.insert (New.customer "Dan" "dan@example.com"): Tx<Customer, unit>)
                       // The database chose Dan's key; the stored record carries it, so it finds the row again.
-                      let danId = (ok stored).Id
-                      let! found = repo.One(plasm { for c in Db.customers do where (c.Id = danId) })
+                      let danId = (ok saved).Id
+                      let! found = repo.One(plasm { for c in tableOf<Customer> do where (c.Id = danId) })
                       (ok found |> Option.map (fun c -> c.Name)) |> shouldBe __
                   }
           )
@@ -67,7 +67,7 @@ let lesson =
               "The version goes up on update",
               fun repo ->
                   task {
-                      // Db.orders declares a version field: Version counts the updates of the row.
+                      // tableOf<Order> declares a version field: Version counts the updates of the row.
                       let! draft = order repo 2L
                       let! updated = repo.Transact(Tx.update (draft, { draft with Status = Published }): Tx<Order, unit>)
                       draft.Version |> shouldBe __
@@ -80,8 +80,8 @@ let lesson =
               fun repo ->
                   task {
                       // Tx.delete deletes the record you read.
-                      let customers = Query.from Db.customers
-                      let! cy = repo.One(plasm { for c in Db.customers do where (c.Name = "Cy") })
+                      let customers = Query.from (tableOf<Customer>)
+                      let! cy = repo.One(plasm { for c in tableOf<Customer> do where (c.Name = "Cy") })
                       let goodbye: Tx<Customer, unit> = Tx.delete (ok cy).Value
                       let! before = repo.Count customers
                       ok before |> shouldBe __
@@ -96,9 +96,9 @@ let lesson =
               fun repo ->
                   task {
                       let sprocket = New.product "SPROCKET" "Sprocket"
-                      let! stored = repo.Transact(Tx.insert sprocket: Tx<Product, unit>)
+                      let! saved = repo.Transact(Tx.insert sprocket: Tx<Product, unit>)
                       // The database generated a key (its value depends on earlier inserts).
-                      ((ok stored).Id <> ProductId 0L) |> shouldBe __
+                      ((ok saved).Id <> ProductId 0L) |> shouldBe __
                       sprocket.Id |> shouldBe __
                   }
           )
@@ -137,7 +137,7 @@ let lesson =
                   task {
                       // A Customer has no version field, so an update checks every column
                       // of the record it was made from. Another writer renamed Ada first.
-                      let! ada = repo.One(plasm { for c in Db.customers do where (c.Name = "Ada") })
+                      let! ada = repo.One(plasm { for c in tableOf<Customer> do where (c.Name = "Ada") })
                       let ada = (ok ada).Value
                       let! _ = repo.Transact(Tx.update (ada, { ada with Name = "Ada L." }): Tx<Customer, unit>)
                       let! late = repo.Transact(Tx.update (ada, { ada with Name = "Ada B." }): Tx<Customer, unit>)

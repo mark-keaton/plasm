@@ -7,7 +7,7 @@ open Plasm.Koans.Shop
 
 let private customers (repo: Repo) =
     task {
-        let! n = repo.Count(Query.from Db.customers)
+        let! n = repo.Count(Query.from (tableOf<Customer>))
         return ok n
     }
 
@@ -35,7 +35,7 @@ let cancel (reason: string) (order: Order) : Result<Order, string> =
 /// Read what the decision needs, let the domain decide, write what it decided.
 let private cancelOrder (id: OrderId) : Tx<Order, Refusal> =
     transaction {
-        let! order = Tx.one (plasm { for o in Db.orders do where (o.Id = id) }) |> Tx.orReject (Missing "order")
+        let! order = Tx.one (plasm { for o in tableOf<Order> do where (o.Id = id) }) |> Tx.orReject (Missing "order")
         let! cancelled = cancel "duplicate" order |> Tx.ofResult Refused
         return! Tx.update (order, cancelled)
     }
@@ -154,8 +154,8 @@ let lesson =
                       // is what the later steps change.
                       let look =
                           transaction {
-                              let! ada = Tx.one (plasm { for c in Db.customers do where (c.Name = "Ada") })
-                              let! orders = Tx.count (Query.from Db.orders)
+                              let! ada = Tx.one (plasm { for c in tableOf<Customer> do where (c.Name = "Ada") })
+                              let! orders = Tx.count (Query.from (tableOf<Order>))
                               return (ada |> Option.map (fun c -> c.Name)), orders
                           }
 
@@ -171,7 +171,7 @@ let lesson =
                       // A transaction's own reasons to fail are its error type: here
                       // Refusal, above under Given. Tx.orReject turns a None into one.
                       let zed =
-                          Tx.one (plasm { for c in Db.customers do where (c.Name = "Zed") })
+                          Tx.one (plasm { for c in tableOf<Customer> do where (c.Name = "Zed") })
                           |> Tx.orReject (Missing "customer Zed")
 
                       let! r = repo.Transact zed
@@ -229,7 +229,7 @@ let lesson =
 
                       let! r = repo.Transact audit
                       (err r).Step.Action |> shouldBe __
-                      let! audited = repo.Count(plasm { for p in Db.products do where (p.Sku = "AUDIT") })
+                      let! audited = repo.Count(plasm { for p in tableOf<Product> do where (p.Sku = "AUDIT") })
                       ok audited |> shouldBe __
                   }
           )

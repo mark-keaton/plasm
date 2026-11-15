@@ -1,7 +1,7 @@
-# A record needs nothing from Plasm
+# A stored record is still plain F#
 "Widget"
 "Better widget"
-# A schema names the table
+# A record names its table
 true
 # Columns are named in snake_case
 true
@@ -21,3 +21,5 @@ Some "duplicate"
 # A model reports every mistake at once
 2
 [ Some "Page"; Some "Referrer" ]
+# A list is stored only if its records are
+[ Some "Wishes" ]

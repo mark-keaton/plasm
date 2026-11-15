@@ -21,7 +21,7 @@ let lesson =
                       // A filter compares a field as F# would: Total is a decimal, so it is
                       // compared with a decimal (20m). count, defined at the top of this
                       // lesson, runs repo.Count: how many rows the query matches.
-                      let! n = count repo (plasm { for o in Db.orders do where (o.Total > 20m) })
+                      let! n = count repo (plasm { for o in tableOf<Order> do where (o.Total > 20m) })
                       n |> shouldBe __
                   }
           )
@@ -32,7 +32,7 @@ let lesson =
                   task {
                       // s.Contains "o" is true when the text s has an "o" in it. In a filter it
                       // becomes SQL's LIKE, which matches text against a pattern.
-                      let withO = plasm { for c in Db.customers do where (c.Name.Contains "o") }
+                      let withO = plasm { for c in tableOf<Customer> do where (c.Name.Contains "o") }
                       (ok (repo.Explain withO)).Sql.Contains "LIKE" |> shouldBe __
                       let! customers = repo.All withO
                       ok customers |> List.map (fun c -> c.Name) |> shouldBe __
@@ -44,7 +44,7 @@ let lesson =
               fun repo ->
                   task {
                       // && keeps a row only when both sides are true.
-                      let! n = count repo (plasm { for o in Db.orders do where (o.Status = Published && o.Total < 50m) })
+                      let! n = count repo (plasm { for o in tableOf<Order> do where (o.Status = Published && o.Total < 50m) })
                       n |> shouldBe __
                   }
           )
@@ -54,7 +54,7 @@ let lesson =
               fun repo ->
                   task {
                       // || keeps a row when either side is true, or both.
-                      let! n = count repo (plasm { for o in Db.orders do where (o.Status = Draft || o.Total > 50m) })
+                      let! n = count repo (plasm { for o in tableOf<Order> do where (o.Status = Draft || o.Total > 50m) })
                       n |> shouldBe __
                   }
           )
@@ -64,7 +64,7 @@ let lesson =
               fun repo ->
                   task {
                       // orderByDescending sorts the rows largest first.
-                      let! orders = repo.All(plasm { for o in Db.orders do orderByDescending o.Total })
+                      let! orders = repo.All(plasm { for o in tableOf<Order> do orderByDescending o.Total })
                       ok orders |> List.map (fun o -> o.Total) |> shouldBe __
                   }
           )
@@ -75,7 +75,7 @@ let lesson =
                   task {
                       let! n =
                           count repo (plasm {
-                              for o in Db.orders do
+                              for o in tableOf<Order> do
                                   where (o.Status = Published)
                                   where (o.Total > 50m)
                           })
@@ -88,7 +88,7 @@ let lesson =
               "Comparing with None",
               fun repo ->
                   task {
-                      let withoutCustomer = plasm { for o in Db.orders do where (o.CustomerId = None) }
+                      let withoutCustomer = plasm { for o in tableOf<Order> do where (o.CustomerId = None) }
                       (ok (repo.Explain withoutCustomer)).Sql.Contains "IS NULL" |> shouldBe __
                       let! n = count repo withoutCustomer
                       n |> shouldBe __
@@ -100,7 +100,7 @@ let lesson =
               fun repo ->
                   task {
                       // Orders that are not Ada's: in F#, an Order with no customer is not Ada's.
-                      let notAdas = plasm { for o in Db.orders do where (not (o.CustomerId = Some(CustomerId 1L))) }
+                      let notAdas = plasm { for o in tableOf<Order> do where (not (o.CustomerId = Some(CustomerId 1L))) }
                       let! n = count repo notAdas
                       n |> shouldBe __
                   }
@@ -111,7 +111,7 @@ let lesson =
               fun repo ->
                   task {
                       let wanted: OrderStatus list = []
-                      let! n = count repo (plasm { for o in Db.orders do where (List.contains o.Status wanted) })
+                      let! n = count repo (plasm { for o in tableOf<Order> do where (List.contains o.Status wanted) })
                       n |> shouldBe __
                   }
           )
@@ -121,7 +121,7 @@ let lesson =
               fun repo ->
                   task {
                       let shout (s: string) = s.ToUpperInvariant() + "!"
-                      let! r = repo.All(plasm { for c in Db.customers do where (shout c.Name = "ADA!") })
+                      let! r = repo.All(plasm { for c in tableOf<Customer> do where (shout c.Name = "ADA!") })
 
                       let refused =
                           match r with
@@ -136,10 +136,10 @@ let lesson =
               "Pages need an order",
               fun repo ->
                   task {
-                      let! unordered = repo.All(plasm { for o in Db.orders do take 2 })
+                      let! unordered = repo.All(plasm { for o in tableOf<Order> do take 2 })
                       Result.isError unordered |> shouldBe __
 
-                      let! page = repo.All(plasm { for o in Db.orders do orderBy o.Total; take 2 })
+                      let! page = repo.All(plasm { for o in tableOf<Order> do orderBy o.Total; take 2 })
                       ok page |> List.map (fun o -> o.Total) |> shouldBe __
                   }
           )
@@ -149,7 +149,7 @@ let lesson =
               fun repo ->
                   task {
                       let statuses = [| Published |]
-                      let matching = plasm { for o in Db.orders do where (Array.contains o.Status statuses) }
+                      let matching = plasm { for o in tableOf<Order> do where (Array.contains o.Status statuses) }
                       let! before = count repo matching
                       statuses.[0] <- Draft
                       let! after = count repo matching

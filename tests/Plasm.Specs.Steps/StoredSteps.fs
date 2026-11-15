@@ -59,7 +59,7 @@ module Stored =
 
     let titledLike (prefix: string) =
         plasm {
-            for c in stored<Card> do
+            for c in tableOf<Card> do
                 where (c.Title.StartsWith prefix)
                 orderBy c.Title
         }
@@ -221,7 +221,7 @@ type StoredSteps(w: World) =
     let readBack () =
         task {
             let id = (w.Get<Card> "storedCard").Id
-            let! r = repo().One(plasm { for c in stored<Card> do where (c.Id = id) })
+            let! r = repo().One(plasm { for c in tableOf<Card> do where (c.Id = id) })
             w.Set("storedRead", (ok r).Value)
         }
         |> unit
@@ -346,7 +346,7 @@ type StoredSteps(w: World) =
     member _.ReadBoard() =
         task {
             let id = (w.Get<Board> "storedNewBoard").Id
-            let! r = repo().One(plasm { for b in stored<Board> do where (b.Id = id) })
+            let! r = repo().One(plasm { for b in tableOf<Board> do where (b.Id = id) })
             w.Set("storedBoardRead", (ok r).Value)
         }
         |> unit

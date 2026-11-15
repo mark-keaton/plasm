@@ -53,7 +53,7 @@ type ProviderSteps(w: World) =
 
     [<StepDefinition("I explain a query for Orders, which own their Lines, with the test dialect")>]
     member _.ExplainLoads() =
-        let plan = explain (Query.from (stored<Order>))
+        let plan = explain (Query.from (tableOf<Order>))
         w.Set("sql", (plan.Loads |> List.head).Sql)
 
     [<StepDefinition("the load command matches keys with an IN list of parameters")>]
@@ -64,7 +64,7 @@ type ProviderSteps(w: World) =
     [<StepDefinition("I explain a query comparing an optional field with <> with the test dialect")>]
     member _.ExplainNullSafe() =
         let reason = Some "late"
-        w.Set("sql", (explain (plasm { for o in stored<Order> do where (o.CancellationReason <> reason) })).Sql)
+        w.Set("sql", (explain (plasm { for o in tableOf<Order> do where (o.CancellationReason <> reason) })).Sql)
 
     [<StepDefinition("the comparison uses the dialect's null-safe operator")>]
     member _.NullSafe() =
@@ -73,7 +73,7 @@ type ProviderSteps(w: World) =
 
     [<StepDefinition("I explain a query filtering on the length of a name with the test dialect")>]
     member _.ExplainLength() =
-        w.Set("sql", (explain (plasm { for c in stored<Customer> do where (c.Name.Length > 3) })).Sql)
+        w.Set("sql", (explain (plasm { for c in tableOf<Customer> do where (c.Name.Length > 3) })).Sql)
 
     [<StepDefinition("the length uses the dialect's function name")>]
     member _.Length() =

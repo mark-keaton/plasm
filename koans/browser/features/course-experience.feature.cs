@@ -633,7 +633,7 @@ namespace Plasm.Koans.Browser.Specs.Features
   await this.FeatureBackgroundAsync();
 #line hidden
 #line 76
-      await testRunner.WhenAsync("the learner opens the koan \"A record needs nothing from Plasm\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
+      await testRunner.WhenAsync("the learner opens the koan \"A stored record is still plain F#\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 77
       await testRunner.ThenAsync("its keywords, type names, strings, numbers and comments are coloured", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");

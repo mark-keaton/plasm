@@ -36,7 +36,7 @@ let lesson =
                       // an Email that Email.create would not make.
                       let broken: Tx<int, unit> = Tx.executeSql $"update customers set email = 'nobody' where id = 3"
                       let! _ = repo.Transact broken
-                      let! customers = repo.All(Query.from Db.customers)
+                      let! customers = repo.All(Query.from (tableOf<Customer>))
 
                       match customers with
                       | Error(DbError.Materialization m) -> (m.Property, m.Message) |> shouldBe __
@@ -48,8 +48,8 @@ let lesson =
               "A duplicate is the field's error",
               fun repo ->
                   task {
-                      // The rest is the database's: its constraints. Db.customers states
-                      // `unique (fun c -> c.Email)`, and the table's unique constraint has
+                      // The rest is the database's: its constraints. Customer's Email is
+                      // marked [<Unique>] in Shop.fs, and the table's unique constraint has
                       // PostgreSQL's default name, customers_email_key. A duplicate comes
                       // back as the Email field's error. fieldErrors is at the top of this lesson.
                       // (repo.Transact runs a transaction and Tx.insert is a step that
@@ -93,7 +93,7 @@ let lesson =
                       let order: Tx<Order, unit> = Tx.insert (New.order None Draft -1m)
                       let! r = repo.Transact order
                       Result.isError r |> shouldBe __
-                      let! n = repo.Count(Query.from Db.orders)
+                      let! n = repo.Count(Query.from (tableOf<Order>))
                       ok n |> shouldBe __
                   }
           )

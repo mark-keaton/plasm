@@ -91,7 +91,7 @@ type OwnedOneSteps(w: World) =
 
     let readAll () =
         task {
-            let! r = repo().All(plasm { for a in stored<Account> do orderBy a.Name })
+            let! r = repo().All(plasm { for a in tableOf<Account> do orderBy a.Name })
             return r
         }
 
@@ -190,8 +190,8 @@ type OwnedOneSteps(w: World) =
             let! r =
                 repo().All(
                     plasm {
-                        for a in stored<Account> do
-                            where (exists (plasm { for p in stored<Profile> do where (p.Account = a.Id && p.Bio = bio) }))
+                        for a in tableOf<Account> do
+                            where (exists (plasm { for p in tableOf<Profile> do where (p.Account = a.Id && p.Bio = bio) }))
                     }
                 )
 
@@ -202,7 +202,7 @@ type OwnedOneSteps(w: World) =
     [<StepDefinition("^I keep the Accounts where Option.exists \\(fun p -> p.Bio = \"(\\w+)\"\\) over their profile$")>]
     member _.KeepByOption(bio: string) =
         task {
-            let! r = repo().All(plasm { for a in stored<Account> do where (a.Profile |> Option.exists (fun p -> p.Bio = bio)) })
+            let! r = repo().All(plasm { for a in tableOf<Account> do where (a.Profile |> Option.exists (fun p -> p.Bio = bio)) })
             w.Set("kept", ok r |> List.map (fun a -> a.Name))
         }
         |> unit
@@ -210,7 +210,7 @@ type OwnedOneSteps(w: World) =
     [<StepDefinition("I keep the Accounts whose profile is None")>]
     member _.KeepWithout() =
         task {
-            let! r = repo().All(plasm { for a in stored<Account> do where a.Profile.IsNone })
+            let! r = repo().All(plasm { for a in tableOf<Account> do where a.Profile.IsNone })
             w.Set("kept", ok r |> List.map (fun a -> a.Name))
         }
         |> unit

@@ -1,5 +1,5 @@
-/// Lesson 05: About records and schemas.
-module Plasm.Koans.Lessons.L05_RecordsAndSchemas
+/// Lesson 05: About stored records.
+module Plasm.Koans.Lessons.L05_StoredRecords
 
 open Plasm
 open Plasm.Koans
@@ -7,21 +7,28 @@ open Plasm.Koans.Shop
 
 /// A record with two fields Plasm cannot store: a Uri has no column type, and
 /// it is not a wrapper or a union Plasm can store by convention.
+[<Table "visits">]
 type Visit =
     { Id: int64
       Page: System.Uri
       Referrer: System.Uri }
 
-let visits = schema<Visit> "visits" { identityKey (fun v -> v.Id) }
+/// A wish: a plain record that names no table, so it is not stored.
+type Wish = { Item: string }
+
+/// A wishlist holding wishes. A list is stored only if its records are.
+[<Table "wishlists">]
+type Wishlist = { Id: int64; Wishes: Wish list }
 
 let lesson =
     Lesson.make
-        "About records and schemas"
+        "About stored records"
         [ Koan.Sync(
-              "A record needs nothing from Plasm",
+              "A stored record is still plain F#",
               fun _ ->
-                  // Product is a plain F# record: no base class, no attributes.
-                  // Its table and key are described separately, in Db.products.
+                  // Product is an ordinary immutable F# record. In Shop.fs it carries
+                  // [<Table "products">], a note saying where it is stored; it has no
+                  // base class and nothing to call. Copy-and-update works as always.
                   let widget = { Id = ProductId 1L; Sku = "WIDGET"; Name = "Widget" }
                   let renamed = { widget with Name = "Better widget" }
                   widget.Name |> shouldBe __
@@ -29,13 +36,13 @@ let lesson =
           )
 
           Koan.Sync(
-              "A schema names the table",
+              "A record names its table",
               fun repo ->
-                  // A schema is a value that says how a record is stored. In Shop.fs,
-                  // Db.products is: schema<Product> "products" { identityKey (fun p -> p.Id) }
-                  // Query.from makes a query for every row of a schema's table.
+                  // [<Table "products">] on Product names the table it is stored in.
+                  // tableOf<Product> is every stored Product, as a query source, and
+                  // Query.from makes a query for all of them.
                   // repo.Explain shows the SQL a query would send, without sending it.
-                  let sql = (ok (repo.Explain(Query.from Db.products))).Sql
+                  let sql = (ok (repo.Explain(Query.from (tableOf<Product>)))).Sql
                   // Which table does the query read from?
                   sql.Contains "FROM \"products\"" |> shouldBe __
           )
@@ -44,9 +51,8 @@ let lesson =
               "Columns are named in snake_case",
               fun repo ->
                   // A column is named after its field, in snake_case: lower case words
-                  // joined by underscores. The schema could name a column itself, but
-                  // Db.orders does not.
-                  let sql = (ok (repo.Explain(Query.from Db.orders))).Sql
+                  // joined by underscores. Nothing on Order says so; it is the rule.
+                  let sql = (ok (repo.Explain(Query.from (tableOf<Order>)))).Sql
                   // Order has a field PlacedAt. Which name does the SQL use?
                   sql.Contains "\"placed_at\"" |> shouldBe __
                   sql.Contains "\"PlacedAt\"" |> shouldBe __
@@ -56,10 +62,11 @@ let lesson =
               "A key finds one record",
               fun repo ->
                   task {
-                      // The key is the field that identifies a record: identityKey (fun p -> p.Id).
-                      // The database numbers new rows 1, 2, 3, in the order they were inserted.
+                      // A stored record's key is its field named Id. A key that wraps a
+                      // number, such as ProductId, is numbered by the database: 1, 2, 3, in
+                      // the order the rows were inserted.
                       // repo runs queries against the database; One reads one record, if any.
-                      let! product = repo.One(plasm { for p in Db.products do where (p.Id = ProductId 2L) })
+                      let! product = repo.One(plasm { for p in tableOf<Product> do where (p.Id = ProductId 2L) })
                       // ok takes the value out of an Ok result; .Value takes it out of Some.
                       (ok product).Value.Name |> shouldBe __
                   }
@@ -78,7 +85,7 @@ let lesson =
                       // in this koan's sandbox and vanishes when it ends.)
                       let cancel: Tx<int, unit> = Tx.executeSql $"update orders set status = 'cancelled', cancellation_reason = 'test' where id = 2"
                       let! _ = repo.Transact cancel
-                      let! order = repo.One(plasm { for o in Db.orders do where (o.Id = OrderId 2L) })
+                      let! order = repo.One(plasm { for o in tableOf<Order> do where (o.Id = OrderId 2L) })
                       // Is Status the text, or a case of OrderStatus?
                       (ok order).Value.Status |> shouldBe __
                   }
@@ -92,7 +99,7 @@ let lesson =
                       // stores it as the number it wraps, and reads it back wrapped.
                       // An Email is stored the same way: email (in Shop.fs) makes one.
                       let adaEmail = email "ada@example.com"
-                      let! ada = repo.One(plasm { for c in Db.customers do where (c.Email = adaEmail) })
+                      let! ada = repo.One(plasm { for c in tableOf<Customer> do where (c.Email = adaEmail) })
                       let ada = (ok ada).Value
                       ada.Id |> shouldBe __
                   }
@@ -109,7 +116,7 @@ let lesson =
                       // stored in the database is refused on the way in, with its field named.
                       let zero: Tx<int, unit> = Tx.executeSql $"update order_lines set quantity = 0 where id = 1"
                       let! _ = repo.Transact zero
-                      let! lines = repo.All(Query.from Db.orderLines)
+                      let! lines = repo.All(Query.from (tableOf<OrderLine>))
 
                       match lines with
                       | Error(DbError.Materialization m) -> m.Property |> shouldBe __
@@ -122,7 +129,7 @@ let lesson =
               fun repo ->
                   task {
                       // Order 4 has no customer (a NULL column) but has a cancellation reason.
-                      let! order = repo.One(plasm { for o in Db.orders do where (o.Id = OrderId 4L) })
+                      let! order = repo.One(plasm { for o in tableOf<Order> do where (o.Id = OrderId 4L) })
                       let order = (ok order).Value
                       order.CustomerId |> shouldBe __
                       order.CancellationReason |> shouldBe __
@@ -133,10 +140,22 @@ let lesson =
               "A model reports every mistake at once",
               fun _ ->
                   // A Visit (above, under Given) has two fields Plasm cannot store.
-                  // Building a model reports both, not just the first.
-                  match Model.buildSchemas [] [ visits ] with
+                  // Model.build makes a model from the record types it lists, and
+                  // reports every problem, not just the first.
+                  match Model.build [] [ typeof<Visit> ] with
                   | Ok _ -> failwith "expected configuration errors"
                   | Error errors ->
                       errors.Length |> shouldBe __
                       errors |> List.map (fun e -> e.Property) |> shouldBe __
+          )
+
+          Koan.Sync(
+              "A list is stored only if its records are",
+              fun _ ->
+                  // A Wishlist (under Given) holds a list of Wish, a record that names
+                  // no table. Plasm does not guess where the wishes would go: building
+                  // the model refuses it, naming the field.
+                  match Model.build [] [ typeof<Wishlist> ] with
+                  | Ok _ -> failwith "expected a configuration error"
+                  | Error errors -> errors |> List.map (fun e -> e.Property) |> shouldBe __
           ) ]
