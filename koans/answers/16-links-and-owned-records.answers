@@ -1,25 +1,31 @@
-# Tags wait to be asked for
-NotLoaded
-# Reading an article's tags
-[ "draft"; "fsharp" ]
+# An article is read with its tags
+[ "fsharp"; "draft" ]
+# No tags is an empty list
+[]
+# Every article's tags come in one more command
+[ "fsharp"; "sql" ]
+2
+# Filtering articles by their tags
+[ "Intro to Plasm"; "Deep dive" ]
+# Changing the tags writes only links
+[ "ops" ]
+4L
+# Adding and removing one tag
+[ "fsharp"; "draft" ]
+# A link to a missing tag is the field's error
+[ ("Tags", FieldErrorKind.ForeignKeyConstraint "article_tags_tag_id_fkey") ]
+# A tag is changed as a tag
+[ "Tags" ]
+# Deleting an article deletes its links, not its tags
+[ 2L ]
+4L
 # An account's profile is an option
 Some "Writes compilers"
 # An account without a profile
-Loaded None
-# Tags load through the join table
-[ "fsharp"; "sql" ]
-2
-# No tags is an empty, loaded list
-Loaded []
-# Filtering through links
-[ "Intro to Plasm"; "Deep dive" ]
-# Replacing links
-[ "ops" ]
-4L
-# Adding and removing one link
-NotLoaded
-[ "draft"; "fsharp" ]
-# At most one related record
-[ Some "Writes compilers"; None ]
-# Filtering through has-one
+None
+# Adding a profile inserts it
+2L
+# Removing the profile deletes it
+0L
+# Filtering through an owned record
 [ "ada" ]

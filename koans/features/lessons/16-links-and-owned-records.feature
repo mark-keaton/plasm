@@ -1,7 +1,7 @@
 # Lesson 16 of the Plasm Koans. Each row is one koan: what the learner discovers,
 # and the acceptance scenario of Plasm it teaches (feature: scenario).
-Feature: About many-to-many and has-one
-  Join-table relationships and one-to-one relationships load and filter like any other; link writes touch only the join table.
+Feature: About links and owned records
+  An article links to shared tags through a join table: its Tags are read with it, and writing the article writes only its links. An account owns at most one profile, its own row, read and written with it as an option.
 
   Prerequisites: lesson 09, lesson 12.
 
@@ -14,15 +14,18 @@ Feature: About many-to-many and has-one
     And it teaches the acceptance scenario "<teaches>"
 
     Examples:
-      | koan                              | the learner discovers                                             | teaches                                                                 |
-      | Tags wait to be asked for         | without preload, an Article's Tags are NotLoaded                  | core: Unloaded and empty relationships are distinguishable              |
-      | Reading an article's tags         | preload a.Tags fills Tags with the Article's linked Tags          | many-to-many: Preloading a many-to-many relationship                    |
-      | An account's profile is an option | a has-one relationship loads as Some profile                      | has-one: Preloading a has-one relationship                              |
-      | An account without a profile      | an Account with no Profile has its Profile loaded as None         | has-one: Preloading a has-one relationship                              |
-      | Tags load through the join table  | preloading Tags is one batched command; a shared Tag is one value | many-to-many: Preloading a many-to-many relationship                    |
-      | No tags is an empty, loaded list  | an Article without links has Loaded []                            | many-to-many: An Article without Tags has an empty, loaded relationship |
-      | Filtering through links           | Rel.any through a join table keeps each Article once              | many-to-many: Filtering through a many-to-many relationship             |
-      | Replacing links                   | putLinks makes the join table match a set, and writes no Tag      | many-to-many: Replacing an Article's Tags                               |
-      | Adding and removing one link      | addLinks and removeLinks change only the links named              | many-to-many: Adding and removing individual links                      |
-      | At most one related record        | a has-one relationship loads as Some or None                      | has-one: Preloading a has-one relationship                              |
-      | Filtering through has-one         | Rel.exists filters through an optional relationship               | has-one: Filtering through a has-one relationship                       |
+      | koan                                                | the learner discovers                                                                                      | teaches                                                                      |
+      | An article is read with its tags                    | an article's Tags, shared records reached through article_tags, are read with it in the order of their key | linked-collections: Reading a card reads its tags, in their order            |
+      | No tags is an empty list                            | an article linking to no tag reads with []                                                                 | linked-collections: A card without tags reads with an empty list             |
+      | Every article's tags come in one more command       | the tags of every article come in one more command, through the join table                                 | linked-collections: Every card's tags are read in one more command           |
+      | Filtering articles by their tags                    | List.exists over a.Tags runs in the database and keeps each article once                                   | linked-collections: Cards are kept by their tags, as F# reads a list         |
+      | Changing the tags writes only links                 | an update with a new list of tags rewrites the article's links and writes no Tag                           | linked-collections: Changing the tags of a card read writes only its links   |
+      | Adding and removing one tag                         | the list is the whole set of links: filtering it and appending to it changes only those links              | linked-collections: Changing the tags of a card read writes only its links   |
+      | A link to a missing tag is the field's error        | a link to a tag that does not exist is the Tags field's ForeignKeyConstraint error                         | linked-collections: A link to a tag that does not exist is the field's error |
+      | A tag is changed as a tag                           | renaming a linked tag through the article is refused as a Tags error: a tag is its own aggregate           | linked-collections: Changing a linked tag through the card is refused        |
+      | Deleting an article deletes its links, not its tags | deleting an article deletes its rows of article_tags and leaves every tag                                  | linked-collections: Deleting a card deletes its links, not its tags          |
+      | An account's profile is an option                   | an Account owns at most one Profile, read with it as Some profile                                          | owned-records: Reading an account reads its profile and settings             |
+      | An account without a profile                        | an account with no profile reads with None                                                                 | owned-records: An account without a profile reads with None                  |
+      | Adding a profile inserts it                         | changing Profile from None to Some inserts the profile row                                                 | owned-records: Adding the optional record inserts it                         |
+      | Removing the profile deletes it                     | changing Profile from Some to None deletes the profile row                                                 | owned-records: Removing the optional record deletes it                       |
+      | Filtering through an owned record                   | an exists over Db.profiles keeps the accounts whose profile matches                                        | query-exists: Orders with a succeeded payment                                |

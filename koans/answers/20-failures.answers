@@ -4,8 +4,9 @@ Ok None
 "refused"
 # A failed write says what kind of failure
 DbFailureKind.CheckViolation
-# A broken rule names its constraint
-Some "orders_cancelled_has_reason"
+# Your refusals and Plasm's are apart
+"the shop's"
+"Plasm's"
 # Failures are values
 DbFailureKind.RepositoryClosed
 # Error cases are qualified
@@ -19,4 +20,5 @@ Error DbError.MoreThanOneRow
 # Rejections keep their type
 OutOfStock "GIZMO"
 # Every union is qualified
-ChangeAction.Insert
+false
+false

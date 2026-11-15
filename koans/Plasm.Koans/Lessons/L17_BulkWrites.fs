@@ -13,9 +13,10 @@ let lesson =
               fun repo ->
                   task {
                       // A bulk update changes every row a query matches, in one SQL command.
-                      // The function says what each matching row becomes.
+                      // The function says what each matching row becomes. Like every write,
+                      // it is a step of a transaction: Tx.execute, run by repo.Transact.
                       let gizmos = plasm { for p in Db.products do where (p.Sku = "GIZMO") }
-                      let! changed = repo.Execute(Bulk.update (gizmos, fun p -> { p with Name = "Gizmo Mark II" }))
+                      let! changed = repo.Transact(Tx.execute (Bulk.update (gizmos, fun p -> { p with Name = "Gizmo Mark II" })): Tx<_, unit>)
                       // The result is how many rows were changed.
                       ok changed |> shouldBe __
                   }
@@ -26,7 +27,7 @@ let lesson =
               fun repo ->
                   task {
                       let sprockets = plasm { for p in Db.products do where (p.Sku = "SPROCKET") }
-                      let! changed = repo.Execute(Bulk.update (sprockets, fun p -> { p with Name = "Sprocket" }))
+                      let! changed = repo.Transact(Tx.execute (Bulk.update (sprockets, fun p -> { p with Name = "Sprocket" })): Tx<_, unit>)
                       ok changed |> shouldBe __
                   }
           )
@@ -37,7 +38,7 @@ let lesson =
                   task {
                       // A bulk delete removes every row a query matches, and returns how many.
                       let ofOrder1 = plasm { for p in Db.payments do where (p.OrderId = OrderId 1L) }
-                      let! removed = repo.Execute(Bulk.delete ofOrder1)
+                      let! removed = repo.Transact(Tx.execute (Bulk.delete ofOrder1): Tx<_, unit>)
                       ok removed |> shouldBe __
                   }
           )
@@ -47,7 +48,7 @@ let lesson =
               fun repo ->
                   task {
                       // Query.from with no filter matches every row of the table.
-                      let! removed = repo.Execute(Bulk.delete (Query.from Db.payments))
+                      let! removed = repo.Transact(Tx.execute (Bulk.delete (Query.from Db.payments)): Tx<_, unit>)
                       ok removed |> shouldBe __
                   }
           )
@@ -57,7 +58,7 @@ let lesson =
               fun repo ->
                   task {
                       let drafts = plasm { for o in Db.orders do where (o.Status = Draft) }
-                      let! changed = repo.Execute(Bulk.update (drafts, fun o -> { o with Status = Published }))
+                      let! changed = repo.Transact(Tx.execute (Bulk.update (drafts, fun o -> { o with Status = Published })): Tx<_, unit>)
                       ok changed |> shouldBe __
                       let! published = repo.Count(plasm { for o in Db.orders do where (o.Status = Published) })
                       ok published |> shouldBe __
@@ -68,7 +69,7 @@ let lesson =
               "Updating from the current row",
               fun repo ->
                   task {
-                      let! _ = repo.Execute(Bulk.update (Query.from Db.orders, fun o -> { o with Total = o.Total * 2m }))
+                      let! _ = repo.Transact(Tx.execute (Bulk.update (Query.from Db.orders, fun o -> { o with Total = o.Total * 2m })): Tx<_, unit>)
                       let! total = repo.One(plasm { for o in Db.orders do select (Agg.sum o.Total) })
                       (ok total).Value |> shouldBe __
                   }
@@ -79,7 +80,7 @@ let lesson =
               fun repo ->
                   task {
                       let failed = plasm { for p in Db.payments do where (p.Status = Failed) }
-                      let! removed = repo.Execute(Bulk.delete failed)
+                      let! removed = repo.Transact(Tx.execute (Bulk.delete failed): Tx<_, unit>)
                       ok removed |> shouldBe __
                       let! left = repo.Count(Query.from Db.payments)
                       ok left |> shouldBe __
@@ -91,7 +92,7 @@ let lesson =
               fun repo ->
                   task {
                       let parts = [ New.product "BOLT" "Bolt"; New.product "NUT" "Nut"; New.product "WASHER" "Washer" ]
-                      let! inserted = repo.Execute(Bulk.insert parts)
+                      let! inserted = repo.Transact(Tx.execute (Bulk.insert parts): Tx<_, unit>)
                       ok inserted |> List.map (fun p -> p.Sku) |> shouldBe __
                       (commands ()).Length |> shouldBe __
                   }
@@ -102,8 +103,27 @@ let lesson =
               fun repo ->
                   task {
                       let catalogue = [ New.product "WIDGET" "Widget"; New.product "SPROCKET" "Sprocket" ]
-                      let! inserted = repo.Execute(Bulk.insertMissing (catalogue, fun p -> p.Sku))
+                      let! inserted = repo.Transact(Tx.execute (Bulk.insertMissing (catalogue, fun p -> p.Sku)): Tx<_, unit>)
                       ok inserted |> List.map (fun p -> p.Sku) |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Bulk writes are steps like any other",
+              fun repo ->
+                  task {
+                      // A bulk write is one step of a transaction: when a later step
+                      // fails, it is rolled back with the rest.
+                      let tx =
+                          transaction {
+                              let! _ = Tx.execute (Bulk.delete (Query.from Db.payments))
+                              return! Tx.fail "changed my mind"
+                          }
+
+                      let! r = repo.Transact tx
+                      Result.isError r |> shouldBe __
+                      let! left = repo.Count(Query.from Db.payments)
+                      ok left |> shouldBe __
                   }
           )
 

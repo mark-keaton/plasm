@@ -19,6 +19,9 @@
 1
 # Inserting only what is missing
 [ "SPROCKET" ]
+# Bulk writes are steps like any other
+true
+3L
 # Bulk writes can be inspected
 true
 0

@@ -10,7 +10,7 @@
 [ "Gadget" ]
 false
 # SQL can return mapped records
-[ OrderId 3L ]
+[ PaymentId 2L; PaymentId 3L ]
 # SQL can return tuples and scalars
 [ "Ada"; "Bob"; "Cy" ]
 ("cancelled", 1L)
@@ -21,3 +21,5 @@ true
 [ "Ada" ]
 # Commands return affected rows
 2
+# Hand-written SQL inside a transaction
+2L

@@ -20,8 +20,9 @@ Feature: About hand-written SQL
       | SQL can return a single number            | repo.Sql<int64> reads a one-column row as a number               | raw-sql: Reading tuples and scalars from SQL       |
       | SQL can return pairs                      | a two-column row becomes a tuple, by position                    | raw-sql: Reading tuples and scalars from SQL       |
       | An interpolated value becomes a parameter | the value is sent beside the SQL, never inside it                | raw-sql: Interpolated values are always parameters |
-      | SQL can return mapped records             | repo.Sql<Order> reads rows into Orders by column name            | raw-sql: Reading mapped records from SQL           |
+      | SQL can return mapped records             | repo.Sql<Payment> reads rows into Payments by column name        | raw-sql: Reading mapped records from SQL           |
       | SQL can return tuples and scalars         | rows become tuples by position, or single values                 | raw-sql: Reading tuples and scalars from SQL       |
       | Interpolation is parameters               | an interpolated value is a parameter, so injection is impossible | raw-sql: Interpolated values are always parameters |
       | A fragment inside a typed query           | Raw.fragment adds literal SQL to a plasm { } query               | raw-sql: A fragment inside a typed query           |
-      | Commands return affected rows             | repo.ExecuteSql returns how many rows changed                    | raw-sql: Executing hand-written commands           |
+      | Commands return affected rows             | Tx.executeSql, a transaction step, returns how many rows changed | raw-sql: Executing hand-written commands           |
+      | Hand-written SQL inside a transaction     | Tx.sql reads, inside the transaction, what an earlier step wrote | raw-sql: Hand-written SQL inside a transaction     |

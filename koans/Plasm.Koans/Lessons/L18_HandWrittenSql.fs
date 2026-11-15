@@ -65,9 +65,12 @@ let lesson =
               "SQL can return mapped records",
               fun repo ->
                   task {
+                      // Rows are read into a record of the model by column name. (Not a
+                      // whole Order: an Order is read with its lines, which a query of
+                      // the orders table alone does not read.)
                       let minimum = 50m
-                      let! big = repo.Sql<Order>($"SELECT * FROM orders WHERE total >= {minimum} ORDER BY id")
-                      ok big |> List.map (fun o -> o.Id) |> shouldBe __
+                      let! big = repo.Sql<Payment>($"SELECT * FROM payments WHERE amount >= {minimum} ORDER BY id")
+                      ok big |> List.map (fun p -> p.Id) |> shouldBe __
                   }
           )
 
@@ -107,7 +110,30 @@ let lesson =
               "Commands return affected rows",
               fun repo ->
                   task {
-                      let! n = repo.ExecuteSql $"update orders set status = 'cancelled', cancellation_reason = 'archived' where status = 'published'"
+                      // A hand-written command is a write, so it is a transaction step:
+                      // Tx.executeSql gives how many rows it changed.
+                      let archive: Tx<int, unit> =
+                          Tx.executeSql $"update orders set status = 'cancelled', cancellation_reason = 'archived' where status = 'published'"
+
+                      let! n = repo.Transact archive
                       ok n |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Hand-written SQL inside a transaction",
+              fun repo ->
+                  task {
+                      // Tx.sql reads with hand-written SQL as a step, so it sees what the
+                      // steps before it wrote, before anything is committed.
+                      let tx =
+                          transaction {
+                              let! _ = Tx.executeSql $"delete from payments where status = 'failed'"
+                              let! left = Tx.sql<int64, unit> $"select count(*) from payments"
+                              return List.head left
+                          }
+
+                      let! r = repo.Transact tx
+                      ok r |> shouldBe __
                   }
           ) ]

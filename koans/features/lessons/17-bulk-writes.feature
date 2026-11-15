@@ -14,14 +14,15 @@ Feature: About bulk writes
     And it teaches the acceptance scenario "<teaches>"
 
     Examples:
-      | koan                            | the learner discovers                                             | teaches                                                           |
-      | A bulk update returns a count   | Bulk.update changes the rows a query matches and returns how many | bulk-writes: Updating every row a query matches                   |
-      | A bulk update can match nothing | a query matching no rows updates nothing and returns 0            | bulk-writes: Updating every row a query matches                   |
-      | A bulk delete returns a count   | Bulk.delete removes the rows a query matches and returns how many | bulk-writes: Deleting every row a query matches                   |
-      | Deleting every payment          | Bulk.delete of Query.from removes every row of the table          | bulk-writes: Deleting every row a query matches                   |
-      | Updating what a query matches   | Bulk.update changes every matching row and returns how many       | bulk-writes: Updating every row a query matches                   |
-      | Updating from the current row   | the new value can be computed from the row's own fields           | bulk-writes: Bulk updates can compute from the current row        |
-      | Deleting what a query matches   | Bulk.delete removes matching rows and returns how many            | bulk-writes: Deleting every row a query matches                   |
-      | Inserting many records          | Bulk.insert writes many records in one command and returns them   | bulk-writes: Inserting many records in one command                |
-      | Inserting only what is missing  | insertMissing skips records whose key already exists              | bulk-writes: Inserting only what is missing                       |
-      | Bulk writes can be inspected    | repo.Explain shows a bulk write's SQL without running it          | bulk-writes: Bulk writes can be inspected without database access |
+      | koan                                 | the learner discovers                                               | teaches                                                           |
+      | A bulk update returns a count        | Bulk.update changes the rows a query matches and returns how many   | bulk-writes: Updating every row a query matches                   |
+      | A bulk update can match nothing      | a query matching no rows updates nothing and returns 0              | bulk-writes: Updating every row a query matches                   |
+      | A bulk delete returns a count        | Bulk.delete removes the rows a query matches and returns how many   | bulk-writes: Deleting every row a query matches                   |
+      | Deleting every payment               | Bulk.delete of Query.from removes every row of the table            | bulk-writes: Deleting every row a query matches                   |
+      | Updating what a query matches        | Bulk.update changes every matching row and returns how many         | bulk-writes: Updating every row a query matches                   |
+      | Updating from the current row        | the new value can be computed from the row's own fields             | bulk-writes: Bulk updates can compute from the current row        |
+      | Deleting what a query matches        | Bulk.delete removes matching rows and returns how many              | bulk-writes: Deleting every row a query matches                   |
+      | Inserting many records               | Bulk.insert writes many records in one command and returns them     | bulk-writes: Inserting many records in one command                |
+      | Inserting only what is missing       | insertMissing skips records whose key already exists                | bulk-writes: Inserting only what is missing                       |
+      | Bulk writes are steps like any other | a bulk write is a step: a later failure rolls it back with the rest | bulk-writes: Bulk writes run inside transactions                  |
+      | Bulk writes can be inspected         | repo.Explain shows a bulk write's SQL without running it            | bulk-writes: Bulk writes can be inspected without database access |

@@ -24,4 +24,4 @@ Feature: About prepared queries
       | Paging by arguments                      | take size.Value and skip offset.Value bind per call                    | prepared-queries: Paging arguments                                                 |
       | Prepared queries still compose           | extending a prepared query applies the extension everywhere            | prepared-queries: Extending a prepared query applies the extension everywhere      |
       | Arguments are read only inside the query | reading .Value while building is refused with an explanation           | prepared-queries: Arguments are only read inside query operations                  |
-      | Prepared load queries                    | a bound prepared query can be the query for a relationship load        | prepared-queries: A prepared query used as a load query binds its own arguments    |
+      | An exists takes an argument too          | an exists inside a prepared query reads its arguments too              | query-exists: The inner query takes a prepared argument too                        |
