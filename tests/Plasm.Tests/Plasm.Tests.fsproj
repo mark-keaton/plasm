@@ -15,6 +15,7 @@
     <Compile Include="Behaviour.fs" />
     <Compile Include="Joins.fs" />
     <Compile Include="Batch2.fs" />
+    <Compile Include="ConventionCost.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Plasm.TestDomain/Plasm.TestDomain.fsproj" />

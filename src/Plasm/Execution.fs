@@ -163,7 +163,37 @@ let readEntity (schema: SchemaInfo) : DbDataReader -> obj[] =
         let mutable j = 0
 
         for f in schema.Fields do
-            // A field reads one column, or a union with fields its several.
+          match f.Union with
+          | None ->
+            // One column: read it and convert it, with nothing allocated per row
+            // beyond the value itself.
+            let at = j
+            j <- j + 1
+
+            let raw =
+                try
+                    readers.[at].Invoke(r, at)
+                with :? InvalidCastException as ex ->
+                    raise (
+                        MaterializationFailure
+                            { Model = schema.Name
+                              Property = f.Name
+                              Value = string (r.GetFieldType at)
+                              Message = $"column {f.Column} does not match {f.ProviderType.Name}: {ex.Message}" }
+                    )
+
+            match f.FromDb raw with
+            | Ok v -> values.[f.Index] <- v
+            | Error msg ->
+                raise (
+                    MaterializationFailure
+                        { Model = schema.Name
+                          Property = f.Name
+                          Value = describe raw
+                          Message = msg }
+                )
+          | Some _ ->
+            // A union with fields reads its several columns.
             let raws =
                 f.Parts
                 |> List.map (fun p ->

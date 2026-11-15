@@ -29,22 +29,46 @@ module internal Conventions =
 
         Array.append onType inModule
 
-    /// Reads `create`'s Result: the value, or the domain's reason.
-    let private outcome (r: obj) : Result<obj, string> =
-        let case, fields = FSharpValue.GetUnionFields(r, r.GetType())
-        if case.Name = "Ok" then Ok fields.[0] else Error(string fields.[0])
+    // Each conversion is compiled once per type, so a value read by convention
+    // costs what a registered mapping costs (no reflection per value).
+    type private X = System.Linq.Expressions.Expression
+
+    let private lambda<'R> (body: System.Linq.Expressions.ParameterExpression -> X) : Func<obj, 'R> =
+        let v = X.Parameter(typeof<obj>, "v")
+        X.Lambda<Func<obj, 'R>>(body v, v).Compile()
+
+    let private boxed (e: X) : X = X.Convert(e, typeof<obj>)
+
+    /// `fun v -> create (v :?> 'P)` read as a Result<obj, string>.
+    let private compileCreate (create: MethodInfo) (p: Type) : Func<obj, Result<obj, string>> =
+        let resultType = create.ReturnType
+        let ok = typeof<Result<obj, string>>.GetMethod("NewOk")
+        let error = typeof<Result<obj, string>>.GetMethod("NewError")
+
+        lambda (fun v ->
+            let r = X.Variable(resultType, "r")
+
+            X.Block(
+                [ r ],
+                X.Assign(r, X.Call(create, X.Convert(v, p))),
+                X.Condition(
+                    X.Equal(X.Property(r, "Tag"), X.Constant 0),
+                    X.Call(ok, boxed (X.Property(r, "ResultValue"))),
+                    X.Call(error, X.Property(r, "ErrorValue"))
+                )
+            ))
 
     /// A fieldless union, stored as its case names in snake case, ordered as
     /// it is declared.
     let private fieldless (t: Type) (cases: UnionCaseInfo[]) =
-        let tag = FSharpValue.PreComputeUnionTagReader(t, true)
+        let tag = lambda<int> (fun v -> X.Property(X.Convert(v, t), "Tag"))
         let values = cases |> Array.map (fun c -> FSharpValue.MakeUnion(c, [||], true))
         let stored = cases |> Array.map (fun c -> Paths.snakeCase c.Name)
         let byName = Array.zip stored values |> dict
 
         { DomainType = t
           ProviderType = typeof<string>
-          ToProvider = fun v -> box stored.[tag v]
+          ToProvider = fun v -> box stored.[tag.Invoke v]
           FromProvider =
             fun v ->
                 match byName.TryGetValue(unbox<string> v) with
@@ -58,8 +82,9 @@ module internal Conventions =
     /// A single-case union over a built-in type, stored as that type and read
     /// through its create function when it has one.
     let private wrapper (t: Type) (case: UnionCaseInfo) (p: Type) : Result<ScalarMapping, string> =
-        let read = FSharpValue.PreComputeUnionReader(case, true)
-        let toProvider (v: obj) = (read v).[0]
+        let field = case.GetFields().[0]
+        let read = lambda<obj> (fun v -> boxed (X.Property(X.Convert(v, t), field)))
+        let toProvider (v: obj) = read.Invoke v
 
         let mapping fromProvider description =
             { DomainType = t
@@ -72,13 +97,16 @@ module internal Conventions =
               Description = description }
 
         match creates t p with
-        | [| _, create |] -> Ok(mapping (fun v -> outcome (create.Invoke(null, [| v |]))) $"{t.Name} as {p.Name}, read through {t.Name}.create")
+        | [| _, create |] ->
+            let create = compileCreate create p
+            Ok(mapping create.Invoke $"{t.Name} as {p.Name}, read through {t.Name}.create")
         | [||] when not (FSharpType.IsUnion(t, false)) ->
             Error
                 $"type {t.Name} has a private representation and no create function, so Plasm cannot read it without bypassing the domain; give it `static member create: {p.Name} -> Result<{t.Name}, string>`, or register Scalar.tryWrap"
         | [||] ->
-            let make = FSharpValue.PreComputeUnionConstructor(case, true)
-            Ok(mapping (fun v -> Ok(make [| v |])) $"{t.Name} as {p.Name}, by convention")
+            let ctor = FSharpValue.PreComputeUnionConstructorInfo(case, true)
+            let make = lambda<obj> (fun v -> boxed (X.Call(ctor, X.Convert(v, p))))
+            Ok(mapping (fun v -> Ok(make.Invoke v)) $"{t.Name} as {p.Name}, by convention")
         | several ->
             let names = several |> Array.map fst |> String.concat " and "
             Error $"type {t.Name} has more than one create function ({names}); keep one, or register a mapping"
@@ -114,12 +142,19 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, registered:
     // only in a query, never in a field, gets its mapping on first use).
     let found = Collections.Concurrent.ConcurrentDictionary<Type, ScalarMapping option>()
 
+    // Made once: a lambda passed to GetOrAdd would be a new delegate per call.
+    let byConvention =
+        Func<Type, ScalarMapping option>(fun t ->
+            match Conventions.tryFor t with
+            | Some(Ok m) -> Some m
+            | _ -> None)
+
     /// A type's mapping: registered, else by convention; (false, _) when none.
     let tryScalar (t: Type) =
         match registered.TryGetValue t with
         | true, m -> true, m
         | _ ->
-            match found.GetOrAdd(t, fun t -> match Conventions.tryFor t with Some(Ok m) -> Some m | _ -> None) with
+            match found.GetOrAdd(t, byConvention) with
             | Some m -> true, m
             | None -> false, Unchecked.defaultof<ScalarMapping>
 
