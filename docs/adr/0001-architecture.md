@@ -1,7 +1,81 @@
 # ADR 0001: Ecto's architecture, expressed in F#
 
-- Status: accepted (first delivery)
+- Status: accepted (first delivery); amended 2026-11-14 (strict design, one style)
 - Date: 2026-11-12
+
+## Amendment, 2026-11-14: one style
+
+The user decided that Plasm has one way to build an application: "There
+should not be two styles." The application's own records are the stored
+records, each fact about the data is written once, and the API that served a
+second, row-record style was removed. The decisions below are kept as they
+were written; paragraphs this amendment replaces are marked *superseded*.
+
+**Aggregates instead of relationships.** A schema states what a record owns or
+links, and those fields are plain F# values:
+
+- `owns` / `ownsOrderedBy` (a list of the record's own rows), `ownsOptional` /
+  `ownsOne` (one owned record) and `links` / `linksOrderedBy` (shared records
+  through a join table) replace `Assoc<'T>`, `NotLoaded`/`Loaded`, `hasMany`,
+  `hasOne`, `belongsTo` and `manyToMany`. `AssocKind` is internal.
+- A typed id is a reference to the schema whose key it is; another aggregate is
+  reached by a query, never through a field.
+- What a record owns or links is always loaded with it, at every level, one
+  command per list per batch of owner keys. This replaces `preload`,
+  `replacePreload`, `repo.Preload` and load conflicts (`LoadConflict`): there
+  is nothing to choose per query, so nothing can conflict. A whole owner in a
+  joined row, a projection or hand-written SQL comes with what it owns.
+- Filtering through another aggregate is `exists (plasm { ... })`, a correlated
+  `EXISTS` that reads the outer row and prepared arguments. `List.exists` /
+  `List.forall` over an owned or linked list, and `Option.exists` / `IsSome` /
+  `IsNone` over an owned optional record, translate the same way. These replace
+  the `Rel` module (`Rel.any`, `Rel.all`, `Rel.exists`).
+- `limitPerParent` (top-N children per parent) was dropped on purpose: the
+  latest few rows per parent is a report, written as hand-written SQL.
+
+**Writing an aggregate.** `Tx.update (original, changed)` compares the record
+read with the record the domain decided on. It writes only the columns that
+differ, the owned rows by difference (new ones inserted, changed ones updated,
+missing ones deleted) and the links as the new set. Ownership is the removal
+policy, so `putChildren`, `replaceChildren`, `ReplaceScope` and `OnReplace`
+were removed, and `putLinks`, `addLinks` and `removeLinks` with them. An owned
+item carrying another owner's key, or listed twice, is refused before any
+command; a linked record cannot be changed through its owner.
+
+**No validation in Plasm.** The domain's constructors validate (a `create`
+function is also how a stored value is read back), and the database's
+constraints come back as field errors by PostgreSQL's default names.
+`Changeset.validate*`, `cast`, `castWith`, `set`, `clear`, `forKey`,
+`getField`, `tryGetChange` and `addError` were removed (step b).
+
+**One query syntax.** `plasm { }` is the only way to write a query; the
+pipeline `Query.where` / `select` / ... functions were removed (step c).
+`Query.from` and `Query.prepare` remain.
+
+**One write path.** Every write is a transaction step run by `repo.Transact`:
+`Tx.insert record`, `Tx.update (original, changed, ?expectVersion)`,
+`Tx.delete record`, `Tx.execute (Bulk...)`, `Tx.executeSql` and `Tx.sql`.
+`repo.Insert`, `Update`, `Delete`, `Execute` and `ExecuteSql`, `WriteError`
+and `Tx.write` were removed (step d). `Changeset`, `ChangeAction` and
+`FieldChange` are internal: the diff a changeset recorded is still how an
+update is computed, but no caller builds one. Failures are
+`TransactionError<'E>` with a `TxFailure<'E>` (`Rejected`, `InvalidChanges`,
+`Conflict`, `Failed`, `Misused`), displayed as what failed and where.
+
+**Also removed** (step a2): a query's `LoadPaths` member (a plan's
+`QueryPlan.LoadPaths` remains), `LoadStrategy.PerParentWindow` and
+`ProviderCapabilities.PerParentLimit` (with `limitPerParent`),
+`TranslationError.LoadConflict` (with `preload`) and the `FieldErrorKind` case
+`ReplacementRejected` (with `OnReplace`).
+
+**What stays from the earlier decisions.** Queries as quotations, translation
+rules, plan caching, joins, batching by `= ANY(@keys)` with
+`MaxKeysPerCommand`, snapshot reads, materialisation through constructors,
+aggregates, bulk writes, hand-written SQL, prepared queries, the schema check,
+the sandbox and F# Interactive support are unchanged.
+
+`docs/status.md` lists each step with its commit, and the scenarios that left
+the user's original specification.
 
 ## Context
 
@@ -64,7 +138,8 @@ baseline.
   custom operation its argument as a **quotation**, via
   `[<ProjectionParameter; ReflectedDefinition>]`. The compiler type-checks it
   against the record: `o.Total > "x"`, `preload o.Total` and
-  `preload o.Product` are compile errors.
+  `preload o.Product` are compile errors. (*Superseded 2026-11-14:* there is
+  no `preload`; `owns (fun o -> o.Total) ...` does not compile instead.)
 - Composition is ordinary F#: `let forCustomer c q = plasm { for o in q do where (o.CustomerId = Some c) }`.
   *Amended 2026-11-14 (one style):* the pipeline helpers (`Query.where`, ...)
   were removed; `plasm { }` is the only way to write a query, and
@@ -82,7 +157,8 @@ baseline.
     differs from SQL's NULL.
   - An empty `List.contains` gives `FALSE`.
   - `Rel.any` and `Rel.all` give correlated `EXISTS`, so a parent never
-    duplicates.
+    duplicates. (*Superseded 2026-11-14:* `exists (plasm { ... })` and
+    `List.exists` / `List.forall` over owned and linked lists.)
 - `take` or `skip` without an ordering is rejected. With an ordering, the
   primary key is appended as a documented tiebreaker.
 - Plans are cached per repo, keyed by the query value (by reference). A plan
@@ -110,9 +186,12 @@ baseline.
   appends every source's key. Preloading through a join is not offered:
   combining row multiplication with graph assembly would blur two models, so
   `preload` on a joined query is a planning error that points to
-  `repo.Preload`.
+  `repo.Preload`. (*Superseded 2026-11-14:* a whole record in a joined row
+  comes with what it owns, read in one more command per list after the joined
+  rows; pagination still appends every source's key.)
 - Joins return one row per matching pair. Relationship predicates (`Rel.any`)
-  remain the way to filter parents without duplication.
+  remain the way to filter parents without duplication. (*Superseded
+  2026-11-14:* `exists (plasm { ... })`.)
 
 ### Materialisation of immutable records
 
@@ -125,6 +204,9 @@ baseline.
     materialisation error.
   - Wrapper types need an explicit `Scalar.wrap` or `Scalar.tryWrap`.
   - Fieldless unions need an explicit `Scalar.enum` table.
+  - *Amended by the strict design (step 1):* wrappers, types with a `create`
+    function and fieldless unions are stored by convention; registered
+    mappings override the conventions.
 - `Scalar.tryWrap` runs the domain's validating constructor. A stored value it
   rejects produces a structured `MaterializationError` (model, property, value,
   message). The constructor is never bypassed.
@@ -135,6 +217,9 @@ baseline.
 
 ### Relationships and the unloaded state
 
+*Superseded 2026-11-14 (one style; see the amendment above):* there is no `Assoc` and
+no unloaded state. What a record owns or links is a plain field, always loaded.
+
 - `Assoc<'T> = NotLoaded | Loaded of 'T`. The payload encodes cardinality:
   `Assoc<X list>` (has-many), `Assoc<X option>` (optional belongs-to/has-one)
   and `Assoc<X>` (required belongs-to).
@@ -142,6 +227,12 @@ baseline.
   throws instead of loading.
 
 ### Planning, batching and assembling nested loads
+
+*Superseded 2026-11-14 (one style; see the amendment above):* loads are no
+longer requested. The planner adds a load for every owned and linked list (and
+owned record) at every level; batching by `= ANY(@keys)`, ordering, bottom-up
+assembly and snapshot reads stay as described. `preload`, `limitPerParent`,
+load conflicts and `repo.Preload` were removed.
 
 - Each `preload` names a relationship by a typed path, and may give a child
   `Query` with filters, ordering, `limitPerParent` and nested preloads.
@@ -171,6 +262,10 @@ baseline.
 
 ### Changesets: unchanged, assigned and cleared
 
+*Superseded 2026-11-14 (one style; see the amendment above):* `Changeset` is
+internal. `Tx.update (original, changed)` builds the diff described here; no
+caller builds a changeset, validates one, or declares constraints on it.
+
 - `Changeset<'T>` is immutable and holds:
   - the original value (or only a key)
   - a map of changes by field
@@ -194,6 +289,11 @@ baseline.
   classified `DbFailureKind`.
 
 ### Association writes
+
+*Superseded 2026-11-14 (one style; see the amendment above):* an owned list is written with its owner, by
+difference from the record read; ownership is the policy. `putChildren`,
+`replaceChildren`, `ReplaceScope` and `OnReplace` were removed. The ownership
+check (`NotOwned`) and the single transaction remain.
 
 - `putChildren` inserts new children and updates existing ones by identity.
   Every update and delete is verified to belong to the parent (`NotOwned`
@@ -230,7 +330,8 @@ baseline.
   repeated. By default nothing is re-run.
 - Optimistic concurrency: a schema's `version` field is required to match on
   update and delete, and is incremented. A mismatch is
-  `WriteError.Stale` / `TxFailure.Conflict`.
+  `WriteError.Stale` / `TxFailure.Conflict` (`TxFailure.Conflict` only since
+  `WriteError` was removed, 2026-11-14).
 - Amended by the strict design (step 5): a record without a version field is
   checked against the record its change was made from. The UPDATE or DELETE
   carries `column IS NOT DISTINCT FROM @original` for every column, so a row
@@ -256,7 +357,7 @@ transfer at most one row.
 
 Set-based writes are `BulkWrite<'R>` values, like queries. They are inspected
 with `repo.Explain` and run by `repo.Execute` or as a transaction step
-(`Tx.execute`). An update is a copy-and-update lambda
+(`Tx.execute`; the only way since 2026-11-14). An update is a copy-and-update lambda
 (`fun o -> { o with Status = Cancelled }`). Fields read unchanged from the row
 are not written, and assigned values may read the row (`o.Total + 10m`).
 Upserts use the same form over the stored and incoming rows. Following Ecto's
@@ -289,6 +390,11 @@ rejected for the same reason. `take` and `skip` quote their count, so that
 overload broke type inference for ordinary computed counts.
 
 ### Many-to-many relationships
+
+*Superseded 2026-11-14 (one style; see the amendment above):* `links` / `linksOrderedBy` declare a
+plain list of shared records through a join table, always loaded. Writing the
+owner writes only join-table rows, as below; `putLinks`, `addLinks` and
+`removeLinks` were removed.
 
 `manyToMany` names the join table and its two key columns. Loading goes through
 the join table with one command per batch of owner keys, and the owner key
@@ -365,13 +471,16 @@ spots; each fix began as a failing scenario.
   programming errors found before database work, and cancellation, throw.
 - **Steps cannot end their transaction.** `TxContext` gives commands enlisted
   in the transaction instead of the transaction itself; write steps check the
-  changeset's action when built.
+  changeset's action when built (superseded 2026-11-14: write steps take
+  records, so a step's action is its name).
 - **Second audit.** `not` is two-valued only where an operand can be NULL
   (an option field, a left-joined source, an aggregate or a fragment), so
   ordinary negations keep their indexes. Pipeline joins nest their rows
-  (`((o, l), p)`) and the translator follows the lambda's tuple shape.
+  (`((o, l), p)`) and the translator follows the lambda's tuple shape
+  (superseded 2026-11-14: the pipeline functions were removed).
   `repo.One` keeps the query's own limit. A bound prepared query used as a
-  load query binds its own arguments. Every public union is qualified.
+  load query binds its own arguments (superseded 2026-11-14: there are no
+  load queries). Every public union is qualified.
   Transaction failures are typed (`StepFailure.Failed of DbError`,
   `Rejected of Rejection`), and a `Tx.run` command cannot control the
   transaction. A query's display hides parameter values unless the repository
@@ -382,6 +491,9 @@ spots; each fix began as a failing scenario.
   and link SQL are still PostgreSQL-shaped (see the status document).
 
 ## Following Ecto, and differing from it on purpose
+
+*As decided 2026-11-12. Since the one style, preloads, validations,
+per-changeset constraints and `on_replace` are gone; the rest holds.*
 
 **Same as Ecto:**
 
@@ -412,6 +524,9 @@ spots; each fix began as a failing scenario.
 
 ## Consequences
 
+- *2026-11-14:* the list below is from the first delivery; aggregates and
+  group-by, many-to-many (as `links`), bulk writes, upserts and unions with
+  fields have since been built. The current gaps are in `docs/status.md`.
 - PostgreSQL is the only provider. Everything provider-specific sits behind
   `IProvider` / `ISqlDialect` (rendering hooks, capabilities, error
   classification, snapshot support).
