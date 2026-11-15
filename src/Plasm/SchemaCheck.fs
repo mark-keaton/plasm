@@ -26,6 +26,11 @@ type SchemaIssueKind =
     /// A field that references another record (a typed id) has no foreign key
     /// to that record's table.
     | MissingReference
+    /// A unique field or a reference is held by a constraint (or unique index)
+    /// whose name is not the one a violation is mapped to the field by
+    /// (<table>_<column>_key, <table>_<column>_fkey): a violation would be a
+    /// database failure instead of the field's error.
+    | MisnamedConstraint
 
 /// A difference between the model and the database that would make a mapped
 /// read or write fail.
@@ -135,20 +140,21 @@ module internal SchemaCheck =
                 Execution.query
                     s
                     { Sql =
-                        "SELECT t.relname::text, a.attname::text FROM pg_index i "
+                        "SELECT t.relname::text, a.attname::text, ic.relname::text, EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = i.indexrelid AND c.conrelid = t.oid AND c.contype IN ('u', 'p')) FROM pg_index i "
                         + "JOIN pg_class t ON t.oid = i.indrelid JOIN pg_namespace n ON n.oid = t.relnamespace "
+                        + "JOIN pg_class ic ON ic.oid = i.indexrelid "
                         + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = i.indkey[0] "
                         + "WHERE i.indisunique AND i.indnkeyatts = 1 AND n.nspname = current_schema() AND t.relname::text = ANY("
                         + dialect.ParameterName 0
                         + ")"
                       Parameters = [ box tables ] }
-                    (fun r -> r.GetString 0, r.GetString 1)
+                    (fun r -> (r.GetString 0, r.GetString 1), (r.GetString 2, r.GetBoolean 3))
 
             let! referenceRows =
                 Execution.query
                     s
                     { Sql =
-                        "SELECT t.relname::text, a.attname::text, r.relname::text FROM pg_constraint c "
+                        "SELECT t.relname::text, a.attname::text, r.relname::text, c.conname::text FROM pg_constraint c "
                         + "JOIN pg_class t ON t.oid = c.conrelid JOIN pg_class r ON r.oid = c.confrelid "
                         + "JOIN pg_namespace n ON n.oid = t.relnamespace "
                         + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = c.conkey[1] "
@@ -156,10 +162,30 @@ module internal SchemaCheck =
                         + dialect.ParameterName 0
                         + ")"
                       Parameters = [ box tables ] }
-                    (fun r -> (r.GetString 0, r.GetString 1), r.GetString 2)
+                    (fun r -> ((r.GetString 0, r.GetString 1), r.GetString 2), r.GetString 3)
 
-            let uniques = set uniqueRows
-            let references = referenceRows |> List.ofSeq
+            let uniqueNames = uniqueRows |> List.ofSeq
+            let uniques = uniqueNames |> List.map fst |> set
+            let referenceNames = referenceRows |> List.ofSeq
+            let references = referenceNames |> List.map fst
+
+            let bare (table: string) = table.Split('.') |> Array.last
+
+            // A fact the model states, held under a name violations are not
+            // mapped by: the field's error would become a database failure.
+            let misnamed (holders: (string * bool) list) (expected: string) table =
+                if not holders.IsEmpty && not (holders |> List.exists (fun (n, _) -> n = expected)) then
+                    let actual, isConstraint = holders.Head
+
+                    let how =
+                        if isConstraint then
+                            $"alter table {table} rename constraint {actual} to {expected}"
+                        else
+                            $"alter index {actual} rename to {expected}"
+
+                    Some(actual, $"rename {actual} to {expected} (`{how}`)")
+                else
+                    None
 
             let byTable =
                 rows |> Seq.groupBy fst |> Seq.map (fun (t, cs) -> t, cs |> Seq.map snd |> List.ofSeq) |> Map.ofSeq
@@ -275,6 +301,20 @@ module internal SchemaCheck =
 
                     for f in sc.Fields do
                         if columns |> List.exists (fun c -> c.Name = f.Column) then
+                            if f.Unique then
+                                let holders = uniqueNames |> List.filter (fun (k, _) -> k = (sc.Table, f.Column)) |> List.map snd
+
+                                match misnamed holders $"{bare sc.Table}_{f.Column}_key" sc.Table with
+                                | Some(actual, fix) ->
+                                    add
+                                        SchemaIssueKind.MisnamedConstraint
+                                        sc.Name
+                                        (Some f.Name)
+                                        sc.Table
+                                        (Some f.Column)
+                                        $"{actual} holds the uniqueness of {sc.Name}.{f.Name}, but a violation is mapped to the field by its default name; {fix}"
+                                | None -> ()
+
                             if f.Unique && not (uniques.Contains(sc.Table, f.Column)) then
                                 add
                                     SchemaIssueKind.MissingUnique
@@ -293,6 +333,22 @@ module internal SchemaCheck =
                                     sc.Table
                                     (Some f.Column)
                                     $"{sc.Name}.{f.Name} holds a {target.Name} key, but no foreign key references {target.Table}; add `references {target.Table}`"
+                            | Some target ->
+                                let holders =
+                                    referenceNames
+                                    |> List.filter (fun (k, _) -> k = ((sc.Table, f.Column), target.Table))
+                                    |> List.map (fun (_, n) -> n, true)
+
+                                match misnamed holders $"{bare sc.Table}_{f.Column}_fkey" sc.Table with
+                                | Some(actual, fix) ->
+                                    add
+                                        SchemaIssueKind.MisnamedConstraint
+                                        sc.Name
+                                        (Some f.Name)
+                                        sc.Table
+                                        (Some f.Column)
+                                        $"{actual} holds the reference from {sc.Name}.{f.Name} to {target.Table}, but a violation is mapped to the field by its default name; {fix}"
+                                | None -> ()
                             | _ -> ()
 
             for sc, a, j in joinTables do
@@ -318,6 +374,25 @@ module internal SchemaCheck =
                                 j.Table
                                 (Some column)
                                 $"{j.Table}.{column} has no foreign key to {table}; add `references {table}`"
+
+                    // A linked list maps a link to a missing record by the
+                    // target side's default name.
+                    if a.Linked then
+                        let holders =
+                            referenceNames
+                            |> List.filter (fun (k, _) -> k = ((j.Table, j.TargetColumn), target.Table))
+                            |> List.map (fun (_, n) -> n, true)
+
+                        match misnamed holders $"{bare j.Table}_{j.TargetColumn}_fkey" j.Table with
+                        | Some(actual, fix) ->
+                            add
+                                SchemaIssueKind.MisnamedConstraint
+                                sc.Name
+                                (Some a.Name)
+                                j.Table
+                                (Some j.TargetColumn)
+                                $"{actual} holds the links of {sc.Name}.{a.Name} to {target.Table}, but a link to a missing record is mapped to the field by its default name; {fix}"
+                        | None -> ()
 
             return List.ofSeq issues
         }

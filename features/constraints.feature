@@ -52,7 +52,14 @@ Feature: Database constraints are stated once, in the model
       And OrderLine.ProductId references Product
       And no record's own key references itself
 
-  Rule: The schema check finds a missing constraint
+  Rule: The schema check finds a missing or misnamed constraint
+
+    A unique field and a reference are facts the model states, and a violation
+    is mapped to its field by the constraint's name. A constraint that holds the
+    fact under another name would turn the field's error into a database
+    failure, so the schema check reports it, with the rename. A check
+    constraint is not stated in the model: its default name is how a field
+    claims it.
 
     Scenario: A unique field without a unique constraint is reported
       Given the customers table has lost its unique constraint on email
@@ -63,3 +70,24 @@ Feature: Database constraints are stated once, in the model
       Given the orders table has lost its foreign key on customer_id
       When I check the model against the database
       Then the missing reference from Order.CustomerId to customers is reported
+
+    Scenario: A unique constraint under another name is reported, with the rename
+      Given the unique constraint on customers.email is renamed to customers_email_uniq
+      When I check the model against the database
+      Then Customer.Email is reported as misnamed, saying to rename customers_email_uniq to customers_email_key
+
+    Scenario: A unique index under another name is reported, with the rename
+      Given the unique constraint on customers.email is replaced by the unique index customers_email_idx
+      When I check the model against the database
+      Then Customer.Email is reported as misnamed, saying to rename customers_email_idx to customers_email_key
+
+    Scenario: A foreign key under another name is reported, with the rename
+      Given the foreign key on orders.customer_id is renamed to orders_customer_ref
+      When I check the model against the database
+      Then Order.CustomerId is reported as misnamed, saying to rename orders_customer_ref to orders_customer_id_fkey
+
+    Scenario: A misnamed constraint is reported once its field is the only holder
+      Given the unique constraint on customers.email is renamed to customers_email_uniq
+      And the unique constraint customers_email_key is added on customers.email
+      When I check the model against the database
+      Then no issue is reported for Customer.Email

@@ -127,3 +127,38 @@ type ConstraintSteps(w: World) =
             (issues
              |> List.exists (fun i -> i.Kind = SchemaIssueKind.MissingReference && i.Model = model && i.Field = Some field && i.Message.Contains table))
             $"the issues are %A{issues}"
+
+    [<StepDefinition("^the unique constraint on customers.email is renamed to (\\w+)$")>]
+    member _.RenameUnique(name: string) =
+        w.Db.Exec $"alter table customers rename constraint customers_email_key to {name}" |> unit
+
+    [<StepDefinition("^the unique constraint on customers.email is replaced by the unique index (\\w+)$")>]
+    member _.UniqueIndex(name: string) =
+        w.Db.Exec $"alter table customers drop constraint customers_email_key; create unique index {name} on customers (email)" |> unit
+
+    [<StepDefinition("^the unique constraint customers_email_key is added on customers.email$")>]
+    member _.AddUnique() =
+        w.Db.Exec "alter table customers add constraint customers_email_key unique (email)" |> unit
+
+    [<StepDefinition("^the foreign key on orders.customer_id is renamed to (\\w+)$")>]
+    member _.RenameReference(name: string) =
+        w.Db.Exec $"alter table orders rename constraint orders_customer_id_fkey to {name}" |> unit
+
+    [<StepDefinition("^(\\w+)\\.(\\w+) is reported as misnamed, saying to rename (\\w+) to (\\w+)$")>]
+    member _.Misnamed(model: string, field: string, actual: string, expected: string) =
+        let issues = w.Get<SchemaIssue list> "issues"
+
+        check
+            (issues
+             |> List.exists (fun i ->
+                 i.Kind = SchemaIssueKind.MisnamedConstraint
+                 && i.Model = model
+                 && i.Field = Some field
+                 && i.Message.Contains $"rename {actual} to {expected}"))
+            $"the issues are %A{issues}"
+
+    [<StepDefinition("^no issue is reported for (\\w+)\\.(\\w+)$")>]
+    member _.NoIssueFor(model: string, field: string) =
+        let issues = w.Get<SchemaIssue list> "issues"
+        check (issues |> List.forall (fun i -> not (i.Model = model && i.Field = Some field))) $"the issues are %A{issues}"
+

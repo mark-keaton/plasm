@@ -613,6 +613,11 @@ the same guarantee more exhaustively.
 | A typed id references the schema whose key it is | Implemented and verified | `ConstraintSteps.fs` |  | `Model.References`; only typed ids (never built-in key types) are inferred. |
 | A unique field without a unique constraint is reported | Implemented and verified | `ConstraintSteps.fs` |  | `unique (fun c -> c.Email)` in the schema; `SchemaIssueKind.MissingUnique`. |
 | A reference without a foreign key is reported | Implemented and verified | `ConstraintSteps.fs` |  | `SchemaIssueKind.MissingReference`. |
+| A unique constraint under another name is reported, with the rename | Implemented and verified | `ConstraintSteps.fs` |  | Found by the Kanban session: a renamed `boards_slug_key` left CheckSchema silent and turned the Slug error into a database failure. New `SchemaIssueKind.MisnamedConstraint`; the message gives the `alter table ... rename constraint` to run. Violations stay mapped by name: at the moment of a violation the transaction is aborted (no catalog lookup) and Npgsql hides the error detail, so the start-up check is where the name is enforced. |
+| A unique index under another name is reported, with the rename | Implemented and verified | `ConstraintSteps.fs` |  | `alter index ... rename to ...`. |
+| A foreign key under another name is reported, with the rename | Implemented and verified | `ConstraintSteps.fs` |  | Inferred references, and the target side of a linked list's join table. Check constraints are not stated in the model, so they are not reported: the default name is how a field claims one. |
+| A misnamed constraint is reported once its field is the only holder | Implemented and verified | `ConstraintSteps.fs` |  | A second constraint with the default name satisfies the check. |
+
 
 ### query-check.feature
 
