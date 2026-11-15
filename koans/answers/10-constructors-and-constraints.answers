@@ -1,0 +1,16 @@
+# A constructor refuses bad input
+"an email needs an @, got 'ada.example.com'"
+"ada@example.com"
+# What the domain refuses is refused when read
+("Email", "an email needs an @, got 'nobody'")
+# A duplicate is the field's error
+[ ("Email", FieldErrorKind.UniqueConstraint "customers_email_key") ]
+# A missing reference is the field's error
+[ ("CustomerId", "does not exist") ]
+# A broken check is the field's error
+[ FieldErrorKind.CheckConstraint "orders_total_check" ]
+# Refused changes are never written
+true
+4L
+# A rule across columns is no field's error
+Some "orders_cancelled_has_reason"

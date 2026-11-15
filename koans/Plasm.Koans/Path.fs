@@ -12,14 +12,14 @@ let lessons: Lesson list =
       L06_QueryValues.lesson
       L07_FiltersAndOrdering.lesson
       L08_Reading.lesson
-      L09_Relationships.lesson
-      L10_Changesets.lesson
+      L09_AggregatesAndReferences.lesson
+      L10_ConstructorsAndConstraints.lesson
       L11_Writes.lesson
-      L12_ChildWrites.lesson
+      L12_WritingAnAggregate.lesson
       L13_Transactions.lesson
       L14_Joins.lesson
       L15_AggregatesAndGrouping.lesson
-      L16_ManyToManyAndHasOne.lesson
+      L16_LinksAndOwnedRecords.lesson
       L17_BulkWrites.lesson
       L18_HandWrittenSql.lesson
       L19_PreparedQueries.lesson

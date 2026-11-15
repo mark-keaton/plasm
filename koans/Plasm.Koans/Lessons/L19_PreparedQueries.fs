@@ -120,13 +120,22 @@ let lesson =
           )
 
           Koan.Task(
-              "Prepared load queries",
+              "An exists takes an argument too",
               fun repo ->
                   task {
-                      let paymentsWith =
-                          Query.prepare (fun (status: Arg<PaymentStatus>) -> plasm { for p in Db.payments do where (p.Status = status.Value) })
+                      // An inner query inside exists can read the prepared query's
+                      // arguments: the orders with a payment of at least an amount.
+                      let paidAtLeast =
+                          Query.prepare (fun (least: Arg<decimal>) ->
+                              plasm {
+                                  for o in Db.orders do
+                                      where (exists (plasm { for p in Db.payments do where (p.OrderId = o.Id && p.Amount >= least.Value) }))
+                                      orderBy o.Id
+                              })
 
-                      let! orders = repo.All(plasm { for o in Db.orders do where (o.Id = OrderId 3L); preload o.Payments (paymentsWith Failed) })
-                      (ok orders).Head.Payments |> Assoc.get |> List.map (fun p -> p.Status) |> shouldBe __
+                      let! big = repo.All(paidAtLeast 50m)
+                      ok big |> List.map (fun o -> o.Id) |> shouldBe __
+                      let! any = repo.All(paidAtLeast 0m)
+                      ok any |> List.map (fun o -> o.Id) |> shouldBe __
                   }
           ) ]

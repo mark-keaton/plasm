@@ -4,10 +4,13 @@
 4L
 # A sandbox's insert is gone afterwards
 3L
-# A matching model has no schema issues
+# Every query is checked before it runs
+[ "Plasm.Koans.Shop.Mistakes.shouting" ]
 0
-# A sandbox rolls everything back
-(4L, 3L)
+# The model prints the tables it expects
+true
+true
+0
 # Transactions keep their meaning in a sandbox
 3L
 # A database error does not end a sandbox

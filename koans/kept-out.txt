@@ -8,3 +8,31 @@ Description     # how a query displays itself; not an API to program against
 FilterCount     # diagnostic member, not for application code
 LoadPaths       # diagnostic member, not for application code
 PlansMade       # internal
+# The one style. An aggregate's owned and linked records are plain fields,
+# always loaded and written with it; every write is a transaction step.
+Assoc           # relationship fields: an aggregate holds plain lists and options (owns, links)
+NotLoaded       # nothing is left unloaded
+Loaded          # nothing is left unloaded
+preload         # owned and linked records are always loaded; other aggregates are queried
+replacePreload  # as preload
+limitPerParent  # as preload
+Preload         # repo.Preload: as preload
+hasMany         # owns / ownsOrderedBy, or a reference by id
+hasOne          # ownsOptional / ownsOne
+belongsTo       # a typed id field is the reference
+manyToMany      # links / linksOrderedBy
+Rel             # Rel.any / exists / all: List.exists, List.forall, and exists (plasm { ... })
+putChildren     # write the owner with its changed list: Tx.update (original, changed)
+replaceChildren # as putChildren
+putLinks        # as putChildren
+addLinks        # as putChildren
+removeLinks     # as putChildren
+OnReplace       # an owned list is the whole truth: a line left out is deleted
+ReplaceScope    # as OnReplace
+Changeset       # writes take records: Tx.insert, Tx.update (original, changed), Tx.delete
+WriteError      # a transaction's failure is a TxFailure
+Insert          # repo.Insert: every write is a transaction step (Tx.insert)
+Update          # repo.Update: Tx.update
+Delete          # repo.Delete: Tx.delete
+Execute         # repo.Execute: Tx.execute
+ExecuteSql      # repo.ExecuteSql: Tx.executeSql

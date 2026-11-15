@@ -5,6 +5,15 @@ open Plasm
 open Plasm.Koans
 open Plasm.Koans.Shop
 
+/// A record with two fields Plasm cannot store: a Uri has no column type, and
+/// it is not a wrapper or a union Plasm can store by convention.
+type Visit =
+    { Id: int64
+      Page: System.Uri
+      Referrer: System.Uri }
+
+let visits = schema<Visit> "visits" { identityKey (fun v -> v.Id) }
+
 let lesson =
     Lesson.make
         "About records and schemas"
@@ -60,11 +69,15 @@ let lesson =
               "A union is stored as text",
               fun repo ->
                   task {
-                      // OrderStatus is a union with no fields. Scalar.enum in Db.scalars stores
-                      // each case as text: Draft as "draft", Published as "published", and so on.
+                      // OrderStatus is a union with no fields. Plasm stores such a union
+                      // by convention, each case as its name in snake_case: Draft as
+                      // 'draft', Published as 'published', and so on. Nothing registers it.
                       // Here the status column of Order 2 is changed with SQL, as text.
-                      // (The change is made in this koan's sandbox and vanishes when it ends.)
-                      let! _ = repo.ExecuteSql $"update orders set status = 'cancelled', cancellation_reason = 'test' where id = 2"
+                      // (Tx.executeSql is a step running SQL, in a transaction that
+                      // repo.Transact runs; lesson 18 goes deeper. The change is made
+                      // in this koan's sandbox and vanishes when it ends.)
+                      let cancel: Tx<int, unit> = Tx.executeSql $"update orders set status = 'cancelled', cancellation_reason = 'test' where id = 2"
+                      let! _ = repo.Transact cancel
                       let! order = repo.One(plasm { for o in Db.orders do where (o.Id = OrderId 2L) })
                       // Is Status the text, or a case of OrderStatus?
                       (ok order).Value.Status |> shouldBe __
@@ -75,8 +88,11 @@ let lesson =
               "Wrapped keys keep their meaning",
               fun repo ->
                   task {
-                      // CustomerId wraps the bigint key (Scalar.wrap in Db.scalars).
-                      let! ada = repo.One(plasm { for c in Db.customers do where (c.Email = "ada@example.com") })
+                      // CustomerId is a single-case union over int64. By convention Plasm
+                      // stores it as the number it wraps, and reads it back wrapped.
+                      // An Email is stored the same way: email (in Shop.fs) makes one.
+                      let adaEmail = email "ada@example.com"
+                      let! ada = repo.One(plasm { for c in Db.customers do where (c.Email = adaEmail) })
                       let ada = (ok ada).Value
                       ada.Id |> shouldBe __
                   }
@@ -89,8 +105,10 @@ let lesson =
                       // Quantity can only be built by Quantity.create, which refuses zero.
                       Quantity.create 0 |> Result.isOk |> shouldBe __
 
-                      // A zero stored in the database is refused on the way in, with its field named.
-                      let! _ = repo.ExecuteSql $"update order_lines set quantity = 0 where id = 1"
+                      // Plasm reads a Quantity back through Quantity.create, so a zero
+                      // stored in the database is refused on the way in, with its field named.
+                      let zero: Tx<int, unit> = Tx.executeSql $"update order_lines set quantity = 0 where id = 1"
+                      let! _ = repo.Transact zero
                       let! lines = repo.All(Query.from Db.orderLines)
 
                       match lines with
@@ -114,11 +132,11 @@ let lesson =
           Koan.Sync(
               "A model reports every mistake at once",
               fun _ ->
-                  // Building a model with no scalar mappings: CustomerId, OrderId,
-                  // OrderStatus and the rest cannot be stored.
-                  match Model.build [] [ Db.customers; Db.orders ] with
+                  // A Visit (above, under Given) has two fields Plasm cannot store.
+                  // Building a model reports both, not just the first.
+                  match Model.build [] [ visits ] with
                   | Ok _ -> failwith "expected configuration errors"
                   | Error errors ->
-                      (errors.Length > 1) |> shouldBe __
-                      errors |> List.exists (fun e -> e.Model = "Order") |> shouldBe __
+                      errors.Length |> shouldBe __
+                      errors |> List.map (fun e -> e.Property) |> shouldBe __
           ) ]

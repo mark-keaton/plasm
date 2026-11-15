@@ -14,6 +14,6 @@ None
 Some c.Id
 # Filters on joined columns run in SQL
 true
-2L
+[ OrderId 1L; OrderId 2L ]
 # Joined queries compose
 [ "Ada"; "Bob" ]

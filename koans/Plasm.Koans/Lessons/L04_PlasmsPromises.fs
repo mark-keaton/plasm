@@ -32,10 +32,10 @@ let lesson =
           Koan.Sync(
               "Nothing runs until you ask",
               fun repo ->
-                  // A query and a changeset (a description of a write) are values.
-                  // Only a repo call sends anything. (Lessons 06 and 10 go deeper.)
+                  // A query and a transaction (a description of writes) are values.
+                  // Only a repo call sends anything. (Lessons 06 and 13 go deeper.)
                   let _drafts = plasm { for o in Db.orders do where (o.Status = Draft) }
-                  let _dan = Changeset.insert (New.customer "Dan" "dan@example.com")
+                  let _addDan: Tx<Customer, unit> = Tx.insert (New.customer "Dan" "dan@example.com")
                   (commands ()).Length |> shouldBe __
           )
 
@@ -43,12 +43,14 @@ let lesson =
               "No hidden queries",
               fun repo ->
                   task {
-                      // An order's Lines is a relationship: Loaded with the lines, or
-                      // NotLoaded. Reading a NotLoaded relationship never queries the
-                      // database behind your back. (Lesson 09 goes deeper.)
-                      let! orders = repo.All(Query.from Db.orders)
-                      let first = ok orders |> List.find (fun o -> o.Id = OrderId 1L)
-                      first.Lines |> shouldBe __
+                      // An order's Lines are read with the order, every time: one
+                      // command for the order, one for its lines. Reading o.Lines
+                      // afterwards is reading a list; it never queries the database
+                      // behind your back. (Lesson 09 goes deeper.)
+                      let! first = repo.One(plasm { for o in Db.orders do where (o.Id = OrderId 1L) })
+                      let first = (ok first).Value
+                      first.Lines.Length |> shouldBe __
+                      first.Lines |> List.map (fun l -> l.UnitPrice) |> ignore
                       (commands ()).Length |> shouldBe __
                   }
           )
@@ -75,10 +77,11 @@ let lesson =
                       // unique. The failure comes back as an Error you can match on,
                       // here as invalid changes naming the field; nothing is thrown.
                       // (Lessons 10 and 20 go deeper.)
-                      let! r = repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
+                      let addAdaAgain: Tx<Customer, unit> = Tx.insert (New.customer "Ada again" "ada@example.com")
+                      let! r = repo.Transact addAdaAgain
 
-                      match err r with
-                      | WriteError.Invalid cs -> cs.Errors |> List.map (fun e -> e.Field) |> shouldBe __
+                      match (err r).Failure with
+                      | TxFailure.InvalidChanges(_, errors) -> errors |> List.map (fun e -> e.Field) |> shouldBe __
                       | other -> failwithf "expected invalid changes, got %A" other
                   }
           )
@@ -87,11 +90,13 @@ let lesson =
               "Only what you change is written",
               fun repo ->
                   task {
-                      // Changeset.edit describes a change to a record you hold. The
-                      // UPDATE sets only the fields that changed. (Lesson 11 goes deeper.)
+                      // Tx.update (original, changed) describes a change to a record you
+                      // read. The UPDATE sets only the fields that differ. (Lesson 11
+                      // goes deeper.)
                       let! drafts = repo.All(plasm { for o in Db.orders do where (o.Status = Draft) })
                       let draft = ok drafts |> List.head
-                      let! _ = repo.Update(draft |> Changeset.edit (fun o -> { o with Status = Published }))
+                      let publish: Tx<Order, unit> = Tx.update (draft, { draft with Status = Published })
+                      let! _ = repo.Transact publish
                       let update = List.last (commands ())
                       update.Contains "\"status\" = " |> shouldBe __
                       update.Contains "\"total\" = " |> shouldBe __
@@ -127,13 +132,12 @@ let lesson =
           )
 
           Koan.Task(
-              "Relationships load in batches",
+              "What an order owns loads in one batch",
               fun repo ->
                   task {
-                      // preload asks for a relationship to be loaded with the rows.
-                      // The lines of all four orders come in one command, not one
-                      // command per order. (Lesson 09 goes deeper.)
-                      let! _ = repo.All(plasm { for o in Db.orders do preload o.Lines })
+                      // Reading all four orders reads all their lines too: in one
+                      // more command, not one command per order. (Lesson 09 goes deeper.)
+                      let! _ = repo.All(Query.from Db.orders)
                       (commands ()).Length |> shouldBe __
                   }
           )
@@ -147,7 +151,8 @@ let lesson =
                       let! inside =
                           repo.Sandbox(fun repo ->
                               task {
-                                  let! _ = repo.Insert(Changeset.insert (New.customer "Dan" "dan@example.com"))
+                                  let addDan: Tx<Customer, unit> = Tx.insert (New.customer "Dan" "dan@example.com")
+                                  let! _ = repo.Transact addDan
                                   return! repo.Count(Query.from Db.customers)
                               })
 

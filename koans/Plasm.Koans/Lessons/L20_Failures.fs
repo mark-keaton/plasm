@@ -32,7 +32,7 @@ let lesson =
               fun repo ->
                   task {
                       // customers.email is unique (see the schema), and Ada already has this email.
-                      let! r = repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
+                      let! r = repo.Transact(Tx.insert (New.customer "Ada again" "ada@example.com"): Tx<Customer, unit>)
 
                       let outcome =
                           match r with
@@ -47,28 +47,39 @@ let lesson =
               "A failed write says what kind of failure",
               fun repo ->
                   task {
-                      // WriteError.Failed is a failure reported by the database. Its Kind is a DbFailureKind:
-                      // UniqueViolation, ForeignKeyViolation, CheckViolation, NotNullViolation, and others.
-                      // The orders table's rule orders_cancelled_has_reason (a cancelled order needs a
-                      // reason) spans two columns, so it is no single field's error.
-                      let! r = repo.Insert(Changeset.insert (New.order None Cancelled 5m))
+                      // TxFailure.Failed(DbError.Database f) is a failure reported by the database.
+                      // Its Kind is a DbFailureKind: UniqueViolation, ForeignKeyViolation,
+                      // CheckViolation, NotNullViolation, and others. The orders table's rule
+                      // orders_cancelled_has_reason (a cancelled order needs a reason) spans two
+                      // columns, so it is no single field's error.
+                      let! r = repo.Transact(Tx.insert (New.order None Cancelled 5m): Tx<Order, unit>)
 
-                      match r with
-                      | Error(WriteError.Failed f) -> f.Kind |> shouldBe __
+                      match (err r).Failure with
+                      | TxFailure.Failed(DbError.Database f) -> f.Kind |> shouldBe __
                       | other -> failwithf "expected a database failure, got %A" other
                   }
           )
 
           Koan.Task(
-              "A broken rule names its constraint",
+              "Your refusals and Plasm's are apart",
               fun repo ->
                   task {
-                      let! r = repo.Insert(Changeset.insert (New.order None Cancelled 5m))
+                      // A transaction fails with its own reasons (TxFailure.Rejected, of its
+                      // own error type) or with Plasm's: the database's (TxFailure.Failed),
+                      // a stale copy (TxFailure.Conflict) or a refused field
+                      // (TxFailure.InvalidChanges). whose tells them apart.
+                      let whose (r: Result<Order, TransactionError<StockError>>) =
+                          match r with
+                          | Ok _ -> "nobody's"
+                          | Error e ->
+                              match e.Failure with
+                              | TxFailure.Rejected _ -> "the shop's"
+                              | _ -> "Plasm's"
 
-                      match r with
-                      // Constraint is the name of the database constraint that refused the row, if any.
-                      | Error(WriteError.Failed f) -> f.Constraint |> shouldBe __
-                      | other -> failwithf "expected a database failure, got %A" other
+                      let! outOfStock = repo.Transact(Tx.fail (OutOfStock "GIZMO"))
+                      let! cancelled = repo.Transact(Tx.insert (New.order None Cancelled 5m))
+                      whose outOfStock |> shouldBe __
+                      whose cancelled |> shouldBe __
                   }
           )
 
@@ -107,7 +118,8 @@ let lesson =
               "Unreadable rows are named",
               fun repo ->
                   task {
-                      let! _ = repo.ExecuteSql $"update orders set status = 'lost' where id = 1"
+                      let lose: Tx<int, unit> = Tx.executeSql $"update orders set status = 'lost' where id = 1"
+                      let! _ = repo.Transact lose
                       let! r = repo.All(Query.from Db.orders)
 
                       match r with
@@ -154,6 +166,20 @@ let lesson =
           Koan.Sync(
               "Every union is qualified",
               fun _ ->
-                  let cs = Changeset.insert (New.customer "Eve" "eve@example.com")
-                  cs.Action |> shouldBe __
+                  // PaymentStatus (in Shop.fs) has a case Failed, and so does Plasm's
+                  // TxFailure. Plasm's cases are always written with their type name, so
+                  // a plain Failed is your domain's, and TxFailure.Failed is Plasm's.
+                  let paid (s: PaymentStatus) =
+                      match s with
+                      | Succeeded -> true
+                      | Pending
+                      | Failed -> false
+
+                  let databaseFailed (f: TxFailure<unit>) =
+                      match f with
+                      | TxFailure.Failed _ -> true
+                      | _ -> false
+
+                  paid Failed |> shouldBe __
+                  databaseFailed (TxFailure.Conflict "Order") |> shouldBe __
           ) ]

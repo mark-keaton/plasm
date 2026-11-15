@@ -70,13 +70,27 @@ let lesson =
           )
 
           Koan.Task(
+              "An order holds its lines",
+              fun repo ->
+                  task {
+                      // An Order holds its OrderLines as a plain list: its own rows
+                      // in the order_lines table, read with the order every time.
+                      let! orders = repo.All(Query.from Db.orders)
+                      let first = ok orders |> List.find (fun o -> o.Id = OrderId 1L)
+                      first.Lines |> List.map (fun l -> l.ProductId) |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
               "A koan's changes stay in the koan",
               fun repo ->
                   task {
                       // Every koan runs in a sandbox: a transaction that is rolled
                       // back when the koan ends. Inside it, changes are real.
-                      // (Changeset.insert describes a new row; lesson 10 explains it.)
-                      let! _ = repo.Insert(Changeset.insert (New.customer "Dan" "dan@example.com"))
+                      // (repo.Transact runs a transaction, and Tx.insert is a step
+                      // that inserts a record; lessons 11 and 13 explain them.)
+                      let addDan: Tx<Customer, unit> = Tx.insert (New.customer "Dan" "dan@example.com")
+                      let! _ = repo.Transact addDan
                       let! customers = repo.Count(Query.from Db.customers)
                       ok customers |> shouldBe __
                   }

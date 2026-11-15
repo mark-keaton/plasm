@@ -1,7 +1,7 @@
 # Lesson 03 of the Plasm Koans. Each row is one koan: what the learner discovers,
 # and the acceptance scenario of Plasm it teaches (feature: scenario).
 Feature: Meet the shop
-  The koans database is a small shop: customers place orders, each order has lines, and each line is for a product. Every koan starts from the same data, and its changes vanish when it ends.
+  The koans database is a small shop: customers place orders, each order holds its lines, and each line is for a product. Every koan starts from the same data, and its changes vanish when it ends.
 
   Prerequisites: lesson 02.
 
@@ -15,10 +15,11 @@ Feature: Meet the shop
 
     Examples:
       | koan                              | the learner discovers                                                                                | teaches                                                                  |
-      | The shop has three customers      | repo.All(Query.from Db.customers) reads every customer, each as a Customer record                  | core: Querying a mapped property uses its declared type                  |
-      | Counting rows                     | repo.Count counts a table's rows without reading them                                              | aggregates: Counting a filtered query                                    |
+      | The shop has three customers      | repo.All(Query.from Db.customers) reads every customer, each as a Customer record                    | core: Querying a mapped property uses its declared type                  |
+      | Counting rows                     | repo.Count counts a table's rows without reading them                                                | aggregates: Counting a filtered query                                    |
       | The database numbers the rows     | the database gives each row a key in the order the starting data inserts it, so Bob is CustomerId 2L | elegance: Domain scalar wrappers preserve their meaning                  |
       | An order belongs to a customer    | an order's CustomerId names the customer who placed it; Ada has placed two orders                    | core: Client-side processing is an explicit boundary                     |
       | An order may have no customer     | order 4 has no customer, so its CustomerId is None                                                   | core: Nullable values remain explicit                                    |
+      | An order holds its lines          | an Order's Lines is a plain list of its own OrderLines, read with the order                          | owned-collections: Reading an invoice reads its lines                    |
       | A koan's changes stay in the koan | a customer inserted in a koan is there for the rest of that koan                                     | sandbox: Changes inside a sandbox are visible inside and gone afterwards |
       | The next koan starts afresh       | the customer the previous koan inserted is gone: every koan starts from the starting data            | sandbox: Changes inside a sandbox are visible inside and gone afterwards |

@@ -2,10 +2,10 @@
 "Dan"
 4L
 # An insert assigns the key
-Some "dan@example.com"
+Some "Dan"
 # An update returns the new record
 15m
-12.50m
+12.5m
 # The version goes up on update
 1
 2
@@ -19,8 +19,9 @@ ProductId 0L
 true
 false
 # Stale updates are refused
-true
-# Infrastructure is not a domain error
-DbFailureKind.CheckViolation
-# Each call takes its own kind of changeset
-true
+Some(TxFailure.Conflict "Order")
+# Without a version, every column is checked
+Some(TxFailure.Conflict "Customer")
+# A copy from elsewhere says which version it saw
+Some(TxFailure.Conflict "Order")
+12.5m

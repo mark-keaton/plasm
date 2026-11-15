@@ -19,6 +19,27 @@ let private addDan: Tx<string, unit> =
         return dan.Name
     }
 
+/// Why the shop refuses a change: its transactions' own error type.
+type Refusal =
+    | Missing of what: string
+    | Refused of reason: string
+
+/// The domain's decision, a plain function: an order may be cancelled with a
+/// reason, unless it is already published.
+let cancel (reason: string) (order: Order) : Result<Order, string> =
+    if order.Status = Published then
+        Error "a published order cannot be cancelled"
+    else
+        Ok { order with Status = Cancelled; CancellationReason = Some reason }
+
+/// Read what the decision needs, let the domain decide, write what it decided.
+let private cancelOrder (id: OrderId) : Tx<Order, Refusal> =
+    transaction {
+        let! order = Tx.one (plasm { for o in Db.orders do where (o.Id = id) }) |> Tx.orReject (Missing "order")
+        let! cancelled = cancel "duplicate" order |> Tx.ofResult Refused
+        return! Tx.update (order, cancelled)
+    }
+
 let lesson =
     Lesson.make
         "About transactions"
@@ -121,6 +142,54 @@ let lesson =
                       e.RolledBack |> List.map (fun s -> s.Action) |> shouldBe __
                       let! n = customers repo
                       n |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Reading inside a transaction",
+              fun repo ->
+                  task {
+                      // Tx.one reads the one row a query matches (or None), and Tx.count
+                      // counts rows, as steps: inside the transaction, so what they read
+                      // is what the later steps change.
+                      let look =
+                          transaction {
+                              let! ada = Tx.one (plasm { for c in Db.customers do where (c.Name = "Ada") })
+                              let! orders = Tx.count (Query.from Db.orders)
+                              return (ada |> Option.map (fun c -> c.Name)), orders
+                          }
+
+                      let! r = repo.Transact(look: Tx<_, unit>)
+                      ok r |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "A missing row is a rejection",
+              fun repo ->
+                  task {
+                      // A transaction's own reasons to fail are its error type: here
+                      // Refusal, above under Given. Tx.orReject turns a None into one.
+                      let zed =
+                          Tx.one (plasm { for c in Db.customers do where (c.Name = "Zed") })
+                          |> Tx.orReject (Missing "customer Zed")
+
+                      let! r = repo.Transact zed
+                      (err r).Failure |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "The domain decides, the transaction writes",
+              fun repo ->
+                  task {
+                      // cancelOrder (above, under Given) reads an order, lets cancel decide,
+                      // and writes what it decided. Tx.ofResult turns the decision's Error
+                      // into a rejection. Order 2 is a draft; order 1 is published.
+                      let! draft = repo.Transact(cancelOrder (OrderId 2L))
+                      (ok draft).Status |> shouldBe __
+                      let! published = repo.Transact(cancelOrder (OrderId 1L))
+                      (err published).Failure |> shouldBe __
                   }
           )
 

@@ -1,0 +1,26 @@
+# Inserting an order inserts its lines
+5L
+5L
+# The stored order holds its stored lines
+1
+true
+# Saved lines are read back
+2
+10m
+# Adding a line to an order read
+2L
+# Lines that did not change are not written
+0
+2L
+# Lines are matched by key
+OrderLineId 1L
+9m
+# A line left out of the list is deleted
+1L
+# Changing some lines is changing the list
+[ ProductId 1L ]
+# A line's error is the order's field error
+[ "Lines[1].UnitPrice" ]
+4L
+# Deleting an order deletes its lines
+0L

@@ -1,7 +1,6 @@
 /// Lesson 11: About writes.
 module Plasm.Koans.Lessons.L11_Writes
 
-open System
 open Plasm
 open Plasm.Koans
 open Plasm.Koans.Shop
@@ -12,6 +11,12 @@ let private order (repo: Repo) (id: int64) =
         return (ok o).Value
     }
 
+/// Why a transaction failed, or None if it succeeded.
+let private failure (r: Result<'T, TransactionError<unit>>) =
+    match r with
+    | Error e -> Some e.Failure
+    | Ok _ -> None
+
 let lesson =
     Lesson.make
         "About writes"
@@ -19,8 +24,13 @@ let lesson =
               "Inserting adds a row",
               fun repo ->
                   task {
-                      // repo.Insert takes an insert changeset, writes it, and returns the stored record.
-                      let! stored = repo.Insert(Changeset.insert (New.customer "Dan" "dan@example.com"))
+                      // Every write goes through a transaction: a description of steps
+                      // that repo.Transact runs, all or nothing. Tx.insert is a step that
+                      // inserts a record and gives it back as stored. Tx<Customer, unit>
+                      // says the transaction gives a Customer and has no reasons of its
+                      // own to fail (unit); a single step needs to be told that.
+                      let addDan: Tx<Customer, unit> = Tx.insert (New.customer "Dan" "dan@example.com")
+                      let! stored = repo.Transact addDan
                       (ok stored).Name |> shouldBe __
                       let! n = repo.Count(Query.from Db.customers)
                       ok n |> shouldBe __
@@ -31,11 +41,11 @@ let lesson =
               "An insert assigns the key",
               fun repo ->
                   task {
-                      let! stored = repo.Insert(Changeset.insert (New.customer "Dan" "dan@example.com"))
+                      let! stored = repo.Transact(Tx.insert (New.customer "Dan" "dan@example.com"): Tx<Customer, unit>)
                       // The database chose Dan's key; the stored record carries it, so it finds the row again.
                       let danId = (ok stored).Id
                       let! found = repo.One(plasm { for c in Db.customers do where (c.Id = danId) })
-                      (ok found |> Option.map (fun c -> c.Email)) |> shouldBe __
+                      (ok found |> Option.map (fun c -> c.Name)) |> shouldBe __
                   }
           )
 
@@ -43,9 +53,10 @@ let lesson =
               "An update returns the new record",
               fun repo ->
                   task {
+                      // Tx.update (original, changed) changes the record you read into the
+                      // one you made from it with `with`, and gives it back as stored.
                       let! draft = order repo 2L
-                      // repo.Update takes an update changeset and returns the record as stored.
-                      let! updated = repo.Update(draft |> Changeset.edit (fun o -> { o with Total = 15m }))
+                      let! updated = repo.Transact(Tx.update (draft, { draft with Total = 15m }): Tx<Order, unit>)
                       (ok updated).Total |> shouldBe __
                       // Records are values: the one you read is not changed.
                       draft.Total |> shouldBe __
@@ -58,7 +69,7 @@ let lesson =
                   task {
                       // Db.orders declares a version field: Version counts the updates of the row.
                       let! draft = order repo 2L
-                      let! updated = repo.Update(draft |> Changeset.edit (fun o -> { o with Status = Published }))
+                      let! updated = repo.Transact(Tx.update (draft, { draft with Status = Published }): Tx<Order, unit>)
                       draft.Version |> shouldBe __
                       (ok updated).Version |> shouldBe __
                   }
@@ -68,13 +79,13 @@ let lesson =
               "Deleting a record",
               fun repo ->
                   task {
+                      // Tx.delete deletes the record you read.
                       let customers = Query.from Db.customers
                       let! cy = repo.One(plasm { for c in Db.customers do where (c.Name = "Cy") })
-                      // Changeset.delete describes removing a record; only repo.Delete removes it.
-                      let goodbye = Changeset.delete (ok cy).Value
+                      let goodbye: Tx<Customer, unit> = Tx.delete (ok cy).Value
                       let! before = repo.Count customers
                       ok before |> shouldBe __
-                      let! _ = repo.Delete goodbye
+                      let! _ = repo.Transact goodbye
                       let! after = repo.Count customers
                       ok after |> shouldBe __
                   }
@@ -85,7 +96,7 @@ let lesson =
               fun repo ->
                   task {
                       let sprocket = New.product "SPROCKET" "Sprocket"
-                      let! stored = repo.Insert(Changeset.insert sprocket)
+                      let! stored = repo.Transact(Tx.insert sprocket: Tx<Product, unit>)
                       // The database generated a key (its value depends on earlier inserts).
                       ((ok stored).Id <> ProductId 0L) |> shouldBe __
                       sprocket.Id |> shouldBe __
@@ -97,8 +108,8 @@ let lesson =
               fun repo ->
                   task {
                       let! draft = order repo 2L
-                      let! _ = repo.Update(draft |> Changeset.edit (fun o -> { o with Status = Published }))
-                      let update = List.last (commands ())
+                      let! _ = repo.Transact(Tx.update (draft, { draft with Status = Published }): Tx<Order, unit>)
+                      let update = commands () |> List.find (fun c -> c.StartsWith "UPDATE")
                       // Which columns does the UPDATE set?
                       update.Contains "\"status\" = " |> shouldBe __
                       update.Contains "\"total\" = " |> shouldBe __
@@ -109,45 +120,41 @@ let lesson =
               "Stale updates are refused",
               fun repo ->
                   task {
+                      // An update checks that the row is still the one you read: for a
+                      // record with a version, by its version. failure is at the top of
+                      // this lesson.
                       let! first = order repo 1L
-                      let! _ = repo.Update(first |> Changeset.edit (fun o -> { o with Total = 31m }))
-                      // `first` still has the old version.
-                      let! again = repo.Update(first |> Changeset.edit (fun o -> { o with Total = 32m }))
-
-                      let stale =
-                          match again with
-                          | Error(WriteError.Stale _) -> true
-                          | _ -> false
-
-                      stale |> shouldBe __
+                      let! _ = repo.Transact(Tx.update (first, { first with Total = 31m }): Tx<Order, unit>)
+                      // `first` still has the old version: this change was made from a stale copy.
+                      let! again = repo.Transact(Tx.update (first, { first with Total = 32m }): Tx<Order, unit>)
+                      failure again |> shouldBe __
                   }
           )
 
           Koan.Task(
-              "Infrastructure is not a domain error",
+              "Without a version, every column is checked",
               fun repo ->
                   task {
-                      // The orders table has a rule across two columns: a cancelled
-                      // order needs a reason (orders_cancelled_has_reason). It belongs to
-                      // no single field, so breaking it is a database failure, not a
-                      // field's error.
-                      let! r = repo.Insert(Changeset.insert (New.order None Cancelled 5m))
-
-                      match r with
-                      | Error(WriteError.Failed f) -> f.Kind |> shouldBe __
-                      | other -> failwithf "expected a database failure, got %A" other
+                      // A Customer has no version field, so an update checks every column
+                      // of the record it was made from. Another writer renamed Ada first.
+                      let! ada = repo.One(plasm { for c in Db.customers do where (c.Name = "Ada") })
+                      let ada = (ok ada).Value
+                      let! _ = repo.Transact(Tx.update (ada, { ada with Name = "Ada L." }): Tx<Customer, unit>)
+                      let! late = repo.Transact(Tx.update (ada, { ada with Name = "Ada B." }): Tx<Customer, unit>)
+                      failure late |> shouldBe __
                   }
           )
 
-          Koan.Sync(
-              "Each call takes its own kind of changeset",
+          Koan.Task(
+              "A copy from elsewhere says which version it saw",
               fun repo ->
-                  let refusal =
-                      try
-                          repo.Update(Changeset.insert (New.product "X" "X")) |> ignore
-                          ""
-                      with :? ArgumentException as e ->
-                          e.Message
-
-                  refusal.StartsWith "repo.Update was given a changeset for insert" |> shouldBe __
+                  task {
+                      // A copy that comes back from a browser or another service carries
+                      // the version it was read at: expectVersion checks that one instead.
+                      let! draft = order repo 2L
+                      let! r = repo.Transact(Tx.update (draft, { draft with Total = 20m }, expectVersion = 7): Tx<Order, unit>)
+                      failure r |> shouldBe __
+                      let! after = order repo 2L
+                      after.Total |> shouldBe __
+                  }
           ) ]

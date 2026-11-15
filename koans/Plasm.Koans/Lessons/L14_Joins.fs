@@ -72,6 +72,7 @@ let lesson =
                               for o in Db.orders do
                                   leftJoin c in Db.customers on (o.CustomerId = Some c.Id)
                                   where (o.Id = OrderId 4L)
+                                  select (o.Id, c)
                           }
 
                       let! row = repo.One fourth
@@ -89,10 +90,14 @@ let lesson =
                               for o in Db.orders do
                                   join c in Db.customers on (o.CustomerId = Some c.Id)
                                   orderBy o.Id
+                                  select (o.Id, c)
                           }
 
+                      // A whole Customer can be selected; a whole Order cannot, because
+                      // it is read with its lines, which a join does not read. Select
+                      // the order's fields instead.
                       let! rows = repo.All pairs
-                      ok rows |> List.map (fun (o, c) -> o.Id, c.Name) |> shouldBe __
+                      ok rows |> List.map (fun (id, c) -> id, c.Name) |> shouldBe __
                   }
           )
 
@@ -105,10 +110,11 @@ let lesson =
                               for o in Db.orders do
                                   leftJoin c in Db.customers on (o.CustomerId = Some c.Id)
                                   orderBy o.Id
+                                  select (o.Id, c)
                           }
 
                       let! rows = repo.All all
-                      ok rows |> List.map (fun (o, c) -> o.Id, c |> Option.map (fun c -> c.Name)) |> List.last |> shouldBe __
+                      ok rows |> List.map (fun (id, c) -> id, c |> Option.map (fun c -> c.Name)) |> List.last |> shouldBe __
                   }
           )
 
@@ -138,11 +144,13 @@ let lesson =
                               for o in Db.orders do
                                   join c in Db.customers on (o.CustomerId = Some c.Id)
                                   where (c.Name = "Ada")
+                                  orderBy o.Id
+                                  select o.Id
                           }
 
                       (ok (repo.Explain adas)).Sql.Contains "WHERE" |> shouldBe __
-                      let! n = repo.Count adas
-                      ok n |> shouldBe __
+                      let! ids = repo.All adas
+                      ok ids |> shouldBe __
                   }
           )
 
@@ -151,8 +159,8 @@ let lesson =
               fun repo ->
                   task {
                       let withCustomers = plasm { for o in Db.orders do join c in Db.customers on (o.CustomerId = Some c.Id); orderBy o.Id }
-                      let large (q: Query<Order * Customer>) = plasm { for (o, c) in q do where (o.Total > 20m) }
+                      let large (q: Query<Order * Customer>) = plasm { for (o, c) in q do where (o.Total > 20m); select c.Name }
                       let! rows = repo.All(large withCustomers)
-                      ok rows |> List.map (fun (_, c) -> c.Name) |> shouldBe __
+                      ok rows |> shouldBe __
                   }
           ) ]

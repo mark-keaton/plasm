@@ -11,6 +11,9 @@ let private customers (repo: Repo) =
         return ok n
     }
 
+/// A step that inserts Dan, a new customer.
+let private addDan: Tx<Customer, unit> = Tx.insert (New.customer "Dan" "dan@example.com")
+
 let lesson =
     Lesson.make
         "About testing with Plasm"
@@ -33,7 +36,7 @@ let lesson =
                       let! inside =
                           repo.Sandbox(fun repo ->
                               task {
-                                  let! _ = repo.Insert(Changeset.insert (New.customer "Dan" "dan@example.com"))
+                                  let! _ = repo.Transact addDan
                                   return! customers repo
                               })
 
@@ -45,38 +48,36 @@ let lesson =
               "A sandbox's insert is gone afterwards",
               fun repo ->
                   task {
-                      let! _ = repo.Sandbox(fun repo -> repo.Insert(Changeset.insert (New.customer "Dan" "dan@example.com")))
+                      let! _ = repo.Sandbox(fun repo -> repo.Transact addDan)
                       // The sandbox has ended: count with the outer repository.
                       let! after = customers repo
                       after |> shouldBe __
                   }
           )
 
-          Koan.Task(
-              "A matching model has no schema issues",
+          Koan.Sync(
+              "Every query is checked before it runs",
               fun repo ->
-                  task {
-                      // CheckSchema compares the model (Db.model in Shop.fs) with the database's tables and
-                      // columns, and lists every mismatch it finds.
-                      let! issues = repo.CheckSchema()
-                      ok issues |> List.length |> shouldBe __
-                  }
+                  // repo.CheckQueries translates every query an assembly defines as a
+                  // value in its modules, runs none of them, and lists those Plasm cannot
+                  // translate. Call it in a test, or at start-up. Here it checks the
+                  // shop's modules (Shop.fs): Queries, whose queries translate, and
+                  // Mistakes, whose one query, Mistakes.shouting, does not.
+                  let problems = repo.CheckQueries(typeof<Customer>.Assembly, "Plasm.Koans.Shop")
+                  problems |> List.map (fun p -> p.Query) |> shouldBe __
+                  (commands ()).Length |> shouldBe __
           )
 
-          Koan.Task(
-              "A sandbox rolls everything back",
+          Koan.Sync(
+              "The model prints the tables it expects",
               fun repo ->
-                  task {
-                      let! inside =
-                          repo.Sandbox(fun repo ->
-                              task {
-                                  let! _ = repo.Insert(Changeset.insert (New.customer "Dan" "dan@example.com"))
-                                  return! customers repo
-                              })
-
-                      let! after = customers repo
-                      (inside, after) |> shouldBe __
-                  }
+                  // repo.Ddl() prints the tables the model expects, with the constraint
+                  // names Plasm maps errors by. It runs nothing: it is the target for
+                  // the migration you write.
+                  let ddl = repo.Ddl()
+                  ddl.Contains "constraint customers_email_key unique (email)" |> shouldBe __
+                  ddl.Contains "constraint orders_customer_id_fkey foreign key (customer_id) references customers (id)" |> shouldBe __
+                  (commands ()).Length |> shouldBe __
           )
 
           Koan.Task(
@@ -100,9 +101,9 @@ let lesson =
               fun repo ->
                   task {
                       // Every koan already runs in a sandbox: repo is one.
-                      let! duplicate = repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
+                      let! duplicate = repo.Transact(Tx.insert (New.customer "Ada again" "ada@example.com"): Tx<Customer, unit>)
                       Result.isError duplicate |> shouldBe __
-                      let! later = repo.Insert(Changeset.insert (New.customer "Dan" "dan@example.com"))
+                      let! later = repo.Transact addDan
                       Result.isOk later |> shouldBe __
                   }
           )
@@ -121,7 +122,8 @@ let lesson =
               fun repo ->
                   task {
                       // DDL is transactional in PostgreSQL, so the sandbox undoes this too.
-                      let! _ = repo.ExecuteSql $"alter table orders drop column cancellation_reason"
+                      let drop: Tx<int, unit> = Tx.executeSql $"alter table orders drop column cancellation_reason"
+                      let! _ = repo.Transact drop
                       let! issues = repo.CheckSchema()
                       let issue = (ok issues).Head
                       (issue.Kind, issue.Model, issue.Field) |> shouldBe __

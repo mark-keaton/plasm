@@ -16,6 +16,13 @@ true
 "insert Order"
 [ "insert Customer" ]
 3L
+# Reading inside a transaction
+(Some "Ada", 4L)
+# A missing row is a rejection
+TxFailure.Rejected(Missing "customer Zed")
+# The domain decides, the transaction writes
+Cancelled
+TxFailure.Rejected(Refused "a published order cannot be cancelled")
 # An empty transaction is fine
 Ok 42
 # Retries are opt-in

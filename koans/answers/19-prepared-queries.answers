@@ -16,5 +16,6 @@ false
 1L
 # Arguments are read only inside the query
 true
-# Prepared load queries
-[ Failed ]
+# An exists takes an argument too
+[ OrderId 3L ]
+[ OrderId 1L; OrderId 3L ]

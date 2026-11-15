@@ -19,5 +19,5 @@ false
 None
 Some "duplicate"
 # A model reports every mistake at once
-true
-true
+2
+[ Some "Page"; Some "Referrer" ]

@@ -11,26 +11,32 @@ open Plasm.Koans.Browser.Specs.Site
 module Snippets =
     let queries =
         """    task {
-        let! joined = repo.All(plasm { for o in Db.orders do join c in Db.customers on (o.CustomerId = Some c.Id); orderBy o.Id })
+        let! joined = repo.All(plasm { for o in Db.orders do join c in Db.customers on (o.CustomerId = Some c.Id); orderBy o.Id; select (o.Id, c.Name) })
         let! totals = repo.All(plasm { for o in Db.orders do groupBy o.CustomerId; orderBy o.CustomerId; select (o.CustomerId, Agg.count (), Agg.sum o.Total) })
-        let lines = plasm { for l in Db.orderLines do orderBy l.Id; preload l.Product }
-        let! loaded = repo.All(plasm { for o in Db.orders do orderBy o.Id; preload o.Lines lines; preload o.Payments })
-        let pairs = match joined with Ok rows -> rows |> List.map (fun (o, c) -> o.Id, c.Name) | Error e -> failwithf "%A" e
+        let! loaded = repo.All(plasm { for o in Db.orders do orderBy o.Id })
+        let paymentsOf = Query.prepare (fun (ids: Arg<OrderId list>) -> plasm { for p in Db.payments do where (List.contains p.OrderId ids.Value); orderBy p.Id })
+        let pairs = match joined with Ok rows -> rows | Error e -> failwithf "%A" e
+        let orders = match loaded with Ok os -> os | Error e -> failwithf "%A" e
+        let! payments = repo.All(paymentsOf (orders |> List.map (fun o -> o.Id)))
+        let payments = match payments with Ok ps -> ps | Error e -> failwithf "%A" e
         let graph =
-            match loaded with
-            | Ok os ->
-                os |> List.map (fun o ->
-                    o.Id,
-                    (o.Lines |> Assoc.get |> List.map (fun l -> l.Quantity.Value, (Assoc.get l.Product).Sku)),
-                    (o.Payments |> Assoc.get |> List.map (fun p -> p.Status, p.Amount)))
-            | Error e -> failwithf "%A" e
+            orders |> List.map (fun o ->
+                o.Id,
+                (o.Lines |> List.map (fun l -> l.Quantity.Value, l.ProductId)),
+                (payments |> List.filter (fun p -> p.OrderId = o.Id) |> List.map (fun p -> p.Status, p.Amount)))
         return sprintf "%A\n%A\n%A" pairs totals graph
     }"""
 
     let uniqueViolation =
         """    task {
-        let! r = repo.Insert(Changeset.insert (New.customer "Ada again" "ada@example.com"))
-        return (match r with Error(WriteError.Failed f) -> sprintf "%A %A %A" f.Kind f.SqlState f.Constraint | other -> sprintf "%A" other)
+        let! r = repo.Transact(Tx.insert (New.customer "Ada again" "ada@example.com"): Tx<Customer, unit>)
+        return
+            (match r with
+             | Error e ->
+                 match e.Failure with
+                 | TxFailure.InvalidChanges(_, errors) -> errors |> List.map (fun f -> sprintf "%s %A" f.Field f.Kind) |> String.concat ", "
+                 | other -> sprintf "%A" other
+             | Ok _ -> "saved")
     }"""
 
     let transactions =
@@ -45,7 +51,7 @@ module Snippets =
         let! inside =
             repo.Sandbox(fun r ->
                 task {
-                    let! _ = r.Insert(Changeset.insert (New.customer "Eve" "eve@example.com"))
+                    let! _ = r.Transact(Tx.insert (New.customer "Eve" "eve@example.com"): Tx<Customer, unit>)
                     let! n = r.Count(Query.from Db.customers)
                     return n
                 })
@@ -64,7 +70,7 @@ module Snippets =
     let values =
         """    task {
         let placed = DateTime(2026, 3, 4, 5, 6, 7, 891, DateTimeKind.Utc)
-        let! o = repo.Insert(Changeset.insert { New.order (Some(CustomerId 2L)) Cancelled 12345.67m with PlacedAt = placed; CancellationReason = Some "naïve ✓ 'quoted'" })
+        let! o = repo.Transact(Tx.insert { New.order (Some(CustomerId 2L)) Cancelled 12345.67m with PlacedAt = placed; CancellationReason = Some "naïve ✓ 'quoted'" }: Tx<Order, unit>)
         let o = match o with Ok o -> o | Error e -> failwithf "%A" e
         let! back = repo.One(plasm { for x in Db.orders do where (x.Id = o.Id) })
         let back = match back with Ok(Some b) -> { b with Id = OrderId 0L } | other -> failwithf "%A" other
@@ -76,12 +82,13 @@ module Snippets =
 
     let readsAndWrites =
         """    task {
-        let! ada = repo.One(plasm { for c in Db.customers do where (c.Email = "ada@example.com"); preload c.Orders })
+        let adaEmail = email "ada@example.com"
+        let! ada = repo.One(plasm { for c in Db.customers do where (c.Email = adaEmail) })
         let ada = match ada with Ok(Some a) -> a | other -> failwithf "%A" other
-        let! _ = repo.Update(ada |> Changeset.edit (fun c -> { c with Name = "Ada L." }))
-        let! _ = repo.Insert(Changeset.insert (New.product "SPROCKET" "Sprocket"))
-        let! _ = repo.Execute(Bulk.update (plasm { for o in Db.orders do where (o.Status = Draft) }, fun o -> { o with Total = o.Total + 1m }))
-        let! _ = repo.Count(plasm { for o in Db.orders do where (Rel.any (fun p -> p.Status = Succeeded) o.Payments) })
+        let! _ = repo.Transact(Tx.update (ada, { ada with Name = "Ada L." }): Tx<Customer, unit>)
+        let! _ = repo.Transact(Tx.insert (New.product "SPROCKET" "Sprocket"): Tx<Product, unit>)
+        let! _ = repo.Transact(Tx.execute (Bulk.update (plasm { for o in Db.orders do where (o.Status = Draft) }, fun o -> { o with Total = o.Total + 1m })): Tx<int, unit>)
+        let! _ = repo.Count(plasm { for o in Db.orders do where (exists (plasm { for p in Db.payments do where (p.OrderId = o.Id && p.Status = Succeeded) })) })
         return "done"
     }"""
 
@@ -104,7 +111,7 @@ module Snippets =
         let! seen = repo.Count(plasm { for c in Db.customers do where (c.Name = "Pia") })
         let readDone = started.ElapsedMilliseconds
         let! t = tx
-        let! _ = repo.ExecuteSql $"delete from customers where name = 'Pia'"
+        let! _ = repo.Transact(Tx.executeSql $"delete from customers where name = 'Pia'": Tx<int, unit>)
         return sprintf "%A|%b|%d" seen (Result.isOk t) readDone
     }"""
 
@@ -212,7 +219,7 @@ type DatabaseSteps(w: BrowserWorld) =
     [<StepDefinition("the failure is a unique violation naming the constraint")>]
     member _.UniqueNamed() =
         sameResult ()
-        check (fst page = "UniqueViolation Some \"23505\" Some \"customers_email_key\"") (fst page)
+        check (fst page = "Email UniqueConstraint \"customers_email_key\"") (fst page)
 
     [<StepDefinition("a transaction with a failing step and a nested sandbox run in the page")>]
     member _.Transactions() = both Snippets.transactions |> unit

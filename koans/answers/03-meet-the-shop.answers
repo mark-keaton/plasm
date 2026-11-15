@@ -8,6 +8,8 @@ CustomerId 2L
 2
 # An order may have no customer
 None
+# An order holds its lines
+[ ProductId 1L; ProductId 2L ]
 # A koan's changes stay in the koan
 4L
 # The next koan starts afresh
