@@ -24,7 +24,7 @@ references. The schema states the rest: the key, `unique`, `owns` and `links`.
 Write transactions as `Tx<'T, 'E>`, and check queries and the schema at
 start-up. [`examples/Kanban`](../examples/Kanban) is the reference
 application. The row-record style (`Assoc<'T>` with `preload`,
-`Changeset.validate*` and `cast`, the pipeline `Query.*` functions) remains
+the pipeline `Query.*` functions) remains
 supported and specified, but it is not the recommended way to start an
 application.
 
@@ -151,11 +151,11 @@ about 30 s together on the development machine.
 
 **Writes:**
 
-- `Changeset.insert` / `update` / `edit` / `forKey` / `delete`
-- `set`, `clear`, `cast` and `castWith`
-- Validations: `validateRequired`, `validateLength`, `validateOptionalLength`,
-  `validateRange`, `validateInclusion`, `validateFormat`, `validate` and
-  `addError`
+- `Changeset.insert` / `update` / `edit` / `delete` and `expectVersion`
+- No input validation: the domain's types validate (a `create` function is
+  checked on every read), and a constraint the database enforces comes back
+  as the field's error. `validate*`, `cast`, `castWith`, `set`, `clear`,
+  `forKey`, `getField`, `tryGetChange` and `addError` were removed (one style).
 - Constraint mapping: unique, foreign key and check
 - `Changeset.check model`
 - `putChildren` and `replaceChildren`, with `ReplaceScope` and `OnReplace`

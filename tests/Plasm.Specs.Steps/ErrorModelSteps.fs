@@ -223,8 +223,8 @@ let read (f: TxFailure<StockError>) =
     [<StepDefinition("a transaction step's changeset is invalid")>]
     member _.InvalidStep() =
         task {
-            let bad = Changeset.insert (New.order None Draft 10m) |> Changeset.validateRange ((fun o -> o.Total), max = 1m)
-            let! r = w.Repo.Transact(Tx.write bad: Tx<Order, string>)
+            // orders_total_check refuses a negative total: the field's error.
+            let! r = w.Repo.Transact(Tx.insert (New.order None Draft -5m): Tx<Order, string>)
             w.Set("invalidStep", (err r).Failure)
         }
         |> unit

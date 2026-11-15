@@ -1,7 +1,6 @@
 /// Lesson 10: About changesets.
 module Plasm.Koans.Lessons.L10_Changesets
 
-open System.Collections.Generic
 open Plasm
 open Plasm.Koans
 open Plasm.Koans.Shop
@@ -34,24 +33,6 @@ let lesson =
           )
 
           Koan.Sync(
-              "A valid changeset has no errors",
-              fun _ ->
-                  // A validation checks a proposed value; validateLength checks a string's length.
-                  let cs = Changeset.insert (New.customer "Dan" "dan@example.com") |> Changeset.validateLength ((fun c -> c.Name), min = 1)
-                  cs.IsValid |> shouldBe __
-                  cs.Errors |> shouldBe __
-          )
-
-          Koan.Sync(
-              "A validation adds an error",
-              fun _ ->
-                  let cs = Changeset.insert (New.customer "" "dan@example.com") |> Changeset.validateLength ((fun c -> c.Name), min = 1)
-                  // A failed validation adds a FieldError; its Field names the field it is about.
-                  cs.IsValid |> shouldBe __
-                  (List.head cs.Errors).Field |> shouldBe __
-          )
-
-          Koan.Sync(
               "A changeset leaves its input alone",
               fun _ ->
                   let cs = ada |> Changeset.edit (fun c -> { c with Name = "Ada L." })
@@ -68,41 +49,26 @@ let lesson =
                   cs.Changes |> shouldBe __
           )
 
-          Koan.Sync(
-              "Errors can be inspected",
-              fun repo ->
-                  let cs =
-                      Changeset.insert (New.customer "" "not an email")
-                      |> Changeset.validateLength ((fun c -> c.Name), min = 1)
-                      |> Changeset.validateFormat ((fun c -> c.Email), "^[^@\\s]+@[^@\\s]+$")
-
-                  cs.IsValid |> shouldBe __
-                  cs.Errors |> List.map (fun e -> e.Field) |> shouldBe __
-                  (commands ()).Length |> shouldBe __
-          )
-
-          Koan.Sync(
-              "Input cannot touch protected fields",
-              fun _ ->
-                  let form = readOnlyDict [ "name", "Mallory"; "email", "ada@new.example.com"; "id", "99" ]
-                  let cs = Changeset.update ada |> Changeset.cast (form, fun c -> c.Email)
-                  cs.Changes |> List.map fst |> shouldBe __
-          )
-
           Koan.Task(
               "Invalid changes are never written",
               fun repo ->
                   task {
-                      let invalid = Changeset.insert (New.customer "" "dan@example.com") |> Changeset.validateLength ((fun c -> c.Name), min = 1)
-                      let! r = repo.Insert invalid
+                      // Plasm validates nothing itself: the database's constraints
+                      // decide. Db.orders' table checks `total >= 0`
+                      // (orders_total_check), so a negative total is refused, and
+                      // the transaction writes nothing.
+                      let! r = repo.Transact(Tx.insert (New.order None Draft -1m): Tx<Order, unit>)
 
-                      let isInvalid =
+                      let refusedField =
                           match r with
-                          | Error(WriteError.Invalid _) -> true
-                          | _ -> false
+                          | Error e ->
+                              match e.Failure with
+                              | TxFailure.InvalidChanges(_, errors) -> (List.head errors).Field
+                              | _ -> "another failure"
+                          | Ok _ -> "nothing was refused"
 
-                      isInvalid |> shouldBe __
-                      let! n = repo.Count(Query.from Db.customers)
+                      refusedField |> shouldBe __
+                      let! n = repo.Count(Query.from Db.orders)
                       ok n |> shouldBe __
                   }
           )

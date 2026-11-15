@@ -79,8 +79,8 @@ type EleganceSteps(w: World) =
         task {
             do! compiles "let q (id: OrderId) = plasm { for o in orders do where (o.Id = id) }"
             do! rejected "let q (id: CustomerId) = plasm { for o in orders do where (o.Id = id) }"
-            do! compiles "let c (o: Order) (c: CustomerId) = Changeset.update o |> Changeset.set((fun o -> o.CustomerId), Some c)"
-            do! rejected "let c (o: Order) (i: OrderId) = Changeset.update o |> Changeset.set((fun o -> o.CustomerId), Some i)"
+            do! compiles "let c (o: Order) (c: CustomerId) : Tx<Order, unit> = Tx.update (o, { o with CustomerId = Some c })"
+            do! rejected "let c (o: Order) (i: OrderId) : Tx<Order, unit> = Tx.update (o, { o with CustomerId = Some i })"
         }
         |> unit
 
@@ -410,14 +410,14 @@ type EleganceSteps(w: World) =
         task {
             let s: {| Id: OrderId; Status: OrderStatus; Version: int |} = w.Get "summary"
 
-            let cs =
-                Changeset.forKey((fun (o: Order) -> o.Id), s.Id)
-                |> Changeset.expectVersion s.Version
-                |> Changeset.set((fun o -> o.Status), Published)
-
+            // A projection is not a record: an update from it says which rows
+            // and which fields, and nothing else.
+            let byId = plasm { for o in Schemas.orders do where (o.Id = s.Id) }
             w.MarkCommands()
-            let! r = w.Repo.Update cs
-            w.Set("updated", ok r)
+            let! r = w.Repo.Transact(Tx.execute (Bulk.update (byId, fun o -> { o with Status = Published })): Tx<int, unit>)
+            equal 1 (ok r) "rows updated"
+            let! read = w.Repo.One byId
+            w.Set("updated", (ok read).Value)
         }
         |> unit
 
@@ -434,7 +434,7 @@ type EleganceSteps(w: World) =
 
     [<StepDefinition("only explicitly described fields are eligible for update")>]
     member _.OnlyExplicit() =
-        let update = w.CommandsSinceMark |> List.exactlyOne
+        let update = w.CommandsSinceMark |> List.find (fun c -> c.Sql.StartsWith "UPDATE")
         let setClause = update.Sql.Substring(update.Sql.IndexOf " SET ", update.Sql.IndexOf " WHERE " - update.Sql.IndexOf " SET ")
         equal " SET \"status\" = @p0, \"version\" = (\"orders\".\"version\" + @p1)" setClause "SET clause"
 

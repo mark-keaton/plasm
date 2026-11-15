@@ -1,33 +1,11 @@
 namespace Plasm.Specs
 
-open System.Collections.Generic
 open Reqnroll
 open Plasm
 open Plasm.TestDomain.Domain
 open Plasm.TestDomain.Database
 
-module OrderChanges =
-    let parseStatus (s: string) =
-        match s.ToLowerInvariant() with
-        | "draft" -> Ok Draft
-        | "published" -> Ok Published
-        | "cancelled" -> Ok Cancelled
-        | _ -> Error "is invalid"
-
-    /// The only fields an external caller may change.
-    let fromInput (input: IReadOnlyDictionary<string, string>) (order: Order) =
-        Changeset.update order
-        |> Changeset.castWith(input, (fun o -> o.Status), parseStatus)
-        |> Changeset.cast(input, fun o -> o.CancellationReason)
-        |> Changeset.validateOptionalLength((fun o -> o.CancellationReason), max = 200)
-
-    /// Domain validation for new orders.
-    let validateNew (cs: Changeset<Order>) =
-        cs
-        |> Changeset.validateRange((fun o -> o.Total), min = 0m)
-        |> Changeset.validateOptionalLength((fun o -> o.CancellationReason), max = 10)
-
-/// Rule: Changes are explicit and validation is inspectable
+/// Rule: Changes are explicit and the database's refusals are inspectable
 [<Binding>]
 type ChangesetSteps(w: World) =
 
@@ -47,7 +25,6 @@ type ChangesetSteps(w: World) =
     [<StepDefinition("the changeset exposes the proposed status")>]
     member _.ExposesStatus() =
         let cs: Changeset<Order> = w.Get "changeset"
-        equal (Some Published) (cs |> Changeset.tryGetChange (fun o -> o.Status)) "proposed status"
         equal [ "Status", FieldChange.Assigned(box Published) ] cs.Changes "changes"
         equal (Some Published) (cs.Proposed |> Option.map (fun o -> o.Status)) "proposed record"
 
@@ -89,7 +66,7 @@ type ChangesetSteps(w: World) =
     member _.Clears() =
         task {
             let! o = readOrder (w.Get "id")
-            let cs = Changeset.update o |> Changeset.clear (fun o -> o.CancellationReason)
+            let cs = o |> Changeset.edit (fun o -> { o with CancellationReason = None })
             equal [ "CancellationReason", FieldChange.Cleared ] cs.Changes "changes"
             let! r = w.Repo.Update cs
             w.Set("updated", ok r)
@@ -105,99 +82,37 @@ type ChangesetSteps(w: World) =
         }
         |> unit
 
-    // Scenario: Invalid changes can be inspected without execution
-
-    [<StepDefinition("I construct a changeset violating a domain validation")>]
-    member _.ConstructInvalid() =
-        w.MarkCommands()
-
-        let cs =
-            Changeset.insert { New.order None Draft -5m with CancellationReason = Some "far too long a reason" }
-            |> OrderChanges.validateNew
-
-        w.Set("changeset", cs)
-
-    [<StepDefinition("it contains structured validation errors")>]
-    member _.StructuredErrors() =
-        let cs: Changeset<Order> = w.Get "changeset"
-        check (not cs.IsValid) "invalid"
-        equal [ FieldErrorKind.Range; FieldErrorKind.Length ] (cs.Errors |> List.map (fun e -> e.Kind)) "error kinds"
-
-    [<StepDefinition("errors identify the affected fields")>]
-    member _.IdentifyFields() =
-        let cs: Changeset<Order> = w.Get "changeset"
-        equal [ "Total"; "CancellationReason" ] (cs.Errors |> List.map (fun e -> e.Field)) "fields"
-
-    [<StepDefinition("inspecting it performs no database operations")>]
-    member _.InspectNoDb() = equal 0 w.CommandsSinceMark.Length "commands"
-
     // Scenario: Invalid changes are not persisted
 
-    [<StepDefinition("an invalid changeset")>]
-    member _.InvalidChangeset() =
-        w.Set("changeset", Changeset.insert (New.order None Draft -5m) |> OrderChanges.validateNew)
+    [<StepDefinition("a change the database refuses")>]
+    member _.RefusedChange() =
+        // orders_total_check refuses a negative total.
+        w.Set("refused", New.order None Draft -5m)
 
     [<StepDefinition("I submit it for persistence")>]
     member _.Submit() =
         task {
             w.MarkCommands()
-            let! r = w.Repo.Insert(w.Get<Changeset<Order>> "changeset")
+            let! r = w.Repo.Transact(Tx.insert (w.Get<Order> "refused"): Tx<Order, unit>)
             w.Set("result", r)
         }
         |> unit
 
-    [<StepDefinition("the operation returns validation errors")>]
+    [<StepDefinition("the operation returns the field's errors")>]
     member _.ReturnsErrors() =
-        match w.Get<Result<Order, WriteError<Order>>> "result" with
-        | Error(WriteError.Invalid cs) -> equal [ "Total" ] (cs.Errors |> List.map (fun e -> e.Field)) "error fields"
-        | other -> failwithf "expected Invalid, got %A" other
+        match w.Get<Result<Order, TransactionError<unit>>> "result" with
+        | Error e ->
+            match e.Failure with
+            | TxFailure.InvalidChanges(_, errors) ->
+                equal [ "Total", FieldErrorKind.CheckConstraint "orders_total_check" ] (errors |> List.map (fun e -> e.Field, e.Kind)) "errors"
+            | other -> failwithf "expected invalid changes, got %A" other
+        | Ok o -> failwithf "the insert succeeded: %A" o
 
-    [<StepDefinition("no write command is executed")>]
-    member _.NoWrite() =
+    [<StepDefinition("nothing is written")>]
+    member _.NothingWritten() =
         task {
-            equal 0 w.CommandsSinceMark.Length "commands"
             let! n = w.Db.Scalar<int64>("select count(*) from orders")
             equal 0L n "orders"
-        }
-        |> unit
-
-    // Scenario: External input cannot change protected fields
-
-    [<StepDefinition("only specified fields are accepted from external input")>]
-    member _.OnlySpecified() =
-        task {
-            let! id = Seed.order w.Db None "draft" 10m (Seed.at 1)
-            let! o = readOrder id
-            w.Set("order", o)
-        }
-        |> unit
-
-    [<StepDefinition("external input includes an Order identifier or concurrency version")>]
-    member _.HostileInput() =
-        let input =
-            dict
-                [ "id", "999"
-                  "version", "42"
-                  "total", "0.01"
-                  "status", "published" ]
-            |> fun d -> Dictionary(d) :> IReadOnlyDictionary<string, string>
-
-        let o: Order = w.Get "order"
-        w.Set("changeset", OrderChanges.fromInput input o)
-
-    [<StepDefinition("those fields cannot be changed through that input path")>]
-    member _.Protected() =
-        task {
-            let cs: Changeset<Order> = w.Get "changeset"
-            equal [ "Status" ] (cs.Changes |> List.map fst) "accepted changes"
-            let! r = w.Repo.Update cs
-            let updated = ok r
-            let original: Order = w.Get "order"
-            equal original.Id updated.Id "identifier"
-            equal (original.Version + 1) updated.Version "version advanced only by optimistic concurrency"
-            equal original.Total updated.Total "unaccepted field"
-            let! stored = w.Db.Scalar<int>("select version from orders")
-            equal 2 stored "stored version"
         }
         |> unit
 

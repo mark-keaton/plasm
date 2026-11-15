@@ -4,25 +4,13 @@ ChangeAction.Update
 # Changes are visible before saving
 "ada@new.example.com"
 "Ada"
-# A valid changeset has no errors
-true
-[]
-# A validation adds an error
-false
-"Name"
 # A changeset leaves its input alone
 "Ada"
 [ "Name" ]
 # Unchanged and cleared differ
 [ "CancellationReason", FieldChange.Cleared ]
-# Errors can be inspected
-false
-[ "Name"; "Email" ]
-0
-# Input cannot touch protected fields
-[ "Email" ]
 # Invalid changes are never written
-true
-3L
+"Total"
+4L
 # Constraints become field errors
 [ "Email" ]

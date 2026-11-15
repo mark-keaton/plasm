@@ -181,13 +181,10 @@ baseline.
   absent from the map; that is the third state.
 - `Changeset.edit (fun o -> { o with ... })` records exactly the fields the
   function alters.
-- `Changeset.forKey` builds an update from partial data (a projection): only
-  the fields set are written, never defaults.
-- `Changeset.cast` accepts external input field by field, so identifiers and
-  versions cannot be changed unless they are cast explicitly.
-- Validations are pure functions. As in Ecto, they check changed values on
-  update and proposed values on insert. `validateRequired` checks the resulting
-  value.
+- *Amended 2026-11-14 (one style):* `Changeset.forKey`, `cast`, `set`,
+  `clear` and the validations were removed. Validation is the domain's (its
+  types' constructors), external input is parsed by the application into
+  domain values, and a change from partial data is a bulk update over a query.
 - `Changeset.check model` adds model-aware checks without database access:
   primary-key or version changes, and duplicate child identities.
 - Declared unique, foreign-key and check constraints turn matching violations

@@ -57,7 +57,7 @@ short schemas. The shape it sends over the wire (`src/Shared/Api.fs`) is the
 application's own: Plasm does not serialize.
 
 Plasm also supports an older row-record style: `Assoc<'T>` fields loaded with
-`preload`, validation with `Changeset.validate*`, and the pipeline `Query.*`
+`preload`, changesets, and the pipeline `Query.*`
 functions. It is fully supported and specified, but it is not the
 recommended way to start an application. Use it when the stored rows really
 are a different shape from the domain, or when relationships should load only
@@ -109,11 +109,9 @@ let unpaidWithCustomer =
             select (o.Id, o.Total, c |> Option.map (fun c -> c.Email))
     }
 
-// Changes are values. Validation is pure.
-let cs =
-    order
-    |> Changeset.edit (fun o -> { o with Status = Cancelled })
-    |> Changeset.validateRange((fun o -> o.Total), min = 0m)
+// Changes are values. Plasm validates nothing: a constraint the database
+// enforces comes back as the field's error.
+let cs = order |> Changeset.edit (fun o -> { o with Status = Cancelled })
 
 match! repo.Update cs with
 | Ok updated -> ...

@@ -17,7 +17,6 @@ let ``write path smoke`` () =
 
         let cs =
             Changeset.insert draft
-            |> Changeset.validateRange((fun o -> o.Total), min = 0m)
             |> Changeset.putChildren((fun o -> o.Lines), [ Changeset.insert (New.line p 2 5m) ])
 
         let! inserted = db.Repo.Insert cs

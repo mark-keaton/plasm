@@ -391,140 +391,12 @@ let ``ecto: foreign key constraint`` () =
         | other -> failwithf "expected Invalid, got %A" other
     }
 
-// repo.exs: test "insert and update with changeset" — invalid changesets are not written
-[<Fact>]
-let ``ecto: invalid changeset is not written`` () =
-    task {
-        let! db = freshDefault ()
-        let cs = Changeset.insert order0 |> Changeset.validateRange((fun o -> o.Total), max = 5m)
-        let! r = db.Repo.Insert cs
-
-        match r with
-        | Error(WriteError.Invalid c) -> Assert.Equal("Total", c.Errors.Head.Field)
-        | other -> failwithf "expected Invalid, got %A" other
-
-        Assert.Equal(0, db.Recorder.Count)
-    }
-
-// ===========================================================================
-// Changesets (test/ecto/changeset_test.exs)
-// ===========================================================================
-
-// changeset_test.exs: test "cast/4: with valid string keys"
-[<Fact>]
-let ``ecto: cast/4: with valid string keys`` () =
-    let cs =
-        Changeset.update order0
-        |> Changeset.cast(input [ "total", "12.50"; "cancellation_reason", "late" ], fun o -> o.Total)
-        |> Changeset.cast(input [ "total", "12.50"; "cancellation_reason", "late" ], fun o -> o.CancellationReason)
-
-    Assert.Equal<(string * FieldChange) list>(
-        [ "Total", FieldChange.Assigned(box 12.50m); "CancellationReason", FieldChange.Assigned(box (Some "late")) ],
-        cs.Changes
-    )
-
-    Assert.True cs.IsValid
-
-// changeset_test.exs: cast/4 only casts permitted fields
-[<Fact>]
-let ``ecto: cast/4: ignores fields that are not permitted`` () =
-    let raw = input [ "id", "999"; "version", "7"; "total", "3" ]
-    let cs = Changeset.update order0 |> Changeset.cast(raw, fun o -> o.Total)
-    Assert.Equal<string list>([ "Total" ], cs.Changes |> List.map fst)
-
-// changeset_test.exs: test "cast/4: with empty values"
-[<Fact>]
-let ``ecto: cast/4: with empty values`` () =
-    let original = { order0 with CancellationReason = Some "late" }
-    let cs = Changeset.update original |> Changeset.cast(input [ "cancellation_reason", "" ], fun o -> o.CancellationReason)
-    Assert.Equal<(string * FieldChange) list>([ "CancellationReason", FieldChange.Cleared ], cs.Changes)
-
-// changeset_test.exs: cast errors mark the field invalid ("is invalid")
-[<Fact>]
-let ``ecto: cast/4: type errors mark the field as invalid`` () =
-    let cs = Changeset.update order0 |> Changeset.cast(input [ "total", "ten" ], fun o -> o.Total)
-    Assert.False cs.IsValid
-    Assert.Equal<FieldError list>([ { Field = "Total"; Message = "is invalid"; Kind = FieldErrorKind.CastFailed } ], cs.Errors)
-    Assert.Empty cs.Changes
-
 // changeset_test.exs: test "change/2 with a struct"
 [<Fact>]
 let ``ecto: change/2 with a struct`` () =
     let cs = order0 |> Changeset.edit (fun o -> { o with Total = 11m; Status = order0.Status })
     Assert.Equal<string list>([ "Total" ], cs.Changes |> List.map fst)
     Assert.Equal(Some order0, cs.Data)
-
-// changeset_test.exs: test "put_change/3 and delete_change/2"
-[<Fact>]
-let ``ecto: put_change/3 drops a change equal to the data`` () =
-    let cs =
-        Changeset.update order0
-        |> Changeset.set((fun o -> o.Total), 20m)
-        |> Changeset.set((fun o -> o.Total), order0.Total)
-
-    Assert.Empty cs.Changes
-
-// changeset_test.exs: test "fetch_change/2"
-[<Fact>]
-let ``ecto: fetch_change/2`` () =
-    let cs = Changeset.update order0 |> Changeset.set((fun o -> o.Total), 20m)
-    Assert.Equal(Some 20m, cs |> Changeset.tryGetChange(fun o -> o.Total))
-    Assert.Equal(None, cs |> Changeset.tryGetChange(fun o -> o.Status))
-    Assert.Equal(Some Draft, cs |> Changeset.getField(fun o -> o.Status))
-
-// changeset_test.exs: test "validate_required/3"
-[<Fact>]
-let ``ecto: validate_required/3`` () =
-    let blank = Changeset.insert (New.customer "  " "a@x") |> Changeset.validateRequired(fun (c: Customer) -> c.Name)
-    Assert.Equal<FieldError list>([ { Field = "Name"; Message = "can't be blank"; Kind = FieldErrorKind.Required } ], blank.Errors)
-    let missing = Changeset.insert order0 |> Changeset.validateRequired(fun o -> o.CancellationReason)
-    Assert.Equal("CancellationReason", missing.Errors.Head.Field)
-    let present = Changeset.insert (New.customer "Ada" "a@x") |> Changeset.validateRequired(fun (c: Customer) -> c.Name)
-    Assert.True present.IsValid
-
-// changeset_test.exs: test "validate_length/3 with string"
-[<Fact>]
-let ``ecto: validate_length/3 with string`` () =
-    let v name = Changeset.insert (New.customer name "a@x") |> Changeset.validateLength((fun (c: Customer) -> c.Name), min = 3, max = 5)
-    Assert.True((v "abcd").IsValid)
-    Assert.Equal("should be at least 3 character(s)", (v "ab").Errors.Head.Message)
-    Assert.Equal("should be at most 5 character(s)", (v "abcdef").Errors.Head.Message)
-
-// changeset_test.exs: test "validate_number/3"
-[<Fact>]
-let ``ecto: validate_number/3`` () =
-    let v t = Changeset.insert { order0 with Total = t } |> Changeset.validateRange((fun o -> o.Total), min = 0m, max = 100m)
-    Assert.True((v 0m).IsValid)
-    Assert.True((v 100m).IsValid)
-    Assert.Equal(FieldErrorKind.Range, (v -1m).Errors.Head.Kind)
-    Assert.Equal(FieldErrorKind.Range, (v 101m).Errors.Head.Kind)
-
-// changeset_test.exs: test "validate_inclusion/3"
-[<Fact>]
-let ``ecto: validate_inclusion/3`` () =
-    let v s = Changeset.insert { order0 with Status = s } |> Changeset.validateInclusion((fun o -> o.Status), [ Draft; Published ])
-    Assert.True((v Published).IsValid)
-    Assert.Equal<FieldError list>([ { Field = "Status"; Message = "is invalid"; Kind = FieldErrorKind.Inclusion } ], (v Cancelled).Errors)
-
-// changeset_test.exs: test "validate_format/4"
-[<Fact>]
-let ``ecto: validate_format/4`` () =
-    let v e = Changeset.insert (New.customer "A" e) |> Changeset.validateFormat((fun c -> c.Email), "@")
-    Assert.True((v "a@x").IsValid)
-    Assert.Equal<FieldError list>([ { Field = "Email"; Message = "has invalid format"; Kind = FieldErrorKind.Format } ], (v "ax").Errors)
-
-// changeset_test.exs: validations other than validate_required only run on changes
-[<Fact>]
-let ``ecto: validations on updates only check changed fields`` () =
-    let invalidData = { order0 with Total = -5m }
-    let unchanged = Changeset.update invalidData |> Changeset.validateRange((fun o -> o.Total), min = 0m)
-    Assert.True unchanged.IsValid
-    let changed = Changeset.update invalidData |> Changeset.set((fun o -> o.Total), -1m) |> Changeset.validateRange((fun o -> o.Total), min = 0m)
-    Assert.False changed.IsValid
-
-// ===========================================================================
-// Multi (test/ecto/multi_test.exs) — Plasm's Tx
-// ===========================================================================
 
 // multi_test.exs: test "new" (empty multi) / repo transaction of an empty multi
 [<Fact>]
@@ -591,12 +463,11 @@ let ``ecto: error`` () =
 let ``ecto: multi with invalid changeset returns the failed operation and its errors`` () =
     task {
         let! db = freshDefault ()
-        let bad = Changeset.insert order0 |> Changeset.validateRange((fun o -> o.Total), max = 1m)
-
+        // orders_total_check refuses a negative total.
         let tx =
             transaction {
                 let! _ = Tx.insert order0
-                let! _ = Tx.write bad
+                let! _ = Tx.insert { order0 with Total = -1m }
                 return ()
             }
 

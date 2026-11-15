@@ -193,7 +193,12 @@ Feature: Predictable functional persistence for F#
       Then new values containing the loaded relationships are returned
       And the original values remain unchanged
 
-  Rule: Changes are explicit and validation is inspectable
+  Rule: Changes are explicit and the database's refusals are inspectable
+
+    # One style: validation is the domain's (its types' constructors), and
+    # Plasm validates no input. "Invalid changes can be inspected without
+    # execution" and "External input cannot change protected fields" were
+    # removed with Changeset.validate* and Changeset.cast.
 
     Scenario: Creating a changeset preserves its input
       Given an existing Order
@@ -208,22 +213,11 @@ Feature: Predictable functional persistence for F#
       When a changeset explicitly clears CancellationReason
       Then the stored value becomes absent
 
-    Scenario: Invalid changes can be inspected without execution
-      When I construct a changeset violating a domain validation
-      Then it contains structured validation errors
-      And errors identify the affected fields
-      And inspecting it performs no database operations
-
     Scenario: Invalid changes are not persisted
-      Given an invalid changeset
+      Given a change the database refuses
       When I submit it for persistence
-      Then the operation returns validation errors
-      And no write command is executed
-
-    Scenario: External input cannot change protected fields
-      Given only specified fields are accepted from external input
-      When external input includes an Order identifier or concurrency version
-      Then those fields cannot be changed through that input path
+      Then the operation returns the field's errors
+      And nothing is written
 
     Scenario: Database constraints produce structured errors
       Given a changeset for a field the model states is unique

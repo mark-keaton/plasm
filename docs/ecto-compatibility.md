@@ -27,20 +27,20 @@ Outcomes and failure semantics are compared, not SQL text. Each test is named
 | repo.exs | optimistic locking in update/delete operations | Same outcome (`Stale` instead of `StaleEntryError`). Versioning is declared on the schema rather than per changeset. |
 | repo.exs | unique constraint | Deliberately different (strict design, step 4): Ecto needs `unique_constraint` on each changeset. Plasm maps a constraint with PostgreSQL's default name (`customers_email_key`) to its field with nothing declared, "has already been taken"; any other name stays a database failure (`Failed` with `UniqueViolation`) |
 | repo.exs | foreign key constraint | Same pattern (`<table>_<column>_fkey`, "does not exist") |
-| repo.exs | invalid changeset is not written | Same: no command issued |
-| changeset_test.exs | cast/4: with valid string keys | Same (field name, camelCase or snake_case keys) |
-| changeset_test.exs | cast/4 permitted fields | Same: unpermitted keys (id, version) ignored |
-| changeset_test.exs | cast/4: with empty values | Same: `""` clears an optional field (Ecto: nil) |
-| changeset_test.exs | cast type error | Same: "is invalid", no change recorded |
+| repo.exs | invalid changeset is not written | Removed (one style): Plasm validates no input; the domain's constructors do |
+| changeset_test.exs | cast/4: with valid string keys | Removed (one style): Plasm validates no input; the domain's constructors do |
+| changeset_test.exs | cast/4 permitted fields | Removed (one style): Plasm validates no input; the domain's constructors do |
+| changeset_test.exs | cast/4: with empty values | Removed (one style): Plasm validates no input; the domain's constructors do |
+| changeset_test.exs | cast type error | Removed (one style): Plasm validates no input; the domain's constructors do |
 | changeset_test.exs | change/2 with a struct | Same: values equal to the data are not changes (via `Changeset.edit`) |
-| changeset_test.exs | put_change/3 and delete_change/2 | Same: putting the original value back removes the change |
-| changeset_test.exs | fetch_change/2 | Same (`tryGetChange`, `getField`) |
-| changeset_test.exs | validate_required/3 | Same: blank strings and None are "can't be blank" |
-| changeset_test.exs | validate_length/3 with string | Same messages |
-| changeset_test.exs | validate_number/3 | Same semantics (`validateRange`, inclusive bounds) |
-| changeset_test.exs | validate_inclusion/3 | Same |
-| changeset_test.exs | validate_format/4 | Same |
-| changeset_test.exs | validations only check changes on update | Same |
+| changeset_test.exs | put_change/3 and delete_change/2 | Removed (one style): Plasm validates no input; the domain's constructors do |
+| changeset_test.exs | fetch_change/2 | Removed (one style): Plasm validates no input; the domain's constructors do |
+| changeset_test.exs | validate_required/3 | Removed (one style): Plasm validates no input; the domain's constructors do |
+| changeset_test.exs | validate_length/3 with string | Removed (one style): Plasm validates no input; the domain's constructors do |
+| changeset_test.exs | validate_number/3 | Removed (one style): Plasm validates no input; the domain's constructors do |
+| changeset_test.exs | validate_inclusion/3 | Removed (one style): Plasm validates no input; the domain's constructors do |
+| changeset_test.exs | validate_format/4 | Removed (one style): Plasm validates no input; the domain's constructors do |
+| changeset_test.exs | validations only check changes on update | Removed (one style): Plasm validates no input; the domain's constructors do |
 | multi_test.exs | new (empty multi) | Same: succeeds; Plasm issues no command at all |
 | multi_test.exs | insert/update changeset, insert fun | Same; dependencies are typed `let!` bindings instead of a changes map |
 | multi_test.exs | error | Same: failure identifies the step; earlier steps rolled back and listed as `RolledBack` |

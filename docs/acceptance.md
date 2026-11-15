@@ -82,9 +82,9 @@ the same guarantee more exhaustively.
 |---|---|---|---|---|
 | Creating a changeset preserves its input | Implemented and verified | `ChangesetSteps.fs` | EctoCompat.fs (changeset cases); Properties.fs (edit diff) |  |
 | Unspecified and explicitly cleared values differ | Implemented and verified | `ChangesetSteps.fs` | EctoCompat.fs (changeset cases); Properties.fs (edit diff) |  |
-| Invalid changes can be inspected without execution | Implemented and verified | `ChangesetSteps.fs` | EctoCompat.fs (changeset cases); Properties.fs (edit diff) |  |
-| Invalid changes are not persisted | Implemented and verified | `ChangesetSteps.fs` | EctoCompat.fs (changeset cases); Properties.fs (edit diff) |  |
-| External input cannot change protected fields | Implemented and verified | `ChangesetSteps.fs` | EctoCompat.fs (changeset cases); Properties.fs (edit diff) |  |
+| ~~Invalid changes can be inspected without execution~~ | Removed | | | Removed (one style, step b): validation is the domain's constructors; Plasm validates no input. |
+| Invalid changes are not persisted | Implemented and verified | `ChangesetSteps.fs` |  | Rewritten (one style, step b): a change the database refuses (orders_total_check) comes back as the field's error, and the transaction writes nothing. |
+| ~~External input cannot change protected fields~~ | Removed | | | Removed (one style, step b): with `cast` gone, external input is parsed by the application into domain values. |
 | Database constraints produce structured errors | Implemented and verified | `ChangesetSteps.fs` | EctoCompat.fs (changeset cases); Properties.fs (edit diff) |  |
 | Generated values are returned immutably | Implemented and verified | `ChangesetSteps.fs` | EctoCompat.fs (changeset cases); Properties.fs (edit diff) |  |
 
@@ -613,7 +613,7 @@ the same guarantee more exhaustively.
 | A NULL that is still NULL matches | Implemented and verified | `ConcurrencySteps.fs` |  | `IS NOT DISTINCT FROM`, not `=`. |
 | A NULL another writer filled in is a conflict | Implemented and verified | `ConcurrencySteps.fs` |  |  |
 | The check is part of the change's own command | Implemented and verified | `ConcurrencySteps.fs` |  | No read before the write. |
-| A change made from a key alone is not checked | Implemented and verified | `ConcurrencySteps.fs` |  | Nothing to compare; a versioned record still needs `expectVersion`. |
+| A change made from a key alone is not checked | Implemented and verified | `ConcurrencySteps.fs` |  | Rewritten (one style, step b): a change by key alone is a bulk update (`Bulk.update` over a query by id). |
 | A versioned record is checked by its version alone | Implemented and verified | `ConcurrencySteps.fs` |  | Both mechanisms are supported: a `version` field opts in (for records that cross a wire). |
 
 ### constraints.feature

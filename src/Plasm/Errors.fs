@@ -98,12 +98,6 @@ type DbError =
 /// What kind of rule a field error represents.
 [<RequireQualifiedAccess>]
 type FieldErrorKind =
-    | Required
-    | Length
-    | Range
-    | Format
-    | Inclusion
-    | CastFailed
     | UniqueConstraint of constraintName: string
     | ForeignKeyConstraint of constraintName: string
     | CheckConstraint of constraintName: string

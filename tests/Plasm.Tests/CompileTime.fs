@@ -63,14 +63,9 @@ let b = plasm { for o in orders do where (o.Total > 0m); select {| Id = o.Id; Re
 let ``accepts changesets`` () =
     accepts
         """
-let change (o: Order) (input: System.Collections.Generic.IReadOnlyDictionary<string, string>) =
+let change (o: Order) =
     o
-    |> Changeset.edit (fun o -> { o with Status = Published })
-    |> Changeset.set((fun o -> o.Total), 12m)
-    |> Changeset.clear(fun o -> o.CancellationReason)
-    |> Changeset.cast(input, fun o -> o.Total)
-    |> Changeset.validateRange((fun o -> o.Total), min = 0m)
-    |> Changeset.validateOptionalLength((fun o -> o.CancellationReason), max = 100)
+    |> Changeset.edit (fun o -> { o with Status = Published; CancellationReason = None })
     |> Changeset.replaceChildren((fun o -> o.Lines), ReplaceScope.allChildren, [])
 """
 
@@ -135,22 +130,6 @@ let ``rejects where after select`` () =
         "let q = plasm { for o in orders do select o.Id; where (o.Total > 1m) }"
         "FS0193"
         "Projection<OrderId>"
-
-[<Fact>]
-let ``rejects setting a field to a value of the wrong type`` () =
-    rejects
-        "let f (o: Order) = Changeset.update o |> Changeset.set((fun o -> o.Total), 1m)"
-        "let f (o: Order) = Changeset.update o |> Changeset.set((fun o -> o.Total), \"1\")"
-        "FS0001"
-        "string"
-
-[<Fact>]
-let ``rejects clearing a non-optional field`` () =
-    rejects
-        "let f (o: Order) = Changeset.update o |> Changeset.clear(fun o -> o.CancellationReason)"
-        "let f (o: Order) = Changeset.update o |> Changeset.clear(fun o -> o.Total)"
-        "FS0001"
-        "option"
 
 [<Fact>]
 let ``rejects replacing children without stating the replacement scope`` () =

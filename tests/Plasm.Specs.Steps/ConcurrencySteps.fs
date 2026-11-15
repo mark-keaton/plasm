@@ -82,8 +82,13 @@ type ConcurrencySteps(w: World) =
     [<StepDefinition("I change the Note's text by its key alone")>]
     member _.ChangeByKey() =
         task {
-            let! r = repo().Update(Changeset.forKey((fun (n: Note) -> n.Id), (read ()).Id) |> Changeset.set ((fun n -> n.Text), "mine"))
-            saved r
+            // A change by key alone is a bulk update: it names rows, not a record read.
+            let id = (read ()).Id
+            let! r = repo().Transact(Tx.execute (Bulk.update (plasm { for n in notes do where (n.Id = id) }, fun n -> { n with Text = "mine" })): Tx<int, unit>)
+
+            match r with
+            | Ok 1 -> w.Set("noteWrite", (Ok() : Result<unit, string * bool>))
+            | other -> w.Set("noteWrite", (Error(string other, false) : Result<unit, string * bool>))
         }
         |> unit
 

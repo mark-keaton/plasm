@@ -165,15 +165,9 @@ type AssociationWriteSteps(w: World) =
             let! order = orderWithLines id
             let line = Assoc.get order.Lines |> List.exactlyOne
 
-            let invalidByValidation =
-                line
-                |> Changeset.edit (fun l -> { l with UnitPrice = -1m })
-                |> Changeset.validateRange((fun l -> l.UnitPrice), min = 0m)
-
-            // Passes validation but violates a database check constraint.
+            // Violates the database's check constraint.
             let invalidInDatabase = line |> Changeset.edit (fun l -> { l with UnitPrice = -1m })
             let parent = order |> Changeset.edit (fun o -> { o with Status = Published })
-            w.Set("byValidation", parent |> Changeset.putChildren((fun o -> o.Lines), [ invalidByValidation ]))
             w.Set("inDatabase", parent |> Changeset.putChildren((fun o -> o.Lines), [ invalidInDatabase ]))
         }
         |> unit
@@ -181,12 +175,7 @@ type AssociationWriteSteps(w: World) =
     [<StepDefinition("I submit them as one association write")>]
     member _.SubmitTogether() =
         task {
-            let! a = w.Repo.Update(w.Get<Changeset<Order>> "byValidation")
             let! b = w.Repo.Update(w.Get<Changeset<Order>> "inDatabase")
-
-            match a with
-            | Error(WriteError.Invalid cs) -> equal [ "Lines[0].UnitPrice" ] (cs.Errors |> List.map (fun e -> e.Field)) "child error path"
-            | other -> failwithf "expected Invalid, got %A" other
 
             // The database's check (order_lines_unit_price_check) comes back as
             // the child field's error.

@@ -123,36 +123,6 @@ let ``snapshot reads do not see writes committed between commands`` () =
 // -- Writes ------------------------------------------------------------------
 
 [<Fact>]
-let ``forKey updates only the stated fields`` () =
-    task {
-        let! db = freshDefault ()
-        let! p = Seed.product db "A"
-        let! r = db.Repo.Update(Changeset.forKey((fun (x: Product) -> x.Id), p) |> Changeset.set((fun x -> x.Name), "renamed"))
-        let updated = ok (r |> Result.mapError string)
-        Assert.Equal("renamed", updated.Name)
-        Assert.Equal("A", updated.Sku)
-        Assert.Contains("SET \"name\" = @p0 WHERE", db.Recorder.Writes.Head.Sql)
-    }
-
-[<Fact>]
-let ``forKey on a versioned record requires an expected version`` () =
-    task {
-        let! db = freshDefault ()
-        let! o = Seed.order db None "draft" 1m (Seed.at 1)
-        let cs = Changeset.forKey((fun (x: Order) -> x.Id), o) |> Changeset.set((fun x -> x.Total), 2m)
-        let! missing = db.Repo.Update cs
-
-        match missing with
-        | Error(WriteError.Invalid c) -> Assert.Equal("Version", c.Errors.Head.Field)
-        | other -> failwithf "expected Invalid, got %A" other
-
-        let! ok1 = db.Repo.Update(cs |> Changeset.expectVersion 1)
-        Assert.Equal(2, (ok (ok1 |> Result.mapError string)).Version)
-        let! stale = db.Repo.Update(cs |> Changeset.expectVersion 1)
-        Assert.True(match stale with Error(WriteError.Stale _) -> true | _ -> false)
-    }
-
-[<Fact>]
 let ``changing the primary key or the version is rejected before writing`` () =
     task {
         let! db = freshDefault ()
