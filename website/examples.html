@@ -603,7 +603,7 @@ let recent =
   LIMIT @p1
     @p0 = &quot;published&quot;
     @p1 = 5L
-  then Lines (HasMany, OrderLine), one command per batch of keys:
+  then Lines (owns, OrderLine), one command per batch of keys:
   SELECT &quot;t0&quot;.&quot;id&quot; AS &quot;id&quot;, &quot;t0&quot;.&quot;order_id&quot; AS &quot;order_id&quot;, &quot;t0&quot;.&quot;product_id&quot; AS &quot;product_id&quot;, &quot;t0&quot;.&quot;quantity&quot; AS &quot;quantity&quot;, &quot;t0&quot;.&quot;unit_price&quot; AS &quot;unit_price&quot;
   FROM &quot;order_lines&quot; AS &quot;t0&quot;
   WHERE (&quot;t0&quot;.&quot;order_id&quot; = ANY(@p0))

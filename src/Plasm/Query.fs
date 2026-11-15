@@ -273,7 +273,7 @@ module internal QueryOps =
 /// type-checked by the compiler and translated, never run client-side.
 type QueryBuilder() =
 
-    member _.For(_source: Schema<'T>, _body: 'T -> Query<'T>) : Query<'T> = Query<'T>(QueryDef.Empty typeof<'T>)
+    member _.For(_source: Table<'T>, _body: 'T -> Query<'T>) : Query<'T> = Query<'T>(QueryDef.Empty typeof<'T>)
     member _.For(source: Query<'T>, _body: 'T -> Query<'T>) : Query<'T> = source
     member _.Yield(_: 'T) : Query<'T> = Query<'T>(QueryDef.Empty typeof<'T>)
     member _.Zero() : Query<'T> = Query<'T>(QueryDef.Empty typeof<'T>)
@@ -329,8 +329,8 @@ type QueryBuilder() =
     [<CustomOperation("join", IsLikeJoin = true, JoinConditionWord = "on")>]
     member _.Join
         (
-            outer: Schema<'T>,
-            _inner: Schema<'U>,
+            outer: Table<'T>,
+            _inner: Table<'U>,
             [<ReflectedDefinition>] outerKey: Expr<'T -> 'K>,
             [<ReflectedDefinition>] innerKey: Expr<'U -> 'K>,
             _result: 'T -> 'U -> 'R
@@ -342,7 +342,7 @@ type QueryBuilder() =
     member _.Join
         (
             outer: Query<'T>,
-            _inner: Schema<'U>,
+            _inner: Table<'U>,
             [<ReflectedDefinition>] outerKey: Expr<'T -> 'K>,
             [<ReflectedDefinition>] innerKey: Expr<'U -> 'K>,
             _result: 'T -> 'U -> 'R
@@ -354,8 +354,8 @@ type QueryBuilder() =
     [<CustomOperation("leftJoin", IsLikeJoin = true, JoinConditionWord = "on")>]
     member _.LeftJoin
         (
-            outer: Schema<'T>,
-            _inner: Schema<'U>,
+            outer: Table<'T>,
+            _inner: Table<'U>,
             [<ReflectedDefinition>] outerKey: Expr<'T -> 'K>,
             [<ReflectedDefinition>] innerKey: Expr<'U -> 'K>,
             _result: 'T -> 'U option -> 'R
@@ -367,7 +367,7 @@ type QueryBuilder() =
     member _.LeftJoin
         (
             outer: Query<'T>,
-            _inner: Schema<'U>,
+            _inner: Table<'U>,
             [<ReflectedDefinition>] outerKey: Expr<'T -> 'K>,
             [<ReflectedDefinition>] innerKey: Expr<'U -> 'K>,
             _result: 'T -> 'U option -> 'R
@@ -496,7 +496,7 @@ type Query =
         let t = Prepared.template (fun () -> (build (Arg<'A>(0)) (Arg<'B>(1)) (Arg<'C>(2))).Def)
         PreparedQuery3<'A, 'B, 'C, 'T>(t) :> obj :?> ('A -> 'B -> 'C -> Query<'T>)
 
-    static member from(_schema: Schema<'T>) : Query<'T> = Query<'T>(QueryDef.Empty typeof<'T>)
+    static member from(_schema: Table<'T>) : Query<'T> = Query<'T>(QueryDef.Empty typeof<'T>)
 
 
 [<AutoOpen>]

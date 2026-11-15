@@ -255,12 +255,12 @@ module StoredExtensions =
 
     /// The records of type `'T`, as a query source: `for c in tableOf<Card> do`.
     /// What is stored, and where, is read from `'T` (see Model.build).
-    let tableOf<'T> : Schema<'T> =
+    let tableOf<'T> : Table<'T> =
         match Derive.cached typeof<'T> with
-        | Ok d -> Schema<'T>(d)
+        | Ok d -> Table<'T>(d)
         | Error _ ->
             // Reported by Model.build; a query only needs the type.
-            Schema<'T>(
+            Table<'T>(
                 { Type = typeof<'T>
                   Table = defaultArg (Derive.tableName typeof<'T>) ""
                   Key = None

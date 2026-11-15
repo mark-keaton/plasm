@@ -608,7 +608,7 @@ module Model =
 
     /// Validates schemas and scalar mappings together. Fails with every problem
     /// found, each identifying the model and property.
-    let buildSchemas (scalars: ScalarMapping list) (schemas: ISchema list) : Result<Model, ConfigError list> =
+    let internal buildSchemas (scalars: ScalarMapping list) (schemas: ISchema list) : Result<Model, ConfigError list> =
         let errors = ResizeArray<ConfigError>()
         let scalarDict = Dictionary<Type, ScalarMapping>()
 
@@ -710,11 +710,3 @@ module Model =
     /// Like `build` but raises `PlasmConfigurationException` listing every error.
     /// Intended for application start-up.
     let buildOrFail scalars (types: Type list) = orFail (build scalars types)
-
-    /// Like `buildSchemas` but raises `PlasmConfigurationException` listing every error.
-    let buildSchemasOrFail scalars schemas =
-        match buildSchemas scalars schemas with
-        | Ok m -> m
-        | Error es ->
-            let lines = es |> List.map (fun e -> "  - " + string e) |> String.concat "\n"
-            raise (PlasmConfigurationException $"Invalid persistence configuration:\n{lines}")

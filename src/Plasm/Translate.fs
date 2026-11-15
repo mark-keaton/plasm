@@ -1122,7 +1122,7 @@ and innerQuery ctx (whole: Expr) (q: Expr) : QueryDef =
                     let pt = ps.[i].ParameterType
 
                     match a with
-                    | _ when mi.Name = "For" && i = 0 && pt.IsGenericType && pt.GetGenericTypeDefinition() = typedefof<Schema<_>> -> null
+                    | _ when mi.Name = "For" && i = 0 && pt.IsGenericType && pt.GetGenericTypeDefinition() = typedefof<Table<_>> -> null
                     | _ when mi.Name = "For" && i = 1 -> null
                     | _ when typeof<ICheckable>.IsAssignableFrom pt || (pt.IsGenericType && pt.GetGenericTypeDefinition() = typedefof<Query<_>>) -> build a
                     | QuoteTyped x | QuoteRaw x when typeof<Expr>.IsAssignableFrom pt ->
