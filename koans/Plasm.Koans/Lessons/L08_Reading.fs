@@ -26,7 +26,7 @@ let lesson =
                   task {
                       // repo.One reads at most one record. Its value is an option:
                       // Some record when a row matches, None when none does.
-                      let! cy = repo.One(plasm { for c in Db.customers do where (c.Email = "cy@example.com") })
+                      let! cy = repo.One(plasm { for c in Db.customers do where (c.Name = "Cy") })
                       ok cy |> Option.map (fun c -> c.Name) |> shouldBe __
                   }
           )
@@ -100,9 +100,9 @@ let lesson =
               "Leaving the database is explicit",
               fun repo ->
                   task {
-                      let! published = repo.All(plasm { for o in Db.orders do where (o.Status = Published) })
+                      let! succeeded = repo.All(plasm { for p in Db.payments do where (p.Status = Succeeded) })
                       // From here on it is an ordinary F# list, in memory.
-                      ok published |> List.sumBy (fun o -> o.Total) |> shouldBe __
+                      ok succeeded |> List.sumBy (fun p -> p.Amount) |> shouldBe __
                       (commands ()).Length |> shouldBe __
                   }
           )

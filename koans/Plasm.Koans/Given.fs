@@ -20,8 +20,9 @@ type Definition =
       Cases: string list
       /// For a schema, its table.
       Table: string option
-      /// For a record, the record each relationship field points at.
-      Assocs: (string * string) list }
+      /// For a record, the record each list or option field holds (what an
+      /// aggregate owns or links to, read with it).
+      Holds: (string * string) list }
 
 type KoanGiven =
     { Tables: string list
@@ -38,7 +39,7 @@ let private fieldsOf (line: string) =
     fieldPattern.Matches line |> Seq.map (fun m -> m.Groups.[1].Value) |> List.ofSeq
 let private caseLine = Regex(@"^\s*\|\s*(\w+)")
 let private schemaCall = Regex("schema<(\\w+)> \"(\\w+)\"")
-let private assocField = Regex(@"(\w+)\s*:\s*Assoc<(\w+)")
+let private heldField = Regex(@"(\w+)\s*:\s*(\w+) (?:list|option)\b")
 
 /// Splits source into declarations, each with the doc comment above it.
 let parse (source: string) (lines: string[]) : Definition list =
@@ -93,7 +94,7 @@ let parse (source: string) (lines: string[]) : Definition list =
               Fields = if isRecord then body |> List.collect fieldsOf else []
               Cases = if isRecord || not (typeStart.IsMatch body.Head) then [] else body |> List.tail |> List.choose (fun l -> let m = caseLine.Match l in if m.Success then Some m.Groups.[1].Value else None)
               Table = (let m = schemaCall.Match(String.concat "\n" code) in if m.Success then Some m.Groups.[2].Value else None)
-              Assocs = assocField.Matches(String.concat "\n" code) |> Seq.map (fun m -> m.Groups.[1].Value, m.Groups.[2].Value) |> List.ofSeq }))
+              Holds = heldField.Matches(String.concat "\n" code) |> Seq.map (fun m -> m.Groups.[1].Value, m.Groups.[2].Value) |> List.ofSeq }))
 
 let private mentions (text: string) (name: string) =
     Regex.IsMatch(text, @"(?<![\w.])" + Regex.Escape name + @"(?!\w)")
@@ -106,9 +107,9 @@ let private stringWords (code: string) =
 let tables: string list =
     Regex.Matches(KoansData.schema, @"create table (\w+)") |> Seq.map (fun m -> m.Groups.[1].Value) |> List.ofSeq
 
-/// Join tables, by the schema that names them (manyToMany ... "article_tags").
+/// Join tables, by the schema that names them (links ... "article_tags").
 let private joinTables (d: Definition) =
-    Regex.Matches(String.concat "\n" d.Code, "manyToMany \\([^)]*\\) \\([^)]*\\) \"(\\w+)\"") |> Seq.map (fun m -> m.Groups.[1].Value) |> List.ofSeq
+    Regex.Matches(String.concat "\n" d.Code, "links(?:OrderedBy)? \\([^)]*\\) \"(\\w+)\"") |> Seq.map (fun m -> m.Groups.[1].Value) |> List.ofSeq
 
 let private memberLine = Regex(@"^\s*member \w+\.(\w+)")
 
@@ -148,11 +149,24 @@ let forKoan (shop: Definition list) (helpers: Definition list) (body: string) : 
 
     let words = stringWords body
 
-    let viaRelationships =
+    // The schema storing a record, with its table.
+    let schemaOf (record: string) =
+        shop |> List.tryPick (fun d -> if d.Name.StartsWith "Db." && d.Table.IsSome && (schemaCall.Match(String.concat "\n" d.Code).Groups.[1].Value = record) then Some(d, d.Table.Value) else None)
+
+    // What a record holds (its owned or linked records), read whenever it is.
+    let heldBy (record: string) =
+        byName.TryFind record |> Option.map (fun r -> r.Holds |> List.choose (snd >> schemaOf)) |> Option.defaultValue []
+
+    // Records reached through a field the koan reads (o.Lines, a.Tags).
+    // (the owner's schema, which names any join table, and the held table)
+    let viaFields =
         records
-        |> List.collect (fun r -> r.Assocs)
-        |> List.filter (fun (field, _) -> Regex.IsMatch(body, @"\." + field + @"\b"))
-        |> List.choose (fun (_, target) -> shop |> List.tryPick (fun d -> if d.Name.StartsWith "Db." && d.Table.IsSome && (schemaCall.Match(String.concat "\n" d.Code).Groups.[1].Value = target) then Some(d, d.Table.Value) else None))
+        |> List.collect (fun r -> r.Holds |> List.map (fun h -> r.Name, h))
+        |> List.filter (fun (_, (field, _)) -> Regex.IsMatch(body, @"\." + field + @"\b"))
+        |> List.choose (fun (owner, (_, target)) ->
+            match schemaOf owner, schemaOf target with
+            | Some(o, _), Some(_, t) -> Some(o, t)
+            | _ -> None)
 
     let used =
         set [
@@ -161,11 +175,14 @@ let forKoan (shop: Definition list) (helpers: Definition list) (body: string) : 
                 | Some t -> yield t
                 | None -> ()
                 yield! joinTables d
+
+                for _, t in heldBy (schemaCall.Match(String.concat "\n" d.Code).Groups.[1].Value) do
+                    yield t
             for t in tables do
                 if words.Contains t then yield t
-            for d, t in viaRelationships do
+            for owner, t in viaFields do
                 yield t
-                yield! joinTables d ]
+                yield! joinTables owner ]
 
     let usedTables = tables |> List.filter used.Contains
 
@@ -211,7 +228,7 @@ let repo: Definition =
       Fields = []
       Cases = []
       Table = None
-      Assocs = [] }
+      Holds = [] }
 
 /// The Given entry for repo, when a koan uses it.
 let forRepo (body: string) =

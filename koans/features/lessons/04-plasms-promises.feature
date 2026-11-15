@@ -14,14 +14,14 @@ Feature: Plasm's promises
     And it teaches the acceptance scenario "<teaches>"
 
     Examples:
-      | koan                                  | the learner discovers                                                                         | teaches                                                             |
-      | Records stay plain F#                 | a record read from the database is an ordinary value: changing a copy sends nothing           | elegance: Persistence metadata does not require mutable records     |
-      | Nothing runs until you ask            | describing a query and a new row sends no command                                             | core: Constructing a change performs no database operations         |
-      | No hidden queries                     | a relationship that was not loaded is NotLoaded, and reading it never queries                 | core: Reading a relationship never triggers hidden database access  |
-      | Nothing is evaluated behind your back | code Plasm cannot turn into SQL is an Error, and no rows are read to run it in memory         | core: Unsupported translation is explicit                           |
-      | A failure is a value                  | a duplicate email comes back as an Error naming the Email field; nothing is thrown            | core: Database constraints produce structured errors                |
-      | Only what you change is written       | an update sets only the fields that changed                                                   | elegance: Projected values do not imply complete entity state       |
-      | The model is checked before any query | building a model reports what it cannot store, before any query runs                          | core: Unsupported model representations fail during configuration   |
-      | Queries mean what F# means            | = None in a query is IS NULL in SQL, and matches the rows = None matches in F#                | elegance: Null comparisons have explicit semantics                  |
-      | Relationships load in batches         | loading the lines of every order takes one command for the orders and one for all their lines | core: Relationship loading batches across parents                   |
-      | Tests roll back                       | a sandbox's changes are seen inside it and gone when it ends                                  | sandbox: A sandbox inside a sandbox rolls back to the outer sandbox |
+      | koan                                  | the learner discovers                                                                   | teaches                                                               |
+      | Records stay plain F#                 | a record read from the database is an ordinary value: changing a copy sends nothing     | elegance: Persistence metadata does not require mutable records       |
+      | Nothing runs until you ask            | describing a query and an insert sends no command                                       | core: Constructing a change performs no database operations           |
+      | No hidden queries                     | an order's lines come with it, and reading them is reading a list: nothing more is sent | owned-collections: Reading an invoice reads its lines                 |
+      | Nothing is evaluated behind your back | code Plasm cannot turn into SQL is an Error, and no rows are read to run it in memory   | core: Unsupported translation is explicit                             |
+      | A failure is a value                  | a duplicate email comes back as an Error naming the Email field; nothing is thrown      | constraints: A duplicate of a unique field is the field's error       |
+      | Only what you change is written       | an update sets only the fields that differ from the record read                         | typed-transactions: An update writes only the columns that changed    |
+      | The model is checked before any query | building a model reports what it cannot store, before any query runs                    | core: Unsupported model representations fail during configuration     |
+      | Queries mean what F# means            | = None in a query is IS NULL in SQL, and matches the rows = None matches in F#          | elegance: Null comparisons have explicit semantics                    |
+      | What an order owns loads in one batch | reading every order takes one command for the orders and one for all their lines        | owned-collections: Every invoice's lines are read in one more command |
+      | Tests roll back                       | a sandbox's changes are seen inside it and gone when it ends                            | sandbox: A sandbox inside a sandbox rolls back to the outer sandbox   |

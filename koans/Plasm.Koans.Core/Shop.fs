@@ -1,5 +1,7 @@
-/// The koans' shop: Customers, Orders, OrderLines, Products, Payments, Articles
-/// and Tags, Accounts and Profiles. Ordinary F# records; persistence lives in Db.
+/// The koans' shop: Customers, Orders (with their OrderLines), Products,
+/// Payments, Articles (linked to Tags), Accounts (with their Profiles) and
+/// Deliveries. Ordinary F# records, the application's own; how they are stored
+/// lives in Db.
 module Plasm.Koans.Shop
 
 open System
@@ -35,13 +37,38 @@ type Quantity =
 
     static member unsafeOne = Quantity 1
 
+/// An email address. The only way to build one is `Email.create`, which
+/// refuses text without an '@'. Plasm stores it as text and reads it back
+/// through `Email.create` (by convention: no mapping is registered).
+type Email =
+    private
+    | Email of string
+
+    member e.Value =
+        let (Email v) = e
+        v
+
+    static member create(v: string) =
+        if v.Contains "@" then Ok(Email v) else Error $"an email needs an @, got '{v}'"
+
+/// A customer. Customers are referred to by id: an order holds a CustomerId,
+/// not the customer.
 type Customer =
     { Id: CustomerId
       Name: string
-      Email: string
-      Orders: Assoc<Order list> }
+      Email: Email }
 
-and Order =
+/// One line of an order: its own row in order_lines, owned by the order.
+type OrderLine =
+    { Id: OrderLineId
+      OrderId: OrderId
+      ProductId: ProductId
+      Quantity: Quantity
+      UnitPrice: decimal }
+
+/// An order: an aggregate holding its lines, which are read and written with
+/// it. Its customer is another aggregate, referred to by id.
+type Order =
     { Id: OrderId
       CustomerId: CustomerId option
       Status: OrderStatus
@@ -49,24 +76,15 @@ and Order =
       CancellationReason: string option
       PlacedAt: DateTime
       Version: int
-      Customer: Assoc<Customer option>
-      Lines: Assoc<OrderLine list>
-      Payments: Assoc<Payment list> }
+      Lines: OrderLine list }
 
-and OrderLine =
-    { Id: OrderLineId
-      OrderId: OrderId
-      ProductId: ProductId
-      Quantity: Quantity
-      UnitPrice: decimal
-      Product: Assoc<Product> }
-
-and Product =
+type Product =
     { Id: ProductId
       Sku: string
       Name: string }
 
-and Payment =
+/// A payment for an order: an aggregate of its own, referring to its order by id.
+type Payment =
     { Id: PaymentId
       OrderId: OrderId
       Amount: decimal
@@ -76,27 +94,29 @@ and Payment =
 type AccountId = AccountId of int64
 type ProfileId = ProfileId of int64
 
-/// An Account has at most one Profile (has-one; the key is on the Profile).
-type Account =
-    { Id: AccountId
-      Name: string
-      Profile: Assoc<Profile option> }
-
-and Profile =
+/// An account's profile: its own row in profiles, owned by the account.
+type Profile =
     { Id: ProfileId
       AccountId: AccountId
       Bio: string }
 
+/// An account, which owns at most one profile.
+type Account =
+    { Id: AccountId
+      Name: string
+      Profile: Profile option }
+
 type ArticleId = ArticleId of int64
 type TagId = TagId of int64
 
-/// Articles and Tags are linked many-to-many through article_tags.
+/// A tag: shared by the articles that link to it.
+type Tag = { Id: TagId; Name: string }
+
+/// An article, linked to shared tags through the article_tags table.
 type Article =
     { Id: ArticleId
       Title: string
-      Tags: Assoc<Tag list> }
-
-and Tag = { Id: TagId; Name: string }
+      Tags: Tag list }
 
 type DeliveryId = DeliveryId of int64
 
@@ -134,36 +154,33 @@ let qty n =
     | Ok q -> q
     | Error e -> failwith e
 
-/// Schemas, scalar mappings and the model.
+let email s =
+    match Email.create s with
+    | Ok e -> e
+    | Error e -> failwith e
+
+/// Schemas and the model. Everything else follows from the records' types:
+/// a column is named after its field, an id is stored as the number it wraps,
+/// a Quantity or an Email as its value (read back through its `create`), and
+/// OrderStatus or PaymentStatus as its case name ('draft', 'published').
 module Db =
 
     let customers =
         schema<Customer> "customers" {
             identityKey (fun c -> c.Id)
             unique (fun c -> c.Email)
-            hasMany (fun c -> c.Orders) (fun o -> o.CustomerId)
         }
 
-    let private ordersWith (linesOnReplace: OnReplace) =
+    /// An order is read and written whole: its lines are its own rows, in
+    /// the order of their key.
+    let orders =
         schema<Order> "orders" {
             identityKey (fun o -> o.Id)
             version (fun o -> o.Version)
-            belongsTo (fun o -> o.Customer) (fun o -> o.CustomerId)
-            hasMany (fun o -> o.Lines) (fun l -> l.OrderId) linesOnReplace
-            hasMany (fun o -> o.Payments) (fun p -> p.OrderId)
+            ownsOrderedBy (fun o -> o.Lines) (fun l -> l.OrderId) (fun l -> l.Id)
         }
 
-    /// Orders whose Lines have no OnReplace policy (the default: reject).
-    let orders = ordersWith OnReplace.Reject
-
-    /// Orders whose omitted Lines are deleted on replacement.
-    let ordersDeletingLines = ordersWith OnReplace.Delete
-
-    let orderLines =
-        schema<OrderLine> "order_lines" {
-            identityKey (fun l -> l.Id)
-            belongsTo (fun l -> l.Product) (fun l -> l.ProductId)
-        }
+    let orderLines = schema<OrderLine> "order_lines" { identityKey (fun l -> l.Id) }
 
     let products =
         schema<Product> "products" {
@@ -173,10 +190,12 @@ module Db =
 
     let payments = schema<Payment> "payments" { identityKey (fun p -> p.Id) }
 
+    /// An article owns only its links to tags (rows of article_tags); the
+    /// tags themselves are shared.
     let articles =
         schema<Article> "articles" {
             identityKey (fun a -> a.Id)
-            manyToMany (fun a -> a.Tags) "article_tags" "article_id" "tag_id"
+            links (fun a -> a.Tags) "article_tags" "article_id" "tag_id"
         }
 
     let tags = schema<Tag> "tags" { identityKey (fun t -> t.Id) }
@@ -184,33 +203,39 @@ module Db =
     let accounts =
         schema<Account> "accounts" {
             identityKey (fun a -> a.Id)
-            hasOne (fun a -> a.Profile) (fun p -> p.AccountId)
+            ownsOptional (fun a -> a.Profile) (fun p -> p.AccountId)
         }
 
     let profiles = schema<Profile> "profiles" { identityKey (fun p -> p.Id) }
 
     let deliveries = schema<Delivery> "deliveries" { identityKey (fun d -> d.Id) }
 
-    let scalars =
-        [ Scalar.wrap CustomerId (fun (CustomerId v) -> v)
-          Scalar.wrap OrderId (fun (OrderId v) -> v)
-          Scalar.wrap ProductId (fun (ProductId v) -> v)
-          Scalar.wrap OrderLineId (fun (OrderLineId v) -> v)
-          Scalar.wrap PaymentId (fun (PaymentId v) -> v)
-          Scalar.wrap ArticleId (fun (ArticleId v) -> v)
-          Scalar.wrap TagId (fun (TagId v) -> v)
-          Scalar.wrap AccountId (fun (AccountId v) -> v)
-          Scalar.wrap ProfileId (fun (ProfileId v) -> v)
-          Scalar.wrap DeliveryId (fun (DeliveryId v) -> v)
-          Scalar.tryWrap Quantity.create (fun (q: Quantity) -> q.Value)
-          Scalar.enum [ Draft, "draft"; Published, "published"; Cancelled, "cancelled" ]
-          Scalar.enum [ Pending, "pending"; Succeeded, "succeeded"; Failed, "failed" ] ]
-
-    let schemasWith (orders: Schema<Order>) : ISchema list =
+    let schemas: ISchema list =
         [ customers; orders; orderLines; products; payments; articles; tags; accounts; profiles; deliveries ]
 
-    let model = Model.buildOrFail scalars (schemasWith orders)
-    let modelDeletingLines = Model.buildOrFail scalars (schemasWith ordersDeletingLines)
+    let model = Model.buildOrFail [] schemas
+
+/// The shop's queries: values, so `repo.CheckQueries` can check them all.
+module Queries =
+
+    let drafts = plasm { for o in Db.orders do where (o.Status = Draft) }
+
+    /// A customer's orders, oldest first.
+    let ordersOf =
+        Query.prepare (fun (customer: Arg<CustomerId>) ->
+            plasm {
+                for o in Db.orders do
+                    where (o.CustomerId = Some customer.Value)
+                    orderBy o.Id
+            })
+
+/// A query written by mistake: `shout` is F# that SQL cannot run, so Plasm
+/// cannot translate it. `repo.CheckQueries` finds it before it is ever run.
+module Mistakes =
+
+    let shout (s: string) = s.ToUpperInvariant() + "!"
+
+    let shouting = plasm { for c in Db.customers do where (shout c.Name = "ADA!") }
 
 /// Values used to build records before insert (generated fields are ignored).
 module New =
@@ -224,23 +249,19 @@ module New =
           CancellationReason = None
           PlacedAt = DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
           Version = 1
-          Customer = NotLoaded
-          Lines = NotLoaded
-          Payments = NotLoaded }
+          Lines = [] }
 
     let line product quantity price =
         { Id = OrderLineId unsaved
           OrderId = OrderId unsaved
           ProductId = product
           Quantity = qty quantity
-          UnitPrice = price
-          Product = NotLoaded }
+          UnitPrice = price }
 
-    let customer name email =
+    let customer name address =
         { Id = CustomerId unsaved
           Name = name
-          Email = email
-          Orders = NotLoaded }
+          Email = email address }
 
     let product sku name =
         { Id = ProductId unsaved

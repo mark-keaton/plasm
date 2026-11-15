@@ -4,8 +4,8 @@
 # Nothing runs until you ask
 0
 # No hidden queries
-NotLoaded
-1
+2
+2
 # Nothing is evaluated behind your back
 true
 0
@@ -20,7 +20,7 @@ false
 # Queries mean what F# means
 true
 1L
-# Relationships load in batches
+# What an order owns loads in one batch
 2
 # Tests roll back
 4L

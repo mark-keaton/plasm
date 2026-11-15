@@ -116,8 +116,8 @@ let lesson =
               "Captured values become parameters",
               fun repo ->
                   task {
-                      let email = "bob@example.com"
-                      let byEmail = plasm { for c in Db.customers do where (c.Email = email) }
+                      let bobs = email "bob@example.com"
+                      let byEmail = plasm { for c in Db.customers do where (c.Email = bobs) }
                       // Is the email written into the SQL text?
                       (ok (repo.Explain byEmail)).Sql.Contains "bob@example.com" |> shouldBe __
                       let! bob = repo.One byEmail
