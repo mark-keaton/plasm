@@ -56,8 +56,7 @@ let lesson =
                       let sku = "GADGET"
                       let! found = repo.Sql<Product>($"SELECT * FROM products WHERE sku = {sku}")
                       ok found |> List.map (fun p -> p.Name) |> shouldBe __
-                      // commands () is the SQL text this koan has sent, in order.
-                      (List.last (commands ())).Contains "GADGET" |> shouldBe __
+                      (List.last (sqlSent ())).Contains "GADGET" |> shouldBe __
                   }
           )
 
@@ -92,7 +91,7 @@ let lesson =
                       let name = "Ada'; drop table customers; --"
                       let! found = repo.Sql<Customer>($"SELECT * FROM customers WHERE name = {name}")
                       ok found |> shouldBe __
-                      (List.last (commands ())).Contains "@p0" |> shouldBe __
+                      (List.last (sqlSent ())).Contains "@p0" |> shouldBe __
                   }
           )
 

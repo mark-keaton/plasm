@@ -47,7 +47,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 | `tests/Plasm.Tests`: `Behaviour.fs` (real database) | Edge paths: `One`, projections, materialisation errors, snapshot reads, key and version changes refused, owned items of another owner refused and rolled back, `Tx.traverse`, cancellation | 11 pass |
 | `tests/Plasm.Tests`: `Batch2.fs` (SQL shape and real database) | Aggregates and grouping errors; bulk misuse errors, foreign-key failures, a 40,000-row insert split into two commands that roll back together, composite conflict targets; raw SQL with list, option and domain parameters; prepared patterns; join-table type checks | 26 pass |
 | `tests/Plasm.Tests`: `ConventionCost.fs`, `Smoke.fs`, `WriteSmoke.fs` | A value read by convention allocates no more than a registered mapping (three types); a page read and a write path end to end | 5 pass |
-| `koans/Plasm.Koans.Specs` | Every koan (22 lessons, 224 koans) passes with its reference answer and stops at its blank as shipped; the notebook runs in a hosted session and a real kernel | 249 checks pass |
+| `koans/Plasm.Koans.Specs` | Every koan (22 lessons, 225 koans) passes with its reference answer and stops at its blank as shipped; the notebook runs in a hosted session and a real kernel | 249 checks pass |
 | `koans/browser` | The browser koans (PGlite) | 119 scenarios pass |
 
 Run the library's tests with `dotnet test` from the repository root (Docker is

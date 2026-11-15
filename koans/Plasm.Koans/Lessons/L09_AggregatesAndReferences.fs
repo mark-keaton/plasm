@@ -69,7 +69,7 @@ let lesson =
                       for o in ok orders do
                           o.Lines |> ignore
 
-                      (commands ()).Length |> shouldBe __
+                      sqlSent().Length |> shouldBe __
                   }
           )
 
@@ -81,7 +81,7 @@ let lesson =
                       // and only theirs: the second command asks for the lines of two orders.
                       let! page = repo.All(plasm { for o in tableOf<Order> do orderBy o.Id; take 2 })
                       ok page |> List.collect (fun o -> o.Lines) |> List.length |> shouldBe __
-                      (commands ()).Length |> shouldBe __
+                      sqlSent().Length |> shouldBe __
                   }
           )
 
@@ -143,7 +143,7 @@ let lesson =
 
                       let first, _ = List.head (ok rows)
                       first.Lines.Length |> shouldBe __
-                      (commands ()).Length |> shouldBe __
+                      sqlSent().Length |> shouldBe __
                   }
           )
 
@@ -231,6 +231,6 @@ let lesson =
                       let! payments = repo.All(paymentsOf ids)
                       let byOrder = ok payments |> List.countBy (fun p -> p.OrderId)
                       byOrder |> shouldBe __
-                      (commands ()).Length |> shouldBe __
+                      sqlSent().Length |> shouldBe __
                   }
           ) ]

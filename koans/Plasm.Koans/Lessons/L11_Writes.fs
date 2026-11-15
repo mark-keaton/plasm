@@ -109,7 +109,7 @@ let lesson =
                   task {
                       let! draft = order repo 2L
                       let! _ = repo.Transact(Tx.update (draft, { draft with Status = Published }): Tx<Order, unit>)
-                      let update = commands () |> List.find (fun c -> c.StartsWith "UPDATE")
+                      let update = sqlSent () |> List.find (fun c -> c.StartsWith "UPDATE")
                       // Which columns does the UPDATE set?
                       update.Contains "\"status\" = " |> shouldBe __
                       update.Contains "\"total\" = " |> shouldBe __

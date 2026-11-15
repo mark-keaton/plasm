@@ -7,6 +7,9 @@
 []
 # In your app, you make the repo
 3L
+# sqlSent () is the SQL a koan has sent
+[]
+1
 # A query is a description
 0
 # The repo shows its SQL

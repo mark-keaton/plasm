@@ -65,7 +65,7 @@ let lesson =
                   // Mistakes, whose one query, Mistakes.shouting, does not.
                   let problems = repo.CheckQueries(typeof<Customer>.Assembly, "Plasm.Koans.Shop")
                   problems |> List.map (fun p -> p.Query) |> shouldBe __
-                  (commands ()).Length |> shouldBe __
+                  sqlSent().Length |> shouldBe __
           )
 
           Koan.Sync(
@@ -77,7 +77,7 @@ let lesson =
                   let ddl = repo.Ddl()
                   ddl.Contains "constraint customers_email_key unique (email)" |> shouldBe __
                   ddl.Contains "constraint orders_customer_id_fkey foreign key (customer_id) references customers (id)" |> shouldBe __
-                  (commands ()).Length |> shouldBe __
+                  sqlSent().Length |> shouldBe __
           )
 
           Koan.Task(

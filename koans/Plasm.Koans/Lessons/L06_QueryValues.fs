@@ -63,7 +63,7 @@ let lesson =
               fun repo ->
                   let _published = plasm { for o in tableOf<Order> do where (o.Status = Published) }
                   // How many commands has this koan sent?
-                  (commands ()).Length |> shouldBe __
+                  sqlSent().Length |> shouldBe __
           )
 
           Koan.Task(
@@ -98,7 +98,7 @@ let lesson =
                   let sql = (ok (repo.Explain published)).Sql
                   // Is the status sent as a parameter?
                   sql.Contains "\"status\" = @p0" |> shouldBe __
-                  (commands ()).Length |> shouldBe __
+                  sqlSent().Length |> shouldBe __
           )
 
           Koan.Task(

@@ -94,7 +94,7 @@ let lesson =
                       let parts = [ New.product "BOLT" "Bolt"; New.product "NUT" "Nut"; New.product "WASHER" "Washer" ]
                       let! inserted = repo.Transact(Tx.execute (Bulk.insert parts): Tx<_, unit>)
                       ok inserted |> List.map (fun p -> p.Sku) |> shouldBe __
-                      (commands ()).Length |> shouldBe __
+                      sqlSent().Length |> shouldBe __
                   }
           )
 
@@ -133,6 +133,6 @@ let lesson =
                   task {
                       let plan = repo.Explain(Bulk.delete (plasm { for p in tableOf<Payment> do where (p.Status = Failed) }))
                       (ok plan).Sql.StartsWith "DELETE FROM \"payments\"" |> shouldBe __
-                      (commands ()).Length |> shouldBe __
+                      sqlSent().Length |> shouldBe __
                   }
           ) ]

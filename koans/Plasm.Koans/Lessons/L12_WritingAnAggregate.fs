@@ -88,7 +88,7 @@ let lesson =
                       // no command to order_lines but the one that reads them back.
                       let! o = order repo (OrderId 1L)
                       let! _ = repo.Transact(Tx.update (o, { o with Total = 40m }): Tx<Order, unit>)
-                      let lineWrites = commands () |> List.filter (fun c -> c.Contains "order_lines" && not (c.StartsWith "SELECT"))
+                      let lineWrites = sqlSent () |> List.filter (fun c -> c.Contains "order_lines" && not (c.StartsWith "SELECT"))
                       lineWrites.Length |> shouldBe __
                       let! n = linesOf repo o.Id
                       n |> shouldBe __

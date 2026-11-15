@@ -50,7 +50,7 @@ let lesson =
                       // A transaction is a value describing database steps that succeed or fail together.
                       // transaction { } builds it; Tx.insert a step that inserts a record.
                       let tx = addDan
-                      (commands ()).Length |> shouldBe __
+                      sqlSent().Length |> shouldBe __
                       let! n = customers repo
                       n |> shouldBe __
                   }

@@ -66,13 +66,27 @@ let lesson =
                   }
           )
 
+          Koan.Task(
+              "sqlSent () is the SQL a koan has sent",
+              fun repo ->
+                  task {
+                      // sqlSent () lists the SQL this koan has sent to the database
+                      // so far, in order; every koan starts with none. Counting it
+                      // shows when Plasm talks to the database. (In your app, Plasm
+                      // reports each command to RepoOptions.OnCommand instead.)
+                      sqlSent () |> shouldBe __
+                      let! _ = repo.Count(Query.from (tableOf<Customer>))
+                      sqlSent().Length |> shouldBe __
+                  }
+          )
+
           Koan.Sync(
               "A query is a description",
               fun repo ->
                   // A query is a value that describes what to read. Building it
-                  // sends nothing. commands () lists the SQL this koan has sent.
+                  // sends nothing.
                   let _customers = Query.from (tableOf<Customer>)
-                  (commands ()).Length |> shouldBe __
+                  sqlSent().Length |> shouldBe __
           )
 
           Koan.Sync(
@@ -83,7 +97,7 @@ let lesson =
                   let products = Query.from (tableOf<Product>)
                   let sql = (ok (repo.Explain products)).Sql
                   sql.Contains "FROM \"products\"" |> shouldBe __
-                  (commands ()).Length |> shouldBe __
+                  sqlSent().Length |> shouldBe __
           )
 
           Koan.Task(
@@ -94,8 +108,8 @@ let lesson =
                       let products = Query.from (tableOf<Product>)
                       let sql = (ok (repo.Explain products)).Sql
                       let! _ = repo.All products
-                      (commands ()).Length |> shouldBe __
-                      ((commands ()).Head = sql) |> shouldBe __
+                      sqlSent().Length |> shouldBe __
+                      (sqlSent().Head = sql) |> shouldBe __
                   }
           )
 
@@ -108,7 +122,7 @@ let lesson =
                       let products = Query.from (tableOf<Product>)
                       let! first = repo.All products
                       let! second = repo.All products
-                      (commands ()).Length |> shouldBe __
+                      sqlSent().Length |> shouldBe __
                       (ok first = ok second) |> shouldBe __
                   }
           )
@@ -141,6 +155,6 @@ let lesson =
                       | DbError.Translation(TranslationError.UnmappedType name) -> name |> shouldBe __
                       | other -> failwithf "expected an unmapped type, got %A" other
 
-                      (commands ()).Length |> shouldBe __
+                      sqlSent().Length |> shouldBe __
                   }
           ) ]

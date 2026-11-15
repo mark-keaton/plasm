@@ -1,4 +1,4 @@
-/// What every lesson uses: blanks, test helpers (shouldBe, ok, err, commands)
+/// What every lesson uses: blanks, test helpers (shouldBe, ok, err, sqlSent)
 /// and the koan types.
 [<AutoOpen>]
 module Plasm.Koans.Koans
@@ -44,7 +44,7 @@ let mutable internal reported: unit -> CommandEvent list = fun () -> []
 /// The SQL of every command this koan has sent to the database, in order. In
 /// your app, Plasm reports each command to the function you give as
 /// RepoOptions.OnCommand; the koans give one that keeps them here.
-let commands () = reported () |> List.map (fun c -> c.Sql)
+let sqlSent () = reported () |> List.map (fun c -> c.Sql)
 
 /// One koan: a name (matching its row in the lesson's feature file) and a body.
 type Koan =

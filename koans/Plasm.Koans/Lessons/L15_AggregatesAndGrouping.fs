@@ -127,6 +127,6 @@ let lesson =
                       let wrong = plasm { for o in tableOf<Order> do groupBy o.CustomerId; select (o.Status, Agg.count ()) }
                       let! r = repo.All wrong
                       Result.isError r |> shouldBe __
-                      (commands ()).Length |> shouldBe __
+                      sqlSent().Length |> shouldBe __
                   }
           ) ]

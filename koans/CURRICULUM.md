@@ -35,7 +35,7 @@ the reference application in the same style.
 6. **Koans are written as an app would be.** A koan is the body of
    `fun repo -> task { ... }`, and the page shows only the body. It uses Plasm's
    own API (`repo.All`, `repo.Explain`, `Repo(model, provider)`) and the test
-   helpers any Plasm test would have (`shouldBe`, `ok`, `err`, `commands ()`),
+   helpers any Plasm test would have (`shouldBe`, `ok`, `err`, `sqlSent ()`),
    never machinery that exists only for the koans. Under *Given*, every
    definition says whether it is *your app*'s code or a *test helper*.
 7. **Every koan teaches something specified.** Each row in a lesson's feature

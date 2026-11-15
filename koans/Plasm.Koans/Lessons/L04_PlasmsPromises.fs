@@ -24,7 +24,7 @@ let lesson =
                       let widget = ok products |> List.find (fun p -> p.Sku = "WIDGET")
                       let _renamed = { widget with Name = "Blue widget" }
                       widget.Name |> shouldBe __
-                      (commands ()).Length |> shouldBe __
+                      sqlSent().Length |> shouldBe __
                   }
           )
 
@@ -35,7 +35,7 @@ let lesson =
                   // Only a repo call sends anything. (Lessons 06 and 13 go deeper.)
                   let _drafts = plasm { for o in tableOf<Order> do where (o.Status = Draft) }
                   let _addDan: Tx<Customer, unit> = Tx.insert (New.customer "Dan" "dan@example.com")
-                  (commands ()).Length |> shouldBe __
+                  sqlSent().Length |> shouldBe __
           )
 
           Koan.Task(
@@ -50,7 +50,7 @@ let lesson =
                       let first = (ok first).Value
                       first.Lines.Length |> shouldBe __
                       first.Lines |> List.map (fun l -> l.UnitPrice) |> ignore
-                      (commands ()).Length |> shouldBe __
+                      sqlSent().Length |> shouldBe __
                   }
           )
 
@@ -64,7 +64,7 @@ let lesson =
                       let shout (s: string) = s.ToUpperInvariant() + "!"
                       let! r = repo.All(plasm { for c in tableOf<Customer> do where (shout c.Name = "ADA!") })
                       Result.isError r |> shouldBe __
-                      (commands ()).Length |> shouldBe __
+                      sqlSent().Length |> shouldBe __
                   }
           )
 
@@ -96,7 +96,7 @@ let lesson =
                       let draft = ok drafts |> List.head
                       let publish: Tx<Order, unit> = Tx.update (draft, { draft with Status = Published })
                       let! _ = repo.Transact publish
-                      let update = List.last (commands ())
+                      let update = List.last (sqlSent ())
                       update.Contains "\"status\" = " |> shouldBe __
                       update.Contains "\"total\" = " |> shouldBe __
                   }
@@ -113,7 +113,7 @@ let lesson =
                   | Ok _ -> failwith "expected a configuration error"
                   | Error errors ->
                       (errors |> List.map (fun e -> e.Property) |> List.distinct) |> shouldBe __
-                      (commands ()).Length |> shouldBe __
+                      sqlSent().Length |> shouldBe __
           )
 
           Koan.Task(
@@ -137,7 +137,7 @@ let lesson =
                       // Reading all four orders reads all their lines too: in one
                       // more command, not one command per order. (Lesson 09 goes deeper.)
                       let! _ = repo.All(Query.from (tableOf<Order>))
-                      (commands ()).Length |> shouldBe __
+                      sqlSent().Length |> shouldBe __
                   }
           )
 

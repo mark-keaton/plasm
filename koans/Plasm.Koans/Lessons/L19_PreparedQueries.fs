@@ -63,7 +63,7 @@ let lesson =
                       let! bobs = repo.Count(ordersOf (CustomerId 2L))
                       (ok adas, ok bobs) |> shouldBe __
                       // Did the two counts send the same SQL text?
-                      ((commands ()).[0] = (commands ()).[1]) |> shouldBe __
+                      ((sqlSent ()).[0] = (sqlSent ()).[1]) |> shouldBe __
                   }
           )
 

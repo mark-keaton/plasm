@@ -71,7 +71,7 @@ let lesson =
                   task {
                       let! n = repo.Count(plasm { for o in tableOf<Order> do where (o.Status = Published) })
                       ok n |> shouldBe __
-                      (commands ()).Head.Contains "COUNT(*)" |> shouldBe __
+                      sqlSent().Head.Contains "COUNT(*)" |> shouldBe __
                   }
           )
 
@@ -92,7 +92,7 @@ let lesson =
                       let! rows = repo.All totals
                       (ok rows).Head |> shouldBe __
                       // Is the status column read?
-                      (commands ()).Head.Contains "\"status\"" |> shouldBe __
+                      sqlSent().Head.Contains "\"status\"" |> shouldBe __
                   }
           )
 
@@ -103,7 +103,7 @@ let lesson =
                       let! succeeded = repo.All(plasm { for p in tableOf<Payment> do where (p.Status = Succeeded) })
                       // From here on it is an ordinary F# list, in memory.
                       ok succeeded |> List.sumBy (fun p -> p.Amount) |> shouldBe __
-                      (commands ()).Length |> shouldBe __
+                      sqlSent().Length |> shouldBe __
                   }
           )
 

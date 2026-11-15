@@ -65,7 +65,7 @@ let lesson =
                       // all of them, through the join table.
                       let! articles = repo.All(plasm { for a in tableOf<Article> do orderBy a.Id })
                       (ok articles).Head.Tags |> names |> shouldBe __
-                      (commands ()).Length |> shouldBe __
+                      sqlSent().Length |> shouldBe __
                   }
           )
 
