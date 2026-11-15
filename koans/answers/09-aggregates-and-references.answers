@@ -14,9 +14,9 @@ Some(CustomerId 2L)
 "Bob"
 # A join reads both aggregates' fields
 [ (OrderId 1L, "Ada"); (OrderId 2L, "Ada"); (OrderId 3L, "Bob") ]
-# A whole order cannot come from a join
-true
-0
+# A whole order from a join comes with its lines
+2
+2
 # Filtering orders by their lines
 [ OrderId 1L; OrderId 3L ]
 # Every line passes, as F# reads it

@@ -123,22 +123,25 @@ let lesson =
           )
 
           Koan.Task(
-              "A whole order cannot come from a join",
+              "A whole order from a join comes with its lines",
               fun repo ->
                   task {
-                      // A whole Order is always read with its lines, which a join does not
-                      // read. So selecting the whole order from a join is refused before
-                      // anything is sent: select its fields, or query Db.orders itself.
+                      // A whole Order is always read with its lines. Selected from a join,
+                      // the joined rows come from one command, and the lines of every
+                      // Order in them from one more.
                       let! rows =
                           repo.All(
                               plasm {
                                   for o in Db.orders do
                                       join c in Db.customers on (o.CustomerId = Some c.Id)
+                                      where (c.Name = "Ada")
+                                      orderBy o.Id
                                       select (o, c.Name)
                               }
                           )
 
-                      Result.isError rows |> shouldBe __
+                      let first, _ = List.head (ok rows)
+                      first.Lines.Length |> shouldBe __
                       (commands ()).Length |> shouldBe __
                   }
           )
