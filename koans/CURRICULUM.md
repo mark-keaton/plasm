@@ -4,6 +4,14 @@ The course starts simple and adds one idea at a time. A learner who knows a
 little F# and has never used an ORM should be able to start at koan 1 and never
 meet a word, a value or a rule the page has not shown them.
 
+Most lessons teach the row-record style: `Assoc<'T>` with `preload`, and
+changeset validation. That style is fully supported, but it is not the
+recommended way to build an application. The recommended style stores the
+domain's own records, with `owns`, `links`, `unique` and typed `Tx`
+transactions. The README describes it, and `examples/Kanban` is its reference
+application. No lesson teaches it yet; the schema's `unique` is the only part
+the shop uses.
+
 ## Principles
 
 1. **One idea per koan.** A koan has one or two blanks. If it needs three, it is

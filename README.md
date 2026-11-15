@@ -7,6 +7,63 @@ explicit effects. Its design comes from [Ecto](https://github.com/elixir-ecto/ec
 > **Status: experimental first delivery, not production-ready.** PostgreSQL only.
 > See [`docs/status.md`](docs/status.md) for what is verified and what is missing.
 
+## How to build an application with Plasm
+
+Store your domain's own records. Write each fact about the data once, in the
+type if F# can say it there:
+
+- **Types.** A single-case wrapper is stored as its value. A `create` function
+  checks every value that is read. A union with fields is spread over columns.
+  A typed id is a reference.
+- **The schema.** It states only what the types cannot: the key, `unique`
+  fields, and what a record `owns` (its own child rows) or `links` (shared rows
+  through a join table). Owned and linked lists are plain lists, always loaded
+  and written with their owner.
+- **Business transactions.** Write them as `Tx<'T, 'E>` values with your own
+  error type.
+- **Start-up or a test.** Check queries with `repo.CheckQueries` and the
+  schema with `repo.CheckSchema`. `repo.Ddl()` prints the tables the model
+  expects.
+
+```fsharp
+type Stage =
+    | Backlog
+    | Doing of assignee: Person * since: DateTimeOffset
+    | Done of resolution: Resolution * at: DateTimeOffset
+
+type Card =
+    { Id: CardId; Board: BoardId; Title: Title; Stage: Stage
+      Comments: Comment list; Labels: Tag list; Created: DateTimeOffset; Version: int }
+
+let cards =
+    schema<Card> "cards" {
+        key (fun c -> c.Id)
+        version (fun c -> c.Version)
+        ownsOrderedBy (fun c -> c.Comments) (fun m -> m.Card) (fun m -> m.At)
+        linksOrderedBy (fun c -> c.Labels) "card_labels" "card_id" "label_id" (fun l -> l.Name)
+    }
+
+let addCard slug (create: Board -> Card) : Tx<Card, Refusal> =
+    transaction {
+        let! board = Tx.one (Queries.boardBySlug slug) |> Tx.orReject (Missing "board")
+        return! Tx.insert (Changeset.insert (create board))
+    }
+```
+
+[`examples/Kanban`](examples/Kanban) is the reference application in this
+style. Its domain (`src/Shared/Domain.fs`) references no package and also
+compiles to JavaScript with Fable. Its storage (`src/Server/Db.fs`) is five
+short schemas. The shape it sends over the wire (`src/Shared/Api.fs`) is the
+application's own: Plasm does not serialize.
+
+Plasm also supports an older row-record style: `Assoc<'T>` fields loaded with
+`preload`, validation with `Changeset.validate*`, and the pipeline `Query.*`
+functions. It is fully supported and specified, but it is not the
+recommended way to start an application. Use it when the stored rows really
+are a different shape from the domain, or when relationships should load only
+on request. The overview below and the koans are written mostly in this
+style.
+
 ```fsharp
 open Plasm
 
@@ -187,6 +244,7 @@ reference answer (`koans/answers/`) and stops at its blank as shipped.
 | `tests/Plasm.Tests` | Translation, compile-time, property-based, Ecto-compatibility and behaviour tests |
 | `tests/Plasm.TestDomain` | Shared test domain, PostgreSQL fixture (Testcontainers) and compile checker |
 | `examples/Plasm.Examples` | Runnable API tour |
+| `examples/Kanban` | A SAFE-style application (ASP.NET Core, Fable, Elmish) with a plain F# domain at its centre and Plasm behind it; its own solution and scenarios, see its README |
 | `koans/` | The Plasm Koans: lessons, runner, reference answers, and their own specifications |
 | `website/` | Static library website (landing page and worked examples, each with a toggle to the SQL Plasm generated for it); no build step: `python3 -m http.server -d website`. Regenerate the captured SQL with `dotnet run --project examples/Plasm.Examples -- sql` |
 | `benchmarks/` | Plasm vs EF Core 11 (single and split query) |
