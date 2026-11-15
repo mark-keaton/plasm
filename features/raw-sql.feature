@@ -17,9 +17,13 @@ Feature: Typed SQL escape hatches
 
     Scenario: Reading mapped records from SQL
       Given Orders for several Customers
+      When I read Customers with hand-written SQL
+      Then the results are Customer records built through the model
+
+    Scenario: Reading a record that owns others from SQL
+      Given Orders for several Customers, each with an OrderLine
       When I read Orders with hand-written SQL
-      Then the results are Order records built through the model
-      And their relationships are not loaded
+      Then each Order holds its OrderLines, read in one more command
 
     Scenario: Reading tuples and scalars from SQL
       Given Orders for several Customers

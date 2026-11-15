@@ -173,11 +173,39 @@ type OwnedOneSteps(w: World) =
     [<StepDefinition("three commands are sent")>]
     member _.ThreeCommands() = equal 3 w.CommandsSinceMark.Length "commands"
 
-    [<StepDefinition("the read is refused, naming the field Settings")>]
-    member _.Refused() =
+    [<StepDefinition("^the read is refused, naming the field (\\w+)$")>]
+    member _.Refused(field: string) =
         match w.Get<Result<Account list, DbError>> "accounts" with
-        | Error e -> check ((string e).Contains "Settings") (string e)
+        | Error e -> check ((string e).Contains field) (string e)
         | Ok r -> failwithf "the read succeeded: %A" r
+
+    [<StepDefinition("^I keep the Accounts whose profile's bio is \"(\\w+)\", through exists$")>]
+    member _.KeepByBio(bio: string) =
+        task {
+            let! r =
+                repo().All(
+                    plasm {
+                        for a in accounts do
+                            where (exists (plasm { for p in profiles do where (p.Account = a.Id && p.Bio = bio) }))
+                    }
+                )
+
+            w.Set("kept", ok r |> List.map (fun a -> a.Name))
+        }
+        |> unit
+
+    [<StepDefinition("^only \"(\\w+)\" is read$")>]
+    member _.OnlyRead(name: string) = equal [ name ] (w.Get<string list> "kept") "accounts"
+
+    [<StepDefinition("a second profile row for it, behind Plasm's back")>]
+    member _.SecondProfile() =
+        task {
+            let (AccountId raw) = (w.Get<Account> "account").Id
+            let! _ = w.Db.Exec "alter table owned_profiles drop constraint owned_profiles_account_key"
+            let! _ = w.Db.Exec $"insert into owned_profiles(account, bio) values ({raw}, 'again')"
+            ()
+        }
+        |> unit
 
     [<StepDefinition("^I insert an Account \"(\\w+)\" with the bio \"(\\w+)\" and the theme \"(\\w+)\"$")>]
     member _.InsertWith(name: string, bio: string, t: string) =

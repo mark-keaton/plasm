@@ -107,7 +107,7 @@ type JoinSteps(w: World) =
 
         for o, c in pairs do
             equal (Some c.Id) o.CustomerId $"customer of {o.Id}"
-            equal NotLoaded c.Orders "relationships of joined records are not loaded"
+            check (o.Lines |> List.forall (fun l -> l.OrderId = o.Id)) "an Order comes with the lines it owns"
 
     [<StepDefinition("Orders without a Customer are not returned")>]
     member _.NoOrphans() =
@@ -116,7 +116,10 @@ type JoinSteps(w: World) =
 
     [<StepDefinition("the join runs as a single database command")>]
     member _.SingleCommand() =
-        let cmd = w.CommandsSinceMark |> List.exactlyOne
+        // The joined rows come from one command; the Orders' lines, which they
+        // own, from one more.
+        let cmd = w.CommandsSinceMark |> List.filter (fun c -> c.Sql.Contains " JOIN ") |> List.exactlyOne
+        check (w.CommandsSinceMark |> List.forall (fun c -> c = cmd || c.Sql.Contains "FROM \"order_lines\"")) "only the owned lines besides the join"
         check (cmd.Sql.Contains "INNER JOIN \"customers\" AS \"j1\" ON (\"t0\".\"customer_id\" = \"j1\".\"id\")") cmd.Sql
 
     // Scenario: A left join represents a missing match as None
@@ -133,7 +136,7 @@ type JoinSteps(w: World) =
     member _.EveryOrderOnce() =
         let rows: (Order * Customer option) list = w.Get "optionalPairs"
         equal (w.Get<OrderId list> "orders") (rows |> List.map (fun (o, _) -> o.Id)) "orders"
-        check ((w.CommandsSinceMark |> List.exactlyOne).Sql.Contains "LEFT JOIN") "a LEFT JOIN was executed"
+        check ((w.QueryCommands |> List.exactlyOne).Sql.Contains "LEFT JOIN") "a LEFT JOIN was executed"
 
     [<StepDefinition("an Order without a Customer is paired with None")>]
     member _.PairedWithNone() =
@@ -190,12 +193,12 @@ type JoinSteps(w: World) =
 
     [<StepDefinition("the filter is part of the executed SQL")>]
     member _.FilterInSql() =
-        let cmd = w.CommandsSinceMark |> List.exactlyOne
+        let cmd = w.QueryCommands |> List.exactlyOne
         check (cmd.Sql.Contains "WHERE (\"j1\".\"name\" = @p0)") cmd.Sql
 
     [<StepDefinition("only matching rows are transferred")>]
     member _.OnlyMatching() =
-        equal 2 (w.CommandsSinceMark |> List.exactlyOne).Rows "rows transferred"
+        equal 2 (w.QueryCommands |> List.exactlyOne).Rows "rows transferred"
 
         for _, c in w.Get<(Order * Customer) list> "pairs" do
             equal "Ada" c.Name "customer"
@@ -207,7 +210,7 @@ type JoinSteps(w: World) =
         task {
             let! rows = run (plasm { for (o, c) in Joins.withOptionalCustomers do where c.IsNone })
             w.Set("kept", rows |> List.map (fun (o: Order, _) -> o))
-            check ((w.CommandsSinceMark |> List.exactlyOne).Sql.Contains "(\"j1\".\"id\" IS NULL)") "anti-join in SQL"
+            check ((w.QueryCommands |> List.exactlyOne).Sql.Contains "(\"j1\".\"id\" IS NULL)") "anti-join in SQL"
         }
         |> unit
 
@@ -286,7 +289,7 @@ type JoinSteps(w: World) =
                 run (
                     plasm {
                         for o in Schemas.orders do
-                            where (o.Id = target && o.Payments |> Rel.any (fun p -> p.Status = Succeeded))
+                            where (o.Id = target && exists (plasm { for p in Schemas.payments do where (p.OrderId = o.Id && p.Status = Succeeded) }))
                     }
                 )
 
@@ -407,7 +410,7 @@ type JoinSteps(w: World) =
 
     [<StepDefinition("the joins run as a single database command")>]
     member _.JoinsSingleCommand() =
-        let cmd = w.CommandsSinceMark |> List.exactlyOne
+        let cmd = w.QueryCommands |> List.exactlyOne
         check (cmd.Sql.Contains "INNER JOIN \"order_lines\" AS \"j1\"") cmd.Sql
         check (cmd.Sql.Contains "INNER JOIN \"products\" AS \"j2\" ON (\"j1\".\"product_id\" = \"j2\".\"id\")") cmd.Sql
 
@@ -434,7 +437,7 @@ type JoinSteps(w: World) =
 
     [<StepDefinition("only the projected columns are retrieved")>]
     member _.OnlyProjectedColumns() =
-        let sql = (w.CommandsSinceMark |> List.exactlyOne).Sql
+        let sql = (w.QueryCommands |> List.exactlyOne).Sql
         let selectList = sql.Substring(0, sql.IndexOf " FROM ")
         equal "SELECT \"t0\".\"id\" AS \"c0\", \"j1\".\"name\" AS \"c1\"" selectList "select list"
 
@@ -464,7 +467,7 @@ type JoinSteps(w: World) =
     member _.DerivedFilters() =
         let rows: (Order * Customer) list = w.Get "pairs"
         equal [ (w.Get<OrderId list> "orders").[1] ] (rows |> List.map (fun (o, _) -> o.Id)) "orders"
-        let cmd = w.CommandsSinceMark |> List.exactlyOne
+        let cmd = w.QueryCommands |> List.exactlyOne
         check (cmd.Sql.Contains "\"j1\".\"name\" = @p0" && cmd.Sql.Contains "\"t0\".\"total\" > @p1") cmd.Sql
         equal 1 cmd.Rows "rows transferred"
 
@@ -496,23 +499,10 @@ type JoinSteps(w: World) =
         }
         |> unit
 
-    [<StepDefinition("I request relationship loads on a joined query")>]
-    member _.LoadsOnJoined() =
-        task {
-            w.MarkCommands()
-            let! r = w.Repo.All(plasm { for (o, c) in Joins.withCustomers do preload o.Lines })
-            w.Set("loadFailure", (match r with Error e -> Some e | Ok _ -> None))
-        }
-        |> unit
-
     [<StepDefinition("the request is rejected with an explanation")>]
     member _.RejectedWithExplanation() =
-        // Shared: other features set "expectedExplanation" to the phrases they expect.
-        let expected =
-            if w.Has "expectedExplanation" then
-                w.Get<string list> "expectedExplanation"
-            else
-                [ "not supported on joined queries"; "repo.Preload" ]
+        // Shared: a feature sets "expectedExplanation" to the phrases it expects.
+        let expected = w.Get<string list> "expectedExplanation"
 
         match w.Get<DbError option> "loadFailure" with
         | Some(DbError.Translation(TranslationError.InvalidQuery msg)) ->

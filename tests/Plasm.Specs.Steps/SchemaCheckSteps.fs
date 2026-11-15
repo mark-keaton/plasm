@@ -36,7 +36,7 @@ module Drift =
     type ArticleWrongJoin =
         { Id: ArticleId
           Title: string
-          Tags: Assoc<Tag list> }
+          Tags: Tag list }
 
     let model (schemas: ISchema list) = Model.buildOrFail Schemas.scalars schemas
 
@@ -124,12 +124,16 @@ type SchemaCheckSteps(w: World) =
         equal (Some "name") i.Column "column"
         check (i.Message.Contains "inserts would fail") i.Message
 
-    [<StepDefinition("a many-to-many relationship whose join table column does not exist")>]
+    [<StepDefinition("mappings for Articles and Tags linked through a join table")>]
+    member _.LinkedMappings() =
+        check (w.Db.Model.Types |> List.contains typeof<Article>) "Article is mapped"
+
+    [<StepDefinition("a link whose join table column does not exist")>]
     member _.WrongJoin() =
         useModel
             [ schema<Drift.ArticleWrongJoin> "articles" {
                   identityKey (fun a -> a.Id)
-                  manyToMany (fun a -> a.Tags) "article_tags" "article_id" "label_id"
+                  links (fun a -> a.Tags) "article_tags" "article_id" "label_id"
               }
               Schemas.tags ]
 

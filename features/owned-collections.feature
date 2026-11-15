@@ -35,9 +35,10 @@ Feature: An owned collection is a plain list, loaded and written with its owner
       When I read the Invoices
       Then two commands are sent
 
-    Scenario: A whole Invoice cannot be selected from a join
+    Scenario: A whole Invoice selected from a join comes with its lines
+      Given an Invoice "INV-1" with the lines "pen" 2 and "ink" 5
       When I select whole Invoices joined with their lines
-      Then the query is refused, saying an owned list is loaded with its owner
+      Then each joined Invoice holds all its lines, read in one more command
 
   Rule: Writing the owner writes what it owns
 
@@ -51,6 +52,12 @@ Feature: An owned collection is a plain list, loaded and written with its owner
       When I read it, then change the pen to 3, remove the ink and add "pad" 4
       Then the invoice_lines table holds "pen" 3 and "pad" 4 for that Invoice
       And the pen line kept its key
+
+    Scenario: A line of another Invoice is refused, not copied
+      Given Invoices "INV-1", "INV-2" and "INV-3", each with one line
+      When I read them, then add the line of "INV-2" to "INV-1"
+      Then the change is refused, saying the line does not belong to "INV-1"
+      And the invoice_lines table holds 3 lines
 
     Scenario: Deleting an Invoice deletes its lines
       Given an Invoice "INV-1" with the lines "pen" 2 and "ink" 5

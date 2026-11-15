@@ -21,7 +21,7 @@ Feature: Database-specific SQL comes from the provider
   Rule: Constructs the dialect can express are rendered by it
 
     Scenario: Relationship loads without array parameters send one parameter per key
-      When I explain a query for Orders preloading their Lines with the test dialect
+      When I explain a query for Orders, which own their Lines, with the test dialect
       Then the load command matches keys with an IN list of parameters
 
     Scenario: Null-safe comparisons are rendered by the dialect
@@ -42,8 +42,8 @@ Feature: Database-specific SQL comes from the provider
         | operation                  | capability    |
         | an upsert                  | upserts       |
         | an insert                  | RETURNING     |
-        | replacing an Order's Lines | row locking   |
-        | adding links to an Article | array parameters |
+        | deleting an Order and its Lines | row locking   |
+        | changing an Article's links     | array parameters |
 
   Rule: An unsupported operation is reported the same way by every call
 

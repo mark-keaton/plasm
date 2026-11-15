@@ -201,7 +201,7 @@ type QuerySemanticsSteps(w: World) =
             // Diagnostics record times to the second.
             do! System.Threading.Tasks.Task.Delay 1100
             let! _ = repo.All q
-            w.Set("times", w.CommandsSinceMark |> List.map (fun c -> c.Parameters |> List.map snd |> List.head))
+            w.Set("times", w.QueryCommands |> List.map (fun c -> c.Parameters |> List.map snd |> List.head))
             w.Set("timesKind", "recorded")
         }
         |> unit

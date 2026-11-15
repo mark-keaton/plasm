@@ -42,15 +42,13 @@ let page (customer: CustomerId) =
 """
 
 [<Fact>]
-let ``accepts preloads with reusable child queries`` () =
+let ``accepts queries that reach other aggregates`` () =
     accepts
         """
-let lines = plasm { for l in orderLines do preload l.Product }
-let ok = plasm { for p in payments do where (p.Status = Succeeded); orderBy p.CreatedAt; limitPerParent 3 }
-let q = plasm { for o in orders do preload o.Lines lines; preload o.Payments ok; preload o.Customer }
-let byFn (src: Query<Order>) = plasm { for o in src do preload o.Payments }
+let paid = plasm { for o in orders do where (exists (plasm { for p in payments do where (p.OrderId = o.Id && p.Status = Succeeded) })) }
+let big = plasm { for o in orders do where (o.Lines |> List.exists (fun l -> l.UnitPrice > 10m)) }
+let paymentsOf = Query.prepare (fun (ids: Arg<OrderId list>) -> plasm { for p in payments do where (List.contains p.OrderId ids.Value) })
 """
-
 [<Fact>]
 let ``accepts projections to tuples and anonymous records`` () =
     accepts
@@ -60,15 +58,12 @@ let b = plasm { for o in orders do where (o.Total > 0m); select {| Id = o.Id; Re
 """
 
 [<Fact>]
-let ``accepts changesets`` () =
+let ``accepts writes of records`` () =
     accepts
         """
-let change (o: Order) =
-    o
-    |> Changeset.edit (fun o -> { o with Status = Published; CancellationReason = None })
-    |> Changeset.replaceChildren((fun o -> o.Lines), ReplaceScope.allChildren, [])
+let change (o: Order) : Tx<Order, unit> = Tx.update (o, { o with Status = Published; CancellationReason = None; Lines = [] })
+let stale (o: Order) : Tx<Order, unit> = Tx.update (o, { o with Total = 1m }, expectVersion = 3)
 """
-
 [<Fact>]
 let ``accepts transactions with typed dependent steps`` () =
     accepts
@@ -100,29 +95,26 @@ let ``rejects comparing a CustomerId with an OrderId`` () =
         "OrderId"
 
 [<Fact>]
-let ``rejects preloading a non-relationship field`` () =
+let ``rejects owning a field that is not a list`` () =
     rejects
-        "let q = plasm { for o in orders do preload o.Payments }"
-        "let q = plasm { for o in orders do preload o.Total }"
+        "let s = schema<Order> \"o\" { identityKey (fun o -> o.Id); owns (fun o -> o.Lines) (fun l -> l.OrderId) }"
+        "let s = schema<Order> \"o\" { identityKey (fun o -> o.Id); owns (fun o -> o.Total) (fun l -> l.OrderId) }"
         "FS0001"
-        "Assoc"
-
+        "list"
 [<Fact>]
-let ``rejects preloading a field Order does not have`` () =
+let ``rejects owning a field Order does not have`` () =
     rejects
-        "let q = plasm { for o in orders do preload o.Payments }"
-        "let q = plasm { for o in orders do preload o.Product }"
+        "let s = schema<Order> \"o\" { identityKey (fun o -> o.Id); owns (fun o -> o.Lines) (fun l -> l.OrderId) }"
+        "let s = schema<Order> \"o\" { identityKey (fun o -> o.Id); owns (fun o -> o.Product) (fun l -> l.OrderId) }"
         "FS0039"
         "Product"
-
 [<Fact>]
-let ``rejects a child query of the wrong type`` () =
+let ``rejects an exists query compared with a value`` () =
     rejects
-        "let q = plasm { for o in orders do preload o.Payments (plasm { for p in payments do where (p.Amount > 0m) }) }"
-        "let q = plasm { for o in orders do preload o.Payments (plasm { for l in orderLines do where (l.UnitPrice > 0m) }) }"
-        "FS0041"
-        "Query<OrderLine>"
-
+        "let q = plasm { for o in orders do where (exists (plasm { for p in payments do where (p.OrderId = o.Id) })) }"
+        "let q = plasm { for o in orders do where (exists (plasm { for p in payments do where (p.OrderId = o.Id) }) = 1) }"
+        "FS0001"
+        "bool"
 [<Fact>]
 let ``rejects where after select`` () =
     rejects
@@ -132,29 +124,26 @@ let ``rejects where after select`` () =
         "Projection<OrderId>"
 
 [<Fact>]
-let ``rejects replacing children without stating the replacement scope`` () =
+let ``rejects an update of two different records`` () =
     rejects
-        "let f (o: Order) = Changeset.update o |> Changeset.replaceChildren((fun o -> o.Lines), ReplaceScope.allChildren, [])"
-        "let f (o: Order) = Changeset.update o |> Changeset.replaceChildren((fun o -> o.Lines), [])"
-        "FS0501"
-        "scope: ReplaceScope"
-
+        "let f (o: Order) : Tx<Order, unit> = Tx.update (o, { o with Total = 1m })"
+        "let f (o: Order) (c: Customer) : Tx<Order, unit> = Tx.update (o, c)"
+        "FS0001"
+        "Customer"
 [<Fact>]
-let ``rejects a hasMany foreign key selected from the wrong record type`` () =
+let ``rejects an owner key selected from the wrong record type`` () =
     rejects
-        "let s = schema<Order> \"o\" { identityKey (fun o -> o.Id); hasMany (fun o -> o.Lines) (fun l -> l.OrderId) }"
-        "let s = schema<Order> \"o\" { identityKey (fun o -> o.Id); hasMany (fun o -> o.Lines) (fun (p: Payment) -> p.OrderId) }"
+        "let s = schema<Order> \"o\" { identityKey (fun o -> o.Id); owns (fun o -> o.Lines) (fun l -> l.OrderId) }"
+        "let s = schema<Order> \"o\" { identityKey (fun o -> o.Id); owns (fun o -> o.Lines) (fun (p: Payment) -> p.OrderId) }"
         "FS0001"
         "Payment"
-
 [<Fact>]
-let ``rejects Rel.any on a single-valued relationship`` () =
+let ``rejects List.exists over a field that is not a list`` () =
     rejects
-        "let q = plasm { for o in orders do where (Rel.any (fun p -> p.Amount > 1m) o.Payments) }"
-        "let q = plasm { for o in orders do where (Rel.any (fun (c: Customer) -> c.Name = \"x\") o.Customer) }"
+        "let q = plasm { for o in orders do where (o.Lines |> List.exists (fun l -> l.UnitPrice > 1m)) }"
+        "let q = plasm { for o in orders do where (o.Total |> List.exists (fun l -> l > 1m)) }"
         "FS0001"
         "list"
-
 [<Fact>]
 let ``rejects a nested join-style for (joins are not silently ignored)`` () =
     rejects

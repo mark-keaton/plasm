@@ -149,6 +149,7 @@ type OwnedSteps(w: World) =
     [<StepDefinition("I select whole Invoices joined with their lines")>]
     member _.Join() =
         task {
+            w.MarkCommands()
             let! r =
                 repo().All(
                     plasm {
@@ -158,15 +159,19 @@ type OwnedSteps(w: World) =
                     }
                 )
 
-            w.Set("joined", r |> Result.map ignore)
+            w.Set("joined", ok r)
         }
         |> unit
 
-    [<StepDefinition("the query is refused, saying an owned list is loaded with its owner")>]
-    member _.Refused() =
-        match w.Get<Result<unit, DbError>> "joined" with
-        | Error(DbError.Translation e) -> check ((string e).Contains "owned") (string e)
-        | other -> failwithf "expected a translation error, got %A" other
+    [<StepDefinition("each joined Invoice holds all its lines, read in one more command")>]
+    member _.JoinedWithLines() =
+        let joined = w.Get<(Invoice * Line) list> "joined"
+        equal 2 joined.Length "one row per line"
+
+        for i, _ in joined do
+            equal [ "pen", 2m; "ink", 5m ] (described i.Lines) "the Invoice's lines"
+
+        equal 2 w.CommandsSinceMark.Length "the join, and the lines its Invoices own"
 
     [<StepDefinition("^I insert an Invoice \"(.*)\" with the lines (.+)$")>]
     member _.InsertWith(number: string, text: string) =
@@ -210,6 +215,32 @@ type OwnedSteps(w: World) =
             let! read = readOne ()
             let pen = read.Lines |> List.find (fun l -> l.Item = "pen")
             equal (w.Get<LineId> "penKey") pen.Id "pen's key"
+        }
+        |> unit
+
+    [<StepDefinition("^I read them, then add the line of \"(.*)\" to \"(.*)\"$")>]
+    member _.Steal(from: string, into: string) =
+        task {
+            let! all = readAll ()
+            let source = all |> List.find (fun i -> i.Number = from)
+            let target = all |> List.find (fun i -> i.Number = into)
+            let! r = repo().Transact(Tx.update (target, { target with Lines = target.Lines @ source.Lines }): Tx<Invoice, unit>)
+            w.Set("stolen", r)
+        }
+        |> unit
+
+    [<StepDefinition("^the change is refused, saying the line does not belong to \"(.*)\"$")>]
+    member _.StealRefused(_into: string) =
+        match w.Get<Result<Invoice, TransactionError<unit>>> "stolen" with
+        | Error { Failure = TxFailure.InvalidChanges(_, errors) } ->
+            check (errors |> List.exists (fun e -> e.Kind = FieldErrorKind.NotOwned && e.Message.Contains "does not belong")) $"%A{errors}"
+        | other -> failwithf "expected the change to be refused, got %A" other
+
+    [<StepDefinition("^the invoice_lines table holds (\\d+) lines$")>]
+    member _.LineCount(n: int64) =
+        task {
+            let! count = w.Db.Scalar<int64>("select count(*) from invoice_lines")
+            equal n count "lines"
         }
         |> unit
 

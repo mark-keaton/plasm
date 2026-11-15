@@ -11,7 +11,7 @@ module Good =
 
     let byName = Query.prepare (fun (name: Arg<string>) -> plasm { for c in customers do where (c.Name = name.Value) })
 
-    let withOrders = plasm { for c in customers do preload c.Orders }
+    let paid = plasm { for o in orders do where (exists (plasm { for p in payments do where (p.OrderId = o.Id && p.Status = Succeeded) })) }
 
 module Bad =
     // String.Normalize has no SQL translation.

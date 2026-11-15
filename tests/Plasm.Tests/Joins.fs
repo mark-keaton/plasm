@@ -133,7 +133,7 @@ let ``a left-joined source compared with a value is rejected`` () =
         plasm {
             for o in orders do
                 leftJoin c in customers on (o.CustomerId = Some c.Id)
-                where (c = Some { Id = CustomerId 1L; Name = "Ada"; Email = "a"; Orders = NotLoaded })
+                where (c = Some { Id = CustomerId 1L; Name = "Ada"; Email = "a" })
         }
         |> explain
 
@@ -142,38 +142,12 @@ let ``a left-joined source compared with a value is rejected`` () =
     | other -> failwithf "expected UnsupportedExpression, got %A" other
 
 [<Fact>]
-let ``preload on a joined query is reported at planning, not thrown`` () =
-    let q =
-        plasm {
-            for o in orders do
-                join c in customers on (o.CustomerId = Some c.Id)
-                preload o.Lines
-        }
-
-    match err (explain q) with
-    | TranslationError.InvalidQuery msg -> Assert.Contains("repo.Preload", msg)
-    | other -> failwithf "expected InvalidQuery, got %A" other
-
-[<Fact>]
-let ``limitPerParent on a joined query is rejected`` () =
-    let q =
-        plasm {
-            for o in orders do
-                join c in customers on (o.CustomerId = Some c.Id)
-                limitPerParent 2
-        }
-
-    match err (explain q) with
-    | TranslationError.InvalidQuery msg -> Assert.Contains("limitPerParent", msg)
-    | other -> failwithf "expected InvalidQuery, got %A" other
-
-[<Fact>]
 let ``relationship predicates work on the root of a joined query`` () =
     let sql =
         plasm {
             for o in orders do
                 leftJoin c in customers on (o.CustomerId = Some c.Id)
-                where (not (o.Payments |> Rel.any (fun p -> p.Status = Succeeded)))
+                where (not (exists (plasm { for p in payments do where (p.OrderId = o.Id && p.Status = Succeeded) })))
                 orderBy o.PlacedAt
                 select (o.Id, o.Total, c |> Option.map (fun c -> c.Email))
         }

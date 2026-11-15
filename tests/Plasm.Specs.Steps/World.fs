@@ -28,6 +28,12 @@ type World() =
 
     member w.CommandsSinceMark = w.Db.Recorder.Events |> List.skip w.Mark
 
+    /// The commands since the mark, without the loads of the OrderLines an
+    /// Order owns (one more command whenever Orders are read).
+    member w.QueryCommands =
+        w.CommandsSinceMark
+        |> List.filter (fun c -> not (c.Sql.StartsWith "SELECT" && c.Sql.Contains "FROM \"order_lines\" AS \"t0\" WHERE (\"t0\".\"order_id\""))
+
 [<AutoOpen>]
 module Support =
 
@@ -61,8 +67,6 @@ module Support =
                 where (p.Status = Succeeded)
                 orderBy p.CreatedAt
         }
-
-    let linesWithProduct = plasm { for l in Schemas.orderLines do preload l.Product }
 
     let forCustomer (customer: CustomerId) (q: Query<Order>) =
         plasm {

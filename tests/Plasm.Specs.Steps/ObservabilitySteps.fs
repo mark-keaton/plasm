@@ -20,8 +20,10 @@ type ObservabilitySteps(w: World) =
     member _.ExecuteWithLoads() =
         task {
             let! id = Seed.order w.Db None "published" 10m (Seed.at 1)
-            let! _ = Seed.payment w.Db id 10m "succeeded" (Seed.at 2)
-            let q = plasm { for o in Schemas.orders do where (o.Total > 5m); preload o.Payments successfulPayments }
+            let! p = Seed.product w.Db "SKU"
+            let! _ = Seed.line w.Db id p 1 10m
+            // An Order owns its OrderLines: reading Orders loads them.
+            let q = plasm { for o in Schemas.orders do where (o.Total > 5m) }
             w.MarkCommands()
             let! r = w.Repo.All q
             ok r |> ignore
@@ -34,7 +36,7 @@ type ObservabilitySteps(w: World) =
         let events = w.CommandsSinceMark
         equal 2 events.Length "commands"
         check (events.[0].Sql.Contains "FROM \"orders\"") "parent command"
-        check (events.[1].Sql.Contains "FROM \"payments\"") "relationship command"
+        check (events.[1].Sql.Contains "FROM \"order_lines\"") "relationship command"
 
         for e in events do
             check (e.Duration > TimeSpan.Zero) "duration recorded"
@@ -140,7 +142,7 @@ type ObservabilitySteps(w: World) =
     member _.ConnectionFails() =
         task {
             let repo = Repo(w.Db.Model, Postgres.connect "Host=127.0.0.1;Port=1;Timeout=3;Database=none;Username=x;Password=y")
-            let! read = repo.All(plasm { for o in Schemas.orders do preload o.Payments })
+            let! read = repo.All(Query.from Schemas.orders)
             let! write = repo.Insert(Changeset.insert (New.order None Draft 1m))
             w.Set("read", read)
             w.Set("write", write)

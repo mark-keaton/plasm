@@ -13,48 +13,42 @@ let ``write path smoke`` () =
         let! c = Seed.customer db "Ada" "ada@example.com"
         let! p = Seed.product db "A"
 
-        let draft = New.order (Some c) Draft 10m
+        let draft = { New.order (Some c) Draft 10m with Lines = [ New.line p 2 5m ] }
+        let write (tx: Tx<'T, unit>) = db.Repo.Transact tx
 
-        let cs =
-            Changeset.insert draft
-            |> Changeset.putChildren((fun o -> o.Lines), [ Changeset.insert (New.line p 2 5m) ])
-
-        let! inserted = db.Repo.Insert cs
+        let! inserted = write (Tx.insert draft)
         let order = ok (inserted |> Result.mapError string)
         printfn "%A" order
         Assert.NotEqual(OrderId 0L, order.Id)
         Assert.Equal(OrderId 0L, draft.Id)
-        let lines = Assoc.get order.Lines
-        Assert.Equal(1, lines.Length)
-        Assert.Equal(order.Id, lines.[0].OrderId)
+        Assert.Equal(1, order.Lines.Length)
+        Assert.Equal(order.Id, order.Lines.[0].OrderId)
 
         // update with version
-        let! updated = db.Repo.Update(order |> Changeset.edit (fun o -> { o with Status = Published }))
+        let! updated = write (Tx.update (order, { order with Status = Published }))
         let updated = ok (updated |> Result.mapError string)
         Assert.Equal(2, updated.Version)
 
         // stale
-        let! stale = db.Repo.Update(order |> Changeset.edit (fun o -> { o with Status = Cancelled }))
+        let! stale = write (Tx.update (order, { order with Status = Cancelled }))
 
         match stale with
-        | Error(WriteError.Stale _) -> ()
-        | other -> failwithf "expected stale, got %A" other
+        | Error { Failure = TxFailure.Conflict _ } -> ()
+        | other -> failwithf "expected a conflict, got %A" other
 
         // constraint
-        let! dup =
-            db.Repo.Insert(Changeset.insert (New.customer "Bob" "ada@example.com"))
+        let! dup = write (Tx.insert (New.customer "Bob" "ada@example.com"))
 
         match dup with
-        | Error(WriteError.Invalid cs) -> printfn "%A" cs.Errors
+        | Error { Failure = TxFailure.InvalidChanges(_, errors) } -> printfn "%A" errors
         | other -> failwithf "expected invalid, got %A" other
 
         // transaction
         let tx =
             transaction {
                 let! o = Tx.insert (New.order (Some c) Draft 1m)
-                let! l = Tx.insert { New.line p 1 1m with OrderId = o.Id }
                 let! _ = Tx.insert (New.order (Some c) Draft -1m)
-                return o, l
+                return o
             }
 
         let! r = db.Repo.Transact tx

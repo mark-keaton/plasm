@@ -8,6 +8,28 @@ open Plasm
 open Plasm.TestDomain.Domain
 open Plasm.TestDomain.Database
 
+/// A provider whose dialect cannot read a consistent snapshot (to test rejection).
+type LimitedProvider(inner: IProvider) =
+    let dialect =
+        { new ISqlDialect with
+            member _.Name = "LimitedSQL"
+            member _.QuoteIdentifier s = inner.Dialect.QuoteIdentifier s
+            member _.ParameterName i = inner.Dialect.ParameterName i
+            member _.ColumnTypes t = inner.Dialect.ColumnTypes t
+            member _.NullSafeComparison negated = inner.Dialect.NullSafeComparison negated
+            member _.FunctionName name = inner.Dialect.FunctionName name
+
+            member _.Capabilities =
+                { inner.Dialect.Capabilities with
+                    SnapshotReads = false } }
+
+    interface IProvider with
+        member _.Dialect = dialect
+        member _.OpenConnection ct = inner.OpenConnection ct
+        member _.Classify ex = inner.Classify ex
+        member _.BeginSnapshot(_, _) = Task.FromResult None
+        member _.BeginTransaction(c, i, ct) = inner.BeginTransaction(c, i, ct)
+
 module TxSteps =
     /// Reads the current transaction id through the escape hatch.
     let txid name =
@@ -165,8 +187,10 @@ type TransactionSteps(w: World) =
     member _.Graph() =
         task {
             let! id = Seed.order w.Db None "published" 10m (Seed.at 1)
-            let! _ = Seed.payment w.Db id 10m "succeeded" (Seed.at 2)
+            let! p = Seed.product w.Db "SKU"
+            let! _ = Seed.line w.Db id p 1 1m
             w.Set("id", id)
+            w.Set("product", p)
         }
         |> unit
 
@@ -174,9 +198,11 @@ type TransactionSteps(w: World) =
     member _.RequestSnapshot() =
         task {
             let (OrderId id) = w.Get "id"
+            let (ProductId product) = w.Get "product"
 
-            // A concurrent writer commits a payment between the parent query and
-            // the Payments query (triggered from the diagnostics hook).
+            // A concurrent writer commits an OrderLine between the Orders' query
+            // and the query for the lines they own (triggered from the
+            // diagnostics hook).
             let repoInterleaved () =
                 let mutable fired = false
 
@@ -195,12 +221,12 @@ type TransactionSteps(w: World) =
                                     use cmd = c.CreateCommand()
 
                                     cmd.CommandText <-
-                                        $"insert into payments(order_id, amount, status, created_at) values ({id}, 1, 'succeeded', now())"
+                                        $"insert into order_lines(order_id, product_id, quantity, unit_price) values ({id}, {product}, 1, 1)"
 
                                     cmd.ExecuteNonQuery() |> ignore) }
                 )
 
-            let q = plasm { for o in Schemas.orders do preload o.Payments }
+            let q = Query.from Schemas.orders
             let! snapshot = repoInterleaved().All(q, ReadConsistency.Snapshot)
             let! independent = repoInterleaved().All(q, ReadConsistency.Independent)
             w.Set("snapshot", ok snapshot)
@@ -210,11 +236,11 @@ type TransactionSteps(w: World) =
 
     [<StepDefinition("the queries execute within a provider-supported consistency mechanism")>]
     member _.Consistent() =
-        let count key = (Assoc.get (List.exactlyOne (w.Get<Order list> key)).Payments).Length
-        // Snapshot: the concurrent payment is invisible to the second query.
-        equal 1 (count "snapshot") "payments seen in snapshot"
+        let count key = (List.exactlyOne (w.Get<Order list> key)).Lines.Length
+        // Snapshot: the concurrent line is invisible to the second query.
+        equal 1 (count "snapshot") "lines seen in snapshot"
         // ReadConsistency.Independent reads see it (proving the interleaving really happened).
-        equal 3 (count "independent") "payments seen without snapshot"
+        equal 3 (count "independent") "lines seen without snapshot"
 
     [<StepDefinition("Or the request is rejected as unsupported")>]
     member _.OrRejected() =
@@ -223,7 +249,7 @@ type TransactionSteps(w: World) =
                 Repo(w.Db.Model, LimitedProvider(w.Db.Provider), { RepoOptions.Default with OnCommand = Some w.Db.Recorder.Record })
 
             w.MarkCommands()
-            let! r = repo.All(plasm { for o in Schemas.orders do preload o.Payments }, ReadConsistency.Snapshot)
+            let! r = repo.All(Query.from Schemas.orders, ReadConsistency.Snapshot)
 
             match r with
             | Error(DbError.Translation(TranslationError.UnsupportedByProvider(op, _))) -> equal "snapshot reads" op "operation"

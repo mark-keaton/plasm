@@ -25,10 +25,9 @@ Feature: Database constraints are stated once, in the model
       When I insert another Customer with the email "ada@example.com"
       Then the insert fails with a uniqueness error on Email, naming customers_email_key
 
-    Scenario: A duplicate on a record written with its children is the record's field error
-      Given a Customer with the email "ada@example.com"
-      When I insert another Customer with the email "ada@example.com" together with an Order
-      Then the insert fails with a uniqueness error on Email, naming customers_email_key
+    Scenario: A violation by an owned record is that record's field error
+      When I insert an Order with a line for the Product with id 999
+      Then the insert fails with a reference error on Lines[0].ProductId, naming order_lines_product_id_fkey
       And no Order was written
 
     Scenario: A reference to a missing row is the field's error

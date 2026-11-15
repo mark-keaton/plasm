@@ -10,10 +10,10 @@ Feature: Idiomatic and principled F# persistence
   Background:
     Given a configured relational database
     And mappings for Customers, Orders, OrderLines, Products, and Payments
-    And an Order belongs to a Customer
-    And an Order has many OrderLines
-    And an Order has many Payments
-    And an OrderLine belongs to a Product
+    And an Order refers to its Customer by id
+    And an Order owns its OrderLines
+    And a Payment refers to its Order by id
+    And an OrderLine refers to its Product by id
 
   Rule: Ordinary F# domain types remain usable
 
@@ -26,7 +26,7 @@ Feature: Idiomatic and principled F# persistence
 
     Scenario: Domain scalar wrappers preserve their meaning
       Given distinct CustomerId and OrderId types
-      And each has a configured scalar mapping
+      And each is stored as its value by convention
       When I construct queries and changes
       Then those identifiers remain distinct at compile time
       And their database parameters use the configured scalar representation
@@ -47,9 +47,9 @@ Feature: Idiomatic and principled F# persistence
 
     Scenario: Optional relationships preserve parent rows
       Given an Order has no optional Customer relationship
-      When I load that relationship
+      When I read it with its Customer through a left join
       Then the Order remains in the result
-      And the relationship is represented as loaded and absent
+      And its Customer is None
 
     Scenario: Null comparisons have explicit semantics
       Given a mapped optional field
@@ -94,23 +94,20 @@ Feature: Idiomatic and principled F# persistence
       Then unselected fields cannot implicitly become defaults or NULL
       And only explicitly described fields are eligible for update
 
-    Scenario: Filtered collections are not authoritative replacements
-      Given I load only successful Payments for an Order
-      When I submit an unrelated Order change
-      Then unsuccessful Payments remain unchanged
-      When I attempt to replace Payments using the filtered collection
-      Then the API requires explicit acknowledgement of replacement scope
+    # One style: "Filtered collections are not authoritative replacements" was
+    # removed. An owned collection is always loaded whole, so there is no
+    # filtered collection to write back.
 
     Scenario: Duplicate child identities are rejected
-      Given an association changeset contains two entries for the same child identity
-      When I validate the changeset
+      Given an Order change whose OrderLines hold two entries for the same identity
+      When I write it
       Then it reports the duplicate identity
       And it does not choose an entry based on incidental ordering
 
   Rule: Efficiency guarantees are testable
 
     Scenario: Loading plans can be inspected
-      Given a query with nested separate-query loads
+      Given a query for Orders, which own their OrderLines
       When I inspect its execution plan
       Then I can identify the requested load paths
       And the planned batching strategy

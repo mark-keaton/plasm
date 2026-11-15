@@ -1,5 +1,6 @@
 namespace Plasm.Specs
 
+open System
 open Reqnroll
 open Plasm
 open Plasm.TestDomain.Domain
@@ -8,10 +9,10 @@ open Plasm.TestDomain.Database
 [<Binding>]
 type BackgroundSteps(w: World) =
 
-    let relationship (q: Query<'T>) (path: string) (kind: string) =
-        let plan = w.Repo.Explain q |> ok
-        let step = plan.Loads |> List.find (fun l -> l.Path = path)
-        equal kind step.Relationship $"relationship kind of {path}"
+    let reference (model: string) (field: string) (target: Type) =
+        check
+            (w.Db.Model.References |> List.exists (fun r -> r.Model = model && r.Field = field && r.Target = target.Name))
+            $"{model}.{field} references {target.Name}: %A{w.Db.Model.References}"
 
     /// Each scenario has its own database and connection pool; release the
     /// pool's connections when the scenario ends.
@@ -33,21 +34,19 @@ type BackgroundSteps(w: World) =
         for t in [ typeof<Customer>; typeof<Order>; typeof<OrderLine>; typeof<Product>; typeof<Payment> ] do
             check (List.contains t w.Db.Model.Types) $"{t.Name} is mapped"
 
-    [<StepDefinition("an Order belongs to a Customer")>]
-    member _.OrderBelongsToCustomer() =
-        relationship (plasm { for o in Schemas.orders do preload o.Customer }) "Customer" "BelongsTo"
+    [<StepDefinition("an Order refers to its Customer by id")>]
+    member _.OrderRefersToCustomer() = reference "Order" "CustomerId" typeof<Customer>
 
-    [<StepDefinition("an Order has many OrderLines")>]
-    member _.OrderHasManyLines() =
-        relationship (plasm { for o in Schemas.orders do preload o.Lines }) "Lines" "HasMany"
+    [<StepDefinition("an Order owns its OrderLines")>]
+    member _.OrderOwnsLines() =
+        let plan = w.Repo.Explain(Query.from Schemas.orders) |> ok
+        check (plan.Loads |> List.exists (fun l -> l.Path = "Lines")) "an Order's OrderLines are loaded with it"
 
-    [<StepDefinition("an Order has many Payments")>]
-    member _.OrderHasManyPayments() =
-        relationship (plasm { for o in Schemas.orders do preload o.Payments }) "Payments" "HasMany"
+    [<StepDefinition("a Payment refers to its Order by id")>]
+    member _.PaymentRefersToOrder() = reference "Payment" "OrderId" typeof<Order>
 
-    [<StepDefinition("an OrderLine belongs to a Product")>]
-    member _.LineBelongsToProduct() =
-        relationship (plasm { for l in Schemas.orderLines do preload l.Product }) "Product" "BelongsTo"
+    [<StepDefinition("an OrderLine refers to its Product by id")>]
+    member _.LineRefersToProduct() = reference "OrderLine" "ProductId" typeof<Product>
 
     // -- Shared steps --------------------------------------------------------
 

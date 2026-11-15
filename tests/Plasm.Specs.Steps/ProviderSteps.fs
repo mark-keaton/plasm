@@ -49,11 +49,11 @@ type ProviderSteps(w: World) =
 
     [<StepDefinition("a test dialect without array parameters, upserts, RETURNING or row locking, with its own null-safe comparison and string length")>]
     member _.TestDialect() =
-        w.Set("testRepo", Repo(Schemas.modelDeletingLines, TestDialectProvider(w.Db.Provider)))
+        w.Set("testRepo", Repo(Schemas.model, TestDialectProvider(w.Db.Provider)))
 
-    [<StepDefinition("I explain a query for Orders preloading their Lines with the test dialect")>]
+    [<StepDefinition("I explain a query for Orders, which own their Lines, with the test dialect")>]
     member _.ExplainLoads() =
-        let plan = explain (plasm { for o in Schemas.orders do preload o.Lines })
+        let plan = explain (Query.from Schemas.orders)
         w.Set("sql", (plan.Loads |> List.head).Sql)
 
     [<StepDefinition("the load command matches keys with an IN list of parameters")>]
@@ -103,29 +103,22 @@ type ProviderSteps(w: World) =
                             match x with
                             | Error(WriteError.Translation(TranslationError.UnsupportedByProvider(op, _))) -> Some op
                             | other -> failwithf "expected an unsupported insert, got %A" other
-                    | "replacing an Order's Lines" ->
-                        let! x =
-                            r.Update(
-                                Changeset.update stored
-                                |> Changeset.replaceChildren ((fun o -> o.Lines), ReplaceScope.allChildren, [])
-                            )
+                    | "deleting an Order and its Lines" ->
+                        // Deleting an owner deletes every line it has, read FOR UPDATE.
+                        let! x = r.Transact(Tx.delete stored: Tx<Order, unit>)
 
                         return
                             match x with
-                            | Error(WriteError.Translation(TranslationError.UnsupportedByProvider(op, _))) -> Some op
-                            | other -> failwithf "expected an unsupported replacement, got %A" other
-                    | "adding links to an Article" ->
-                        let article = { Id = ArticleId 1L; Title = "Intro"; Tags = NotLoaded }
+                            | Error { Failure = TxFailure.Failed(DbError.Translation(TranslationError.UnsupportedByProvider(op, _))) } -> Some op
+                            | other -> failwithf "expected an unsupported delete, got %A" other
+                    | "changing an Article's links" ->
+                        let article = { Id = ArticleId 1L; Title = "Intro"; Tags = [] }
 
-                        let! x =
-                            r.Update(
-                                Changeset.update article
-                                |> Changeset.addLinks ((fun a -> a.Tags), [ { Id = TagId 1L; Name = "fsharp" } ])
-                            )
+                        let! x = r.Transact(Tx.update (article, { article with Tags = [ { Id = TagId 1L; Name = "fsharp" } ] }): Tx<Article, unit>)
 
                         return
                             match x with
-                            | Error(WriteError.Translation(TranslationError.UnsupportedByProvider(op, _))) -> Some op
+                            | Error { Failure = TxFailure.Failed(DbError.Translation(TranslationError.UnsupportedByProvider(op, _))) } -> Some op
                             | other -> failwithf "expected unsupported links, got %A" other
                     | op -> return failwithf "unknown operation %s" op
                 }

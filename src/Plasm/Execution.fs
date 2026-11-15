@@ -378,39 +378,60 @@ let readRoot (s: Session) (plan: Planner.Plan) : Task<obj list> =
         return rows |> Seq.map plan.RootSchema.Shape.Construct |> List.ofSeq
     }
 
-let rec private build (shape: Translate.Shape) (row: obj[]) : obj =
+/// The lists a record owns or links, for records read as field values (a
+/// join's or hand-written SQL's rows): loaded as a query of the records loads
+/// them, one batched command per list (owned-collections.feature).
+let private loadOwned (s: Session) (model: Model) (schema: SchemaInfo) (rows: obj[] list) : Task<unit> =
+    if rows.IsEmpty || not (schema.Assocs |> Array.exists (fun a -> a.Owned || a.Linked)) then
+        Task.FromResult()
+    else
+        match Planner.planLoads s.Provider.Dialect model schema [] with
+        | Ok nodes -> loadInto s (ResizeArray rows) nodes
+        | Error e -> invalidOp $"the lists {schema.Name} owns could not be planned: {e}"
+
+/// A whole record's field values from a projection row; null for a
+/// left-joined source without a match.
+let private entityValues (start: int) (schema: SchemaInfo) (optional: bool) (row: obj[]) : obj[] =
+    // Each field's columns start where the fields before it end.
+    let offsets = schema.Fields |> Array.scan (fun at f -> at + f.Parts.Length) start
+    let keyAt = offsets.[schema.Fields |> Array.findIndex (fun f -> f.Name = schema.Key.Name)]
+
+    if optional && isNull row.[keyAt] then
+        null
+    else
+        let values = Array.zeroCreate<obj> schema.FieldCount
+
+        schema.Fields
+        |> Array.iteri (fun j f ->
+            let raws = [ for i in offsets.[j] .. offsets.[j + 1] - 1 -> row.[i] ]
+
+            match f.FromColumns raws with
+            | Ok v -> values.[f.Index] <- v
+            | Error m ->
+                raise (
+                    MaterializationFailure
+                        { Model = schema.Name
+                          Property = f.Name
+                          Value = String.Join(", ", raws |> List.map describe)
+                          Message = m }
+                ))
+
+        for a in schema.Assocs do
+            values.[a.Index] <- a.Ctors.NotLoaded
+
+        values
+
+/// Builds a projected value; `entity` gives the field values of the n-th
+/// whole record in the shape (in the order `collect` found them).
+let rec private build (shape: Translate.Shape) (row: obj[]) (entity: unit -> obj[]) : obj =
     match shape with
     | Translate.Const v -> v
     | Translate.Leaf(i, _, _, _) -> row.[i]
-    | Translate.Build(ctor, parts) -> ctor (parts |> List.map (fun p -> build p row) |> Array.ofList)
-    | Translate.EntityLeaf(start, schema, optional) ->
-        // Each field's columns start where the fields before it end.
-        let offsets = schema.Fields |> Array.scan (fun at f -> at + f.Parts.Length) start
-        let keyAt = offsets.[schema.Fields |> Array.findIndex (fun f -> f.Name = schema.Key.Name)]
-
-        if optional && isNull row.[keyAt] then
-            null // None: the left-joined source had no match
-        else
-            let values = Array.zeroCreate<obj> schema.FieldCount
-
-            schema.Fields
-            |> Array.iteri (fun j f ->
-                let raws = [ for i in offsets.[j] .. offsets.[j + 1] - 1 -> row.[i] ]
-
-                match f.FromColumns raws with
-                | Ok v -> values.[f.Index] <- v
-                | Error m ->
-                    raise (
-                        MaterializationFailure
-                            { Model = schema.Name
-                              Property = f.Name
-                              Value = String.Join(", ", raws |> List.map describe)
-                              Message = m }
-                    ))
-
-            for a in schema.Assocs do
-                values.[a.Index] <- a.Ctors.NotLoaded
-
+    | Translate.Build(ctor, parts) -> ctor (parts |> List.map (fun p -> build p row entity) |> Array.ofList)
+    | Translate.EntityLeaf(_, schema, optional) ->
+        match entity () with
+        | null -> null // None: the left-joined source had no match
+        | values ->
             let record = schema.Shape.Construct values
 
             if optional then
@@ -418,13 +439,15 @@ let rec private build (shape: Translate.Shape) (row: obj[]) : obj =
             else
                 record
 
-let readProjection (s: Session) (select: Sql.Select) (shape: Translate.Shape) (model: string) : Task<obj list> =
+let readProjection (s: Session) (model: Model) (select: Sql.Select) (shape: Translate.Shape) (label: string) : Task<obj list> =
     let leaves = ResizeArray<int * Type * (obj -> Result<obj, string>) * string>()
+    let entities = ResizeArray<int * SchemaInfo * bool>()
 
     let rec collect sh =
         match sh with
         | Translate.Leaf(i, t, c, l) -> leaves.Add(i, t, c, l)
-        | Translate.EntityLeaf(start, schema, _) ->
+        | Translate.EntityLeaf(start, schema, optional) ->
+            entities.Add(start, schema, optional)
             // Raw provider values; the entity is built from them (build, below).
             let mutable j = start
 
@@ -444,7 +467,7 @@ let readProjection (s: Session) (select: Sql.Select) (shape: Translate.Shape) (m
             query s cmd (fun r ->
                 let values = Array.zeroCreate<obj> select.Columns.Length
 
-                for i, t, convert, label in leaves do
+                for i, t, convert, l in leaves do
                     let raw = (columnReader t).Invoke(r, i)
 
                     match convert raw with
@@ -452,15 +475,33 @@ let readProjection (s: Session) (select: Sql.Select) (shape: Translate.Shape) (m
                     | Error msg ->
                         raise (
                             MaterializationFailure
-                                { Model = model
-                                  Property = label
+                                { Model = label
+                                  Property = l
                                   Value = describe raw
                                   Message = msg }
                         )
 
                 values)
 
-        return rows |> Seq.map (build shape) |> List.ofSeq
+        // Each whole record's values, by record position then row; then what
+        // the records own, loaded for all rows at once.
+        let records =
+            [| for start, schema, optional in entities -> [| for row in rows -> entityValues start schema optional row |] |]
+
+        for n in 0 .. entities.Count - 1 do
+            let _, schema, _ = entities.[n]
+            do! loadOwned s model schema (records.[n] |> Array.filter (fun v -> not (isNull v)) |> List.ofArray)
+
+        return
+            rows
+            |> Seq.mapi (fun i row ->
+                let mutable next = 0
+
+                build shape row (fun () ->
+                    let v = records.[next].[i]
+                    next <- next + 1
+                    v))
+            |> List.ofSeq
     }
 
 // ---------------------------------------------------------------------------
@@ -585,9 +626,6 @@ let rawReader (model: Model) (t: Type) (label: string) : DbDataReader -> obj =
         | Error m -> fail property (if isNull raw then "NULL" else string raw) m
 
     match model.TrySchema t with
-    | Some schema when schema.Assocs |> Array.exists (fun a -> a.Owned || a.Linked) ->
-        let owned = (schema.Assocs |> Array.find (fun a -> a.Owned || a.Linked)).Name
-        fun _ -> fail owned "(owned or linked list)" $"hand-written SQL cannot read a whole {schema.Name}: its list {owned} is loaded with its owner. Query {schema.Name} itself, or read its columns into a record of your own"
     | Some schema ->
         let mutable ordinals: int[] = null
 
@@ -615,7 +653,12 @@ let rawReader (model: Model) (t: Type) (label: string) : DbDataReader -> obj =
             for a in schema.Assocs do
                 values.[a.Index] <- a.Ctors.NotLoaded
 
-            schema.Shape.Construct values
+            // A record that owns or links lists: its field values, completed
+            // by rawRecords.
+            if schema.Assocs |> Array.exists (fun a -> a.Owned || a.Linked) then
+                box values
+            else
+                schema.Shape.Construct values
     | None when Microsoft.FSharp.Reflection.FSharpType.IsRecord(t, BindingFlags.Public ||| BindingFlags.NonPublic) ->
         let fields = Microsoft.FSharp.Reflection.FSharpType.GetRecordFields(t, BindingFlags.Public ||| BindingFlags.NonPublic)
         let ctor = Microsoft.FSharp.Reflection.FSharpValue.PreComputeRecordConstructor(t, BindingFlags.Public ||| BindingFlags.NonPublic)
@@ -643,3 +686,17 @@ let rawReader (model: Model) (t: Type) (label: string) : DbDataReader -> obj =
                 fail "(value)" $"{r.FieldCount} columns" $"the SQL returns {r.FieldCount} columns for a single {Reflection.typeName t}"
 
             convert t "(value)" (value r 0)
+
+/// The rows of hand-written SQL as 'R values: a record that owns or links
+/// lists is completed with them, as a query of it would be.
+let rawRecords (s: Session) (model: Model) (t: Type) (cmd: Sql.Command) : Task<obj list> =
+    task {
+        let! rows = query s cmd (rawReader model t "SQL")
+
+        match model.TrySchema t with
+        | Some schema when schema.Assocs |> Array.exists (fun a -> a.Owned || a.Linked) ->
+            let values = rows |> Seq.map (fun v -> v :?> obj[]) |> List.ofSeq
+            do! loadOwned s model schema values
+            return values |> List.map schema.Shape.Construct
+        | _ -> return List.ofSeq rows
+    }

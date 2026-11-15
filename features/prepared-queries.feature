@@ -38,8 +38,8 @@ Feature: Prepared queries
 
     Scenario: Prepared queries keep relationship loads
       Given Orders for several Customers with Payments
-      When I prepare a query that preloads Payments
-      Then each run loads the Payments with batched commands
+      When I prepare a query for the Orders of a Customer, which own their OrderLines
+      Then each run loads the OrderLines with batched commands
 
     Scenario: Prepared queries can be inspected and counted
       Given Orders for several Customers
@@ -75,6 +75,6 @@ Feature: Prepared queries
 
     Scenario: A prepared query used as a load query binds its own arguments
       Given Orders for several Customers with Payments
-      When I preload Payments with a prepared query bound to a status, both on a query and onto Orders I already hold
+      When I read the Payments of the Orders I hold with a prepared query bound to a status
       Then each Order has only the Payments with that status
       And no exception is thrown

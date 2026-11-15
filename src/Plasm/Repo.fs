@@ -250,7 +250,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                 match Translate.projection model (ref false) query.Def None with
                 | Error e -> return Error(DbError.Translation e)
                 | Ok(select, shape) ->
-                    let! rows = withArgs query.Def.Args ct false (fun s -> Execution.readProjection s select shape query.Def.Root.Name)
+                    let! rows = withArgs query.Def.Args ct false (fun s -> Execution.readProjection s model select shape query.Def.Root.Name)
                     return Ok(rows |> List.map unbox<'T>)
               else
                 match planFor query.Def with
@@ -275,7 +275,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                 | Error e -> return Error(DbError.Translation e)
                 | Ok(select, shape) ->
                     let! rows =
-                        withArgs projection.Def.Args ct false (fun s -> Execution.readProjection s select shape projection.Def.Root.Name)
+                        withArgs projection.Def.Args ct false (fun s -> Execution.readProjection s model select shape projection.Def.Root.Name)
 
                     return Ok(rows |> List.map unbox<'R>)
             })
@@ -385,8 +385,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
         Execution.guard provider (fun () ->
             task {
                 let cmd = Execution.rawCommand model provider.Dialect sql
-                let read = Execution.rawReader model typeof<'R> "SQL"
-                let! rows = withSession ct false (fun s -> Execution.query s cmd read)
+                let! rows = withSession ct false (fun s -> Execution.rawRecords s model typeof<'R> cmd)
                 return Ok(rows |> Seq.map unbox<'R> |> List.ofSeq)
             })
 

@@ -19,7 +19,6 @@
     <Compile Include="BulkSteps.fs" />
     <Compile Include="RawSqlSteps.fs" />
     <Compile Include="PreparedSteps.fs" />
-    <Compile Include="ManyToManySteps.fs" />
     <Compile Include="SchemaCheckSteps.fs" />
     <Compile Include="SandboxSteps.fs" />
     <Compile Include="FsiSteps.fs" />
@@ -33,7 +32,6 @@
     <Compile Include="UnionFieldSteps.fs" />
     <Compile Include="OwnedSteps.fs" />
     <Compile Include="LinkedSteps.fs" />
-    <Compile Include="HasOneSteps.fs" />
     <Compile Include="ProviderSteps.fs" />
     <Compile Include="ReadingSteps.fs" />
     <Compile Include="PgEnumSteps.fs" />

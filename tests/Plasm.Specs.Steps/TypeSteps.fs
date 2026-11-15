@@ -58,28 +58,26 @@ type TypeSteps(w: World) =
 
     // Scenario: Relationship loads are checked against the source type
 
-    [<StepDefinition("I attempt to load a relationship not defined for Orders")>]
-    member _.LoadUndefined() =
+    [<StepDefinition("I attempt to declare that Orders own a relationship not defined for them")>]
+    member _.OwnUndefined() =
+        let declare body = $"let s = schema<Order> \"orders\" {{ identityKey (fun o -> o.Id); {body} }}"
+
         w.Set(
             "snippets",
-            [ "let q = plasm { for o in orders do preload o.Product }", "FS0039"
-              "let q = plasm { for o in orders do preload o.Total }", "FS0001"
-              "let q = plasm { for o in orders do preload o.Payments linesWithProductQ }", "FS0041" ]
+            [ declare "owns (fun o -> o.Product) (fun l -> l.OrderId)", "FS0039"
+              declare "owns (fun o -> o.Total) (fun l -> l.OrderId)", "FS0001"
+              declare "owns (fun o -> o.Lines) (fun (p: Payment) -> p.OrderId)", "FS0001" ]
         )
 
-        w.Set(
-            "control",
-            "let linesWithProductQ = plasm { for l in orderLines do preload l.Product }\nlet q = plasm { for o in orders do preload o.Lines linesWithProductQ }"
-        )
+        w.Set("control", declare "owns (fun o -> o.Lines) (fun l -> l.OrderId)")
 
-    [<StepDefinition("the load specification is rejected at compile time")>]
-    member _.LoadRejected() =
+    [<StepDefinition("the declaration is rejected at compile time")>]
+    member _.OwnRejected() =
         task {
-            let prefix = "let linesWithProductQ = plasm { for l in orderLines do preload l.Product }\n"
             do! compiles (w.Get "control")
 
             for code, error in w.Get<(string * string) list> "snippets" do
-                do! rejected (prefix + code) error
+                do! rejected code error
         }
         |> unit
 
@@ -126,7 +124,7 @@ type TypeSteps(w: World) =
     [<StepDefinition("I validate the persistence configuration")>]
     member _.Validate() =
         let shipments: Schema<Shipment> = w.Get "shipments"
-        w.Set("config", Model.build Schemas.scalars (Schemas.schemasWith Schemas.orders @ [ shipments ]))
+        w.Set("config", Model.build Schemas.scalars (Schemas.all @ [ shipments ]))
 
     [<StepDefinition("configuration fails with the model and property identified")>]
     member _.ConfigFails() =

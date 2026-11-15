@@ -1516,13 +1516,6 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
             if c.Grouped then
                 invalid $"a whole {b.Schema.Name} cannot be selected from a grouped query; select grouped keys and Agg functions"
 
-            match b.Schema.Assocs |> Array.tryFind (fun a -> a.Owned || a.Linked) with
-            | Some a ->
-                let kind = if a.Owned then "owned" else "linked"
-
-                invalid
-                    $"a whole {b.Schema.Name} cannot be selected here: its {kind} list {a.Name} is loaded with its owner, which a join or projection does not do. Query {b.Schema.Name} itself, or select its fields"
-            | None -> ()
 
             let start = columns.Count
 

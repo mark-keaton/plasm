@@ -45,7 +45,7 @@ Feature: Using Plasm from F# Interactive
       And no database command was executed
 
     Scenario: A query with loads displays one command per load
-      When I evaluate a query for Orders preloading their Lines and Products
+      When I evaluate a query for Orders, which own their Lines
       Then the session displays the main command and one command for each load, in execution order
       And no database command was executed
 
@@ -74,10 +74,8 @@ Feature: Using Plasm from F# Interactive
       When compiled code formats a query with %A
       Then the SQL is shown with each parameter's value
 
-    Scenario: Relationships that were not loaded display as not loaded
-      When I read Orders without preloading their Lines
-      Then each Order's Lines are displayed as not loaded
-      And loaded relationships display their records
+    # One style: "Relationships that were not loaded display as not loaded" was
+    # removed; no relationship is ever unloaded.
 
   Rule: Results display without awaiting tasks
 

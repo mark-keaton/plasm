@@ -51,6 +51,15 @@ let private originalWhere (schema: SchemaInfo) (s: CsState) =
 /// every item; a change made from a record read compares the old list with the
 /// new by key (inserting new items, updating changed ones, deleting missing
 /// ones); a delete deletes what the owner owns first.
+/// A generated key's value before the database assigns one (0, an empty
+/// Guid, or null).
+let private unsavedKey (schema: SchemaInfo) (key: obj) =
+    schema.Key.ToColumns key
+    |> List.forall (fun v ->
+        isNull v
+        || v = box DBNull.Value
+        || (v.GetType().IsValueType && v.Equals(Activator.CreateInstance(v.GetType()))))
+
 let rec private owned (model: Model) (s: CsState) : CsState =
     let schema = schemaOf model s.Type
     let declared = s.Children |> List.map (fun w -> w.Assoc) |> set
@@ -161,6 +170,10 @@ let rec private owned (model: Model) (s: CsState) : CsState =
                                     |> Array.fold (fun (m: Map<string, obj>) (i, p) -> m.Add(p.Name, now.[i])) Map.empty
 
                                 c, Some { state a.Target ChangeAction.Update o with Changes = changes }
+                            // A generated key the owner did not have: the record is
+                            // another owner's (or not stored). Written as an update,
+                            // the ownership check refuses it instead of inserting a copy.
+                            | _ when target.KeyGenerated && not (unsavedKey target (keyOf c)) -> c, Some(state a.Target ChangeAction.Update c)
                             | _ -> c, Some(state a.Target ChangeAction.Insert c))
 
                     let kept = Collections.Generic.HashSet<obj>(after |> List.map keyOf, HashIdentity.Structural)

@@ -34,14 +34,11 @@ type ConstraintSteps(w: World) =
         }
         |> unit
 
-    [<StepDefinition("^I insert another Customer with the email \"(.*)\" together with an Order$")>]
-    member _.InsertDuplicateWithChildren(email: string) =
+    [<StepDefinition("^I insert an Order with a line for the Product with id (\\d+)$")>]
+    member _.InsertWithMissingProduct(id: int64) =
         task {
-            let cs =
-                Changeset.insert (New.customer "Another" email)
-                |> Changeset.putChildren((fun c -> c.Orders), [ Changeset.insert (New.order None Draft 5m) ])
-
-            let! r = w.Repo.Insert cs
+            let order = { New.order None Draft 5m with Lines = [ New.line (ProductId id) 1 1m ] }
+            let! r = w.Repo.Insert(Changeset.insert order)
             insertResult r
         }
         |> unit
@@ -62,7 +59,7 @@ type ConstraintSteps(w: World) =
         }
         |> unit
 
-    [<StepDefinition("^the insert fails with a (uniqueness|reference|check) error on (\\w+), naming (\\w+)$")>]
+    [<StepDefinition("^the insert fails with a (uniqueness|reference|check) error on ([\\w\\[\\]\\.]+), naming (\\w+)$")>]
     member _.FieldError(kind: string, field: string, name: string) =
         match failure () with
         | Choice1Of2 errors ->

@@ -7,7 +7,8 @@ Feature: Explicit, typed joins
   So that I can filter, sort, page and project across relationships without client-side work
 
   Joins complement relationship loading: a join returns combined rows from one
-  command, while preload returns immutable graphs from batched commands.
+  command; a whole record in a row comes with what it owns, loaded in one more
+  command per list.
 
   Background:
     Given a configured relational database
@@ -90,9 +91,6 @@ Feature: Explicit, typed joins
     Scenario: Unsupported join requests are explicit
       When I join on an expression that cannot be translated
       Then execution fails with the unsupported expression identified
-      And no database command is executed
-      When I request relationship loads on a joined query
-      Then the request is rejected with an explanation
       And no database command is executed
 
     Scenario: Joined queries run inside transactions

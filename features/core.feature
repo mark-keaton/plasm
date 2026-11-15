@@ -14,10 +14,10 @@ Feature: Predictable functional persistence for F#
   Background:
     Given a configured relational database
     And mappings for Customers, Orders, OrderLines, Products, and Payments
-    And an Order belongs to a Customer
-    And an Order has many OrderLines
-    And an Order has many Payments
-    And an OrderLine belongs to a Product
+    And an Order refers to its Customer by id
+    And an Order owns its OrderLines
+    And a Payment refers to its Order by id
+    And an OrderLine refers to its Product by id
 
   Rule: Persistence descriptions are values and execution is explicit
 
@@ -54,8 +54,8 @@ Feature: Predictable functional persistence for F#
       Then the expression is rejected at compile time
 
     Scenario: Relationship loads are checked against the source type
-      When I attempt to load a relationship not defined for Orders
-      Then the load specification is rejected at compile time
+      When I attempt to declare that Orders own a relationship not defined for them
+      Then the declaration is rejected at compile time
 
     Scenario: Nullable values remain explicit
       Given an Order has an optional CancellationReason
@@ -101,97 +101,60 @@ Feature: Predictable functional persistence for F#
       Then unrelated mapped scalar columns are not retrieved
       And complete Order entities are not materialized
 
-  Rule: Relationship loading is explicit, composable, and batched
+  Rule: An aggregate is loaded whole, and other aggregates are reached by query
 
-    Scenario: Unloaded and empty relationships are distinguishable
-      Given an Order with no Payments
-      When I read the Order without loading Payments
-      Then Payments is represented as not loaded
-      When I explicitly load Payments
-      Then Payments is represented as loaded and empty
+    # One style (2026-11-14): no relationship is loaded on request. An Order owns
+    # its OrderLines, always loaded with it; its Customer and its Payments are
+    # other aggregates, referred to by id. Removed with Assoc and preload:
+    # "Unloaded and empty relationships are distinguishable", "Nested loads
+    # compose", "A child filter does not implicitly filter parents", "Per-parent
+    # limits preserve their stated meaning", "Unsupported loading semantics are
+    # rejected", "Conflicting relationship customizations are explicit" and
+    # "Loading onto existing values preserves the originals". The latest few
+    # rows per parent is a report: write it in SQL (raw-sql.feature).
 
     Scenario: Reading a relationship never triggers hidden database access
-      Given an Order with an unloaded Payments relationship
-      When application code inspects that relationship
+      Given an Order with an OrderLine, read from the database
+      When application code inspects its OrderLines
       Then no database command is executed
-      And its unloaded state remains observable
 
     Scenario: Sibling collections load without a cartesian product
       Given an Order has 10 OrderLines
       And the Order has 10 Payments
-      When I request both collections using separate-query loading
-      Then the library loads both collections automatically
+      When I read the Order, and its Payments with a query by its id
+      Then each related record appears once in its collection
       And it does not transfer their 100-row cross product
-      And each related record appears once in its collection
 
     Scenario: Relationship loading batches across parents
       Given a query returns 100 Orders
-      When I request their OrderLines
+      When I read them, each with the OrderLines it owns
       Then the library fetches OrderLines in batches across those Orders
       And it does not issue one OrderLine query per Order
       And it associates each OrderLine with its owning Order
 
-    Scenario: Nested loads compose
-      Given a reusable load specification for OrderLines and their Products
-      When I combine it with a load specification for Payments
-      Then the resulting query loads both branches
-      And nested relationships are populated automatically
-
     Scenario: Pagination applies to parents before collection expansion
       Given Orders have a deterministic ordering
-      When I request the first 20 Orders with OrderLines and Payments
+      When I request the first 20 Orders
       Then exactly the first 20 matching Orders are returned
-      And their requested collections are complete
+      And their OrderLines are complete
       And child row counts do not change which Orders are selected
-
-    Scenario: A child filter does not implicitly filter parents
-      When I load Orders with only successful Payments
-      Then all Orders matching the parent query are returned
-      And each loaded Payments collection contains only successful Payments
 
     Scenario: Parent filtering through relationships is explicit
       When I query Orders having at least one successful Payment
       Then only Orders satisfying that relationship predicate are returned
-      And loading Payments remains a separate explicit choice
+      And their Payments are read only by a query of their own
 
     Scenario: Filtered relationship queries are reusable
       Given a reusable query for successful Payments ordered by creation time
-      When I use it as the Payments load for Orders
+      When I use it for the Payments of a page of Orders
       Then the filter and ordering are applied in the database
-      And Payments are assembled into the corresponding Orders
-
-    Scenario: Per-parent limits preserve their stated meaning
-      When I request the latest 3 Payments for each Order
-      Then each Order receives at most its own latest 3 Payments
-      And the limit is not applied globally across all Orders
-
-    Scenario: Unsupported loading semantics are rejected
-      Given the provider cannot implement a requested per-parent operation
-      When I execute the load
-      Then the library reports the unsupported operation
-      And it does not substitute a global operation
+      And the application groups the Payments by their Order
 
     Scenario: Provider parameter limits do not cause per-parent loading
       Given a relationship load contains more parent keys than one command permits
       When I execute the load
       Then keys are divided into supported batches
       And the assembled result is equivalent to an unrestricted batch load
-
-    @changed
-    Scenario: Conflicting relationship customizations are explicit
-      Changed: combining queries is total (it never throws). The conflict is reported
-      as a structured LoadConflict when the combined query is planned (Explain) or
-      executed, before any database command. Resolve it with replacePreload.
-      Given two load specifications customize the same relationship differently
-      When I combine those specifications
-      Then the library reports a composition conflict
-      And I must explicitly choose replacement or another supported resolution
-
-    Scenario: Loading onto existing values preserves the originals
-      Given immutable Orders already held by application code
-      When I load their Payments
-      Then new values containing the loaded relationships are returned
-      And the original values remain unchanged
 
   Rule: Changes are explicit and the database's refusals are inspectable
 
@@ -231,25 +194,30 @@ Feature: Predictable functional persistence for F#
       Then the returned value contains the generated identifier
       And the submitted value remains unchanged
 
-  Rule: Association writes have explicit lifecycle semantics
+  Rule: Writing an aggregate writes what it owns
+
+    # One style: what an aggregate owns is written with it, by difference from
+    # the record it was read as. "Removing related records requires a
+    # configured policy" became "Removing an owned record deletes it":
+    # ownership is the policy.
 
     Scenario: Omitting an association does not modify it
       Given an Order with existing OrderLines
       When I update only the Order status
       Then existing OrderLines are preserved
-      And an unloaded collection is not interpreted as empty
+      And no command is sent for its OrderLines
 
     Scenario: Updating an association matches existing identities
       Given an Order with an existing OrderLine
-      When an association changeset modifies that OrderLine by its identity
+      When I change that OrderLine in the Order I read
       Then the existing row is updated
       And a duplicate row is not inserted
 
-    Scenario: Removing related records requires a configured policy
-      Given an association replacement omits an existing child
-      When no removal policy has been configured
-      Then the replacement is rejected
-      And the child is not silently deleted or detached
+    Scenario: Removing an owned record deletes it
+      Given an Order with two OrderLines
+      When I remove one of them from the Order I read
+      Then that OrderLine is deleted
+      And the other is kept
 
     Scenario: Parent and association writes are atomic
       Given a valid Order change and an invalid OrderLine change

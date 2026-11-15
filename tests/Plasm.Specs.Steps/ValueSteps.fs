@@ -26,8 +26,6 @@ type ValueSteps(w: World) =
                     where (o.Status = Published)
                     orderByDescending o.PlacedAt
                     take 10
-                    preload o.Lines linesWithProduct
-                    preload o.Payments successfulPayments
             }
 
         let projected =
@@ -42,12 +40,13 @@ type ValueSteps(w: World) =
 
     [<StepDefinition("the query can be passed to another function")>]
     member _.PassToFunction() =
-        let describe (q: Query<Order>) = q.FilterCount, q.LoadPaths
+        let describe (q: Query<Order>) = q.FilterCount
         let q: Query<Order> = w.Get "query"
-        equal (2, [ "Lines"; "Payments" ]) (describe q) "described query"
-        // Inspection is a further function over the value; still no database access.
+        equal 2 (describe q) "described query"
+        // Inspection is a further function over the value; still no database
+        // access. The relationship load is the OrderLines the Order owns.
         let plan = w.Repo.Explain q |> ok
-        equal [ "Lines"; "Lines.Product"; "Payments" ] plan.LoadPaths "plan paths"
+        equal [ "Lines" ] plan.LoadPaths "plan paths"
         equal 0 w.CommandsSinceMark.Length "commands"
 
     // Scenario: Executing a query does not mutate its description

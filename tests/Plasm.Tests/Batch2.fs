@@ -138,7 +138,7 @@ let ``a bulk update can clear an optional field and filter through a relationshi
         let withPayments =
             plasm {
                 for o in orders do
-                    where (Rel.any (fun p -> p.Status = Succeeded) o.Payments)
+                    where (exists (plasm { for p in payments do where (p.OrderId = o.Id && p.Status = Succeeded) }))
             }
 
         let bulk = Bulk.update (withPayments, fun o -> { o with CancellationReason = None })
@@ -174,7 +174,7 @@ let ``bulk writes reject versions, relationships and empty changes`` () =
     let message (b: BulkWrite<int>) = offlineRepo.Explain b |> invalidQuery
 
     Assert.Contains("version", message (Bulk.update (all, fun o -> { o with Version = 7 })))
-    Assert.Contains("relationship", message (Bulk.update (all, fun o -> { o with Lines = Loaded [] })))
+    Assert.Contains("relationship", message (Bulk.update (all, fun o -> { o with Lines = [] })))
     Assert.Contains("must return a copy of the row", message (Bulk.update (all, fun o -> o)))
     Assert.Contains("assigns no field", message (Bulk.update (all, fun o -> { o with Total = o.Total })))
     Assert.Contains("joins are not supported", message (Bulk.delete (plasm { for o in orders do join c in customers on (o.CustomerId = Some c.Id); where (c.Name = "x") })))
@@ -360,68 +360,53 @@ let ``expressions of arguments are compiled into bound parameters`` () =
 // -- Batch 2b: many-to-many, schema check, sandbox -------------------------------
 
 [<Fact>]
-let ``manyToMany requires a join table name`` () =
-    let bad =
-        schema<Product> "products" {
-            identityKey (fun p -> p.Id)
-        }
-
-    // An empty join table name is a configuration error naming the relationship.
+let ``links requires a join table name`` () =
+    // An empty join table name is a configuration error naming the list.
     let r =
         Model.build
             Schemas.scalars
-            [ schema<Order> "orders" {
-                  identityKey (fun o -> o.Id)
-                  manyToMany (fun o -> o.Lines) "" "order_id" "line_id"
-                  hasMany (fun o -> o.Payments) (fun p -> p.OrderId)
-                  belongsTo (fun o -> o.Customer) (fun o -> o.CustomerId)
+            [ schema<Article> "articles" {
+                  identityKey (fun a -> a.Id)
+                  links (fun a -> a.Tags) "" "article_id" "tag_id"
               }
-              Schemas.customers
-              Schemas.orderLines
-              bad
-              Schemas.payments ]
+              Schemas.tags ]
 
     match r with
-    | Error es -> Assert.Contains(es, fun e -> e.Property = Some "Lines" && e.Message.Contains "join table")
+    | Error es -> Assert.Contains(es, fun e -> e.Property = Some "Tags" && e.Message.Contains "join table")
     | Ok _ -> failwith "expected a configuration error"
 
 [<Fact>]
-let ``nested loads below a many-to-many relationship and Tx link writes`` () =
+let ``linked lists are written as join-table rows by difference`` () =
     task {
         let! db = freshDefault ()
         let! a = db.Scalar<int64>("insert into articles(title) values ('A') returning id")
         let! t = db.Scalar<int64>("insert into tags(name) values ('x') returning id")
         let tag = { Id = TagId t; Name = "x" }
-        let article = { Id = ArticleId a; Title = "A"; Tags = NotLoaded }
+        let article = { Id = ArticleId a; Title = "A"; Tags = [] }
+        let write (tx: Tx<Article, unit>) = db.Repo.Transact tx
 
-        let! r =
-            db.Repo.Transact(
-                transaction {
-                    let! written = Tx.write (Changeset.update article |> Changeset.putLinks ((fun x -> x.Tags), [ tag; tag ]))
-                    return written
-                }
-            )
-
-        Assert.Equal(Loaded [ tag; tag ], (ok r).Tags)
+        // The same Tag twice is one link.
+        let! r = write (Tx.update (article, { article with Tags = [ tag; tag ] }))
+        let linked = ok r
         let! n = db.Scalar<int64>("select count(*) from article_tags")
         Assert.Equal(1L, n)
 
-        // removeLinks of something not linked is a no-op; putLinks [] clears.
-        let! _ = db.Repo.Update(Changeset.update article |> Changeset.removeLinks ((fun x -> x.Tags), [ { tag with Id = TagId 12345L } ]))
-        let! cleared = db.Repo.Update(Changeset.update article |> Changeset.putLinks ((fun x -> x.Tags), []))
-        Assert.Equal(Loaded [], (ok cleared).Tags)
+        // An empty list clears the links.
+        let! cleared = write (Tx.update (linked, { linked with Tags = [] }))
+        Assert.Equal<Tag list>([], (ok cleared).Tags)
         let! n = db.Scalar<int64>("select count(*) from article_tags")
         Assert.Equal(0L, n)
     }
 
 [<Fact>]
-let ``a relationship-only update of an identity table without a version sends no row update`` () =
+let ``a links-only update of an identity table without a version sends no row update`` () =
     task {
         let! db = freshDefault ()
         let! a = db.Scalar<int64>("insert into articles(title) values ('A') returning id")
+        let! t = db.Scalar<int64>("insert into tags(name) values ('x') returning id")
         db.Recorder.Clear()
-        let article = { Id = ArticleId a; Title = "A"; Tags = NotLoaded }
-        let! r = db.Repo.Update(Changeset.update article |> Changeset.addLinks ((fun x -> x.Tags), []))
+        let article = { Id = ArticleId a; Title = "A"; Tags = [] }
+        let! r = db.Repo.Transact(Tx.update (article, { article with Tags = [ { Id = TagId t; Name = "x" } ] }): Tx<Article, unit>)
         ok r |> ignore
         Assert.DoesNotContain(db.Recorder.Events, fun e -> e.Sql.StartsWith "UPDATE")
     }

@@ -70,6 +70,23 @@ Feature: An owned record is a plain field, loaded and written with its owner
       When I delete the Account I read
       Then the profiles table and the settings table are empty
 
+  Rule: Other queries reach an owned record
+
+    These were has-one.feature's scenarios, before has-one became an owned
+    record (one style, 2026-11-14).
+
+    Scenario: Filtering through an owned record
+      Given an Account "ada" with the bio "maths" and the theme "dark"
+      And an Account "bob" with the bio "poetry" and the theme "light"
+      When I keep the Accounts whose profile's bio is "maths", through exists
+      Then only "ada" is read
+
+    Scenario: An owned record matched by two rows is refused when read
+      Given an Account "ada" with the bio "maths" and the theme "dark"
+      And a second profile row for it, behind Plasm's back
+      When I read the Accounts
+      Then the read is refused, naming the field Profile
+
   Rule: A record field is owned or refused
 
     Scenario: A record field the schema does not own is refused at build, saying how to own it

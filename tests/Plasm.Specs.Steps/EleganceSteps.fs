@@ -61,10 +61,11 @@ type EleganceSteps(w: World) =
     [<StepDefinition("distinct CustomerId and OrderId types")>]
     member _.DistinctIds() = check (typeof<CustomerId> <> typeof<OrderId>) "distinct types"
 
-    [<StepDefinition("each has a configured scalar mapping")>]
+    [<StepDefinition("each is stored as its value by convention")>]
     member _.Mapped() =
-        for t in [ typeof<CustomerId>; typeof<OrderId> ] do
-            check (Schemas.scalars |> List.exists (fun s -> s.Domain = t)) $"{t.Name} mapping"
+        check Schemas.scalars.IsEmpty "no mapping is registered"
+        equal (Ok(box (CustomerId 7L))) (w.Db.Model.ScalarFromDb(typeof<CustomerId>, box 7L)) "CustomerId from its value"
+        equal (Ok(box (OrderId 7L))) (w.Db.Model.ScalarFromDb(typeof<OrderId>, box 7L)) "OrderId from its value"
 
     [<StepDefinition("I construct queries and changes")>]
     member _.ConstructQueriesAndChanges() =
@@ -157,7 +158,7 @@ type EleganceSteps(w: World) =
             let q =
                 plasm {
                     for o in Schemas.orders do
-                        where (o.Payments |> Rel.any (fun p -> p.Status = Succeeded))
+                        where (exists (plasm { for p in Schemas.payments do where (p.OrderId = o.Id && p.Status = Succeeded) }))
                         orderBy o.Id
                 }
 
@@ -188,23 +189,30 @@ type EleganceSteps(w: World) =
         }
         |> unit
 
-    [<StepDefinition("I load that relationship")>]
-    member _.LoadCustomer() =
+    [<StepDefinition("I read it with its Customer through a left join")>]
+    member _.LeftJoinCustomer() =
         task {
-            let! os = all (plasm { for o in Schemas.orders do orderBy o.Id; preload o.Customer })
-            w.Set("orders", os)
+            let! rows =
+                w.Repo.All(
+                    plasm {
+                        for o in Schemas.orders do
+                            leftJoin c in Schemas.customers on (o.CustomerId = Some c.Id)
+                            orderBy o.Id
+                            select (o.Id, c |> Option.map (fun c -> c.Name))
+                    }
+                )
+
+            w.Set("withCustomers", ok rows)
         }
         |> unit
 
     [<StepDefinition("the Order remains in the result")>]
     member _.Remains() =
-        equal (w.Get<OrderId list> "ids") (w.Get<Order list> "orders" |> List.map (fun o -> o.Id)) "orders"
+        equal (w.Get<OrderId list> "ids") (w.Get<(OrderId * string option) list> "withCustomers" |> List.map fst) "orders"
 
-    [<StepDefinition("the relationship is represented as loaded and absent")>]
-    member _.LoadedAbsent() =
-        let orders: Order list = w.Get "orders"
-        equal (Loaded None) orders.[1].Customer "missing customer"
-        check (match orders.[0].Customer with Loaded(Some c) -> c.Name = "Ada" | _ -> false) "present customer"
+    [<StepDefinition("its Customer is None")>]
+    member _.CustomerNone() =
+        equal [ Some "Ada"; None ] (w.Get<(OrderId * string option) list> "withCustomers" |> List.map snd) "customers"
 
     // Scenario: Null comparisons have explicit semantics
 
@@ -300,7 +308,7 @@ type EleganceSteps(w: World) =
     member _.NoSilentPromise() =
         // The unordered page was rejected before any command ran.
         check (w.CommandsSinceMark |> List.forall (fun e -> e.Sql.Contains "ORDER BY")) "every executed page is ordered"
-        equal 3 (w.CommandsSinceMark.Length) "only the ordered pages executed"
+        equal 3 (w.QueryCommands.Length) "only the ordered pages executed"
 
     // == Rule: Composition has consistent algebraic behavior ==================
 
@@ -338,8 +346,8 @@ type EleganceSteps(w: World) =
     member _.SameLoad() =
         task {
             let! id = Seed.order w.Db None "published" 1m (Seed.at 1)
-            let! _ = Seed.payment w.Db id 1m "succeeded" (Seed.at 2)
-            let! _ = Seed.payment w.Db id 2m "failed" (Seed.at 3)
+            let! p = Seed.product w.Db "SKU"
+            let! _ = Seed.line w.Db id p 1 1m
             ()
         }
         |> unit
@@ -347,8 +355,9 @@ type EleganceSteps(w: World) =
     [<StepDefinition("I compose them")>]
     member _.ComposeThem() =
         task {
-            let a (q: Query<Order>) = plasm { for o in q do preload o.Payments successfulPayments }
-            let b (q: Query<Order>) = plasm { for o in q do preload o.Payments successfulPayments }
+            // Each function's query reads Orders, and so the OrderLines they own.
+            let a (q: Query<Order>) = plasm { for o in q do where (o.Total > 0m) }
+            let b (q: Query<Order>) = plasm { for o in q do where (o.Status = Published) }
             let q = plasm { for o in Schemas.orders do orderBy o.Id } |> a |> b
             w.Set("plan", w.Repo.Explain q |> ok)
             w.MarkCommands()
@@ -359,13 +368,13 @@ type EleganceSteps(w: World) =
 
     [<StepDefinition("the relationship is loaded once")>]
     member _.LoadedOnce() =
-        equal [ "Payments" ] (w.Get<QueryPlan>("plan").LoadPaths) "planned loads"
-        equal 1 (commandsOn "payments" w.CommandsSinceMark).Length "payment commands"
+        equal [ "Lines" ] (w.Get<QueryPlan>("plan").LoadPaths) "planned loads"
+        equal 1 (commandsOn "order_lines" w.CommandsSinceMark).Length "line commands"
 
     [<StepDefinition("its records are not duplicated")>]
     member _.NotDuplicated() =
-        let payments = Assoc.get (List.exactlyOne (w.Get<Order list> "orders")).Payments
-        equal 1 payments.Length "payments"
+        let lines = (List.exactlyOne (w.Get<Order list> "orders")).Lines
+        equal 1 lines.Length "lines"
 
     // Scenario: Empty transaction descriptions are valid
 
@@ -438,109 +447,42 @@ type EleganceSteps(w: World) =
         let setClause = update.Sql.Substring(update.Sql.IndexOf " SET ", update.Sql.IndexOf " WHERE " - update.Sql.IndexOf " SET ")
         equal " SET \"status\" = @p0, \"version\" = (\"orders\".\"version\" + @p1)" setClause "SET clause"
 
-    // Scenario: Filtered collections are not authoritative replacements
-
-    [<StepDefinition("I load only successful Payments for an Order")>]
-    member _.LoadSuccessfulOnly() =
-        task {
-            let! id = Seed.order w.Db None "published" 10m (Seed.at 1)
-            let! _ = Seed.payment w.Db id 5m "succeeded" (Seed.at 2)
-            let! _ = Seed.payment w.Db id 5m "succeeded" (Seed.at 3)
-            let! _ = Seed.payment w.Db id 5m "failed" (Seed.at 4)
-            let! os = all (plasm { for o in Schemas.orders do preload o.Payments successfulPayments })
-            w.Set("order", List.exactlyOne os)
-        }
-        |> unit
-
-    [<StepDefinition("I submit an unrelated Order change")>]
-    member _.UnrelatedChange() =
-        task {
-            let! r = w.Repo.Update(w.Get<Order> "order" |> Changeset.edit (fun o -> { o with Status = Cancelled }))
-            w.Set("order", ok r)
-        }
-        |> unit
-
-    [<StepDefinition("unsuccessful Payments remain unchanged")>]
-    member _.UnsuccessfulRemain() =
-        task {
-            let! failed = w.Db.Scalar<int64>("select count(*) from payments where status = 'failed'")
-            let! total = w.Db.Scalar<int64>("select count(*) from payments")
-            equal (1L, 3L) (failed, total) "stored payments"
-        }
-        |> unit
-
-    [<StepDefinition("I attempt to replace Payments using the filtered collection")>]
-    member _.ReplaceFiltered() =
-        task {
-            // Without a scope the call does not compile.
-            do!
-                rejectedWith
-                    "FS0501"
-                    "let r (o: Order) (ps: Changeset<Payment> list) = Changeset.update o |> Changeset.replaceChildren((fun o -> o.Payments), ps)"
-
-            let order: Order = w.Get "order"
-            let loaded = Assoc.get order.Payments |> List.map Changeset.update
-
-            let cs =
-                Changeset.update order
-                |> Changeset.replaceChildren((fun o -> o.Payments), ReplaceScope.matching successfulPayments, loaded)
-
-            let! r = w.Repo.Update cs
-            ok r |> ignore
-        }
-        |> unit
-
-    [<StepDefinition("the API requires explicit acknowledgement of replacement scope")>]
-    member _.ScopeRequired() =
-        task {
-            // Scoped to successful payments, the replacement leaves the failed one alone.
-            let! failed = w.Db.Scalar<int64>("select count(*) from payments where status = 'failed'")
-            let! total = w.Db.Scalar<int64>("select count(*) from payments")
-            equal (1L, 3L) (failed, total) "stored payments"
-        }
-        |> unit
-
     // Scenario: Duplicate child identities are rejected
 
-    [<StepDefinition("an association changeset contains two entries for the same child identity")>]
+    [<StepDefinition("an Order change whose OrderLines hold two entries for the same identity")>]
     member _.DuplicateEntries() =
         task {
             let! p = Seed.product w.Db "SKU"
             let! id = Seed.order w.Db None "draft" 1m (Seed.at 1)
             let! _ = Seed.line w.Db id p 1 1m
-            let! r = w.Repo.One(plasm { for o in Schemas.orders do preload o.Lines })
+            let! r = w.Repo.One(Query.from Schemas.orders)
             let order = (ok r).Value
-            let line = Assoc.get order.Lines |> List.exactlyOne
-
-            w.Set(
-                "changeset",
-                Changeset.update order
-                |> Changeset.putChildren(
-                    (fun o -> o.Lines),
-                    [ line |> Changeset.edit (fun l -> { l with Quantity = qty 2 })
-                      line |> Changeset.edit (fun l -> { l with Quantity = qty 3 }) ]
-                )
-            )
+            let line = List.exactlyOne order.Lines
+            w.Set("original", order)
+            w.Set("changed", { order with Lines = [ { line with Quantity = qty 2 }; { line with Quantity = qty 3 } ] })
         }
         |> unit
 
-    [<StepDefinition("I validate the changeset")>]
-    member _.ValidateChangeset() =
-        w.MarkCommands()
-        w.Set("checked", Changeset.check w.Db.Model (w.Get<Changeset<Order>> "changeset"))
+    [<StepDefinition("I write it")>]
+    member _.WriteIt() =
+        task {
+            w.MarkCommands()
+            let! r = w.Repo.Transact(Tx.update (w.Get<Order> "original", w.Get<Order> "changed"): Tx<Order, unit>)
+            w.Set("duplicateWrite", r)
+        }
+        |> unit
 
     [<StepDefinition("it reports the duplicate identity")>]
     member _.ReportsDuplicate() =
-        let cs: Changeset<Order> = w.Get "checked"
-        let e = cs.Errors |> List.exactlyOne
-        equal (FieldErrorKind.DuplicateIdentity, "Lines") (e.Kind, e.Field) "error"
-        equal 0 w.CommandsSinceMark.Length "validation needs no database"
+        match w.Get<Result<Order, TransactionError<unit>>> "duplicateWrite" with
+        | Error { Failure = TxFailure.InvalidChanges(_, [ e ]) } ->
+            equal (FieldErrorKind.DuplicateIdentity, "Lines") (e.Kind, e.Field) "error"
+            check (w.CommandsSinceMark |> List.forall (fun c -> not (c.Sql.StartsWith "UPDATE" || c.Sql.StartsWith "INSERT"))) "nothing written"
+        | other -> failwithf "expected one invalid change, got %A" other
 
     [<StepDefinition("it does not choose an entry based on incidental ordering")>]
     member _.NoChoice() =
         task {
-            let! r = w.Repo.Update(w.Get<Changeset<Order>> "changeset")
-            check (match r with Error(WriteError.Invalid _) -> true | _ -> false) "the write is rejected"
             let! q = w.Db.Scalar<int>("select quantity from order_lines")
             equal 1 q "stored quantity untouched"
         }
@@ -548,9 +490,8 @@ type EleganceSteps(w: World) =
 
     // == Rule: Efficiency guarantees are testable ==============================
 
-    [<StepDefinition("a query with nested separate-query loads")>]
-    member _.NestedQuery() =
-        w.Set("query", published |> Loads.withLinesAndProducts |> Loads.withSuccessfulPayments)
+    [<StepDefinition("a query for Orders, which own their OrderLines")>]
+    member _.OwningQuery() = w.Set("query", published)
 
     [<StepDefinition("I inspect its execution plan")>]
     member _.Inspect() =
@@ -566,7 +507,7 @@ type EleganceSteps(w: World) =
 
     [<StepDefinition("I can identify the requested load paths")>]
     member _.Paths() =
-        equal [ "Lines"; "Lines.Product"; "Payments" ] (w.Get<QueryPlan>("plan").LoadPaths) "paths"
+        equal [ "Lines" ] (w.Get<QueryPlan>("plan").LoadPaths) "paths"
 
     [<StepDefinition("the planned batching strategy")>]
     member _.Strategy() =
@@ -585,9 +526,12 @@ type EleganceSteps(w: World) =
             let! _ =
                 w.Db.Exec("insert into orders(status, total, placed_at) select 'published', g, now() from generate_series(1, 150) g")
 
+            let! p = Seed.product w.Db "SKU"
+
             let! _ =
                 w.Db.Exec(
-                    "insert into payments(order_id, amount, status, created_at) select o.id, 1, 'succeeded', now() from orders o, generate_series(1, 3)"
+                    "insert into order_lines(order_id, product_id, quantity, unit_price) select o.id, @p, 1, 1 from orders o, generate_series(1, 3)",
+                    [ "p", box (let (ProductId v) = p in v) ]
                 )
 
             ()
@@ -600,9 +544,9 @@ type EleganceSteps(w: World) =
             let run n =
                 task {
                     w.MarkCommands()
-                    let! os = all (plasm { for o in Schemas.orders do orderBy o.Id; take n; preload o.Payments })
+                    let! os = all (plasm { for o in Schemas.orders do orderBy o.Id; take n })
                     equal n os.Length "parents"
-                    return (commandsOn "payments" w.CommandsSinceMark).Length
+                    return (commandsOn "order_lines" w.CommandsSinceMark).Length
                 }
 
             let! small = run 10
@@ -646,7 +590,6 @@ type EleganceSteps(w: World) =
                         for o in Schemas.orders do
                             orderByDescending o.PlacedAt
                             take 20
-                            preload o.Lines
                     }
                 )
 

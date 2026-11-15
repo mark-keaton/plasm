@@ -10,7 +10,7 @@ module Filters =
     let withOutstandingBalance (q: Query<Order>) =
         plasm {
             for o in q do
-                where (not (Rel.any (fun p -> p.Status = Succeeded) o.Payments))
+                where (not (exists (plasm { for p in Schemas.payments do where (p.OrderId = o.Id && p.Status = Succeeded) })))
         }
 
     /// An ordinary F# function the translator cannot see into.
@@ -59,7 +59,8 @@ type CompositionSteps(w: World) =
     member _.BothInDatabase() =
         let orders: Order list = w.Get "orders"
         equal [ w.Get<OrderId> "unpaid" ] (orders |> List.map (fun o -> o.Id)) "result"
-        let cmd = w.CommandsSinceMark |> List.exactlyOne
+        // The Orders' command (their OrderLines follow in one more).
+        let cmd = w.CommandsSinceMark |> List.find (fun c -> c.Sql.Contains "FROM \"orders\"")
         check (cmd.Sql.Contains "\"customer_id\" = @") "customer predicate is in SQL"
         check (cmd.Sql.Contains "NOT EXISTS") "relationship predicate is in SQL"
         // Only the matching row crossed the wire: filtering happened in the database.

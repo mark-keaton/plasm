@@ -254,7 +254,7 @@ module internal TxCore =
             match Translate.projection rt.Model (ref false) query.Def None with
             | Error e -> return Error(TxFailure.Failed(DbError.Translation e))
             | Ok(select, shape) ->
-                let! rows = Execution.readProjection rt.Session select shape query.Def.Root.Name
+                let! rows = Execution.readProjection rt.Session rt.Model select shape query.Def.Root.Name
                 return Ok(rows |> List.map unbox<'T>)
           else
             match Planner.plan rt.Session.Provider.Dialect rt.Model query.Def with
@@ -414,7 +414,7 @@ type Tx =
         TxCore.step (TxCore.at file line "sql") (fun rt ->
             task {
                 let cmd = Execution.rawCommand rt.Model rt.Session.Provider.Dialect sql
-                let! rows = Execution.query rt.Session cmd (Execution.rawReader rt.Model typeof<'R> "SQL")
+                let! rows = Execution.rawRecords rt.Session rt.Model typeof<'R> cmd
                 return Ok(rows |> Seq.map unbox<'R> |> List.ofSeq)
             })
 

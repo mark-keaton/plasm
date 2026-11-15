@@ -22,26 +22,50 @@ type RawSqlSteps(w: World) =
 
     // Rule: Hand-written queries return typed values
 
+    [<StepDefinition("I read Customers with hand-written SQL")>]
+    member _.ReadCustomers() =
+        task {
+            let excluded = "Nobody"
+            let! r = w.Repo.Sql<Customer>($"SELECT * FROM customers WHERE name <> {excluded} ORDER BY id")
+            w.Set("rawCustomers", ok r)
+        }
+        |> unit
+
+    [<StepDefinition("the results are Customer records built through the model")>]
+    member _.CustomersBuilt() =
+        let customers: Customer list = w.Get "rawCustomers"
+        equal [ w.Get<CustomerId> "ada"; w.Get<CustomerId> "bob" ] (customers |> List.map (fun c -> c.Id)) "typed keys"
+        equal [ "Ada"; "Bob" ] (customers |> List.map (fun c -> c.Name)) "names"
+
+    [<StepDefinition("Orders for several Customers, each with an OrderLine")>]
+    member _.OrdersWithLines() =
+        task {
+            let! ada = Seed.customer w.Db "Ada" "ada@example.com"
+            let! p = Seed.product w.Db "SKU"
+            let! o1 = Seed.order w.Db (Some ada) "published" 10m (Seed.at 1)
+            let! o2 = Seed.order w.Db None "draft" 20m (Seed.at 2)
+            let! _ = Seed.line w.Db o1 p 1 10m
+            let! _ = Seed.line w.Db o2 p 2 10m
+            ()
+        }
+        |> unit
+
     [<StepDefinition("I read Orders with hand-written SQL")>]
     member _.ReadOrders() =
         task {
-            let minimum = 15m
+            let minimum = 5m
+            w.MarkCommands()
             let! r = w.Repo.Sql<Order>($"SELECT * FROM orders WHERE total >= {minimum} ORDER BY id")
             w.Set("rawOrders", ok r)
         }
         |> unit
 
-    [<StepDefinition("the results are Order records built through the model")>]
-    member _.OrdersBuilt() =
+    [<StepDefinition("each Order holds its OrderLines, read in one more command")>]
+    member _.OrdersHoldLines() =
         let orders: Order list = w.Get "rawOrders"
-        equal [ 20m; 30m; 40m ] (orders |> List.map (fun o -> o.Total)) "totals"
-        equal [ Some(w.Get<CustomerId> "ada"); Some(w.Get<CustomerId> "bob"); None ] (orders |> List.map (fun o -> o.CustomerId)) "typed keys"
-        equal [ Published; Published; Draft ] (orders |> List.map (fun o -> o.Status)) "mapped statuses"
-
-    [<StepDefinition("their relationships are not loaded")>]
-    member _.NotLoaded() =
-        for o in w.Get<Order list> "rawOrders" do
-            check (o.Lines = NotLoaded && o.Payments = NotLoaded && o.Customer = NotLoaded) "relationships are NotLoaded"
+        equal [ [ 1 ]; [ 2 ] ] (orders |> List.map (fun o -> o.Lines |> List.map (fun l -> l.Quantity.Value))) "each Order's lines"
+        check (orders |> List.forall (fun o -> o.Lines |> List.forall (fun l -> l.OrderId = o.Id))) "lines of their Order"
+        equal 2 w.CommandsSinceMark.Length "the SQL, and the lines its Orders own"
 
     [<StepDefinition("I read Customer names with their Order counts using hand-written SQL")>]
     member _.ReadTuples() =

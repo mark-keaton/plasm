@@ -44,6 +44,6 @@ Feature: Checking the model against the database schema
 
     Scenario: Join tables are checked
       Given mappings for Articles and Tags linked through a join table
-      And a many-to-many relationship whose join table column does not exist
+      And a link whose join table column does not exist
       When I check the model against the database
       Then the missing join table column is reported with its relationship

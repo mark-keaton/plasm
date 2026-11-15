@@ -5,21 +5,13 @@ open Plasm
 open Plasm.TestDomain.Domain
 open Plasm.TestDomain.Database
 
-/// Rule: Association writes have explicit lifecycle semantics
+/// Rule: Writing an aggregate writes what it owns
 [<Binding>]
 type AssociationWriteSteps(w: World) =
 
-    let orderWithLines (id: OrderId) =
+    let readOrder (id: OrderId) =
         task {
-            let! r =
-                w.Repo.One(
-                    plasm {
-                        for o in Schemas.orders do
-                            where (o.Id = id)
-                            preload o.Lines
-                    }
-                )
-
+            let! r = w.Repo.One(plasm { for o in Schemas.orders do where (o.Id = id) })
             return (ok r).Value
         }
 
@@ -37,6 +29,13 @@ type AssociationWriteSteps(w: World) =
             return id
         }
 
+    /// Writes `changed`, made from `original` (the Order read).
+    let update (original: Order) (changed: Order) =
+        task {
+            let! r = w.Repo.Transact(Tx.update (original, changed): Tx<Order, unit>)
+            return r
+        }
+
     let lineCount () = w.Db.Scalar<int64>("select count(*) from order_lines")
 
     // Scenario: Omitting an association does not modify it
@@ -47,10 +46,10 @@ type AssociationWriteSteps(w: World) =
     [<StepDefinition("I update only the Order status")>]
     member _.UpdateStatus() =
         task {
-            let! r = w.Repo.One(plasm { for o in Schemas.orders do where (o.Id = w.Get "id") })
-            let order = (ok r).Value
-            equal NotLoaded order.Lines "lines not loaded"
-            let! u = w.Repo.Update(order |> Changeset.edit (fun o -> { o with Status = Published }))
+            let! order = readOrder (w.Get "id")
+            equal 2 order.Lines.Length "lines read with the Order"
+            w.MarkCommands()
+            let! u = update order { order with Status = Published }
             w.Set("updated", ok u)
         }
         |> unit
@@ -60,31 +59,26 @@ type AssociationWriteSteps(w: World) =
         task {
             let! n = lineCount ()
             equal 2L n "stored lines"
+            equal 2 (w.Get<Order> "updated").Lines.Length "returned lines"
         }
         |> unit
 
-    [<StepDefinition("an unloaded collection is not interpreted as empty")>]
-    member _.UnloadedNotEmpty() =
-        equal NotLoaded (w.Get<Order> "updated").Lines "returned lines remain unloaded"
-        check (w.Db.Recorder.Writes |> List.forall (fun e -> not (e.Sql.Contains "order_lines"))) "no line writes"
+    [<StepDefinition("no command is sent for its OrderLines")>]
+    member _.NoLineCommand() =
+        check (w.CommandsSinceMark |> List.forall (fun e -> not (e.Sql.Contains "order_lines"))) "no command touches order_lines"
 
     // Scenario: Updating an association matches existing identities
 
     [<StepDefinition("an Order with an existing OrderLine")>]
     member _.WithLine() = seedOrderWithLines 1 |> unit
 
-    [<StepDefinition("an association changeset modifies that OrderLine by its identity")>]
+    [<StepDefinition("I change that OrderLine in the Order I read")>]
     member _.ModifyLine() =
         task {
-            let! order = orderWithLines (w.Get "id")
-            let line = Assoc.get order.Lines |> List.exactlyOne
+            let! order = readOrder (w.Get "id")
+            let line = List.exactlyOne order.Lines
             w.Set("lineId", line.Id)
-
-            let cs =
-                Changeset.update order
-                |> Changeset.putChildren((fun o -> o.Lines), [ line |> Changeset.edit (fun l -> { l with Quantity = qty 7 }) ])
-
-            let! r = w.Repo.Update cs
+            let! r = update order { order with Lines = [ { line with Quantity = qty 7 } ] }
             ok r |> ignore
         }
         |> unit
@@ -106,53 +100,38 @@ type AssociationWriteSteps(w: World) =
         }
         |> unit
 
-    // Scenario: Removing related records requires a configured policy
+    // Scenario: Removing an owned record deletes it
 
-    [<StepDefinition("an association replacement omits an existing child")>]
-    member _.ReplacementOmits() =
+    [<StepDefinition("an Order with two OrderLines")>]
+    member _.WithTwoLines() = seedOrderWithLines 2 |> unit
+
+    [<StepDefinition("I remove one of them from the Order I read")>]
+    member _.RemoveOne() =
         task {
-            let! id = seedOrderWithLines 2
-            let! order = orderWithLines id
-            let kept = Assoc.get order.Lines |> List.head
-
-            w.Set(
-                "changeset",
-                Changeset.update order
-                |> Changeset.replaceChildren((fun o -> o.Lines), ReplaceScope.allChildren, [ Changeset.update kept ])
-            )
-        }
-        |> unit
-
-    [<StepDefinition("no removal policy has been configured")>]
-    member _.NoPolicy() =
-        task {
-            w.MarkCommands()
-            let! r = w.Repo.Update(w.Get<Changeset<Order>> "changeset")
-            w.Set("result", r)
-        }
-        |> unit
-
-    [<StepDefinition("the replacement is rejected")>]
-    member _.Rejected() =
-        match w.Get<Result<Order, WriteError<Order>>> "result" with
-        | Error(WriteError.Invalid cs) ->
-            let e = cs.Errors |> List.exactlyOne
-            equal FieldErrorKind.ReplacementRejected e.Kind "error kind"
-            equal "Lines" e.Field "field"
-        | other -> failwithf "expected Invalid, got %A" other
-
-    [<StepDefinition("the child is not silently deleted or detached")>]
-    member _.NotDeleted() =
-        task {
-            let (OrderId id) = w.Get "id"
-            let! n = w.Db.Scalar<int64>("select count(*) from order_lines where order_id = @id", [ "id", box id ])
-            equal 2L n "lines still attached"
-            // The same replacement succeeds once a policy is configured explicitly.
-            let repo = w.Db.RepoWith(model = Schemas.modelDeletingLines)
-            let! r = repo.Update(w.Get<Changeset<Order>> "changeset")
+            let! order = readOrder (w.Get "id")
+            let kept, removed = order.Lines.[0], order.Lines.[1]
+            w.Set("kept", kept.Id)
+            w.Set("removed", removed.Id)
+            let! r = update order { order with Lines = [ kept ] }
             ok r |> ignore
-            let! after = w.Db.Scalar<int64>("select count(*) from order_lines where order_id = @id", [ "id", box id ])
-            equal 1L after "with OnReplace.Delete the omitted line is deleted"
+        }
+        |> unit
+
+    [<StepDefinition("that OrderLine is deleted")>]
+    member _.Deleted() =
+        task {
+            let (OrderLineId removed) = w.Get "removed"
+            let! n = w.Db.Scalar<int64>("select count(*) from order_lines where id = @id", [ "id", box removed ])
+            equal 0L n "the removed line"
+        }
+        |> unit
+
+    [<StepDefinition("the other is kept")>]
+    member _.Kept() =
+        task {
+            let (OrderLineId kept) = w.Get "kept"
+            let! n = w.Db.Scalar<int64>("select count(*) from order_lines where id = @id", [ "id", box kept ])
+            equal 1L n "the kept line"
         }
         |> unit
 
@@ -162,27 +141,27 @@ type AssociationWriteSteps(w: World) =
     member _.ValidAndInvalid() =
         task {
             let! id = seedOrderWithLines 1
-            let! order = orderWithLines id
-            let line = Assoc.get order.Lines |> List.exactlyOne
-
-            // Violates the database's check constraint.
-            let invalidInDatabase = line |> Changeset.edit (fun l -> { l with UnitPrice = -1m })
-            let parent = order |> Changeset.edit (fun o -> { o with Status = Published })
-            w.Set("inDatabase", parent |> Changeset.putChildren((fun o -> o.Lines), [ invalidInDatabase ]))
+            let! order = readOrder id
+            let line = List.exactlyOne order.Lines
+            // The line violates the database's check (order_lines_unit_price_check).
+            w.Set("original", order)
+            w.Set("changed", { order with Status = Published; Lines = [ { line with UnitPrice = -1m } ] })
         }
         |> unit
 
     [<StepDefinition("I submit them as one association write")>]
     member _.SubmitTogether() =
         task {
-            let! b = w.Repo.Update(w.Get<Changeset<Order>> "inDatabase")
+            let! r = update (w.Get "original") (w.Get "changed")
 
-            // The database's check (order_lines_unit_price_check) comes back as
-            // the child field's error.
-            match b with
-            | Error(WriteError.Invalid cs) ->
-                equal [ "Lines[0].UnitPrice", FieldErrorKind.CheckConstraint "order_lines_unit_price_check" ] (cs.Errors |> List.map (fun e -> e.Field, e.Kind)) "child error from the database"
-            | other -> failwithf "expected Invalid, got %A" other
+            // The database's check comes back as the child field's error.
+            match r with
+            | Error e ->
+                match e.Failure with
+                | TxFailure.InvalidChanges(_, errors) ->
+                    equal [ "Lines[0].UnitPrice", FieldErrorKind.CheckConstraint "order_lines_unit_price_check" ] (errors |> List.map (fun e -> e.Field, e.Kind)) "child error from the database"
+                | other -> failwithf "expected invalid changes, got %A" other
+            | Ok o -> failwithf "the write succeeded: %A" o
         }
         |> unit
 

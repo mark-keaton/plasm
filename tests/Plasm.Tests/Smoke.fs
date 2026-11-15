@@ -21,24 +21,22 @@ let ``milestone page with nested batched loads`` () =
         let! _ = Seed.payment db o1 10m "succeeded" (Seed.at 3)
         let! _ = Seed.payment db o2 20m "failed" (Seed.at 4)
 
-        let successful =
-            plasm {
-                for p in Schemas.payments do
-                    where (p.Status = Succeeded)
-                    orderBy p.CreatedAt
-            }
-
-        let linesWithProduct = plasm { for l in Schemas.orderLines do preload l.Product }
-
         let page =
             plasm {
                 for o in Schemas.orders do
                     where (o.Status = Published)
                     orderByDescending o.PlacedAt
                     take 20
-                    preload o.Lines linesWithProduct
-                    preload o.Payments successful
             }
+
+        // Another aggregate is reached by a query of its own.
+        let paymentsOf =
+            Query.prepare (fun (ids: Arg<OrderId list>) ->
+                plasm {
+                    for p in Schemas.payments do
+                        where (List.contains p.OrderId ids.Value && p.Status = Succeeded)
+                        orderBy p.CreatedAt
+                })
 
         let plan = db.Repo.Explain page |> ok
         printfn "%s" plan.Sql
@@ -46,14 +44,15 @@ let ``milestone page with nested batched loads`` () =
 
         let! orders = db.Repo.All page
         let orders = ok orders
+        let! payments = db.Repo.All(paymentsOf (orders |> List.map (fun o -> o.Id)))
+        let payments = ok payments
         for e in db.Recorder.Events do printfn "%s" e.Sql
         Assert.Equal(2, orders.Length)
         Assert.Equal(o2, orders.[0].Id)
-        let lines = Assoc.get orders.[1].Lines
+        let lines = orders.[1].Lines
         Assert.Equal(2, lines.Length)
-        Assert.Equal("B", (Assoc.get lines.[1].Product).Sku)
-        Assert.Equal(1, (Assoc.get orders.[1].Payments).Length)
-        Assert.Equal<Payment list>([], Assoc.get orders.[0].Payments)
-        Assert.Equal(NotLoaded, orders.[0].Customer)
-        Assert.Equal(4, db.Recorder.Count)
+        Assert.Equal(p2, lines.[1].ProductId)
+        Assert.Equal(1, payments.Length)
+        Assert.Equal(orders.[1].Id, payments.[0].OrderId)
+        Assert.Equal(3, db.Recorder.Count)
     }

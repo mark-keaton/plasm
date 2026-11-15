@@ -213,7 +213,8 @@ type FsiSteps(w: World) =
 
     [<StepDefinition("the query is displayed once")>]
     member _.DisplayedOnce() =
-        equal 1 (occurrences "SELECT" (displayed ())) "SELECT commands displayed"
+        // The Orders' command, and the load of the lines they own.
+        equal 1 (occurrences "FROM \"orders\"" (displayed ())) "the query's command displayed"
 
     // -- Displays ------------------------------------------------------------
 
@@ -236,20 +237,17 @@ type FsiSteps(w: World) =
     member _.NoCommand() =
         equal (w.Get<int> "fsiMark") (commandCount ()) "commands run by the session"
 
-    [<StepDefinition("I evaluate a query for Orders preloading their Lines and Products")>]
+    [<StepDefinition("I evaluate a query for Orders, which own their Lines")>]
     member _.QueryWithLoads() =
         markCommands ()
-
-        fsi().Run
-            "let q = plasm { for o in Schemas.orders do preload o.Lines (plasm { for l in Schemas.orderLines do preload l.Product }) }"
-        |> display
+        fsi().Run "let q = plasm { for o in Schemas.orders do where (o.Total > 0m) }" |> display
 
     [<StepDefinition("the session displays the main command and one command for each load, in execution order")>]
     member _.DisplaysLoads() =
         let out = displayed ()
-        equal 3 (occurrences "SELECT" out) "SELECT commands displayed"
+        equal 2 (occurrences "SELECT" out) "SELECT commands displayed"
         let at (table: string) = out.IndexOf($"FROM \"{table}\"")
-        check (at "orders" >= 0 && at "orders" < at "order_lines" && at "order_lines" < at "products") $"commands out of order:\n{out}"
+        check (at "orders" >= 0 && at "orders" < at "order_lines") $"commands out of order:\n{out}"
 
     [<StepDefinition("I evaluate a query whose filter calls an ordinary F# function on a field")>]
     member _.Untranslatable() =
@@ -265,20 +263,6 @@ type FsiSteps(w: World) =
 
     [<StepDefinition("the session does not display SQL")>]
     member _.NoSql() = lacks "SELECT" (displayed ())
-
-    [<StepDefinition("I read Orders without preloading their Lines")>]
-    member _.ReadOrders() =
-        seed().Wait()
-        fsi().Run "repo.All(plasm { for o in Schemas.orders do preload o.Customer }) |> wait" |> display
-
-    [<StepDefinition("each Order's Lines are displayed as not loaded")>]
-    member _.LinesNotLoaded() = contains "Lines = NotLoaded" (displayed ())
-
-    [<StepDefinition("loaded relationships display their records")>]
-    member _.LoadedDisplayed() =
-        let out = displayed ()
-        contains "Customer = Loaded" out
-        contains "\"Ada\"" out
 
     // -- Awaiting ------------------------------------------------------------
 

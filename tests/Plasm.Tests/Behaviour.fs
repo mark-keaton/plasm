@@ -18,7 +18,7 @@ let seedOrderWithLines (db: TestDb) n =
         let! p = Seed.product db "A"
         let! o = Seed.order db None "draft" 10m (Seed.at 1)
         let! ls = [ for i in 1..n -> Seed.line db o p i 1m ] |> Threading.Tasks.Task.WhenAll
-        let! r = db.Repo.All(plasm { for x in orders do preload x.Lines })
+        let! r = db.Repo.All(Query.from orders)
         return p, (ok r).Head, ls
     }
 
@@ -74,21 +74,6 @@ let ``a persisted value rejected by its domain constructor is a materialization 
     }
 
 [<Fact>]
-let ``a filtered load that hides a required related record is a materialization error`` () =
-    task {
-        let! db = freshDefault ()
-        let! p = Seed.product db "A"
-        let! o = Seed.order db None "draft" 1m (Seed.at 1)
-        let! _ = Seed.line db o p 1 1m
-        let none = plasm { for x in products do where (x.Sku = "nope") }
-        let! r = db.Repo.All(plasm { for l in orderLines do preload l.Product none })
-
-        match r with
-        | Error(DbError.Materialization m) -> Assert.Equal("Product", m.Property)
-        | other -> failwithf "expected Materialization, got %A" other
-    }
-
-[<Fact>]
 let ``connection failures are classified as infrastructure failures`` () =
     task {
         let repo = Repo(Schemas.model, Postgres.connect "Host=127.0.0.1;Port=1;Timeout=2")
@@ -104,20 +89,23 @@ let ``snapshot reads do not see writes committed between commands`` () =
     task {
         let! db = freshDefault ()
         let! o = Seed.order db None "draft" 1m (Seed.at 1)
+        let! p = Seed.product db "A"
         let mutable injected = false
 
+        // A line is committed between the Orders' command and the load of the
+        // lines they own.
         let inject (e: CommandEvent) =
             if not injected && e.Sql.Contains "FROM \"orders\"" then
                 injected <- true
-                (Seed.payment db o 1m "pending" (Seed.at 2)).GetAwaiter().GetResult() |> ignore
+                (Seed.line db o p 1 1m).GetAwaiter().GetResult() |> ignore
 
         let repo = Repo(db.Model, db.Provider, { OnCommand = Some inject; IncludeParameterValues = false })
-        let q = plasm { for x in orders do preload x.Payments }
+        let q = Query.from orders
         let! snap = repo.All(q, ReadConsistency.Snapshot)
-        Assert.Equal(Loaded [], (ok snap).Head.Payments)
+        Assert.Equal<OrderLine list>([], (ok snap).Head.Lines)
         injected <- false
         let! indep = repo.All(q, ReadConsistency.Independent)
-        Assert.Equal(2, (Assoc.get (ok indep).Head.Payments).Length) // both injected payments
+        Assert.Equal(2, (ok indep).Head.Lines.Length) // both injected lines
     }
 
 // -- Writes ------------------------------------------------------------------
@@ -143,99 +131,19 @@ let ``changing the primary key or the version is rejected before writing`` () =
     }
 
 [<Fact>]
-let ``putChildren updates an existing child by identity without inserting a duplicate`` () =
-    task {
-        let! db = freshDefault ()
-        let! _, order, _ = seedOrderWithLines db 2
-        let first = (Assoc.get order.Lines).Head
-        let cs = Changeset.update order |> Changeset.putChildren((fun o -> o.Lines), [ first |> Changeset.edit (fun l -> { l with UnitPrice = 9m }) ])
-        let! r = db.Repo.Update cs
-        ok (r |> Result.mapError string) |> ignore
-        let! n = db.Scalar<int64>("select count(*) from order_lines")
-        let! price = db.Scalar<decimal>("select unit_price from order_lines where id = @i", [ "i", box (let (OrderLineId v) = first.Id in v) ])
-        Assert.Equal(2L, n)
-        Assert.Equal(9m, price)
-    }
-
-[<Fact>]
-let ``replacing children without a removal policy is rejected and nothing changes`` () =
-    task {
-        let! db = freshDefault ()
-        let! p, order, _ = seedOrderWithLines db 2
-        let keep = (Assoc.get order.Lines).Head
-
-        let cs =
-            Changeset.update order
-            |> Changeset.replaceChildren((fun o -> o.Lines), ReplaceScope.allChildren, [ Changeset.update keep; Changeset.insert (New.line p 1 1m) ])
-
-        let! r = db.Repo.Update cs
-
-        match r with
-        | Error(WriteError.Invalid c) -> Assert.Equal(FieldErrorKind.ReplacementRejected, c.Errors.Head.Kind)
-        | other -> failwithf "expected Invalid, got %A" other
-
-        let! n = db.Scalar<int64>("select count(*) from order_lines")
-        Assert.Equal(2L, n)
-        let! v = db.Scalar<int>("select version from orders")
-        Assert.Equal(1, v)
-    }
-
-[<Fact>]
-let ``replacing children with OnReplace.Delete deletes omitted children atomically`` () =
-    task {
-        let! db = fresh Schemas.modelDeletingLines
-        let! p, order, _ = seedOrderWithLines db 3
-        let keep = (Assoc.get order.Lines).Head
-
-        let cs =
-            Changeset.update order
-            |> Changeset.replaceChildren((fun o -> o.Lines), ReplaceScope.allChildren, [ Changeset.update keep; Changeset.insert (New.line p 7 1m) ])
-
-        let! r = db.Repo.Update cs
-        let updated = ok (r |> Result.mapError string)
-        let! qtys = db.Repo.All(plasm { for l in orderLines do orderBy l.Id })
-        Assert.Equal<int list>([ 1; 7 ], ok qtys |> List.map (fun l -> l.Quantity.Value))
-        Assert.Equal(2, (Assoc.get updated.Lines).Length)
-    }
-
-[<Fact>]
-let ``a scoped replacement leaves children outside the scope untouched`` () =
-    task {
-        let! db = fresh Schemas.modelDeletingLines
-        let! p, order, _ = seedOrderWithLines db 3 // quantities 1, 2, 3
-        let big = plasm { for l in orderLines do where (l.UnitPrice >= 1m && l.Quantity = qty 3) }
-
-        let cs =
-            Changeset.update order
-            |> Changeset.replaceChildren((fun o -> o.Lines), ReplaceScope.matching big, [])
-
-        let! r = db.Repo.Update cs
-        let updated = ok (r |> Result.mapError string)
-        Assert.Equal(NotLoaded, updated.Lines) // a scoped write is not the complete relationship
-        let! n = db.Scalar<int64>("select count(*) from order_lines")
-        Assert.Equal(2L, n)
-        ignore p
-    }
-
-[<Fact>]
 let ``updating a child that belongs to another parent is rejected and rolled back`` () =
     task {
         let! db = freshDefault ()
         let! _, order, _ = seedOrderWithLines db 1
         let! other = Seed.order db None "draft" 1m (Seed.at 2)
         let! _ = db.Exec("update order_lines set order_id = @o", [ "o", rawId other ])
-        let line = (Assoc.get order.Lines).Head
-
-        let cs =
-            order
-            |> Changeset.edit (fun o -> { o with Total = 99m })
-            |> Changeset.putChildren((fun o -> o.Lines), [ line |> Changeset.edit (fun l -> { l with UnitPrice = 5m }) ])
-
-        let! r = db.Repo.Update cs
+        let line = order.Lines.Head
+        let changed = { order with Total = 99m; Lines = [ { line with UnitPrice = 5m } ] }
+        let! r = db.Repo.Transact(Tx.update (order, changed): Tx<Order, unit>)
 
         match r with
-        | Error(WriteError.Invalid c) -> Assert.Contains(c.Errors, fun e -> e.Kind = FieldErrorKind.NotOwned)
-        | other -> failwithf "expected Invalid, got %A" other
+        | Error { Failure = TxFailure.InvalidChanges(_, errors) } -> Assert.Contains(errors, fun e -> e.Kind = FieldErrorKind.NotOwned)
+        | other -> failwithf "expected invalid changes, got %A" other
 
         let! total = db.Scalar<decimal>("select total from orders where id = @i", [ "i", rawId order.Id ])
         Assert.Equal(10m, total)
@@ -247,13 +155,9 @@ let ``a database check failing in a child write rolls back the parent`` () =
         let! db = freshDefault ()
         let! p, order, _ = seedOrderWithLines db 1
         // unit_price < 0 violates order_lines_unit_price_check in the database only.
-        let cs =
-            order
-            |> Changeset.edit (fun o -> { o with Total = 99m })
-            |> Changeset.putChildren((fun o -> o.Lines), [ Changeset.insert (New.line p 1 -1m) ])
-
-        let! r = db.Repo.Update cs
-        Assert.True(match r with Error(WriteError.Invalid cs) -> cs.Errors |> List.exists (fun e -> e.Kind = FieldErrorKind.CheckConstraint "order_lines_unit_price_check") | _ -> false)
+        let changed = { order with Total = 99m; Lines = order.Lines @ [ New.line p 1 -1m ] }
+        let! r = db.Repo.Transact(Tx.update (order, changed): Tx<Order, unit>)
+        Assert.True(match r with Error { Failure = TxFailure.InvalidChanges(_, errors) } -> errors |> List.exists (fun e -> e.Kind = FieldErrorKind.CheckConstraint "order_lines_unit_price_check") | _ -> false)
         let! total = db.Scalar<decimal>("select total from orders")
         let! v = db.Scalar<int>("select version from orders")
         Assert.Equal(10m, total)
@@ -261,37 +165,26 @@ let ``a database check failing in a child write rolls back the parent`` () =
     }
 
 [<Fact>]
-let ``duplicate child identities are reported without writing`` () =
+let ``an owned item with a key its owner did not have is refused`` () =
     task {
         let! db = freshDefault ()
         let! _, order, _ = seedOrderWithLines db 1
-        let line = (Assoc.get order.Lines).Head
-
-        let cs =
-            Changeset.update order
-            |> Changeset.putChildren(
-                (fun o -> o.Lines),
-                [ line |> Changeset.edit (fun l -> { l with UnitPrice = 2m }); line |> Changeset.edit (fun l -> { l with UnitPrice = 3m }) ]
-            )
-
-        db.Recorder.Clear()
-        let! r = db.Repo.Update cs
+        let! p = Seed.product db "B"
+        let! otherId = Seed.order db None "draft" 5m (Seed.at 2)
+        let! _ = Seed.line db otherId p 4 1m
+        let! all = db.Repo.All(Query.from orders)
+        let other = ok all |> List.find (fun o -> o.Id = otherId)
+        // A line of another Order, copied into this one: not this Order's to write.
+        let stolen = List.exactlyOne other.Lines
+        let! r = db.Repo.Transact(Tx.update (order, { order with Lines = order.Lines @ [ stolen ] }): Tx<Order, unit>)
 
         match r with
-        | Error(WriteError.Invalid c) -> Assert.Contains(c.Errors, fun e -> e.Kind = FieldErrorKind.DuplicateIdentity && e.Field = "Lines")
-        | other -> failwithf "expected Invalid, got %A" other
+        | Error { Failure = TxFailure.InvalidChanges(_, errors) } -> Assert.Contains(errors, fun e -> e.Kind = FieldErrorKind.NotOwned)
+        | other -> failwithf "expected invalid changes, got %A" other
 
-        Assert.Equal(0, db.Recorder.Count)
-    }
-
-[<Fact>]
-let ``inserting a child through an optional foreign key sets Some parent key`` () =
-    task {
-        let! db = freshDefault ()
-        let cs = Changeset.insert (New.customer "Ada" "a@x") |> Changeset.putChildren((fun c -> c.Orders), [ Changeset.insert (New.order None Draft 1m) ])
-        let! r = db.Repo.Insert cs
-        let c = ok (r |> Result.mapError string)
-        Assert.Equal(Some c.Id, (Assoc.get c.Orders).Head.CustomerId)
+        let! n = db.Scalar<int64>("select count(*) from order_lines")
+        Assert.Equal(2L, n)
+        ignore p
     }
 
 // -- Transactions ------------------------------------------------------------

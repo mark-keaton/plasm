@@ -49,9 +49,12 @@ type PreparedSteps(w: World) =
             let! o2 = Seed.order w.Db (Some ada) "published" 20m (Seed.at 2)
             let! o3 = Seed.order w.Db (Some bob) "published" 30m (Seed.at 3)
 
+            let! p = Seed.product w.Db "SKU"
+
             for o in [ o1; o2; o3 ] do
                 let! _ = Seed.payment w.Db o 5m "succeeded" (Seed.at 1)
                 let! _ = Seed.payment w.Db o 5m "failed" (Seed.at 2)
+                let! _ = Seed.line w.Db o p 1 5m
                 ()
 
             w.Set("ada", ada)
@@ -86,43 +89,43 @@ type PreparedSteps(w: World) =
 
     [<StepDefinition("every run sends the same SQL text with different parameter values")>]
     member _.SameSql() =
-        let cmds = w.CommandsSinceMark
+        let cmds = w.QueryCommands
         equal 2 cmds.Length "commands"
         equal 1 (cmds |> List.map (fun c -> c.Sql) |> List.distinct |> List.length) "distinct SQL texts"
         let values = cmds |> List.map (fun c -> c.Parameters |> List.map snd)
         check (values.[0] <> values.[1]) $"parameter values differ: %A{values}"
 
-    [<StepDefinition("I preload Payments with a prepared query bound to a status, both on a query and onto Orders I already hold")>]
+    [<StepDefinition("I read the Payments of the Orders I hold with a prepared query bound to a status")>]
     member _.PreparedChild() =
         task {
             let paymentsWith =
-                Query.prepare (fun (status: Arg<PaymentStatus>) -> plasm { for p in Schemas.payments do where (p.Status = status.Value) })
-
-            let loads = plasm { for o in Schemas.orders do preload o.Payments (paymentsWith Succeeded) }
+                Query.prepare2 (fun (status: Arg<PaymentStatus>) (ids: Arg<OrderId list>) ->
+                    plasm {
+                        for p in Schemas.payments do
+                            where (p.Status = status.Value && List.contains p.OrderId ids.Value)
+                    })
 
             try
-                let! viaQuery = w.Repo.All(plasm { for o in loads do orderBy o.Id })
-                let! plain = w.Repo.All(plasm { for o in Schemas.orders do orderBy o.Id })
-                let! viaPreload = w.Repo.Preload(loads, ok plain)
-                w.Set("childLoads", (Choice1Of2 [ ok viaQuery; ok viaPreload ]: Choice<Order list list, exn>))
+                let! held = w.Repo.All(plasm { for o in Schemas.orders do orderBy o.Id })
+                let held = ok held
+                let! ps = w.Repo.All(paymentsWith Succeeded (held |> List.map (fun o -> o.Id)))
+                let byOrder = ok ps |> List.groupBy (fun p -> p.OrderId) |> Map.ofList
+                let perOrder = held |> List.map (fun o -> o.Id, byOrder |> Map.tryFind o.Id |> Option.defaultValue [])
+                w.Set("childLoads", (Choice1Of2 perOrder: Choice<(OrderId * Payment list) list, exn>))
             with ex ->
-                w.Set("childLoads", (Choice2Of2 ex: Choice<Order list list, exn>))
+                w.Set("childLoads", (Choice2Of2 ex: Choice<(OrderId * Payment list) list, exn>))
         }
         |> unit
 
     [<StepDefinition("each Order has only the Payments with that status")>]
     member _.OnlyStatus() =
-        match w.Get<Choice<Order list list, exn>> "childLoads" with
-        | Choice1Of2 results ->
-            for orders in results do
-                check (not orders.IsEmpty) "no Orders were read"
+        match w.Get<Choice<(OrderId * Payment list) list, exn>> "childLoads" with
+        | Choice1Of2 perOrder ->
+            check (not perOrder.IsEmpty) "no Orders were read"
 
-                for o in orders do
-                    match o.Payments with
-                    | Loaded ps ->
-                        check (not ps.IsEmpty) $"Order {o.Id} has no Payments"
-                        check (ps |> List.forall (fun p -> p.Status = Succeeded)) $"Order {o.Id}: %A{ps}"
-                    | NotLoaded -> failwithf "Order %A Payments not loaded" o.Id
+            for id, ps in perOrder do
+                check (not ps.IsEmpty) $"Order {id} has no Payments"
+                check (ps |> List.forall (fun p -> p.Status = Succeeded)) $"Order {id}: %A{ps}"
         | Choice2Of2 ex -> failwithf "an exception was thrown: %s" ex.Message
 
     // Rule: Prepared queries compose like any other query
@@ -185,7 +188,7 @@ type PreparedSteps(w: World) =
 
     [<StepDefinition("the two runs send one SQL text")>]
     member _.OneText() =
-        let texts = w.CommandsSinceMark |> List.map (fun c -> c.Sql) |> List.distinct
+        let texts = w.QueryCommands |> List.map (fun c -> c.Sql) |> List.distinct
         equal 1 texts.Length $"distinct SQL texts: %A{texts}"
 
     // Scenario: Arguments are typed and always parameters
@@ -226,7 +229,7 @@ type PreparedSteps(w: World) =
 
     [<StepDefinition("both runs send the same SQL text")>]
     member _.SameText() =
-        let texts = w.CommandsSinceMark |> List.map (fun c -> c.Sql) |> List.distinct
+        let texts = w.QueryCommands |> List.map (fun c -> c.Sql) |> List.distinct
         equal 1 texts.Length $"distinct SQL texts: %A{texts}"
         check (texts.Head.Contains "IS NOT DISTINCT FROM" && texts.Head.Contains "= ANY(") texts.Head
 
@@ -253,7 +256,7 @@ type PreparedSteps(w: World) =
     [<StepDefinition("each page is bound from the arguments")>]
     member _.PagesBound() =
         equal [ 3; 1 ] (w.Get<OrderId list list> "pages" |> List.map List.length) "page sizes"
-        check (w.CommandsSinceMark |> List.forall (fun c -> c.Sql.EndsWith "LIMIT @p0 OFFSET @p1")) "LIMIT and OFFSET are parameters"
+        check (w.QueryCommands |> List.forall (fun c -> c.Sql.EndsWith "LIMIT @p0 OFFSET @p1")) "LIMIT and OFFSET are parameters"
 
     [<StepDefinition("the pages together contain every Order exactly once")>]
     member _.PagesComplete() =
@@ -261,36 +264,33 @@ type PreparedSteps(w: World) =
 
     // Scenario: Prepared queries keep relationship loads
 
-    [<StepDefinition("I prepare a query that preloads Payments")>]
-    member _.PreparePreload() =
+    [<StepDefinition("I prepare a query for the Orders of a Customer, which own their OrderLines")>]
+    member _.PrepareOwning() =
         task {
-            let withPayments =
+            let ordersOfCustomer =
                 Query.prepare (fun (customer: Arg<CustomerId>) ->
                     plasm {
                         for o in Schemas.orders do
                             where (o.CustomerId = Some customer.Value)
                             orderBy o.Id
-                            preload o.Payments successfulPayments
                     })
 
             w.MarkCommands()
-            let! a = w.Repo.All(withPayments (w.Get "ada"))
-            let! b = w.Repo.All(withPayments (w.Get "bob"))
+            let! a = w.Repo.All(ordersOfCustomer (w.Get "ada"))
+            let! b = w.Repo.All(ordersOfCustomer (w.Get "bob"))
             w.Set("runs", [ ok a; ok b ])
         }
         |> unit
 
-    [<StepDefinition("each run loads the Payments with batched commands")>]
-    member _.LoadsPayments() =
+    [<StepDefinition("each run loads the OrderLines with batched commands")>]
+    member _.LoadsLines() =
         let runs: Order list list = w.Get "runs"
         equal [ 2; 1 ] (runs |> List.map List.length) "orders per run"
 
         for o in List.concat runs do
-            match o.Payments with
-            | Loaded ps -> equal [ Succeeded ] (ps |> List.map (fun p -> p.Status)) $"payments of {o.Id}"
-            | NotLoaded -> failwithf "payments of %A not loaded" o.Id
+            equal 1 o.Lines.Length $"lines of {o.Id}"
 
-        equal 4 w.CommandsSinceMark.Length "one parent command and one payments command per run"
+        equal 4 w.CommandsSinceMark.Length "one parent command and one lines command per run"
 
     // Scenario: Prepared queries can be inspected and counted
 
