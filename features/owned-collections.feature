@@ -59,6 +59,12 @@ Feature: An owned collection is a plain list, loaded and written with its owner
       Then the change is refused, saying the line does not belong to "INV-1"
       And the invoice_lines table holds 3 lines
 
+    Scenario: The same line twice is refused
+      Given an Invoice "INV-1" with the lines "pen" 2 and "ink" 5
+      When I read it, then write it with its pen line listed twice
+      Then the change is refused as a duplicate line
+      And the invoice_lines table holds "pen" 2 and "ink" 5 for that Invoice
+
     Scenario: Deleting an Invoice deletes its lines
       Given an Invoice "INV-1" with the lines "pen" 2 and "ink" 5
       When I delete the Invoice I read

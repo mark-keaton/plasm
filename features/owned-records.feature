@@ -81,6 +81,18 @@ Feature: An owned record is a plain field, loaded and written with its owner
       When I keep the Accounts whose profile's bio is "maths", through exists
       Then only "ada" is read
 
+    Scenario: Filtering through an owned record, as F# reads an option
+      Given an Account "ada" with the bio "maths" and the theme "dark"
+      And an Account "bob" with the bio "poetry" and the theme "light"
+      When I keep the Accounts where Option.exists (fun p -> p.Bio = "maths") over their profile
+      Then only "ada" is read
+
+    Scenario: Accounts without an owned record
+      Given an Account "ada" with the bio "maths" and the theme "dark"
+      And an Account "bob" without a profile and with the theme "light"
+      When I keep the Accounts whose profile is None
+      Then only "bob" is read
+
     Scenario: An owned record matched by two rows is refused when read
       Given an Account "ada" with the bio "maths" and the theme "dark"
       And a second profile row for it, behind Plasm's back

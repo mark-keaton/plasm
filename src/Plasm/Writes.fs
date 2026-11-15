@@ -144,6 +144,13 @@ let rec private owned (model: Model) (s: CsState) : CsState =
                 match st.Changes.TryFind a.Name, st.Data with
                 | None, _ -> st
                 | Some _, None -> Cs.addError st a.Name (FieldErrorKind.Custom "owned") $"{a.Name} is owned: change it from a {schema.Name} you read, not from its key alone"
+                | Some newList, Some old when
+                    (let after = items a newList |> List.map keyOf |> List.filter (fun k -> not (target.KeyGenerated && unsavedKey target k))
+                     after.Length <> (List.distinct after).Length)
+                    ->
+                    // One stored record listed twice: which copy to write would
+                    // be decided by the order of the list.
+                    Cs.addError st a.Name FieldErrorKind.DuplicateIdentity $"{a.Name} lists the same {target.Name} more than once"
                 | Some newList, Some old ->
                     let before = items a (schema.Shape.Deconstruct old).[a.Index]
                     let after = items a newList

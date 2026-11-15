@@ -194,6 +194,22 @@ type OwnedOneSteps(w: World) =
         }
         |> unit
 
+    [<StepDefinition("^I keep the Accounts where Option.exists \\(fun p -> p.Bio = \"(\\w+)\"\\) over their profile$")>]
+    member _.KeepByOption(bio: string) =
+        task {
+            let! r = repo().All(plasm { for a in accounts do where (a.Profile |> Option.exists (fun p -> p.Bio = bio)) })
+            w.Set("kept", ok r |> List.map (fun a -> a.Name))
+        }
+        |> unit
+
+    [<StepDefinition("I keep the Accounts whose profile is None")>]
+    member _.KeepWithout() =
+        task {
+            let! r = repo().All(plasm { for a in accounts do where a.Profile.IsNone })
+            w.Set("kept", ok r |> List.map (fun a -> a.Name))
+        }
+        |> unit
+
     [<StepDefinition("^only \"(\\w+)\" is read$")>]
     member _.OnlyRead(name: string) = equal [ name ] (w.Get<string list> "kept") "accounts"
 

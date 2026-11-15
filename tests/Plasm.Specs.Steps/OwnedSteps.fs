@@ -244,6 +244,23 @@ type OwnedSteps(w: World) =
         }
         |> unit
 
+    [<StepDefinition("I read it, then write it with its pen line listed twice")>]
+    member _.Twice() =
+        task {
+            let! read = readOne ()
+            let pen = read.Lines |> List.find (fun l -> l.Item = "pen")
+            let! r = repo().Transact(Tx.update (read, { read with Lines = [ pen; pen ] }): Tx<Invoice, unit>)
+            w.Set("twice", r)
+        }
+        |> unit
+
+    [<StepDefinition("the change is refused as a duplicate line")>]
+    member _.TwiceRefused() =
+        match w.Get<Result<Invoice, TransactionError<unit>>> "twice" with
+        | Error { Failure = TxFailure.InvalidChanges(_, errors) } ->
+            check (errors |> List.exists (fun e -> e.Kind = FieldErrorKind.DuplicateIdentity && e.Field = "Lines")) $"%A{errors}"
+        | other -> failwithf "expected the change to be refused, got %A" other
+
     [<StepDefinition("I delete the Invoice I read")>]
     member _.Delete() =
         task {

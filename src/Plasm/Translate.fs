@@ -414,6 +414,19 @@ let (|RowAssoc|_|) (ctx: Ctx) (e: Expr) =
         b.Schema.TryAssoc prop.Name |> Option.map (fun a -> b, a)
     | _ -> None
 
+/// `IsSome` / `IsNone` (or Option.isSome / isNone) of an owned optional record.
+let (|OwnedPresence|_|) (ctx: Ctx) (e: Expr) =
+    let owned (x: Expr) =
+        match x with
+        | RowAssoc ctx (_, a) when a.Owned && a.Cardinality = OptionalOne -> Some a
+        | _ -> None
+
+    match e with
+    | Call(None, mi, [ x ]) when mi.Name = "get_IsSome" || mi.Name = "get_IsNone" || (mi.DeclaringType.Name = "OptionModule" && (mi.Name = "IsSome" || mi.Name = "IsNone")) ->
+        owned x |> Option.map (fun a -> x, a, mi.Name.EndsWith "IsSome")
+    | PropertyGet(Some x, p, []) when p.Name = "IsSome" || p.Name = "IsNone" -> owned x |> Option.map (fun a -> x, a, p.Name = "IsSome")
+    | _ -> None
+
 // Unions with fields (union-fields.feature): the union in a row, its case
 // fields' columns, and its case tests.
 
@@ -732,6 +745,16 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
             (a.Owned || a.Linked) && mi.DeclaringType.Name = "ListModule" && (mi.Name = "Exists" || mi.Name = "ForAll")
             ->
             relationship ctx e pv body assoc (mi.Name = "ForAll")
+        // An owned optional record is an option: Option.exists, Option.forall,
+        // IsSome and IsNone over it are correlated EXISTS subqueries.
+        | Call(None, mi, [ Lambda(pv, body); RowAssoc ctx (_, a) as assoc ]) when
+            a.Owned && a.Cardinality = OptionalOne && (isOptionModule mi "Exists" || isOptionModule mi "ForAll")
+            ->
+            relationship ctx e pv body assoc (mi.Name = "ForAll")
+        | OwnedPresence ctx (assoc, a, present) ->
+            let v = Var("x", a.Target)
+            let found = relationship ctx e v (Expr.Value true) assoc false
+            if present then found else Sql.Not found
         | SpecificCall <@ Rel.any @> (_, _, [ Lambda(pv, body); assoc ]) -> relationship ctx e pv body assoc false
         | SpecificCall <@ Rel.all @> (_, _, [ Lambda(pv, body); assoc ]) -> relationship ctx e pv body assoc true
         | SpecificCall <@ Rel.exists @> (_, _, [ Lambda(pv, body); assoc ]) -> relationship ctx e pv body assoc false
