@@ -10,7 +10,7 @@ type DdlSteps(w: World) =
     let modelNamed (name: string) =
         match name with
         | "the test domain" -> w.Db.Model
-        | "Tickets" -> Model.buildOrFail [] [ Plasm.Specs.Conventions.tickets ]
+        | "Tickets" -> Model.buildSchemasOrFail [] [ Plasm.Specs.Conventions.tickets ]
         | "Cards with a Stage" -> UnionCards.model
         | "Invoices with their lines" -> OwnedInvoices.model
         | "Cards linked to tags" -> LinkedTags.model

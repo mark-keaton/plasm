@@ -76,6 +76,8 @@ type SchemaDef =
           Generated: Set<string>
           /// Fields whose values are unique in the table (constraints.feature).
           Unique: Set<string>
+          /// Fields of a key type that refer to no row ([<NotReference>]).
+          NotReference: Set<string>
           Assocs: AssocDef list }
 
 /// A persistence mapping for the immutable record type `'T`.
@@ -105,6 +107,7 @@ type SchemaBuilder<'T> internal (table: string) =
           Version = None
           Generated = Set.empty
           Unique = Set.empty
+          NotReference = Set.empty
           Assocs = [] }
 
     member _.Run(def: SchemaDef) : Schema<'T> = Schema<'T>(def)

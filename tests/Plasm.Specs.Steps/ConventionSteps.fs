@@ -116,12 +116,12 @@ type ConventionSteps(w: World) =
 
     [<StepDefinition("Tickets in a model built with no scalar mappings")>]
     member _.NoMappings() =
-        let model = Model.buildOrFail [] [ tickets ]
+        let model = Model.buildSchemasOrFail [] [ tickets ]
         w.Set("ticketRepo", w.Db.RepoWith(model = model))
 
     [<StepDefinition("^Tickets in a model built with the mapping Scalar\\.enum \\[ Low, \"lo\"; Normal, \"mid\"; VeryHigh, \"hi\" \\]$")>]
     member _.Override() =
-        let model = Model.buildOrFail [ Scalar.enum [ Low, "lo"; Normal, "mid"; VeryHigh, "hi" ] ] [ tickets ]
+        let model = Model.buildSchemasOrFail [ Scalar.enum [ Low, "lo"; Normal, "mid"; VeryHigh, "hi" ] ] [ tickets ]
         w.Set("ticketRepo", w.Db.RepoWith(model = model))
 
     [<StepDefinition("I insert a Ticket with code \"(.*)\"")>]
@@ -220,11 +220,11 @@ type ConventionSteps(w: World) =
 
     [<StepDefinition("I build a model of a record with a field of a private wrapper type without create")>]
     member _.BuildPrivate() =
-        refusal (fun () -> Model.build [] [ schema<Locked> "locked" { identityKey (fun l -> l.Id) } ])
+        refusal (fun () -> Model.buildSchemas [] [ schema<Locked> "locked" { identityKey (fun l -> l.Id) } ])
 
     [<StepDefinition("I build a model of a record with a field of a type with a create function in a member and in its module")>]
     member _.BuildTwice() =
-        refusal (fun () -> Model.build [] [ schema<Doubled> "doubled" { identityKey (fun d -> d.Id) } ])
+        refusal (fun () -> Model.buildSchemas [] [ schema<Doubled> "doubled" { identityKey (fun d -> d.Id) } ])
 
     [<StepDefinition("the model is refused for that field, saying (.*)")>]
     member _.Refused(saying: string) =

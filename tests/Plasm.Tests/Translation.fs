@@ -245,7 +245,7 @@ type Mood =
     | Sad
 
 let configErrors scalars schemas =
-    match Model.build scalars schemas with
+    match Model.buildSchemas scalars schemas with
     | Ok _ -> failwith "expected configuration errors"
     | Error es -> es
 

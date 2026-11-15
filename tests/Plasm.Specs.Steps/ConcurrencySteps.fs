@@ -17,7 +17,7 @@ module Notes =
 
     let notes = schema<Note> "notes" { identityKey (fun n -> n.Id) }
 
-    let model = Model.buildOrFail [] [ notes ]
+    let model = Model.buildSchemasOrFail [] [ notes ]
 
     let table =
         "drop table if exists notes;

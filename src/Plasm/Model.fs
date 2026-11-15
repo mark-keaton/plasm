@@ -608,7 +608,7 @@ module Model =
 
     /// Validates schemas and scalar mappings together. Fails with every problem
     /// found, each identifying the model and property.
-    let build (scalars: ScalarMapping list) (schemas: ISchema list) : Result<Model, ConfigError list> =
+    let buildSchemas (scalars: ScalarMapping list) (schemas: ISchema list) : Result<Model, ConfigError list> =
         let errors = ResizeArray<ConfigError>()
         let scalarDict = Dictionary<Type, ScalarMapping>()
 
@@ -680,7 +680,7 @@ module Model =
                 s.Fields
                 |> Array.map (fun f ->
                     match keysOf.TryGetValue f.ScalarType with
-                    | true, target when f.Name <> s.Key.Name -> { f with References = Some target }
+                    | true, target when f.Name <> s.Key.Name && not (defs.[t].NotReference.Contains f.Name) -> { f with References = Some target }
                     | _ -> f)
 
             resolved.[t] <- { s with Fields = fields; Key = fields |> Array.find (fun f -> f.Name = s.Key.Name) }
@@ -690,10 +690,30 @@ module Model =
         else
             Ok(Model(resolved, scalarDict))
 
+    /// The model of the records `types` lists and the records they own
+    /// (stored-records.feature). Each says how it is stored: its [<Table>],
+    /// its field named Id, and the attributes on its fields; the rest follows
+    /// from the types. `scalars` overrides a convention for a scalar type.
+    /// Fails with every problem found, each naming the record and field.
+    let build (scalars: ScalarMapping list) (types: Type list) : Result<Model, ConfigError list> =
+        match Derive.model types with
+        | Error es -> Error es
+        | Ok defs -> buildSchemas scalars [ for d in defs -> { new ISchema with member _.Definition = d } ]
+
+    let private orFail result =
+        match result with
+        | Ok m -> m
+        | Error es ->
+            let lines = es |> List.map (fun e -> "  - " + string e) |> String.concat "\n"
+            raise (PlasmConfigurationException $"Invalid persistence configuration:\n{lines}")
+
     /// Like `build` but raises `PlasmConfigurationException` listing every error.
     /// Intended for application start-up.
-    let buildOrFail scalars schemas =
-        match build scalars schemas with
+    let buildOrFail scalars (types: Type list) = orFail (build scalars types)
+
+    /// Like `buildSchemas` but raises `PlasmConfigurationException` listing every error.
+    let buildSchemasOrFail scalars schemas =
+        match buildSchemas scalars schemas with
         | Ok m -> m
         | Error es ->
             let lines = es |> List.map (fun e -> "  - " + string e) |> String.concat "\n"

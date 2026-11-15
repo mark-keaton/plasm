@@ -134,7 +134,7 @@ let lesson =
               fun _ ->
                   // A Visit (above, under Given) has two fields Plasm cannot store.
                   // Building a model reports both, not just the first.
-                  match Model.build [] [ visits ] with
+                  match Model.buildSchemas [] [ visits ] with
                   | Ok _ -> failwith "expected configuration errors"
                   | Error errors ->
                       errors.Length |> shouldBe __

@@ -22,7 +22,7 @@ module Schemas =
     let orders = schema<Order> "exists_orders" { identityKey (fun o -> o.Id) }
     let payments = schema<Payment> "exists_payments" { identityKey (fun p -> p.Id) }
 
-    let model = Model.buildOrFail [] [ orders; payments ]
+    let model = Model.buildSchemasOrFail [] [ orders; payments ]
 
     let tables =
         "drop table if exists exists_payments; drop table if exists exists_orders;

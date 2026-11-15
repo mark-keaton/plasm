@@ -32,7 +32,7 @@ host that generates the tests) binds to F# step definitions in
 (Testcontainers, with a freshly cloned database per scenario).
 
 ```sh
-dotnet test tests/Plasm.Specs          # 338 scenarios (outline examples counted separately)
+dotnet test tests/Plasm.Specs          # 358 scenarios (outline examples counted separately)
 dotnet test tests/Plasm.Tests          # 130 unit, property, compile-time and Ecto-compatibility tests
 ```
 
@@ -40,13 +40,13 @@ dotnet test tests/Plasm.Tests          # 130 unit, property, compile-time and Ec
 
 | Classification | Scenarios |
 |---|---:|
-| Implemented and verified | 338 |
+| Implemented and verified | 358 |
 | Implemented, deliberately changed (with rationale) | 0 |
 | Planned | 0 |
 | Unsupported, with explicit behaviour | 0 |
-| **Total** | **338** |
+| **Total** | **358** |
 
-The 338 count outline examples separately; there are 311 scenario titles. The
+The 358 count outline examples separately; there are 322 scenario titles. The
 13 struck-through rows are removed scenarios and are not counted. The one
 scenario that was deliberately changed, "Conflicting relationship
 customizations are explicit", was removed with `preload`.
@@ -824,4 +824,25 @@ describe the one style; "Reworded" means only words changed.
 | Owner columns, link targets and references are indexed | Implemented and verified | `DdlSteps.fs` |  | 11a6895: `repo.Ddl()` prints `create index <table>_<column>_idx` for each owner column, join-table target column and inferred reference, unless the column already leads a unique constraint or the primary key (a join table's owner column leads its key). |
 | A missing index is not a schema problem | Implemented and verified | `DdlSteps.fs` |  | An index is a matter of performance, and a database may have a better composite one, so `CheckSchema` does not report it. |
 | Printing the DDL runs nothing | Implemented and verified | `DdlSteps.fs` |  | Plasm does not write or apply migrations. |
+
+### stored-records.feature: The types say how the records are stored
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| The tables follow from the records | Implemented and verified | `StoredSteps.fs` |  | `Model.build [] [ typeof<Board>; typeof<Card>; typeof<Label> ]`; `repo.Ddl()` prints every table, including the owned covers and comments and the `card_labels` join table. An integer typed id key is an identity column; a Guid key is assigned. |
+| A list of records that hold the owner's key is owned | Implemented and verified | `StoredSteps.fs` |  | `Comments: Comment list`, where Comment has one field of type CardId. |
+| An owned list is read in the order its field names | Implemented and verified | `StoredSteps.fs` |  | `[<OrderedBy(nameof the<Comment>.At)>]`; a misspelt field is compile error FS0039. |
+| A list of stored records that do not hold the owner's key is linked | Implemented and verified | `StoredSteps.fs` |  | `[<JoinTable "card_labels">]`; the columns default to card_id and label_id. |
+| An optional record that holds the owner's key is owned | Implemented and verified | `StoredSteps.fs` |  | `Cover: Cover option`, where Cover holds a BoardId. |
+| A unique field is the field's error when duplicated | Implemented and verified | `StoredSteps.fs` |  | `[<Unique>]`. |
+| A version field checks the record a change was made from | Implemented and verified | `StoredSteps.fs` |  | `[<Version>]`. |
+| A generated field is filled by the database | Implemented and verified | `StoredSteps.fs` |  | `[<Generated>]`; `repo.Ddl()` cannot print the column's default, so the step adds it. |
+| A field marked as no reference refers to nothing | Implemented and verified | `StoredSteps.fs` |  | `[<NotReference>]` on a BoardId option: no reference is inferred and no foreign key printed. |
+| A query reads a stored record by its type | Implemented and verified | `StoredSteps.fs` |  | `for c in stored<Card> do`. |
+
+### stored-records.feature: What the types leave ambiguous is refused
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| A model the types cannot describe is refused (10 examples) | Implemented and verified | `StoredSteps.fs` |  | No table, no Id, two back-references, a linked list without a join table, a linked record not in the model, an owned record also listed, a record owned by two owners, an unknown OrderedBy field, a list of unstored records, two version fields: each a ConfigError naming the record. |
 

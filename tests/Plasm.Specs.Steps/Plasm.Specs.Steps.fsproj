@@ -39,6 +39,7 @@
     <Compile Include="ExistsSteps.fs" />
     <Compile Include="OwnedOneSteps.fs" />
     <Compile Include="DdlSteps.fs" />
+    <Compile Include="StoredSteps.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Plasm.TestDomain/Plasm.TestDomain.fsproj" />

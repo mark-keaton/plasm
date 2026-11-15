@@ -26,7 +26,7 @@ module LinkedTags =
             linksOrderedBy (fun c -> c.Tags) "card_tags" "card_id" "tag_id" (fun t -> t.Name)
         }
 
-    let model = Model.buildOrFail [] [ cards; tags ]
+    let model = Model.buildSchemasOrFail [] [ cards; tags ]
 
     let tables =
         "drop table if exists card_tags; drop table if exists cards cascade; drop table if exists tags cascade;

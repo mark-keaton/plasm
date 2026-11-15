@@ -110,7 +110,7 @@ type ConstraintSteps(w: World) =
     [<StepDefinition("^I build a model in which Customers and Suppliers both have a CustomerId key$")>]
     member _.SharedKey() =
         let suppliers = schema<SharedKey.Supplier> "suppliers" { identityKey (fun s -> s.Id) }
-        w.Set("sharedKeyModel", Model.build [] [ Schemas.customers; suppliers ])
+        w.Set("sharedKeyModel", Model.buildSchemas [] [ Schemas.customers; suppliers ])
 
     [<StepDefinition("^the model is refused, naming CustomerId and both schemas$")>]
     member _.SharedKeyRefused() =

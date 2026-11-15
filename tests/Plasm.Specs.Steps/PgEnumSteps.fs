@@ -33,7 +33,7 @@ module PgEnums =
     let shipments = schema<Shipment> "shipments" { identityKey (fun s -> s.Id) }
 
     let model =
-        Model.buildOrFail
+        Model.buildSchemasOrFail
             [ Scalar.wrap ShipmentId (fun (ShipmentId v) -> v)
               Scalar.enum labels |> Scalar.asPgEnum "shipment_status" ]
             [ shipments ]

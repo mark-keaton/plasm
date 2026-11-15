@@ -38,7 +38,7 @@ module Drift =
           Title: string
           Tags: Tag list }
 
-    let model (schemas: ISchema list) = Model.buildOrFail Schemas.scalars schemas
+    let model (schemas: ISchema list) = Model.buildSchemasOrFail Schemas.scalars schemas
 
 /// Feature: Checking the model against the database schema
 [<Binding>]

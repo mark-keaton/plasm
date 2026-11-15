@@ -124,7 +124,7 @@ type TypeSteps(w: World) =
     [<StepDefinition("I validate the persistence configuration")>]
     member _.Validate() =
         let shipments: Schema<Shipment> = w.Get "shipments"
-        w.Set("config", Model.build Schemas.scalars (Schemas.all @ [ shipments ]))
+        w.Set("config", Model.buildSchemas Schemas.scalars (Schemas.all @ [ shipments ]))
 
     [<StepDefinition("configuration fails with the model and property identified")>]
     member _.ConfigFails() =

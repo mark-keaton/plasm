@@ -10,6 +10,7 @@
     <Compile Include="Reflection.fs" />
     <Compile Include="Scalar.fs" />
     <Compile Include="Schema.fs" />
+    <Compile Include="Stored.fs" />
     <Compile Include="Model.fs" />
     <Compile Include="Sql.fs" />
     <Compile Include="Query.fs" />
@@ -26,6 +27,9 @@
     <Compile Include="Tx.fs" />
     <Compile Include="Repo.fs" />
     <Compile Include="Interactive.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Plasm.Annotations/Plasm.Annotations.fsproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Plasm.Postgres" />

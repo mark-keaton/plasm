@@ -213,7 +213,7 @@ module Db =
     let schemas: ISchema list =
         [ customers; orders; orderLines; products; payments; articles; tags; accounts; profiles; deliveries ]
 
-    let model = Model.buildOrFail [] schemas
+    let model = Model.buildSchemasOrFail [] schemas
 
 /// The shop's queries: values, so `repo.CheckQueries` can check them all.
 module Queries =

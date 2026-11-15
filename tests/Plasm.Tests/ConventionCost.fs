@@ -11,7 +11,7 @@ open Plasm.TestDomain.Domain.Schemas
 
 /// The same model with the mappings written out, as before conventions.
 let registered =
-    Model.buildOrFail
+    Model.buildSchemasOrFail
         [ Scalar.wrap CustomerId (fun (CustomerId v) -> v)
           Scalar.wrap OrderId (fun (OrderId v) -> v)
           Scalar.wrap ProductId (fun (ProductId v) -> v)

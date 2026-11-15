@@ -422,7 +422,7 @@ type FsiSteps(w: World) =
 
         let issues =
             fsi().Value<string>(
-                $"match Repo(Model.buildOrFail [] [ {name} ], Plasm.Postgres.Postgres.connect @\"{w.Db.ConnectionString};Pooling=false\").CheckSchema() |> wait with Ok [] -> \"none\" | other -> sprintf \"%%A\" other"
+                $"match Repo(Model.buildSchemasOrFail [] [ {name} ], Plasm.Postgres.Postgres.connect @\"{w.Db.ConnectionString};Pooling=false\").CheckSchema() |> wait with Ok [] -> \"none\" | other -> sprintf \"%%A\" other"
             )
 
         equal "none" issues "schema check of the scaffolded mapping"
@@ -541,11 +541,11 @@ type CompiledDisplaySteps(w: World) =
 
     [<StepDefinition("a repository that does not include parameter values in diagnostics")>]
     member _.Hidden() =
-        w.Set("displayRepo", Repo(Model.buildOrFail [] [ probes ], w.Db.Provider))
+        w.Set("displayRepo", Repo(Model.buildSchemasOrFail [] [ probes ], w.Db.Provider))
 
     [<StepDefinition("a repository that includes parameter values in diagnostics")>]
     member _.Shown() =
-        w.Set("displayRepo", Repo(Model.buildOrFail [] [ probes ], w.Db.Provider, { RepoOptions.Default with IncludeParameterValues = true }))
+        w.Set("displayRepo", Repo(Model.buildSchemasOrFail [] [ probes ], w.Db.Provider, { RepoOptions.Default with IncludeParameterValues = true }))
 
     [<StepDefinition("compiled code formats a query with %A")>]
     member _.Format() =

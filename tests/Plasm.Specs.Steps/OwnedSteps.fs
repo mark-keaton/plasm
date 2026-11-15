@@ -30,7 +30,7 @@ module OwnedInvoices =
             owns (fun i -> i.Lines) (fun l -> l.Invoice)
         }
 
-    let model = Model.buildOrFail [] [ invoices; lines ]
+    let model = Model.buildSchemasOrFail [] [ invoices; lines ]
 
     let tables =
         "drop table if exists invoice_lines; drop table if exists invoices;
@@ -280,6 +280,6 @@ type OwnedSteps(w: World) =
 
     [<StepDefinition("I build a model of Invoices without owns")>]
     member _.WithoutOwns() =
-        match Model.build [] [ schema<Invoice> "invoices" { identityKey (fun i -> i.Id) }; lines ] with
+        match Model.buildSchemas [] [ schema<Invoice> "invoices" { identityKey (fun i -> i.Id) }; lines ] with
         | Ok _ -> failwith "the model was built"
         | Error errors -> w.Set("refusal", errors)

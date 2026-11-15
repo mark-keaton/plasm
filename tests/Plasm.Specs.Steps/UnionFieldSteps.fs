@@ -72,7 +72,7 @@ module UnionCards =
 
     let cards = schema<Card> "cards" { identityKey (fun c -> c.Id) }
 
-    let model = Model.buildOrFail [] [ cards ]
+    let model = Model.buildSchemasOrFail [] [ cards ]
 
     let stageColumns = [ "stage_assignee"; "stage_since"; "stage_resolution"; "stage_resolution_reason"; "stage_at" ]
 
@@ -245,7 +245,7 @@ type UnionFieldSteps(w: World) =
 
     [<StepDefinition("I build a model of a record whose union has a case holding a list")>]
     member _.BuildList() =
-        match Model.build [] [ schema<Note> "notes" { identityKey (fun n -> n.Id) } ] with
+        match Model.buildSchemas [] [ schema<Note> "notes" { identityKey (fun n -> n.Id) } ] with
         | Ok _ -> failwith "the model was built"
         | Error errors -> w.Set("refusal", errors)
 

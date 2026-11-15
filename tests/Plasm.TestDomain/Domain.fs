@@ -149,7 +149,7 @@ module Schemas =
     let all: ISchema list =
         [ customers; orders; orderLines; products; payments; articles; tags; accounts; profiles ]
 
-    let model = Model.buildOrFail scalars all
+    let model = Model.buildSchemasOrFail scalars all
 
 /// Values used to build records before insert (generated fields are ignored).
 module New =

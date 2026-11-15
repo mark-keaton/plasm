@@ -106,11 +106,11 @@ let lesson =
           Koan.Sync(
               "The model is checked before any query",
               fun repo ->
-                  // Model.build checks every schema once, when the model is made.
+                  // Model.buildSchemas checks every schema once, when the model is made.
                   // It cannot store a Bookmark's Address (above, under Given).
                   // Each error names the record and the field (Property) at fault.
                   // (Lesson 05 goes deeper.)
-                  match Model.build [] [ bookmarks ] with
+                  match Model.buildSchemas [] [ bookmarks ] with
                   | Ok _ -> failwith "expected a configuration error"
                   | Error errors ->
                       (errors |> List.map (fun e -> e.Property) |> List.distinct) |> shouldBe __

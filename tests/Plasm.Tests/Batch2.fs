@@ -363,7 +363,7 @@ let ``expressions of arguments are compiled into bound parameters`` () =
 let ``links requires a join table name`` () =
     // An empty join table name is a configuration error naming the list.
     let r =
-        Model.build
+        Model.buildSchemas
             Schemas.scalars
             [ schema<Article> "articles" {
                   identityKey (fun a -> a.Id)

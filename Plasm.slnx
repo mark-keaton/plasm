@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Plasm/Plasm.fsproj" />
+    <Project Path="src/Plasm.Annotations/Plasm.Annotations.fsproj" />
     <Project Path="src/Plasm.Postgres/Plasm.Postgres.fsproj" />
   </Folder>
   <Folder Name="/tests/">

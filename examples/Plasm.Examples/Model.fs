@@ -187,4 +187,4 @@ module Db =
     let all: ISchema list = [ customers; products; orders; orderLines; payments; articles; tags ]
 
     /// Checked once at start-up; every problem is reported with model and field.
-    let model = Model.buildOrFail [] all
+    let model = Model.buildSchemasOrFail [] all

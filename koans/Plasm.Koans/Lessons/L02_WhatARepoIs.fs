@@ -133,7 +133,7 @@ let lesson =
                   task {
                       // A model that knows only products, and a repo over it on the
                       // same database: Repo(model, provider), as in your app.
-                      let productsOnly = Model.buildOrFail [] [ Db.products ]
+                      let productsOnly = Model.buildSchemasOrFail [] [ Db.products ]
                       let! customers = Repo(productsOnly, repo.Provider).All(Query.from Db.customers)
 
                       // It cannot read customers: it returns an Error, it does not throw.

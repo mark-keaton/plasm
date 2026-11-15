@@ -37,7 +37,7 @@ module OwnedAccounts =
             ownsOne (fun a -> a.Settings) (fun s -> s.Account)
         }
 
-    let model = Model.buildOrFail [] [ accounts; profiles; settings ]
+    let model = Model.buildSchemasOrFail [] [ accounts; profiles; settings ]
 
     let tables =
         "drop table if exists owned_profiles; drop table if exists owned_settings; drop table if exists owned_accounts;
@@ -308,7 +308,7 @@ type OwnedOneSteps(w: World) =
     member _.WithoutOwnsOne() =
         let bare = schema<Account> "owned_accounts" { identityKey (fun a -> a.Id); ownsOptional (fun a -> a.Profile) (fun p -> p.Account) }
 
-        match Model.build [] [ bare; profiles; settings ] with
+        match Model.buildSchemas [] [ bare; profiles; settings ] with
         | Ok _ -> failwith "the model was built"
         | Error errors -> w.Set("accountRefusal", errors)
 
