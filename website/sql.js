@@ -2,7 +2,7 @@
 // SQL captured from Plasm's diagnostics while running each example against PostgreSQL.
 window.PLASM_SQL = {
   "transactions": {
-    "caption": "Three named steps, one database transaction. Each insert returns the generated key, and the next step uses it as a parameter.",
+    "caption": "One database transaction. Each insert gives back the record as stored, with its generated key, and the next step uses it; the order\u0027s lines are inserted with the order and carry its key.",
     "commands": [
       {
         "parameters": [
@@ -16,13 +16,13 @@ window.PLASM_SQL = {
         "parameters": [
           "@p0 = 1",
           "@p1 = draft",
-          "@p2 = 19.98",
-          "@p3 = NULL",
-          "@p4 = 11/13/2026 17:56:02",
+          "@p2 = NULL",
+          "@p3 = 19.98",
+          "@p4 = 11/14/2026 09:00:00",
           "@p5 = 1"
         ],
         "rows": 1,
-        "sql": "INSERT INTO \u0022orders\u0022 (\u0022customer_id\u0022, \u0022status\u0022, \u0022total\u0022, \u0022cancellation_reason\u0022, \u0022placed_at\u0022, \u0022version\u0022)\nVALUES (@p0, @p1, @p2, @p3, @p4, @p5)\nRETURNING \u0022id\u0022, \u0022customer_id\u0022, \u0022status\u0022, \u0022total\u0022, \u0022cancellation_reason\u0022, \u0022placed_at\u0022, \u0022version\u0022"
+        "sql": "INSERT INTO \u0022orders\u0022 (\u0022customer_id\u0022, \u0022status\u0022, \u0022status_reason\u0022, \u0022total\u0022, \u0022placed_at\u0022, \u0022version\u0022)\nVALUES (@p0, @p1, @p2, @p3, @p4, @p5)\nRETURNING \u0022id\u0022, \u0022customer_id\u0022, \u0022status\u0022, \u0022status_reason\u0022, \u0022total\u0022, \u0022placed_at\u0022, \u0022version\u0022"
       },
       {
         "parameters": [
@@ -44,41 +44,57 @@ window.PLASM_SQL = {
     ]
   },
   "model": {
-    "caption": "Field names become snake_case columns, and every mapped field is read. Relationship fields are not columns: they stay NotLoaded until requested.",
+    "caption": "Field names become snake_case columns, and every field is read. The lines are not a column: they are the order\u0027s own rows, read in one more command for every order the first one found, in the order the schema names.",
     "commands": [
       {
         "parameters": [],
         "rows": 3,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022cancellation_reason\u0022 AS \u0022cancellation_reason\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022"
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022 AS \u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022"
+      },
+      {
+        "parameters": [
+          "@p0 = [1, 2, 3]"
+        ],
+        "rows": 4,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022 AS \u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022 AS \u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022 AS \u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0))\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
       }
     ],
     "empty": null,
     "marks": [
       "\u0022customer_id\u0022",
-      "\u0022cancellation_reason\u0022",
-      "\u0022placed_at\u0022"
+      "\u0022placed_at\u0022",
+      "FROM \u0022order_lines\u0022",
+      "\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)"
     ]
   },
   "scalars": {
-    "caption": "OrderId 1L is sent as the int64 1, and Draft as the text \u0027draft\u0027, using the mappings you registered. The parameter values are listed below the statement.",
+    "caption": "OrderId 1L is sent as the int64 1, and Draft as the text \u0027draft\u0027: conventions, with nothing registered. OrderStatus has a case with a field, so it is read from two columns, status and status_reason. The parameter values are listed below each statement.",
     "commands": [
       {
         "parameters": [
-          "@p0 = 1",
+          "@p0 = 2",
           "@p1 = draft"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022cancellation_reason\u0022 AS \u0022cancellation_reason\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE ((\u0022t0\u0022.\u0022id\u0022 = @p0) AND (\u0022t0\u0022.\u0022status\u0022 = @p1))"
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022 AS \u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE ((\u0022t0\u0022.\u0022id\u0022 = @p0) AND (\u0022t0\u0022.\u0022status\u0022 = @p1))"
+      },
+      {
+        "parameters": [
+          "@p0 = [2]"
+        ],
+        "rows": 2,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022 AS \u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022 AS \u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022 AS \u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0))\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
       }
     ],
     "empty": null,
     "marks": [
       "\u0022t0\u0022.\u0022id\u0022 = @p0",
-      "\u0022t0\u0022.\u0022status\u0022 = @p1"
+      "\u0022t0\u0022.\u0022status\u0022 = @p1",
+      "\u0022t0\u0022.\u0022status_reason\u0022"
     ]
   },
   "queries": {
-    "caption": "Both functions\u0027 filters reach the database. The relationship predicate is a correlated NOT EXISTS, so each order appears at most once.",
+    "caption": "Both functions\u0027 filters reach the database. The payments query becomes a correlated NOT EXISTS, so each order appears at most once. List.exists over the order\u0027s own lines is an EXISTS over order_lines, and the domain\u0027s IsOpen member is written out from its definition. Each query\u0027s orders bring their lines in one more command.",
     "commands": [
       {
         "parameters": [
@@ -86,46 +102,40 @@ window.PLASM_SQL = {
           "@p1 = succeeded"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022cancellation_reason\u0022 AS \u0022cancellation_reason\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE ((\u0022t0\u0022.\u0022customer_id\u0022 = @p0) AND (NOT EXISTS (SELECT 1 FROM \u0022payments\u0022 AS \u0022t1\u0022 WHERE ((\u0022t1\u0022.\u0022order_id\u0022 = \u0022t0\u0022.\u0022id\u0022) AND (\u0022t1\u0022.\u0022status\u0022 = @p1)))))"
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022 AS \u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE ((\u0022t0\u0022.\u0022customer_id\u0022 = @p0) AND (NOT EXISTS (SELECT 1 FROM \u0022payments\u0022 AS \u0022t1\u0022 WHERE ((\u0022t1\u0022.\u0022order_id\u0022 = \u0022t0\u0022.\u0022id\u0022) AND (\u0022t1\u0022.\u0022status\u0022 = @p1)))))"
+      },
+      {
+        "parameters": [
+          "@p0 = [2]"
+        ],
+        "rows": 2,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022 AS \u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022 AS \u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022 AS \u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0))\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
+      },
+      {
+        "parameters": [
+          "@p0 = 2"
+        ],
+        "rows": 2,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022 AS \u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE (((\u0022t0\u0022.\u0022status\u0022 = \u0027draft\u0027) OR ((\u0022t0\u0022.\u0022status\u0022 = \u0027published\u0027) AND TRUE)) AND EXISTS (SELECT 1 FROM \u0022order_lines\u0022 AS \u0022t1\u0022 WHERE ((\u0022t1\u0022.\u0022order_id\u0022 = \u0022t0\u0022.\u0022id\u0022) AND (\u0022t1\u0022.\u0022product_id\u0022 = @p0))))"
+      },
+      {
+        "parameters": [
+          "@p0 = [2, 3]"
+        ],
+        "rows": 3,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022 AS \u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022 AS \u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022 AS \u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0))\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
       }
     ],
     "empty": null,
     "marks": [
       "\u0022t0\u0022.\u0022customer_id\u0022 = @p0",
-      "NOT EXISTS"
+      "NOT EXISTS",
+      "FROM \u0022payments\u0022",
+      "FROM \u0022order_lines\u0022"
     ]
   },
-  "joins": {
-    "caption": "Each join is part of one command. The inner join drops the order without a customer; the left join keeps it, and its customer columns read as NULL, which becomes None. Chained joins add one JOIN each, and the projection reads only the three columns it names.",
-    "commands": [
-      {
-        "parameters": [],
-        "rows": 2,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022c0\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022c1\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022c2\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022c3\u0022,\n    \u0022t0\u0022.\u0022cancellation_reason\u0022 AS \u0022c4\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022c5\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022c6\u0022,\n    \u0022j1\u0022.\u0022id\u0022 AS \u0022c7\u0022,\n    \u0022j1\u0022.\u0022name\u0022 AS \u0022c8\u0022,\n    \u0022j1\u0022.\u0022email\u0022 AS \u0022c9\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nINNER JOIN \u0022customers\u0022 AS \u0022j1\u0022 ON (\u0022t0\u0022.\u0022customer_id\u0022 = \u0022j1\u0022.\u0022id\u0022)\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
-      },
-      {
-        "parameters": [],
-        "rows": 3,
-        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022 AS \u0022c0\u0022, \u0022j1\u0022.\u0022email\u0022 AS \u0022c1\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nLEFT JOIN \u0022customers\u0022 AS \u0022j1\u0022 ON (\u0022t0\u0022.\u0022customer_id\u0022 = \u0022j1\u0022.\u0022id\u0022)\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
-      },
-      {
-        "parameters": [
-          "@p0 = cancelled"
-        ],
-        "rows": 2,
-        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022 AS \u0022c0\u0022, \u0022j2\u0022.\u0022sku\u0022 AS \u0022c1\u0022, \u0022j1\u0022.\u0022quantity\u0022 AS \u0022c2\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nINNER JOIN \u0022order_lines\u0022 AS \u0022j1\u0022 ON (\u0022t0\u0022.\u0022id\u0022 = \u0022j1\u0022.\u0022order_id\u0022)\nINNER JOIN \u0022products\u0022 AS \u0022j2\u0022 ON (\u0022j1\u0022.\u0022product_id\u0022 = \u0022j2\u0022.\u0022id\u0022)\nWHERE (\u0022t0\u0022.\u0022status\u0022 \u003C\u003E @p0)\nORDER BY \u0022j2\u0022.\u0022sku\u0022 ASC"
-      }
-    ],
-    "empty": null,
-    "marks": [
-      "INNER JOIN \u0022customers\u0022 AS \u0022j1\u0022 ON (\u0022t0\u0022.\u0022customer_id\u0022 = \u0022j1\u0022.\u0022id\u0022)",
-      "LEFT JOIN \u0022customers\u0022 AS \u0022j1\u0022",
-      "\u0022j1\u0022.\u0022email\u0022 AS \u0022c1\u0022",
-      "INNER JOIN \u0022products\u0022 AS \u0022j2\u0022 ON (\u0022j1\u0022.\u0022product_id\u0022 = \u0022j2\u0022.\u0022id\u0022)"
-    ]
-  },
-  "loads": {
-    "caption": "The page is chosen first (ORDER BY with the id tiebreaker, LIMIT, OFFSET). Each relationship then gets the selected keys as one array parameter, and the payments filter and ordering run in SQL. The last command is the per-parent limit, a window function partitioned by order.",
+  "owned": {
+    "caption": "The page is chosen first (ORDER BY with the key as tiebreaker, LIMIT, OFFSET). The lines of exactly those orders follow in one command, their keys as one array parameter: two commands for a page of 20 or of 1,000.",
     "commands": [
       {
         "parameters": [
@@ -134,42 +144,14 @@ window.PLASM_SQL = {
           "@p2 = 0"
         ],
         "rows": 2,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022cancellation_reason\u0022 AS \u0022cancellation_reason\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022customer_id\u0022 = @p0)\nORDER BY \u0022t0\u0022.\u0022placed_at\u0022 DESC, \u0022t0\u0022.\u0022id\u0022 ASC\nLIMIT @p1\nOFFSET @p2"
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022 AS \u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022customer_id\u0022 = @p0)\nORDER BY \u0022t0\u0022.\u0022placed_at\u0022 DESC, \u0022t0\u0022.\u0022id\u0022 ASC\nLIMIT @p1\nOFFSET @p2"
       },
       {
         "parameters": [
           "@p0 = [2, 1]"
         ],
-        "rows": 2,
+        "rows": 3,
         "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022 AS \u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022 AS \u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022 AS \u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0))\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
-      },
-      {
-        "parameters": [
-          "@p0 = [1, 2]"
-        ],
-        "rows": 2,
-        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022, \u0022t0\u0022.\u0022sku\u0022 AS \u0022sku\u0022, \u0022t0\u0022.\u0022name\u0022 AS \u0022name\u0022\nFROM \u0022products\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022id\u0022 = ANY(@p0))\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
-      },
-      {
-        "parameters": [
-          "@p0 = [2, 1]",
-          "@p1 = succeeded"
-        ],
-        "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022amount\u0022 AS \u0022amount\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022created_at\u0022 AS \u0022created_at\u0022\nFROM \u0022payments\u0022 AS \u0022t0\u0022\nWHERE ((\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)) AND (\u0022t0\u0022.\u0022status\u0022 = @p1))\nORDER BY \u0022t0\u0022.\u0022created_at\u0022 ASC, \u0022t0\u0022.\u0022id\u0022 ASC"
-      },
-      {
-        "parameters": [],
-        "rows": 3,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022cancellation_reason\u0022 AS \u0022cancellation_reason\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022"
-      },
-      {
-        "parameters": [
-          "@p0 = [1, 2, 3]",
-          "@p1 = 3"
-        ],
-        "rows": 3,
-        "sql": "SELECT\n    \u0022s\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022s\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022s\u0022.\u0022amount\u0022 AS \u0022amount\u0022,\n    \u0022s\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022s\u0022.\u0022created_at\u0022 AS \u0022created_at\u0022\nFROM (SELECT \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022, \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022, \u0022t0\u0022.\u0022amount\u0022 AS \u0022amount\u0022, \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022, \u0022t0\u0022.\u0022created_at\u0022 AS \u0022created_at\u0022, ROW_NUMBER() OVER (PARTITION BY \u0022t0\u0022.\u0022order_id\u0022 ORDER BY \u0022t0\u0022.\u0022created_at\u0022 DESC, \u0022t0\u0022.\u0022id\u0022 ASC) AS \u0022__rank\u0022 FROM \u0022payments\u0022 AS \u0022t0\u0022 WHERE (\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0))) AS \u0022s\u0022\nWHERE (\u0022s\u0022.\u0022__rank\u0022 \u003C= @p1)\nORDER BY \u0022s\u0022.\u0022created_at\u0022 DESC, \u0022s\u0022.\u0022id\u0022 ASC"
       }
     ],
     "empty": null,
@@ -177,31 +159,30 @@ window.PLASM_SQL = {
       "LIMIT @p1",
       "OFFSET @p2",
       "\u0022t0\u0022.\u0022id\u0022 ASC",
-      "\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)",
-      "\u0022t0\u0022.\u0022id\u0022 = ANY(@p0)",
-      "\u0022t0\u0022.\u0022status\u0022 = @p1",
-      "ROW_NUMBER() OVER (PARTITION BY \u0022t0\u0022.\u0022order_id\u0022",
-      "\u0022s\u0022.\u0022__rank\u0022 \u003C= @p1"
+      "\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)"
     ]
   },
-  "existing": {
-    "caption": "Only the payments are queried. The orders you already hold supply the keys, and no orders query is sent.",
+  "references": {
+    "caption": "One command for the payments of every order on the page: the ids are one array parameter, and the status filter and the ordering run in SQL. No orders query is sent again.",
     "commands": [
       {
         "parameters": [
-          "@p0 = [1, 2, 3]"
+          "@p0 = [3, 2, 1]",
+          "@p1 = succeeded"
         ],
-        "rows": 3,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022amount\u0022 AS \u0022amount\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022created_at\u0022 AS \u0022created_at\u0022\nFROM \u0022payments\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0))\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
+        "rows": 1,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022amount\u0022 AS \u0022amount\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022created_at\u0022 AS \u0022created_at\u0022\nFROM \u0022payments\u0022 AS \u0022t0\u0022\nWHERE ((\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)) AND (\u0022t0\u0022.\u0022status\u0022 = @p1))\nORDER BY \u0022t0\u0022.\u0022created_at\u0022 ASC"
       }
     ],
     "empty": null,
     "marks": [
-      "\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)"
+      "\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)",
+      "\u0022t0\u0022.\u0022status\u0022 = @p1",
+      "ORDER BY \u0022t0\u0022.\u0022created_at\u0022 ASC"
     ]
   },
   "projections": {
-    "caption": "Only the three projected columns are selected, and no Order is built. Explain itself sends nothing.",
+    "caption": "Only the three projected columns are selected, and no Order is built, so no lines are read. Explain itself sends nothing.",
     "commands": [
       {
         "parameters": [],
@@ -216,132 +197,60 @@ window.PLASM_SQL = {
       "\u0022t0\u0022.\u0022version\u0022 AS \u0022c2\u0022"
     ]
   },
-  "changesets": {
-    "caption": "The insert omits the generated id and returns it. The form update sets only the two changed fields plus the version, and only if the stored version still matches; the id and version in the form were ignored. The key-only update writes the status alone.",
+  "changes": {
+    "caption": "The order is read with its lines. The update sets only what differs from the record read, here the total, and requires the version the caller saw. The line left out is checked to belong to the order, then deleted. Cancelling writes the status and its reason, the two columns of the case.",
     "commands": [
       {
         "parameters": [
-          "@p0 = Bob",
-          "@p1 = bob@example.com"
+          "@p0 = 2",
+          "@p1 = 2"
         ],
         "rows": 1,
-        "sql": "INSERT INTO \u0022customers\u0022 (\u0022name\u0022, \u0022email\u0022)\nVALUES (@p0, @p1)\nRETURNING \u0022id\u0022, \u0022name\u0022, \u0022email\u0022"
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022 AS \u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022id\u0022 = @p0)\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC\nLIMIT @p1"
       },
       {
         "parameters": [
-          "@p0 = changed my mind",
-          "@p1 = cancelled",
-          "@p2 = 1",
-          "@p3 = 1",
-          "@p4 = 1"
+          "@p0 = [2]"
         ],
-        "rows": 1,
-        "sql": "UPDATE \u0022orders\u0022 AS \u0022orders\u0022\nSET \u0022cancellation_reason\u0022 = @p0, \u0022status\u0022 = @p1, \u0022version\u0022 = (\u0022orders\u0022.\u0022version\u0022 \u002B @p2)\nWHERE ((\u0022orders\u0022.\u0022id\u0022 = @p3) AND (\u0022orders\u0022.\u0022version\u0022 = @p4))\nRETURNING \u0022id\u0022, \u0022customer_id\u0022, \u0022status\u0022, \u0022total\u0022, \u0022cancellation_reason\u0022, \u0022placed_at\u0022, \u0022version\u0022"
+        "rows": 2,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022 AS \u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022 AS \u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022 AS \u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0))\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
       },
       {
         "parameters": [
-          "@p0 = published",
+          "@p0 = 9.99",
           "@p1 = 1",
           "@p2 = 2",
           "@p3 = 1"
         ],
         "rows": 1,
-        "sql": "UPDATE \u0022orders\u0022 AS \u0022orders\u0022\nSET \u0022status\u0022 = @p0, \u0022version\u0022 = (\u0022orders\u0022.\u0022version\u0022 \u002B @p1)\nWHERE ((\u0022orders\u0022.\u0022id\u0022 = @p2) AND (\u0022orders\u0022.\u0022version\u0022 = @p3))\nRETURNING \u0022id\u0022, \u0022customer_id\u0022, \u0022status\u0022, \u0022total\u0022, \u0022cancellation_reason\u0022, \u0022placed_at\u0022, \u0022version\u0022"
-      }
-    ],
-    "empty": null,
-    "marks": [
-      "INSERT INTO \u0022customers\u0022 (\u0022name\u0022, \u0022email\u0022)",
-      "SET \u0022cancellation_reason\u0022 = @p0, \u0022status\u0022 = @p1, \u0022version\u0022 = (\u0022orders\u0022.\u0022version\u0022 \u002B @p2)",
-      "\u0022orders\u0022.\u0022version\u0022 = @p4",
-      "SET \u0022status\u0022 = @p0, \u0022version\u0022"
-    ]
-  },
-  "children": {
-    "caption": "The parent is inserted first; its generated id becomes each line\u0027s order_id. Replacing the lines locks the order\u0027s current lines with FOR UPDATE, then deletes the ones that were left out (the schema declares OnReplace.Delete).",
-    "commands": [
-      {
-        "parameters": [
-          "@p0 = 1",
-          "@p1 = draft",
-          "@p2 = 15.99",
-          "@p3 = NULL",
-          "@p4 = 11/13/2026 17:56:02",
-          "@p5 = 1"
-        ],
-        "rows": 1,
-        "sql": "INSERT INTO \u0022orders\u0022 (\u0022customer_id\u0022, \u0022status\u0022, \u0022total\u0022, \u0022cancellation_reason\u0022, \u0022placed_at\u0022, \u0022version\u0022)\nVALUES (@p0, @p1, @p2, @p3, @p4, @p5)\nRETURNING \u0022id\u0022, \u0022customer_id\u0022, \u0022status\u0022, \u0022total\u0022, \u0022cancellation_reason\u0022, \u0022placed_at\u0022, \u0022version\u0022"
-      },
-      {
-        "parameters": [
-          "@p0 = 4",
-          "@p1 = 1",
-          "@p2 = 1",
-          "@p3 = 9.99"
-        ],
-        "rows": 1,
-        "sql": "INSERT INTO \u0022order_lines\u0022 (\u0022order_id\u0022, \u0022product_id\u0022, \u0022quantity\u0022, \u0022unit_price\u0022)\nVALUES (@p0, @p1, @p2, @p3)\nRETURNING \u0022id\u0022, \u0022order_id\u0022, \u0022product_id\u0022, \u0022quantity\u0022, \u0022unit_price\u0022"
-      },
-      {
-        "parameters": [
-          "@p0 = 4",
-          "@p1 = 2",
-          "@p2 = 2",
-          "@p3 = 3"
-        ],
-        "rows": 1,
-        "sql": "INSERT INTO \u0022order_lines\u0022 (\u0022order_id\u0022, \u0022product_id\u0022, \u0022quantity\u0022, \u0022unit_price\u0022)\nVALUES (@p0, @p1, @p2, @p3)\nRETURNING \u0022id\u0022, \u0022order_id\u0022, \u0022product_id\u0022, \u0022quantity\u0022, \u0022unit_price\u0022"
-      },
-      {
-        "parameters": [
-          "@p0 = 1",
-          "@p1 = 4",
-          "@p2 = 1"
-        ],
-        "rows": 1,
-        "sql": "UPDATE \u0022orders\u0022 AS \u0022orders\u0022\nSET \u0022version\u0022 = (\u0022orders\u0022.\u0022version\u0022 \u002B @p0)\nWHERE ((\u0022orders\u0022.\u0022id\u0022 = @p1) AND (\u0022orders\u0022.\u0022version\u0022 = @p2))\nRETURNING \u0022id\u0022, \u0022customer_id\u0022, \u0022status\u0022, \u0022total\u0022, \u0022cancellation_reason\u0022, \u0022placed_at\u0022, \u0022version\u0022"
-      },
-      {
-        "parameters": [
-          "@p0 = 4"
-        ],
-        "rows": 2,
-        "sql": "SELECT \u0022order_lines\u0022.\u0022id\u0022 AS \u0022id\u0022\nFROM \u0022order_lines\u0022 AS \u0022order_lines\u0022\nWHERE (\u0022order_lines\u0022.\u0022order_id\u0022 = @p0)\nFOR UPDATE"
-      },
-      {
-        "parameters": [
-          "@p0 = 4",
-          "@p1 = [4]"
-        ],
-        "rows": 1,
-        "sql": "DELETE FROM \u0022order_lines\u0022 AS \u0022order_lines\u0022\nWHERE ((\u0022order_lines\u0022.\u0022order_id\u0022 = @p0) AND (\u0022order_lines\u0022.\u0022id\u0022 = ANY(@p1)))"
+        "sql": "UPDATE \u0022orders\u0022 AS \u0022orders\u0022\nSET \u0022total\u0022 = @p0, \u0022version\u0022 = (\u0022orders\u0022.\u0022version\u0022 \u002B @p1)\nWHERE ((\u0022orders\u0022.\u0022id\u0022 = @p2) AND (\u0022orders\u0022.\u0022version\u0022 = @p3))\nRETURNING \u0022id\u0022, \u0022customer_id\u0022, \u0022status\u0022, \u0022status_reason\u0022, \u0022total\u0022, \u0022placed_at\u0022, \u0022version\u0022"
       },
       {
         "parameters": [
           "@p0 = 3",
-          "@p1 = 4"
+          "@p1 = 2"
         ],
         "rows": 1,
         "sql": "SELECT 1 AS \u0022one\u0022\nFROM \u0022order_lines\u0022 AS \u0022order_lines\u0022\nWHERE ((\u0022order_lines\u0022.\u0022id\u0022 = @p0) AND (\u0022order_lines\u0022.\u0022order_id\u0022 = @p1))"
-      }
-    ],
-    "empty": null,
-    "marks": [
-      "INSERT INTO \u0022order_lines\u0022",
-      "FOR UPDATE",
-      "DELETE FROM \u0022order_lines\u0022"
-    ]
-  },
-  "split": {
-    "caption": "Plasm\u0027s relationship commands receive the selected order ids as one array parameter. The parent filter, ordering and LIMIT run once, in the first command, and are never repeated.",
-    "commands": [
+      },
       {
         "parameters": [
-          "@p0 = published",
-          "@p1 = 20"
+          "@p0 = 3",
+          "@p1 = 2",
+          "@p2 = 2",
+          "@p3 = 2",
+          "@p4 = 3"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022cancellation_reason\u0022 AS \u0022cancellation_reason\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022status\u0022 = @p0)\nORDER BY \u0022t0\u0022.\u0022placed_at\u0022 DESC, \u0022t0\u0022.\u0022id\u0022 ASC\nLIMIT @p1"
+        "sql": "DELETE FROM \u0022order_lines\u0022 AS \u0022order_lines\u0022\nWHERE ((\u0022order_lines\u0022.\u0022id\u0022 = @p0) AND ((\u0022order_lines\u0022.\u0022order_id\u0022 IS NOT DISTINCT FROM @p1) AND ((\u0022order_lines\u0022.\u0022product_id\u0022 IS NOT DISTINCT FROM @p2) AND ((\u0022order_lines\u0022.\u0022quantity\u0022 IS NOT DISTINCT FROM @p3) AND (\u0022order_lines\u0022.\u0022unit_price\u0022 IS NOT DISTINCT FROM @p4)))))"
+      },
+      {
+        "parameters": [
+          "@p0 = 2",
+          "@p1 = 2"
+        ],
+        "rows": 1,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022 AS \u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022id\u0022 = @p0)\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC\nLIMIT @p1"
       },
       {
         "parameters": [
@@ -352,25 +261,133 @@ window.PLASM_SQL = {
       },
       {
         "parameters": [
-          "@p0 = [2]"
+          "@p0 = cancelled",
+          "@p1 = changed my mind",
+          "@p2 = 1",
+          "@p3 = 2",
+          "@p4 = 2"
         ],
         "rows": 1,
-        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022, \u0022t0\u0022.\u0022sku\u0022 AS \u0022sku\u0022, \u0022t0\u0022.\u0022name\u0022 AS \u0022name\u0022\nFROM \u0022products\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022id\u0022 = ANY(@p0))\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
+        "sql": "UPDATE \u0022orders\u0022 AS \u0022orders\u0022\nSET \u0022status\u0022 = @p0, \u0022status_reason\u0022 = @p1, \u0022version\u0022 = (\u0022orders\u0022.\u0022version\u0022 \u002B @p2)\nWHERE ((\u0022orders\u0022.\u0022id\u0022 = @p3) AND (\u0022orders\u0022.\u0022version\u0022 = @p4))\nRETURNING \u0022id\u0022, \u0022customer_id\u0022, \u0022status\u0022, \u0022status_reason\u0022, \u0022total\u0022, \u0022placed_at\u0022, \u0022version\u0022"
+      }
+    ],
+    "empty": null,
+    "marks": [
+      "SET \u0022total\u0022 = @p0, \u0022version\u0022 = (\u0022orders\u0022.\u0022version\u0022 \u002B @p1)",
+      "\u0022orders\u0022.\u0022version\u0022 = @p",
+      "DELETE FROM \u0022order_lines\u0022",
+      "SET \u0022status\u0022 = @p0, \u0022status_reason\u0022 = @p1"
+    ]
+  },
+  "errors": {
+    "caption": "The duplicate email reaches the database, which refuses it by customers_email_key; that is the Email field\u0027s error. The stale cancel requires version 1, but the stored row is at version 2, so no row matches: a Conflict. The untranslatable query sends nothing at all.",
+    "commands": [
+      {
+        "parameters": [
+          "@p0 = Eve",
+          "@p1 = ada@example.com"
+        ],
+        "rows": 0,
+        "sql": "INSERT INTO \u0022customers\u0022 (\u0022name\u0022, \u0022email\u0022)\nVALUES (@p0, @p1)\nRETURNING \u0022id\u0022, \u0022name\u0022, \u0022email\u0022"
       },
       {
         "parameters": [
-          "@p0 = [2]",
+          "@p0 = 1",
+          "@p1 = 2"
+        ],
+        "rows": 1,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022 AS \u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022id\u0022 = @p0)\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC\nLIMIT @p1"
+      },
+      {
+        "parameters": [
+          "@p0 = [1]"
+        ],
+        "rows": 1,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022 AS \u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022 AS \u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022 AS \u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0))\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
+      },
+      {
+        "parameters": [
+          "@p0 = cancelled",
+          "@p1 = too late",
+          "@p2 = 1",
+          "@p3 = 1",
+          "@p4 = 1"
+        ],
+        "rows": 0,
+        "sql": "UPDATE \u0022orders\u0022 AS \u0022orders\u0022\nSET \u0022status\u0022 = @p0, \u0022status_reason\u0022 = @p1, \u0022version\u0022 = (\u0022orders\u0022.\u0022version\u0022 \u002B @p2)\nWHERE ((\u0022orders\u0022.\u0022id\u0022 = @p3) AND (\u0022orders\u0022.\u0022version\u0022 = @p4))\nRETURNING \u0022id\u0022, \u0022customer_id\u0022, \u0022status\u0022, \u0022status_reason\u0022, \u0022total\u0022, \u0022placed_at\u0022, \u0022version\u0022"
+      }
+    ],
+    "empty": "isLucky o.Total: no command was sent; translation failed first.",
+    "marks": [
+      "INSERT INTO \u0022customers\u0022",
+      "\u0022orders\u0022.\u0022version\u0022 = @p"
+    ]
+  },
+  "joins": {
+    "caption": "Each join is part of one command. The inner join drops the order without a customer, and its whole Orders come with their lines, in one more command; the left join keeps it, and its customer columns read as NULL, which becomes None. Chained joins add one JOIN each, and the projection reads only the three columns it names.",
+    "commands": [
+      {
+        "parameters": [],
+        "rows": 2,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022c0\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022c1\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022c2\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022 AS \u0022c3\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022c4\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022c5\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022c6\u0022,\n    \u0022j1\u0022.\u0022id\u0022 AS \u0022c7\u0022,\n    \u0022j1\u0022.\u0022name\u0022 AS \u0022c8\u0022,\n    \u0022j1\u0022.\u0022email\u0022 AS \u0022c9\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nINNER JOIN \u0022customers\u0022 AS \u0022j1\u0022 ON (\u0022t0\u0022.\u0022customer_id\u0022 = \u0022j1\u0022.\u0022id\u0022)\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
+      },
+      {
+        "parameters": [
+          "@p0 = [1, 2]"
+        ],
+        "rows": 2,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022 AS \u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022 AS \u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022 AS \u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0))\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
+      },
+      {
+        "parameters": [],
+        "rows": 3,
+        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022 AS \u0022c0\u0022, \u0022j1\u0022.\u0022email\u0022 AS \u0022c1\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nLEFT JOIN \u0022customers\u0022 AS \u0022j1\u0022 ON (\u0022t0\u0022.\u0022customer_id\u0022 = \u0022j1\u0022.\u0022id\u0022)\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
+      },
+      {
+        "parameters": [],
+        "rows": 2,
+        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022 AS \u0022c0\u0022, \u0022j2\u0022.\u0022sku\u0022 AS \u0022c1\u0022, \u0022j1\u0022.\u0022quantity\u0022 AS \u0022c2\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nINNER JOIN \u0022order_lines\u0022 AS \u0022j1\u0022 ON (\u0022t0\u0022.\u0022id\u0022 = \u0022j1\u0022.\u0022order_id\u0022)\nINNER JOIN \u0022products\u0022 AS \u0022j2\u0022 ON (\u0022j1\u0022.\u0022product_id\u0022 = \u0022j2\u0022.\u0022id\u0022)\nWHERE ((\u0022t0\u0022.\u0022status\u0022 = \u0027draft\u0027) OR ((\u0022t0\u0022.\u0022status\u0022 = \u0027published\u0027) AND TRUE))\nORDER BY \u0022j2\u0022.\u0022sku\u0022 ASC"
+      }
+    ],
+    "empty": null,
+    "marks": [
+      "INNER JOIN \u0022customers\u0022 AS \u0022j1\u0022 ON (\u0022t0\u0022.\u0022customer_id\u0022 = \u0022j1\u0022.\u0022id\u0022)",
+      "LEFT JOIN \u0022customers\u0022 AS \u0022j1\u0022",
+      "\u0022j1\u0022.\u0022email\u0022 AS \u0022c1\u0022",
+      "INNER JOIN \u0022products\u0022 AS \u0022j2\u0022 ON (\u0022j1\u0022.\u0022product_id\u0022 = \u0022j2\u0022.\u0022id\u0022)"
+    ]
+  },
+  "split": {
+    "caption": "The page\u0027s filter, ordering and LIMIT run once, in the first command. The lines and then the payments receive the selected order ids as one array parameter; the parent query is never repeated.",
+    "commands": [
+      {
+        "parameters": [
+          "@p0 = published",
+          "@p1 = 20"
+        ],
+        "rows": 1,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022 AS \u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022status\u0022 = @p0)\nORDER BY \u0022t0\u0022.\u0022placed_at\u0022 DESC, \u0022t0\u0022.\u0022id\u0022 ASC\nLIMIT @p1"
+      },
+      {
+        "parameters": [
+          "@p0 = [1]"
+        ],
+        "rows": 1,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022 AS \u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022 AS \u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022 AS \u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0))\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
+      },
+      {
+        "parameters": [
+          "@p0 = [1]",
           "@p1 = succeeded"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022amount\u0022 AS \u0022amount\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022created_at\u0022 AS \u0022created_at\u0022\nFROM \u0022payments\u0022 AS \u0022t0\u0022\nWHERE ((\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)) AND (\u0022t0\u0022.\u0022status\u0022 = @p1))\nORDER BY \u0022t0\u0022.\u0022created_at\u0022 ASC, \u0022t0\u0022.\u0022id\u0022 ASC"
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022amount\u0022 AS \u0022amount\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022created_at\u0022 AS \u0022created_at\u0022\nFROM \u0022payments\u0022 AS \u0022t0\u0022\nWHERE ((\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)) AND (\u0022t0\u0022.\u0022status\u0022 = @p1))\nORDER BY \u0022t0\u0022.\u0022created_at\u0022 ASC"
       }
     ],
     "empty": null,
     "marks": [
       "LIMIT @p1",
-      "\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)",
-      "\u0022t0\u0022.\u0022id\u0022 = ANY(@p0)"
+      "\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)"
     ]
   },
   "aggregates": {
@@ -384,11 +401,9 @@ window.PLASM_SQL = {
         "sql": "SELECT COUNT(*) AS \u0022n\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022status\u0022 = @p0)"
       },
       {
-        "parameters": [
-          "@p0 = cancelled"
-        ],
+        "parameters": [],
         "rows": 1,
-        "sql": "SELECT COUNT(*) AS \u0022c0\u0022, COALESCE(SUM(\u0022t0\u0022.\u0022total\u0022), 0) AS \u0022c1\u0022, AVG(\u0022t0\u0022.\u0022total\u0022) AS \u0022c2\u0022, MAX(\u0022t0\u0022.\u0022placed_at\u0022) AS \u0022c3\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022status\u0022 \u003C\u003E @p0)"
+        "sql": "SELECT COUNT(*) AS \u0022c0\u0022, COALESCE(SUM(\u0022t0\u0022.\u0022total\u0022), 0) AS \u0022c1\u0022, AVG(\u0022t0\u0022.\u0022total\u0022) AS \u0022c2\u0022, MAX(\u0022t0\u0022.\u0022placed_at\u0022) AS \u0022c3\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE ((\u0022t0\u0022.\u0022status\u0022 = \u0027draft\u0027) OR ((\u0022t0\u0022.\u0022status\u0022 = \u0027published\u0027) AND TRUE))"
       },
       {
         "parameters": [
@@ -409,7 +424,7 @@ window.PLASM_SQL = {
     ]
   },
   "bulk": {
-    "caption": "One UPDATE changes every matching draft. Only the assigned fields are in the SET clause, and the version is incremented. The upsert is one INSERT; a row whose SKU already exists is updated from the incoming row (excluded) instead, and both kinds come back through RETURNING.",
+    "caption": "One UPDATE changes every matching draft. Only the assigned field is in the SET clause, as its two columns, and the version is incremented. The upsert is one INSERT; a row whose SKU already exists is updated from the incoming row (excluded) instead, and both kinds come back through RETURNING.",
     "commands": [
       {
         "parameters": [
@@ -417,10 +432,10 @@ window.PLASM_SQL = {
           "@p1 = expired",
           "@p2 = 1",
           "@p3 = draft",
-          "@p4 = 11/13/2026 17:57:02"
+          "@p4 = 11/14/2026 10:00:00"
         ],
-        "rows": 2,
-        "sql": "UPDATE \u0022orders\u0022 AS \u0022orders\u0022\nSET \u0022status\u0022 = @p0, \u0022cancellation_reason\u0022 = @p1, \u0022version\u0022 = (\u0022orders\u0022.\u0022version\u0022 \u002B @p2)\nWHERE ((\u0022orders\u0022.\u0022status\u0022 = @p3) AND (\u0022orders\u0022.\u0022placed_at\u0022 \u003C @p4))"
+        "rows": 1,
+        "sql": "UPDATE \u0022orders\u0022 AS \u0022orders\u0022\nSET \u0022status\u0022 = @p0, \u0022status_reason\u0022 = @p1, \u0022version\u0022 = (\u0022orders\u0022.\u0022version\u0022 \u002B @p2)\nWHERE ((\u0022orders\u0022.\u0022status\u0022 = @p3) AND (\u0022orders\u0022.\u0022placed_at\u0022 \u003C @p4))"
       },
       {
         "parameters": [
@@ -435,7 +450,7 @@ window.PLASM_SQL = {
     ],
     "empty": null,
     "marks": [
-      "SET \u0022status\u0022 = @p0, \u0022cancellation_reason\u0022 = @p1, \u0022version\u0022 = (\u0022orders\u0022.\u0022version\u0022 \u002B @p2)",
+      "SET \u0022status\u0022 = @p0, \u0022status_reason\u0022 = @p1, \u0022version\u0022 = (\u0022orders\u0022.\u0022version\u0022 \u002B @p2)",
       "\u0022orders\u0022.\u0022placed_at\u0022 \u003C @p",
       "ON CONFLICT (\u0022sku\u0022) DO UPDATE",
       "\u0022name\u0022 = \u0022excluded\u0022.\u0022name\u0022"
@@ -473,16 +488,23 @@ window.PLASM_SQL = {
           "@p0 = 1",
           "@p1 = 5"
         ],
-        "rows": 3,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022cancellation_reason\u0022 AS \u0022cancellation_reason\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022customer_id\u0022 = @p0)\nORDER BY \u0022t0\u0022.\u0022placed_at\u0022 DESC, \u0022t0\u0022.\u0022id\u0022 ASC\nLIMIT @p1"
+        "rows": 2,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022 AS \u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022customer_id\u0022 = @p0)\nORDER BY \u0022t0\u0022.\u0022placed_at\u0022 DESC, \u0022t0\u0022.\u0022id\u0022 ASC\nLIMIT @p1"
       },
       {
         "parameters": [
-          "@p0 = 2",
+          "@p0 = [2, 1]"
+        ],
+        "rows": 2,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022 AS \u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022 AS \u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022 AS \u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0))\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
+      },
+      {
+        "parameters": [
+          "@p0 = 3",
           "@p1 = 20"
         ],
         "rows": 0,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022cancellation_reason\u0022 AS \u0022cancellation_reason\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022customer_id\u0022 = @p0)\nORDER BY \u0022t0\u0022.\u0022placed_at\u0022 DESC, \u0022t0\u0022.\u0022id\u0022 ASC\nLIMIT @p1"
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022 AS \u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022customer_id\u0022 = @p0)\nORDER BY \u0022t0\u0022.\u0022placed_at\u0022 DESC, \u0022t0\u0022.\u0022id\u0022 ASC\nLIMIT @p1"
       }
     ],
     "empty": null,
@@ -491,8 +513,8 @@ window.PLASM_SQL = {
       "LIMIT @p1"
     ]
   },
-  "manytomany": {
-    "caption": "Tags load with one command per batch of articles, joined through article_tags, which also supplies each row\u0027s article. Retagging writes only join-table rows: links outside the new set are deleted, missing ones inserted. The filter is an EXISTS through the join table.",
+  "linked": {
+    "caption": "Tags are read with their articles in one more command, joined through article_tags, which also supplies each row\u0027s article. Retagging inserts only the tags not yet stored, then writes only join-table rows: links outside the new set are deleted, missing ones inserted. The filter is an EXISTS through the join table.",
     "commands": [
       {
         "parameters": [],
@@ -508,8 +530,23 @@ window.PLASM_SQL = {
       },
       {
         "parameters": [
+          "@p0 = fsharp",
+          "@p1 = sql"
+        ],
+        "rows": 0,
+        "sql": "INSERT INTO \u0022tags\u0022 (\u0022name\u0022)\nVALUES (@p0), (@p1)\nON CONFLICT (\u0022name\u0022) DO NOTHING\nRETURNING \u0022id\u0022, \u0022name\u0022"
+      },
+      {
+        "parameters": [
+          "@p0 = [fsharp, sql]"
+        ],
+        "rows": 2,
+        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022, \u0022t0\u0022.\u0022name\u0022 AS \u0022name\u0022\nFROM \u0022tags\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022name\u0022 = ANY(@p0))"
+      },
+      {
+        "parameters": [
           "@p0 = 1",
-          "@p1 = [1, 2]"
+          "@p1 = [1, 3]"
         ],
         "rows": 1,
         "sql": "DELETE FROM \u0022article_tags\u0022\nWHERE \u0022article_id\u0022 = @p0 AND NOT (\u0022tag_id\u0022 = ANY(@p1))"
@@ -517,7 +554,7 @@ window.PLASM_SQL = {
       {
         "parameters": [
           "@p0 = 1",
-          "@p1 = [1, 2]",
+          "@p1 = [1, 3]",
           "@p2 = 1"
         ],
         "rows": 1,
@@ -529,26 +566,47 @@ window.PLASM_SQL = {
         ],
         "rows": 1,
         "sql": "SELECT \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022, \u0022t0\u0022.\u0022title\u0022 AS \u0022title\u0022\nFROM \u0022articles\u0022 AS \u0022t0\u0022\nWHERE EXISTS (SELECT 1 FROM \u0022tags\u0022 AS \u0022t1\u0022 INNER JOIN \u0022article_tags\u0022 AS \u0022t1j\u0022 ON (\u0022t1j\u0022.\u0022tag_id\u0022 = \u0022t1\u0022.\u0022id\u0022) WHERE ((\u0022t1j\u0022.\u0022article_id\u0022 = \u0022t0\u0022.\u0022id\u0022) AND (\u0022t1\u0022.\u0022name\u0022 = @p0)))"
+      },
+      {
+        "parameters": [
+          "@p0 = [1]"
+        ],
+        "rows": 2,
+        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022, \u0022t0\u0022.\u0022name\u0022 AS \u0022name\u0022, \u0022j\u0022.\u0022article_id\u0022 AS \u0022__owner\u0022\nFROM \u0022tags\u0022 AS \u0022t0\u0022\nINNER JOIN \u0022article_tags\u0022 AS \u0022j\u0022 ON (\u0022j\u0022.\u0022tag_id\u0022 = \u0022t0\u0022.\u0022id\u0022)\nWHERE (\u0022j\u0022.\u0022article_id\u0022 = ANY(@p0))\nORDER BY \u0022t0\u0022.\u0022name\u0022 ASC, \u0022t0\u0022.\u0022id\u0022 ASC"
       }
     ],
     "empty": null,
     "marks": [
       "INNER JOIN \u0022article_tags\u0022 AS \u0022j\u0022 ON (\u0022j\u0022.\u0022tag_id\u0022 = \u0022t0\u0022.\u0022id\u0022)",
       "(\u0022j\u0022.\u0022article_id\u0022 = ANY(@p0))",
+      "ON CONFLICT (\u0022name\u0022) DO NOTHING",
       "DELETE FROM \u0022article_tags\u0022",
-      "unnest(@p1)",
-      "INNER JOIN \u0022article_tags\u0022 AS \u0022t1j\u0022"
+      "unnest(@p1)"
     ]
   },
   "testing": {
-    "caption": "The schema check is one catalogue query; it found no differences for this model. The sandbox\u0027s insert and count run inside a transaction that is rolled back afterwards. Its BEGIN, savepoints and ROLLBACK are sent by the connection, not as commands, so they do not appear here.",
+    "caption": "Checking the queries and printing the DDL send nothing. The schema check reads the catalogue; it found no differences for this model. The sandbox\u0027s insert and count run inside a transaction that is rolled back afterwards. Its BEGIN, savepoints and ROLLBACK are sent by the connection, not as commands, so they do not appear here.",
     "commands": [
       {
         "parameters": [
           "@p0 = [articles, customers, orders, order_lines, payments, products, tags, article_tags]"
         ],
         "rows": 29,
-        "sql": "SELECT\n    table_name,\n    column_name,\n    data_type,\n    is_nullable,\n    column_default IS NOT NULL OR is_identity = \u0027YES\u0027 OR is_generated \u003C\u003E \u0027NEVER\u0027\nFROM information_schema.columns\nWHERE table_schema = current_schema() AND table_name = ANY(@p0)"
+        "sql": "SELECT\n    table_name,\n    column_name,\n    data_type,\n    is_nullable,\n    column_default IS NOT NULL OR is_identity = \u0027YES\u0027 OR is_generated \u003C\u003E \u0027NEVER\u0027,\n    udt_schema,\n    udt_name\nFROM information_schema.columns\nWHERE table_schema = current_schema() AND table_name = ANY(@p0)"
+      },
+      {
+        "parameters": [
+          "@p0 = [articles, customers, orders, order_lines, payments, products, tags, article_tags]"
+        ],
+        "rows": 10,
+        "sql": "SELECT t.relname::text, a.attname::text, ic.relname::text, EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = i.indexrelid AND c.conrelid = t.oid AND c.contype IN (\u0027u\u0027, \u0027p\u0027))\nFROM pg_index i JOIN pg_class t ON t.oid = i.indrelid JOIN pg_namespace n ON n.oid = t.relnamespace JOIN pg_class ic ON ic.oid = i.indexrelid JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = i.indkey[0]\nWHERE i.indisunique AND i.indnkeyatts = 1 AND n.nspname = current_schema() AND t.relname::text = ANY(@p0)"
+      },
+      {
+        "parameters": [
+          "@p0 = [articles, customers, orders, order_lines, payments, products, tags, article_tags]"
+        ],
+        "rows": 6,
+        "sql": "SELECT t.relname::text, a.attname::text, r.relname::text, c.conname::text\nFROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid JOIN pg_class r ON r.oid = c.confrelid JOIN pg_namespace n ON n.oid = t.relnamespace JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = c.conkey[1]\nWHERE c.contype = \u0027f\u0027 AND array_length(c.conkey, 1) = 1 AND n.nspname = current_schema() AND t.relname::text = ANY(@p0)"
       },
       {
         "parameters": [
@@ -573,25 +631,6 @@ window.PLASM_SQL = {
     "marks": [
       "information_schema.columns",
       "INSERT INTO \u0022customers\u0022"
-    ]
-  },
-  "errors": {
-    "caption": "The stale update\u0027s WHERE requires version 1, but the stored row is at version 2, so 0 rows match and the result is WriteError.Stale. The untranslatable query sends nothing at all.",
-    "commands": [
-      {
-        "parameters": [
-          "@p0 = 1",
-          "@p1 = 1",
-          "@p2 = 1",
-          "@p3 = 1"
-        ],
-        "rows": 0,
-        "sql": "UPDATE \u0022orders\u0022 AS \u0022orders\u0022\nSET \u0022total\u0022 = @p0, \u0022version\u0022 = (\u0022orders\u0022.\u0022version\u0022 \u002B @p1)\nWHERE ((\u0022orders\u0022.\u0022id\u0022 = @p2) AND (\u0022orders\u0022.\u0022version\u0022 = @p3))\nRETURNING \u0022id\u0022, \u0022customer_id\u0022, \u0022status\u0022, \u0022total\u0022, \u0022cancellation_reason\u0022, \u0022placed_at\u0022, \u0022version\u0022"
-      }
-    ],
-    "empty": "isLucky o.Total: no command was sent; translation failed first.",
-    "marks": [
-      "\u0022orders\u0022.\u0022version\u0022 = @p3"
     ]
   }
 };
