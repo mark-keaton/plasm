@@ -112,6 +112,7 @@ type LoadingSteps(w: BrowserWorld) =
     member _.Within(seconds: int) =
         let encodings =
             Site.served |> Seq.groupBy (fun (_, path, _) -> path.Split('/').[0]) |> Seq.map (fun (k, v) -> k, Seq.length v, (v |> Seq.sumBy (fun (_, _, b) -> b)) / 1048576L) |> List.ofSeq
+        eprintfn $"first koan runnable after {readyMs} ms ({float bytes / 1048576.0:F1} MB transferred)"
         check (readyMs <= int64 seconds * 1000L) $"the first koan could be run after {readyMs} ms ({float bytes / 1048576.0:F1} MB; served %A{encodings}; accept-encoding {Site.lastAccept})"
 
     [<StepDefinition("the page transfers at most (\\d+) MB, compressed")>]

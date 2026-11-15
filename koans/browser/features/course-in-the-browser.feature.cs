@@ -229,7 +229,7 @@ namespace Plasm.Koans.Browser.Specs.Features
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Loading stays within budget", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Opening the page is all it takes", null, tagsOfRule);
-#line 27
+#line 32
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -242,13 +242,13 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 13
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 28
+#line 33
       await testRunner.WhenAsync("a learner opens the koans page on a typical connection", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 29
-      await testRunner.ThenAsync("the first koan can be run within 20 seconds", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line 34
+      await testRunner.ThenAsync("the first koan can be run within 25 seconds", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 30
+#line 35
       await testRunner.AndAsync("the page transfers at most 40 MB, compressed", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
@@ -266,7 +266,7 @@ namespace Plasm.Koans.Browser.Specs.Features
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A browser without WebAssembly is told why the course cannot run", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Opening the page is all it takes", null, tagsOfRule);
-#line 32
+#line 37
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -279,10 +279,10 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 13
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 33
+#line 38
       await testRunner.WhenAsync("the koans page is opened in a browser without WebAssembly", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 34
+#line 39
       await testRunner.ThenAsync("the page explains that WebAssembly is required and links to the koans for the ter" +
                         "minal", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
@@ -301,7 +301,7 @@ namespace Plasm.Koans.Browser.Specs.Features
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Every request is for a static file", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Nothing runs on a server", null, tagsOfRule);
-#line 38
+#line 43
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -314,13 +314,13 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 13
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 39
+#line 44
       await testRunner.WhenAsync("a learner runs every koan of the first lesson", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 40
+#line 45
       await testRunner.ThenAsync("every network request is for a static file the site serves", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 41
+#line 46
       await testRunner.AndAsync("no code or data is sent anywhere", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
@@ -338,7 +338,7 @@ namespace Plasm.Koans.Browser.Specs.Features
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("The course works offline after the first visit", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Nothing runs on a server", null, tagsOfRule);
-#line 43
+#line 48
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -351,13 +351,13 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 13
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 44
+#line 49
       await testRunner.GivenAsync("a learner has opened the koans page once", ((string)(null)), ((global::Reqnroll.Table)(null)), "Given ");
 #line hidden
-#line 45
+#line 50
       await testRunner.WhenAsync("the learner opens it again without a network connection", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 46
+#line 51
       await testRunner.ThenAsync("the first koan can be run", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
             }

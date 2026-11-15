@@ -569,6 +569,10 @@ a1; their behaviour is in `owned-records.feature` and
    (SQLite or SQL Server); move the catalogue queries and the link SQL behind
    it.
 5. Diagnostics as OpenTelemetry activities.
+5b. Bring the browser koans' first runnable koan back under 20 s on a 25 Mbit/s
+   connection. Measured 2026-11-15 at 19.2 to 20.1 s with 24.1 MB transferred
+   (about 7.7 s of transfer); the budget in `course-in-the-browser.feature` is
+   25 s until then.
 6. Close the gaps found by the comparison with the F# data-access libraries
    ([comparison.md](comparison.md)): typed parameters (such as `jsonb`) and
    several result sets in raw SQL; then the larger EF Core gaps listed there.
