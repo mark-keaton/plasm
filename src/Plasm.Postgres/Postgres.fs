@@ -41,8 +41,7 @@ type internal PostgresDialect(options: PostgresOptions) =
             | _ -> []
 
         member _.Capabilities =
-            { PerParentLimit = true
-              SnapshotReads = true
+            { SnapshotReads = true
               ArrayParameters = true
               MaxKeysPerCommand = options.MaxKeysPerCommand
               Returning = true

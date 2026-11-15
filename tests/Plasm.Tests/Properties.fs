@@ -146,10 +146,10 @@ let extend (q: Query<Order>) (e: Extension) =
 [<Property(MaxTest = 100)>]
 let ``extending a query never changes the original`` (baseOps: Extension list) (more: Extension list) =
     let baseQ = baseOps |> List.truncate 4 |> List.fold extend (Query.from orders)
-    let before = baseQ.FilterCount, baseQ.LoadPaths, explain baseQ |> Result.map (fun p -> p.Sql, p.LoadPaths)
+    let before = baseQ.FilterCount, explain baseQ |> Result.map (fun p -> p.Sql, p.LoadPaths)
     let derived = more |> List.truncate 4 |> List.fold extend baseQ
     ignore derived
-    let after = baseQ.FilterCount, baseQ.LoadPaths, explain baseQ |> Result.map (fun p -> p.Sql, p.LoadPaths)
+    let after = baseQ.FilterCount, explain baseQ |> Result.map (fun p -> p.Sql, p.LoadPaths)
     before = after
 
 // -- (c) Changeset.edit records exactly the fields that differ -----------------

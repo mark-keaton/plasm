@@ -9,9 +9,6 @@ type LoadStrategy =
     /// the command count depends on the number of keys divided by the batch
     /// size, never on the number of parents.
     | BatchedByKeys of maxKeysPerCommand: int
-    /// As BatchedByKeys, ranking related rows per parent with a window function
-    /// and keeping at most `limit` for each parent.
-    | PerParentWindow of limit: int * maxKeysPerCommand: int
 
 /// An inspectable description of one relationship load.
 type LoadStep =
@@ -28,7 +25,7 @@ type QueryPlan =
     { Sql: string
       Loads: LoadStep list }
 
-    /// Every load path, depth first (e.g. "Lines", "Lines.Product", "Payments").
+    /// Every load path, depth first (e.g. "Lines", "Lines.Notes", "Tags").
     member p.LoadPaths =
         let rec walk (steps: LoadStep list) =
             steps |> List.collect (fun s -> s.Path :: walk s.Children)
@@ -67,155 +64,40 @@ module internal Planner =
 
     let private raiseT e = raise (Translate.TranslationFailure e)
 
-    /// A canonical rendering of a load customisation, used to decide whether two
-    /// loads of the same relationship mean the same thing.
-    let private signature (dialect: ISqlDialect) (model: Model) (vol: bool ref) (target: SchemaInfo) (def: QueryDef) =
-        let ctx = Translate.newCtxWith model vol
-        let wheres, orders = Translate.translateBody ctx def "c" target
-
-        let rendered =
-            Sql.renderSelect
-                dialect
-                { Sql.select (Sql.Table(target.Table, "c")) with
-                    Where = wheres
-                    OrderBy = orders }
-
-        let ps =
-            rendered.Parameters
-            |> List.map (fun p ->
-                match p with
-                | :? Array as a -> a |> Seq.cast<obj> |> Seq.map string |> String.concat ","
-                | p -> $"{p.GetType().Name}:{p}")
-
-        rendered.Sql + " | " + String.concat ";" ps + $" | perParent=%A{def.PerParentLimit}"
-
-    let rec private planLevel
-        (dialect: ISqlDialect)
-        (model: Model)
-        (vol: bool ref)
-        (prefix: string)
-        (parent: SchemaInfo)
-        (loads: LoadSpec list)
-        : LoadNode list =
+    /// The loads of what `parent` owns or links (owned-collections.feature):
+    /// every owned or linked field, at every level, in its declared order (else
+    /// by key), one batched command per field.
+    let rec private planLevel (dialect: ISqlDialect) (model: Model) (vol: bool ref) (prefix: string) (parent: SchemaInfo) : LoadNode list =
         let caps = dialect.Capabilities
 
-        // An owned list is always loaded (owned-collections.feature): in its
-        // declared order, else by its key.
-        let owned =
-            [ for a in parent.Assocs do
-                  if (a.Owned || a.Linked) && not (loads |> List.exists (fun l -> l.Assoc.Name = a.Name)) then
-                      let target =
-                          match model.Schema a.Target with
-                          | Ok t -> t
-                          | Error e -> raiseT e
-
-                      let order =
-                          match a.Order with
-                          | Some o -> o
-                          | None ->
-                              let v = Quotations.Var("x", target.Type)
-                              Quotations.Expr.Lambda(v, Quotations.Expr.PropertyGet(Quotations.Expr.Var v, target.Shape.Fields.[target.Key.Index]))
-
-                      yield
-                          { Assoc = parent.Shape.Fields.[a.Index]
-                            Child = Some { QueryDef.Empty target.Type with Orders = [ order, SortDirection.Ascending ] }
-                            Replace = false } ]
-
-        let loads = loads @ owned
-
-        // Group by relationship, keeping first-request order.
-        let groups =
-            loads
-            |> List.fold
-                (fun (acc: (string * LoadSpec list) list) l ->
-                    match acc |> List.tryFindIndex (fun (n, _) -> n = l.Assoc.Name) with
-                    | Some i -> acc |> List.mapi (fun j (n, ls) -> if i = j then n, ls @ [ l ] else n, ls)
-                    | None -> acc @ [ l.Assoc.Name, [ l ] ])
-                []
-
-        [ for name, specs in groups do
-              let path = if prefix = "" then name else prefix + "." + name
-
-              let assoc =
-                  match parent.TryAssoc name with
-                  | Some a -> a
-                  | None -> raiseT (TranslationError.InvalidQuery $"{parent.Name}.{name} is not a declared relationship")
+        [ for assoc in parent.Assocs do
+              let path = if prefix = "" then assoc.Name else prefix + "." + assoc.Name
 
               let target =
                   match model.Schema assoc.Target with
                   | Ok s -> s
                   | Error e -> raiseT e
 
-              // An explicit replacement discards earlier requests.
-              let specs =
-                  match specs |> List.tryFindIndexBack (fun s -> s.Replace) with
-                  | Some i -> specs |> List.skip i
-                  | None -> specs
+              let order =
+                  match assoc.Order with
+                  | Some o -> o
+                  | None ->
+                      let v = Quotations.Var("x", target.Type)
+                      Quotations.Expr.Lambda(v, Quotations.Expr.PropertyGet(Quotations.Expr.Var v, target.Shape.Fields.[target.Key.Index]))
 
-              let defs =
-                  specs |> List.map (fun s -> s.Child |> Option.defaultValue (QueryDef.Empty target.Type))
-
-              for d in defs do
-                  if d.Root <> target.Type then
-                      raiseT (TranslationError.InvalidQuery $"load query for '{path}' is over {d.Root.Name}, expected {target.Name}")
-
-                  if d.Limit.IsSome || d.Offset.IsSome then
-                      raiseT (
-                          TranslationError.InvalidQuery
-                              $"take/skip in the load query for '{path}' is ambiguous (global or per parent?); use limitPerParent for a per-parent limit"
-                      )
-
-              let signatures =
-                  match defs with
-                  | [ _ ] -> [ () ]
-                  | _ -> defs |> List.map (signature dialect model vol target) |> List.distinct |> List.map ignore
-
-              if signatures.Length > 1 then
-                  raiseT (
-                      TranslationError.LoadConflict(
-                          path,
-                          "the relationship is loaded more than once with different filters, ordering or limits; use replacePreload to choose one"
-                      )
-                  )
-
-              let def = defs.Head
-              let nested = defs |> List.collect (fun d -> d.Loads)
-
-              let strategy =
-                  match def.PerParentLimit with
-                  | None -> LoadStrategy.BatchedByKeys caps.MaxKeysPerCommand
-                  | Some n ->
-                      if assoc.Cardinality <> Many then
-                          raiseT (TranslationError.InvalidQuery $"limitPerParent on '{path}' requires a has-many relationship")
-
-                      if def.Orders.IsEmpty then
-                          raiseT (
-                              TranslationError.InvalidQuery $"limitPerParent on '{path}' requires an ordering to decide which rows are kept"
-                          )
-
-                      if not caps.PerParentLimit then
-                          raiseT (TranslationError.UnsupportedByProvider($"per-parent limit for '{path}'", dialect.Name))
-
-                      LoadStrategy.PerParentWindow(n, caps.MaxKeysPerCommand)
+              let def = { QueryDef.Empty target.Type with Orders = [ order, SortDirection.Ascending ] }
+              let strategy = LoadStrategy.BatchedByKeys caps.MaxKeysPerCommand
 
               let keyField, matchField =
                   match assoc.Kind with
                   | AssocKind.HasMany
                   | AssocKind.HasOne -> parent.Key, target.Field assoc.ForeignKey
-                  | AssocKind.BelongsTo -> parent.Field assoc.ForeignKey, target.Key
                   // Matched on the join table's owner column (see Through).
                   | AssocKind.ManyToMany -> parent.Key, target.Key
 
               // Translate once; each batch only supplies its key array.
               let wheres, orders = Translate.translateBody (Translate.newCtxWith model vol) def "t0" target
               let ranked = Translate.stableOrder "t0" target orders
-
-              let outerOrders =
-                  match strategy with
-                  | LoadStrategy.PerParentWindow _ ->
-                      let _, o = Translate.translateBody (Translate.newCtxWith model vol) def "s" target
-                      Translate.stableOrder "s" target o
-                  | LoadStrategy.BatchedByKeys _ -> []
 
               // Many-to-many rows come through the join table, which supplies
               // the owner key as a trailing column.
@@ -232,31 +114,14 @@ module internal Planner =
 
               let columns = Translate.entityColumns "t0" target @ ownerColumn
 
-              let outerColumns =
-                  (target.Fields |> Array.toList |> List.map (fun f -> Sql.Column("s", f.Column), f.Column))
-                  @ (ownerColumn |> List.map (fun (_, n) -> Sql.Column("s", n), n))
-
               let build (keys: Array) : Sql.Select =
                   let keyFilter = Sql.AnyOf(matchExpr, keys, Sql.storeType matchField)
 
-                  match strategy with
-                  | LoadStrategy.BatchedByKeys _ ->
-                      { Sql.select (Sql.Table(target.Table, "t0")) with
-                          Columns = columns
-                          Joins = joins
-                          Where = keyFilter :: wheres
-                          OrderBy = ranked }
-                  | LoadStrategy.PerParentWindow(n, _) ->
-                      let inner =
-                          { Sql.select (Sql.Table(target.Table, "t0")) with
-                              Columns = columns @ [ Sql.RowNumber(matchExpr, ranked), "__rank" ]
-                              Joins = joins
-                              Where = keyFilter :: wheres }
-
-                      { Sql.select (Sql.Subquery(inner, "s")) with
-                          Columns = outerColumns
-                          Where = [ Sql.Binary("<=", Sql.Column("s", "__rank"), Sql.Param(box (int64 n))) ]
-                          OrderBy = outerOrders }
+                  { Sql.select (Sql.Table(target.Table, "t0")) with
+                      Columns = columns
+                      Joins = joins
+                      Where = keyFilter :: wheres
+                      OrderBy = ranked }
 
               { Path = path
                 Assoc = assoc
@@ -267,11 +132,11 @@ module internal Planner =
                 Build = build
                 Through = assoc.Through
                 Strategy = strategy
-                Args = defs |> List.map (fun d -> d.Args) |> List.tryFind (fun a -> a.Length > 0) |> Option.defaultValue [||]
-                Children = planLevel dialect model vol path target nested } ]
+                Args = [||]
+                Children = planLevel dialect model vol path target } ]
 
-    let planLoads dialect model (schema: SchemaInfo) (loads: LoadSpec list) =
-        Translate.wrap (fun () -> planLevel dialect model (ref false) "" schema loads)
+    let planLoads dialect model (schema: SchemaInfo) =
+        Translate.wrap (fun () -> planLevel dialect model (ref false) "" schema)
 
     let plan (dialect: ISqlDialect) (model: Model) (def: QueryDef) : Result<Plan, TranslationError> =
         let vol = ref false
@@ -279,7 +144,7 @@ module internal Planner =
         match Translate.rootSelect model vol def with
         | Error e -> Error e
         | Ok(root, schema) ->
-            Translate.wrap (fun () -> planLevel dialect model vol "" schema def.Loads)
+            Translate.wrap (fun () -> planLevel dialect model vol "" schema)
             |> Result.map (fun loads ->
                 { Root = root
                   RootSchema = schema
@@ -290,7 +155,10 @@ module internal Planner =
         let sample = n.Build(Array.CreateInstance(n.KeyField.ProviderType, 1))
 
         { Path = n.Path
-          Relationship = $"{n.Assoc.Kind}"
+          Relationship =
+            if n.Assoc.Linked then "links"
+            elif n.Assoc.Cardinality = Many then "owns"
+            else "owns one"
           Target = n.Target.Name
           Strategy = n.Strategy
           Sql = (Sql.renderSelect dialect sample).Sql

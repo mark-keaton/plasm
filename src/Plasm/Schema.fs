@@ -5,24 +5,13 @@ open System.Reflection
 open Microsoft.FSharp.Quotations
 open Microsoft.FSharp.Quotations.Patterns
 
+/// What an owned or linked list is, internally: a list of the owner's own
+/// rows (HasMany), one owned row (HasOne), or links through a join table.
 [<RequireQualifiedAccess>]
-type AssocKind =
+type internal AssocKind =
     | HasMany
     | HasOne
-    | BelongsTo
-    /// Linked through a join table (see `manyToMany`).
     | ManyToMany
-
-/// What happens to existing children omitted from an authoritative replacement.
-/// Mirrors Ecto's `on_replace`; the default rejects the replacement.
-[<RequireQualifiedAccess>]
-type OnReplace =
-    /// Reject the replacement with a structured error (the default).
-    | Reject
-    /// Delete omitted children.
-    | Delete
-    /// Set the omitted children's foreign key to NULL (requires an optional key).
-    | Nilify
 
 module internal Paths =
 
@@ -66,7 +55,6 @@ type internal AssocDef =
       Kind: AssocKind
       /// Null for ManyToMany.
       ForeignKey: PropertyInfo
-      OnReplace: OnReplace
       Through: JoinTable option
       /// An owned list (`owns`): a plain list, always loaded and written with
       /// its owner (owned-collections.feature).
@@ -179,7 +167,6 @@ type SchemaBuilder<'T> internal (table: string) =
                 @ [ { Property = Paths.property "owns" one
                       Kind = AssocKind.HasOne
                       ForeignKey = Paths.property "owns owner" owner
-                      OnReplace = OnReplace.Delete
                       Through = None
                       Owned = true
                       Linked = false
@@ -203,7 +190,6 @@ type SchemaBuilder<'T> internal (table: string) =
                 @ [ { Property = Paths.property "owns" list
                       Kind = AssocKind.HasMany
                       ForeignKey = Paths.property "owns owner" owner
-                      OnReplace = OnReplace.Delete
                       Through = None
                       Owned = true
                       Linked = false
@@ -237,7 +223,6 @@ type SchemaBuilder<'T> internal (table: string) =
                 @ [ { Property = Paths.property "links" list
                       Kind = AssocKind.ManyToMany
                       ForeignKey = null
-                      OnReplace = OnReplace.Reject
                       Through =
                         Some
                             { Table = joinTable
@@ -255,117 +240,6 @@ type SchemaBuilder<'T> internal (table: string) =
     member _.Unique(s: SchemaDef, [<ReflectedDefinition>] field: Expr<'T -> 'F>) =
         let p = Paths.property "unique" field
         add s (fun s -> { s with Unique = s.Unique.Add p.Name })
-
-    static member private AddHasMany(s: SchemaDef, assoc: Expr, foreignKey: Expr, onReplace) =
-        { s with
-            Assocs =
-                s.Assocs
-                @ [ { Property = Paths.property "hasMany" assoc
-                      Kind = AssocKind.HasMany
-                      ForeignKey = Paths.property "hasMany foreign key" foreignKey
-                      OnReplace = onReplace
-                      Through = None
-                      Owned = false
-                      Linked = false
-                      Order = None } ] }
-
-    /// One-to-many: `foreignKey` selects the child's column that references this
-    /// record's primary key. Replacing children that omit existing ones is
-    /// rejected unless an OnReplace policy is given.
-    [<CustomOperation("hasMany")>]
-    member _.HasMany
-        (
-            s: SchemaDef,
-            [<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C list>>,
-            [<ReflectedDefinition>] foreignKey: Expr<'C -> 'K>
-        ) =
-        SchemaBuilder<'T>.AddHasMany(s, assoc, foreignKey, OnReplace.Reject)
-
-    /// One-to-many with an explicit policy for children omitted from a replacement.
-    [<CustomOperation("hasMany")>]
-    member _.HasMany
-        (
-            s: SchemaDef,
-            [<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C list>>,
-            [<ReflectedDefinition>] foreignKey: Expr<'C -> 'K>,
-            onReplace: OnReplace
-        ) =
-        SchemaBuilder<'T>.AddHasMany(s, assoc, foreignKey, onReplace)
-
-    /// One-to-zero-or-one, keyed by the child's `foreignKey`.
-    [<CustomOperation("hasOne")>]
-    member _.HasOne
-        (
-            s: SchemaDef,
-            [<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C option>>,
-            [<ReflectedDefinition>] foreignKey: Expr<'C -> 'K>
-        ) =
-        add s (fun s ->
-            { s with
-                Assocs =
-                    s.Assocs
-                    @ [ { Property = Paths.property "hasOne" assoc
-                          Kind = AssocKind.HasOne
-                          ForeignKey = Paths.property "hasOne foreign key" foreignKey
-                          OnReplace = OnReplace.Reject
-                          Through = None
-                          Owned = false
-                          Linked = false
-                          Order = None } ] })
-
-    /// Many-to-one: `foreignKey` selects this record's column referencing the
-    /// target's primary key. Use `Assoc<'C>` for a required key and
-    /// `Assoc<'C option>` for an optional one.
-    [<CustomOperation("belongsTo")>]
-    member _.BelongsTo
-        (
-            s: SchemaDef,
-            [<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C>>,
-            [<ReflectedDefinition>] foreignKey: Expr<'T -> 'K>
-        ) =
-        add s (fun s ->
-            { s with
-                Assocs =
-                    s.Assocs
-                    @ [ { Property = Paths.property "belongsTo" assoc
-                          Kind = AssocKind.BelongsTo
-                          ForeignKey = Paths.property "belongsTo foreign key" foreignKey
-                          OnReplace = OnReplace.Reject
-                          Through = None
-                          Owned = false
-                          Linked = false
-                          Order = None } ] })
-
-    /// Many-to-many through `joinTable`, whose `ownerColumn` references this
-    /// record's primary key and `targetColumn` the target's:
-    /// `manyToMany (fun a -> a.Tags) "article_tags" "article_id" "tag_id"`.
-    /// Changing links (Changeset.putLinks / addLinks / removeLinks) writes only
-    /// join-table rows.
-    [<CustomOperation("manyToMany")>]
-    member _.ManyToMany
-        (
-            s: SchemaDef,
-            [<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C list>>,
-            joinTable: string,
-            ownerColumn: string,
-            targetColumn: string
-        ) =
-        add s (fun s ->
-            { s with
-                Assocs =
-                    s.Assocs
-                    @ [ { Property = Paths.property "manyToMany" assoc
-                          Kind = AssocKind.ManyToMany
-                          ForeignKey = null
-                          OnReplace = OnReplace.Reject
-                          Through =
-                            Some
-                                { Table = joinTable
-                                  OwnerColumn = ownerColumn
-                                  TargetColumn = targetColumn }
-                          Owned = false
-                          Linked = false
-                          Order = None } ] })
 
 [<AutoOpen>]
 module SchemaBuilderExtensions =
@@ -570,7 +444,6 @@ type internal AssocMap =
       /// for BelongsTo; empty for ManyToMany.
       ForeignKey: string
       Through: JoinTable option
-      OnReplace: OnReplace
       Ctors: Reflection.AssocCtors
       /// Builds the loaded payload's list (Many) from boxed targets.
       MakeList: obj seq -> obj

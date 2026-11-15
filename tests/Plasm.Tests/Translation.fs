@@ -167,16 +167,6 @@ let ``take without ordering is rejected`` () =
 let ``skip without ordering is rejected`` () =
     plasm { for o in orders do skip 10 } |> invalidQuery |> ignore
 
-[<Fact>]
-let ``limitPerParent on a root query is rejected`` () =
-    plasm {
-        for o in orders do
-            orderBy o.Id
-            limitPerParent 3
-    }
-    |> invalidQuery
-    |> ignore
-
 // -- Loads -------------------------------------------------------------------
 
 [<Fact>]
@@ -248,14 +238,7 @@ type Kid = { Id: int; ParentId: string }
 
 type Parent =
     { Id: int64
-      Kids: Assoc<Kid list> }
-
-type Owner = { Id: int64 }
-
-type Pet =
-    { Id: int
-      OwnerId: int64 option
-      Owner: Assoc<Owner> }
+      Kids: Kid list }
 
 type Mood =
     | Happy
@@ -275,7 +258,7 @@ let ``unmapped scalar type identifies model and property`` () =
     Assert.Contains("Address", e.Message)
 
 [<Fact>]
-let ``relationship field without declaration is a configuration error`` () =
+let ``a list field without owns or links is a configuration error`` () =
     let kids = schema<Kid> "kids" { key (fun k -> k.Id) }
     let parents = schema<Parent> "parents" { key (fun p -> p.Id) }
     let es = configErrors [] [ kids; parents ]
@@ -288,24 +271,11 @@ let ``foreign key type mismatch is a configuration error`` () =
     let parents =
         schema<Parent> "parents" {
             key (fun p -> p.Id)
-            hasMany (fun p -> p.Kids) (fun k -> k.ParentId)
+            owns (fun p -> p.Kids) (fun k -> k.ParentId)
         }
 
     let es = configErrors [] [ kids; parents ]
     Assert.Contains(es, fun e -> e.Property = Some "Kids" && e.Message.Contains "foreign key")
-
-[<Fact>]
-let ``required relationship over an optional foreign key is a configuration error`` () =
-    let owners = schema<Owner> "owners" { key (fun o -> o.Id) }
-
-    let pets =
-        schema<Pet> "pets" {
-            key (fun p -> p.Id)
-            belongsTo (fun p -> p.Owner) (fun p -> p.OwnerId)
-        }
-
-    let es = configErrors [] [ owners; pets ]
-    Assert.Contains(es, fun e -> e.Property = Some "Owner" && e.Message.Contains "Assoc<'T option>")
 
 [<Fact>]
 let ``duplicate scalar registration is a configuration error`` () =

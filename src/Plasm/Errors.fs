@@ -26,7 +26,6 @@ type TranslationError =
     /// e.g. pagination without an ordering.
     | InvalidQuery of message: string
     /// Two load specifications customise the same relationship differently.
-    | LoadConflict of path: string * detail: string
     /// The provider cannot implement the requested operation faithfully.
     | UnsupportedByProvider of operation: string * provider: string
     /// F# Interactive: the query and the model use different definitions of a
@@ -39,7 +38,6 @@ type TranslationError =
         | UnsupportedExpression(e, r) -> $"Unsupported expression: {r}\n  in: {e}"
         | UnmappedType t -> $"Type {t} has no schema in this model"
         | InvalidQuery m -> $"Invalid query: {m}"
-        | LoadConflict(p, d) -> $"Conflicting loads for '{p}': {d}"
         | UnsupportedByProvider(op, p) -> $"Provider {p} does not support {op}"
         | RedefinedType(_, d) -> d
 
@@ -102,7 +100,6 @@ type FieldErrorKind =
     | ForeignKeyConstraint of constraintName: string
     | CheckConstraint of constraintName: string
     | DuplicateIdentity
-    | ReplacementRejected
     | NotOwned
     | KeyChange
     | Custom of string

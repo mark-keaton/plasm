@@ -444,7 +444,6 @@ module internal Ddl =
                       | AssocKind.HasOne ->
                           let child = byType.[a.Target]
                           yield child.Table, (child.Field a.ForeignKey).Column, s
-                      | AssocKind.BelongsTo -> yield s.Table, (s.Field a.ForeignKey).Column, byType.[a.Target]
                       | AssocKind.ManyToMany -> () ]
             |> List.distinctBy (fun (t, c, _) -> t, c)
 
@@ -474,7 +473,7 @@ module internal Ddl =
             line (String.concat ",\n" columns)
             line ");"
 
-        // Join tables of manyToMany and links, each once.
+        // Join tables of linked lists, each once.
         let joins =
             [ for s in schemas do
                   for a in s.Assocs do

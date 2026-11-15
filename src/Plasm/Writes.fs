@@ -267,18 +267,7 @@ let rec check (model: Model) (s: CsState) : CsState =
                         st <- err st w.Assoc (FieldErrorKind.Custom "type") $"child changeset is for {c.Type.Name}, expected {target.Name}"
 
                 { w with Children = checkedChildren }
-            | Some a when a.Kind = AssocKind.ManyToMany ->
-                st <-
-                    err
-                        st
-                        w.Assoc
-                        (FieldErrorKind.Custom "relationship")
-                        $"{schema.Name}.{a.Name} is many-to-many; change its links with Changeset.putLinks, addLinks or removeLinks"
-                w
-            | Some a ->
-                st <- err st w.Assoc (FieldErrorKind.Custom "relationship") $"{a.Kind} relationships cannot be written through the parent yet"
-                w
-            | None ->
+            | _ ->
                 st <- err st w.Assoc (FieldErrorKind.Custom "relationship") "not a declared relationship"
                 w)
 
@@ -289,14 +278,7 @@ let rec check (model: Model) (s: CsState) : CsState =
 
             if l.Targets |> List.exists (fun t -> isNull t || t.GetType() <> target.Type) then
                 st <- err st l.Assoc (FieldErrorKind.Custom "type") $"links of {schema.Name}.{a.Name} must be {target.Name} records"
-        | Some a ->
-            st <-
-                err
-                    st
-                    l.Assoc
-                    (FieldErrorKind.Custom "relationship")
-                    $"{schema.Name}.{a.Name} is {a.Kind}, not many-to-many; links are only written through manyToMany relationships (use putChildren for has-many)"
-        | None -> st <- err st l.Assoc (FieldErrorKind.Custom "relationship") "not a declared relationship"
+        | _ -> st <- err st l.Assoc (FieldErrorKind.Custom "relationship") "not a linked list"
 
     { st with Children = children }
 
@@ -566,7 +548,7 @@ and private writeChildren model sess (schema: SchemaInfo) (s: CsState) (parentKe
     }
 
 /// Join-table writes for many-to-many link changes. Returns the relationship
-/// value for the parent: the new set after putLinks, NotLoaded otherwise.
+/// value for the parent: the new set of links.
 and private writeLinks model (sess: Session) (schema: SchemaInfo) (s: CsState) (parentKey: obj) : Task<Map<string, obj>> =
     task {
         let d = sess.Provider.Dialect
@@ -602,12 +584,6 @@ and private writeLinks model (sess: Session) (schema: SchemaInfo) (s: CsState) (
                 let! _ = run $"DELETE FROM {jt} WHERE {oc} = {p 0} AND NOT ({tc} = ANY({p 1}))" [ owner; box arr ]
                 let! _ = insertMissing ()
                 written <- written.Add(a.Name, a.Ctors.Loaded(a.MakeList l.Targets))
-            | AddLinks ->
-                let! _ = insertMissing ()
-                written <- written.Add(a.Name, a.Ctors.NotLoaded)
-            | RemoveLinks ->
-                let! _ = run $"DELETE FROM {jt} WHERE {oc} = {p 0} AND {tc} = ANY({p 1})" [ owner; box arr ]
-                written <- written.Add(a.Name, a.Ctors.NotLoaded)
 
         return written
     }
@@ -646,7 +622,6 @@ and private writeChildList model sess (schema: SchemaInfo) (s: CsState) (parentK
                             let scopeWheres =
                                 match scope with
                                 | AllChildren -> []
-                                | MatchingChildren def -> fst (Translate.translateBody ctx def target.Table target)
 
                             let select =
                                 { Sql.select (Sql.Table(target.Table, target.Table)) with
@@ -675,37 +650,16 @@ and private writeChildList model sess (schema: SchemaInfo) (s: CsState) (parentK
                             else
                                 let ids = Sql.AnyOf(Sql.Column(target.Table, target.Key.Column), keyArray target omitted, Sql.storeType target.Key)
 
-                                match a.OnReplace with
-                                | OnReplace.Reject ->
-                                    let st =
-                                        Cs.addError
-                                            state
-                                            w.Assoc
-                                            FieldErrorKind.ReplacementRejected
-                                            $"replacement omits {omitted.Length} existing {target.Name} record(s) and {schema.Name}.{a.Name} has no OnReplace policy; configure OnReplace.Delete or OnReplace.Nilify"
+                                // What the owner owns and no longer holds is deleted.
+                                let cmd =
+                                    Sql.renderDelete
+                                        sess.Provider.Dialect
+                                        { Table = target.Table
+                                          Where = [ ownedBy; ids ]
+                                          Returning = [] }
 
-                                    return Error(Invalid st)
-                                | OnReplace.Delete ->
-                                    let cmd =
-                                        Sql.renderDelete
-                                            sess.Provider.Dialect
-                                            { Table = target.Table
-                                              Where = [ ownedBy; ids ]
-                                              Returning = [] }
-
-                                    let! _ = execute sess cmd
-                                    return Ok()
-                                | OnReplace.Nilify ->
-                                    let cmd =
-                                        Sql.renderUpdate
-                                            sess.Provider.Dialect
-                                            { Table = target.Table
-                                              Set = [ fk.Column, Sql.Literal "NULL" ]
-                                              Where = [ ownedBy; ids ]
-                                              Returning = [] }
-
-                                    let! _ = execute sess cmd
-                                    return Ok()
+                                let! _ = execute sess cmd
+                                return Ok()
                     }
 
                 match removal with
@@ -776,7 +730,7 @@ and private writeChildList model sess (schema: SchemaInfo) (s: CsState) (parentK
                                 let stored = Collections.Generic.Queue<obj>(produced)
                                 final |> List.map (fun (c, written) -> if written then stored.Dequeue() else c) |> Seq.ofList |> a.MakeList |> a.Ctors.Loaded
                             | None when complete -> a.Ctors.Loaded(a.MakeList produced)
-                            | None -> a.Ctors.NotLoaded
+                            | None -> a.Ctors.Empty
 
                         result <- Ok(written.Add(w.Assoc, value))
 

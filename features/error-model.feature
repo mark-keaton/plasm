@@ -51,7 +51,6 @@ Feature: Failures are values with qualified names
         | ChangeAction   |
         | SortDirection  |
         | FieldChange    |
-        | AssocKind      |
         | LoadStrategy   |
         | TxFailure      |
 

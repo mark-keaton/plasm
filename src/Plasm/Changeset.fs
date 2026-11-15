@@ -20,9 +20,8 @@ type FieldChange =
     /// An optional field is explicitly set to `None`.
     | Cleared
 
-type internal ReplaceScopeDef =
-    | AllChildren
-    | MatchingChildren of QueryDef
+/// A child write that replaces every child the owner has (a delete).
+type internal ReplaceScopeDef = | AllChildren
 
 type internal ChildWrite =
     { Assoc: string
@@ -32,10 +31,7 @@ type internal ChildWrite =
       /// written (its stored value replaces it, in Children's order) or kept.
       Final: (obj * bool) list option }
 
-and internal LinkMode =
-    | PutLinks
-    | AddLinks
-    | RemoveLinks
+and internal LinkMode = | PutLinks
 
 and internal LinkWrite =
     { Assoc: string
@@ -87,22 +83,6 @@ and internal CsState =
                     c.AllErrors |> List.map (fun e -> { e with Field = $"{w.Assoc}[{i}].{e.Field}" })))
 
         s.Errors @ childErrors
-
-/// Scope of an authoritative child replacement. Children outside the scope are
-/// never affected, so replacing with a filtered collection must name its filter.
-[<Sealed>]
-type ReplaceScope<'C> internal (def: ReplaceScopeDef) =
-    member internal _.Def = def
-
-[<RequireQualifiedAccess>]
-module ReplaceScope =
-    /// Every existing child of the parent is subject to the replacement.
-    let allChildren<'C> : ReplaceScope<'C> = ReplaceScope<'C>(AllChildren)
-
-    /// Only existing children matching `query`'s filters are subject to the
-    /// replacement; others are left untouched.
-    let matching (query: Query<'C>) : ReplaceScope<'C> =
-        ReplaceScope<'C>(MatchingChildren query.Def)
 
 /// An immutable description of proposed changes to a `'T`, with validation
 /// errors. Constructing, validating and inspecting it never touches the database.
@@ -210,15 +190,7 @@ type Changeset =
 
         for i, p in Array.indexed shape.Fields do
             if not (Cs.fieldEquals before.[i] after.[i]) then
-                if Reflection.isAssoc p.PropertyType then
-                    s <-
-                        Cs.addError
-                            s
-                            p.Name
-                            (FieldErrorKind.Custom "relationship")
-                            "relationship changes must use Changeset.putChildren or Changeset.replaceChildren"
-                else
-                    s <- { s with Changes = s.Changes.Add(p.Name, after.[i]) }
+                s <- { s with Changes = s.Changes.Add(p.Name, after.[i]) }
 
         Changeset<'T>(s)
 
@@ -234,68 +206,3 @@ type Changeset =
     // A unique, foreign-key or column check constraint with PostgreSQL's default
     // name (<table>_<column>_key, _fkey, _check) comes back as its field's
     // error with nothing declared here (constraints.feature).
-
-    // -- Associations ---------------------------------------------------------
-
-    /// Writes the given children with the parent: changesets built with
-    /// `Changeset.insert` are inserted (their foreign key is set to the parent);
-    /// update changesets update the existing child with that identity. Children
-    /// not listed are left untouched.
-    static member putChildren([<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C list>>, children: Changeset<'C> list) =
-        let name = (Paths.property "putChildren" assoc).Name
-
-        fun (cs: Changeset<'T>) ->
-            Cs.map cs (fun s ->
-                { s with
-                    Children =
-                        s.Children
-                        @ [ { Assoc = name
-                              Replace = None
-                              Children = children |> List.map (fun c -> c.State)
-                              Final = None } ] })
-
-    static member private Link(name, mode, targets: 'C list) =
-        fun (cs: Changeset<'T>) ->
-            Cs.map cs (fun s ->
-                { s with
-                    Links =
-                        s.Links
-                        @ [ { Assoc = name
-                              Mode = mode
-                              Targets = List.map box targets } ] })
-
-    /// Makes `targets` the complete set of records linked through a
-    /// many-to-many relationship: missing join-table rows are inserted and
-    /// others deleted. The targets must already be stored; they are not
-    /// written. The returned record has the relationship loaded with them.
-    static member putLinks([<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C list>>, targets: 'C list) =
-        Changeset.Link((Paths.property "putLinks" assoc).Name, PutLinks, targets)
-
-    /// Links stored records through a many-to-many relationship, keeping
-    /// existing links. The returned record's relationship is NotLoaded, since
-    /// the full set was not read.
-    static member addLinks([<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C list>>, targets: 'C list) =
-        Changeset.Link((Paths.property "addLinks" assoc).Name, AddLinks, targets)
-
-    /// Removes links to the given records (the records themselves are kept).
-    /// The returned record's relationship is NotLoaded.
-    static member removeLinks([<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C list>>, targets: 'C list) =
-        Changeset.Link((Paths.property "removeLinks" assoc).Name, RemoveLinks, targets)
-
-    /// Makes `children` the complete set of children within `scope`. Existing
-    /// children in scope that are not listed are handled by the relationship's
-    /// OnReplace policy; the default policy rejects the write.
-    static member replaceChildren
-        ([<ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C list>>, scope: ReplaceScope<'C>, children: Changeset<'C> list)
-        =
-        let name = (Paths.property "replaceChildren" assoc).Name
-
-        fun (cs: Changeset<'T>) ->
-            Cs.map cs (fun s ->
-                { s with
-                    Children =
-                        s.Children
-                        @ [ { Assoc = name
-                              Replace = Some scope.Def
-                              Children = children |> List.map (fun c -> c.State)
-                              Final = None } ] })

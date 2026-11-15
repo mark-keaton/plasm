@@ -524,35 +524,6 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
             | Error e -> return Error e
         }
 
-    /// Loads relationships onto values already in hand, returning new values.
-    /// `loads` is a query whose preloads are applied; it must not filter, order
-    /// or page. The given values are not modified. Requested relationships are
-    /// always (re)loaded.
-    member _.Preload(loads: Query<'T>, values: 'T list, ?cancellationToken: CancellationToken) =
-        let ct = defaultArg cancellationToken CancellationToken.None
-
-        Execution.guard provider (fun () ->
-            task {
-                let d = loads.Def
-
-                if not d.Wheres.IsEmpty || not d.Orders.IsEmpty || d.Limit.IsSome || d.Offset.IsSome then
-                    return
-                        Error(DbError.Translation(TranslationError.InvalidQuery "a load specification for existing values may only contain preloads"))
-                else
-                    match model.Schema typeof<'T> with
-                    | Error e -> return Error(DbError.Translation e)
-                    | Ok schema ->
-                        match Planner.planLoads provider.Dialect model schema d.Loads with
-                        | Error e -> return Error(DbError.Translation e)
-                        | Ok nodes when values.IsEmpty || nodes.IsEmpty -> return Ok values
-                        | Ok nodes ->
-                            let rows =
-                                values |> List.map (fun v -> Array.copy (schema.Shape.Deconstruct(box v))) |> Array.ofList
-
-                            do! withSession ct false (fun s -> Execution.loadInto s rows nodes)
-                            return Ok(rows |> Array.map (schema.Shape.Construct >> unbox<'T>) |> List.ofArray)
-            })
-
     member private _.WriteOne(cs: Changeset<'T>, ct: CancellationToken) : Task<Result<'T, WriteError<'T>>> =
         task {
             let checkedState = Writes.check model cs.State

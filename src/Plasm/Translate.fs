@@ -574,7 +574,7 @@ let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
         // `Some c.Id` in a comparison or join key: the inner value.
         | NewUnionCase(c, [ x ]) when c.Name = "Some" && Reflection.isOption e.Type -> scalar ctx x
         | RowAssoc ctx (_, a) ->
-            fail e $"relationship '{a.Name}' cannot be used as a value; use Rel.any/Rel.all, or preload it"
+            fail e $"'{a.Name}' cannot be used as a value in a query; filter with List.exists or List.forall over it"
         | PropertyGet(Some(RowField ctx (b, f)), p, []) when f.IsOption && p.Name = "Value" -> Sql.Column(b.Alias, f.Column)
         | Call(None, mi, [ RowField ctx (b, f) ]) when
             f.IsOption
@@ -740,7 +740,7 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
         | Call(None, mi, [ x; coll ]) when mi.Name = "Contains" && isCollectionModule mi -> membership ctx e x coll
         | Call(Some coll, mi, [ x ]) when mi.Name = "Contains" && not (isRowDependent ctx coll) -> membership ctx e x coll
         // An owned or linked list is a plain list: F#'s own List.exists and
-        // List.forall over it read as Rel.any and Rel.all.
+        // List.forall over it are correlated EXISTS subqueries.
         | Call(None, mi, [ Lambda(pv, body); RowAssoc ctx (_, a) as assoc ]) when
             (a.Owned || a.Linked) && mi.DeclaringType.Name = "ListModule" && (mi.Name = "Exists" || mi.Name = "ForAll")
             ->
@@ -755,9 +755,6 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
             let v = Var("x", a.Target)
             let found = relationship ctx e v (Expr.Value true) assoc false
             if present then found else Sql.Not found
-        | SpecificCall <@ Rel.any @> (_, _, [ Lambda(pv, body); assoc ]) -> relationship ctx e pv body assoc false
-        | SpecificCall <@ Rel.all @> (_, _, [ Lambda(pv, body); assoc ]) -> relationship ctx e pv body assoc true
-        | SpecificCall <@ Rel.exists @> (_, _, [ Lambda(pv, body); assoc ]) -> relationship ctx e pv body assoc false
         | RowField ctx (b, f) when f.ScalarType = typeof<bool> && not f.IsOption -> Sql.Column(b.Alias, f.Column)
         | Call(None, mi, [ sql; args ]) when isRawCall mi -> fragment ctx e sql args
         | _ -> fail e "predicate cannot be translated to SQL and will not be evaluated in application memory"
@@ -1035,12 +1032,6 @@ and relationship ctx (whole: Expr) (pv: Var) (body: Expr) (assoc: Expr) (all: bo
                     Sql.Column(alias, (target.Field a.ForeignKey).Column),
                     Sql.Column(parent.Alias, parent.Schema.Key.Column)
                 )
-            | AssocKind.BelongsTo ->
-                Sql.Binary(
-                    "=",
-                    Sql.Column(alias, target.Key.Column),
-                    Sql.Column(parent.Alias, (parent.Schema.Field a.ForeignKey).Column)
-                )
             | AssocKind.ManyToMany ->
                 let j = a.Through.Value
                 Sql.Binary("=", Sql.Column(alias + "j", j.OwnerColumn), Sql.Column(parent.Alias, parent.Schema.Key.Column))
@@ -1078,7 +1069,7 @@ and relationship ctx (whole: Expr) (pv: Var) (body: Expr) (assoc: Expr) (all: bo
                 Where = [ correlation; condition ] }
 
         if all then Sql.Not(Sql.Exists sub) else Sql.Exists sub
-    | _ -> fail whole "Rel.any / Rel.all must be applied directly to a relationship field of the query row"
+    | _ -> fail whole "List.exists / List.forall must be applied directly to an owned or linked list of the query row"
 
 /// `exists (plasm { ... })`: the inner query, rebuilt from its builder calls
 /// (its conditions may read the outer rows, so it cannot be evaluated), becomes
@@ -1087,9 +1078,9 @@ and existsQuery ctx (whole: Expr) (q: Expr) : Sql.Expr =
     let inner = innerQuery ctx whole q
 
     let refuse () =
-        fail whole "an exists query is a condition only: it cannot page, order, join, group or load"
+        fail whole "an exists query is a condition only: it cannot page, order, join or group"
 
-    if inner.Paged || not inner.Orders.IsEmpty || not inner.Joins.IsEmpty || not inner.GroupBy.IsEmpty || not inner.Havings.IsEmpty || not inner.Loads.IsEmpty || inner.Template.IsSome then
+    if inner.Paged || not inner.Orders.IsEmpty || not inner.Joins.IsEmpty || not inner.GroupBy.IsEmpty || not inner.Havings.IsEmpty || inner.Template.IsSome then
         refuse ()
 
     match inner.Problems with
@@ -1343,9 +1334,6 @@ let rootSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Selec
         if not def.GroupBy.IsEmpty || not def.Havings.IsEmpty then
             invalid "a grouped query returns summaries, not records; finish it with select (grouped keys and Agg functions)"
 
-        if def.PerParentLimit.IsSome then
-            invalid "limitPerParent is only meaningful in a relationship load query"
-
         let ctx = newCtxWith model vol
         let wheres, orders = translateBody ctx def "t0" schema
 
@@ -1420,9 +1408,6 @@ type private Core =
 let private core (model: Model) (vol: bool ref) (def: QueryDef) : Core =
     checkProblems def
     let schema = schemaOf model def.Root
-
-    if def.PerParentLimit.IsSome then
-        invalid "limitPerParent is only meaningful in a relationship load query"
 
     let ctx = newCtxWith model vol
     let space, joins = joinSpace ctx def schema
@@ -1570,7 +1555,7 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
 
                 Leaf(i, f.ProviderType, convert, $"{b.Schema.Name}.{f.Name}")
             | RowBinding ctx b -> addEntity b
-            | RowAssoc ctx (_, a) -> fail e $"relationship '{a.Name}' cannot be projected; preload whole records instead"
+            | RowAssoc ctx (_, a) -> fail e $"'{a.Name}' cannot be projected on its own; select the whole record, which comes with it"
             // A union's case field (directly, or through a member such as
             // `match c.Stage with Doing(_, since) -> Some since | _ -> None`):
             // read with the field's own type, and named by it.
@@ -1728,11 +1713,9 @@ let private bulkFilter (model: Model) (vol: bool ref) (def: QueryDef) (what: str
     let reject reason =
         invalid $"a bulk {what} applies to every row the query matches; {reason}"
 
-    if not def.Joins.IsEmpty then reject "joins are not supported (filter with Rel.any instead)"
+    if not def.Joins.IsEmpty then reject "joins are not supported (filter with exists instead)"
     if not def.Orders.IsEmpty || def.Paged then reject "ordering, take and skip have no meaning there"
-    if not def.Loads.IsEmpty then reject "relationship loads have no meaning there"
     if not def.GroupBy.IsEmpty || not def.Havings.IsEmpty then reject "grouping has no meaning there"
-    if def.PerParentLimit.IsSome then reject "limitPerParent has no meaning there"
 
     let ctx = newCtxWith model vol
 

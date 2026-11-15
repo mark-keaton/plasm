@@ -115,7 +115,7 @@ module internal Conventions =
     /// a built-in type or a fieldless union, Some(Error) for one Plasm must not
     /// read, None for any other type.
     let tryFor (t: Type) : Result<ScalarMapping, string> option =
-        if not (FSharpType.IsUnion(t, true)) || Reflection.isOption t || Reflection.isList t || Reflection.isAssoc t then
+        if not (FSharpType.IsUnion(t, true)) || Reflection.isOption t || Reflection.isList t then
             None
         else
             let cases = FSharpType.GetUnionCases(t, true)
@@ -415,15 +415,12 @@ module Model =
             for i, prop in Array.indexed shape.Fields do
                 let t = prop.PropertyType
 
-                let owned = assocDefs.TryFind prop.Name |> Option.exists (fun a -> a.Owned || a.Linked)
-
-                if Reflection.isAssoc t || owned then
-                    match assocDefs.TryFind prop.Name with
-                    | None ->
-                        err (Some prop.Name) "relationship field has no hasMany, hasOne, belongsTo or manyToMany declaration"
-                    | Some a ->
-                        // An owned list is its own payload: a plain list.
-                        let payload = if a.Owned || a.Linked then t else Reflection.elementType t
+                match assocDefs.TryFind prop.Name with
+                | Some a ->
+                    do
+                        // An owned or linked field is its own payload: a plain list,
+                        // an option or a record.
+                        let payload = t
 
                         let cardinality, target =
                             if Reflection.isList payload then
@@ -438,7 +435,6 @@ module Model =
                             | AssocKind.HasMany, Many -> true
                             | AssocKind.HasOne, OptionalOne -> true
                             | AssocKind.HasOne, RequiredOne when a.Owned -> true
-                            | AssocKind.BelongsTo, (OptionalOne | RequiredOne) -> true
                             | AssocKind.ManyToMany, Many -> true
                             | _ -> false
 
@@ -451,16 +447,12 @@ module Model =
                         | true, targetDef ->
                             // Validate the foreign key's type against the referenced key.
                             let fkOwner, refDef =
-                                match a.Kind with
-                                | AssocKind.BelongsTo -> def, targetDef
-                                | AssocKind.HasMany
-                                | AssocKind.HasOne
-                                | AssocKind.ManyToMany -> targetDef, def
+                                targetDef, def
 
                             if a.Kind = AssocKind.ManyToMany then
                                 match a.Through with
                                 | Some j when String.IsNullOrWhiteSpace j.Table || String.IsNullOrWhiteSpace j.OwnerColumn || String.IsNullOrWhiteSpace j.TargetColumn ->
-                                    err (Some prop.Name) "manyToMany needs a join table and both of its key columns"
+                                    err (Some prop.Name) "links needs a join table and both of its key columns"
                                 | _ -> ()
                             elif a.ForeignKey.DeclaringType <> fkOwner.Type then
                                 err
@@ -482,18 +474,7 @@ module Model =
                                             (Some prop.Name)
                                             $"foreign key {fkOwner.Type.Name}.{a.ForeignKey.Name} has type {Reflection.typeName fkType} but {refDef.Type.Name}.{refKey.Name} is {Reflection.typeName refKey.PropertyType}"
 
-                                    if a.Kind = AssocKind.BelongsTo && cardinality = RequiredOne && fkOptional then
-                                        err
-                                            (Some prop.Name)
-                                            "an optional foreign key requires Assoc<'T option> (the related record may be absent)"
-
-                                    if a.Kind = AssocKind.BelongsTo && cardinality = OptionalOne && not fkOptional then
-                                        err
-                                            (Some prop.Name)
-                                            "a required foreign key should use Assoc<'T> rather than Assoc<'T option>"
-
-                                    if a.OnReplace = OnReplace.Nilify && not fkOptional then
-                                        err (Some prop.Name) "OnReplace.Nilify requires an optional foreign key"
+                                    ignore fkOptional
                                 | None -> ()
 
                             assocs.Add
@@ -506,11 +487,9 @@ module Model =
                                   FieldType = t
                                   ForeignKey = (if isNull a.ForeignKey then "" else a.ForeignKey.Name)
                                   Through = a.Through
-                                  OnReplace = a.OnReplace
                                   Ctors =
                                     if (a.Owned || a.Linked) && cardinality = Many then Reflection.listCtors t
-                                    elif a.Owned then Reflection.ownedOneCtors
-                                    else Reflection.assocCtors t
+                                    else Reflection.ownedOneCtors
                                   // An owned record (owned-records.feature) is written as a
                                   // list of none or one: this rebuilds the field from it.
                                   MakeList =
@@ -526,7 +505,7 @@ module Model =
                                   Owned = a.Owned
                                   Linked = a.Linked
                                   Order = a.Order }
-                else
+                | None ->
                     let isOpt = Reflection.isOption t
                     let scalarType = if isOpt then Reflection.elementType t else t
 
@@ -541,7 +520,7 @@ module Model =
                     elif Reflection.isList t then
                         err
                             (Some prop.Name)
-                            $"{prop.Name} is a list, and a list must be owned to be stored: declare `owns (fun x -> x.{prop.Name}) (fun item -> item.Owner)`, or make it Assoc<_ list> for a relationship loaded on request"
+                            $"{prop.Name} is a list, and a list must be owned to be stored: declare `owns (fun x -> x.{prop.Name}) (fun item -> item.Owner)`, or links for shared records through a join table"
                     else
                         let column = def.Columns.TryFind prop.Name |> Option.defaultValue (Paths.snakeCase prop.Name)
 

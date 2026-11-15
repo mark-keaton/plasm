@@ -154,7 +154,7 @@ let execute (s: Session) (cmd: Sql.Command) : Task<int> =
     }
 
 /// Reads an entity row (columns in schema field order) into a field array
-/// with every relationship set to NotLoaded.
+/// with every owned or linked field empty until its load fills it.
 let readEntity (schema: SchemaInfo) : DbDataReader -> obj[] =
     let readers = readersFor schema
 
@@ -225,7 +225,7 @@ let readEntity (schema: SchemaInfo) : DbDataReader -> obj[] =
                 )
 
         for a in schema.Assocs do
-            values.[a.Index] <- a.Ctors.NotLoaded
+            values.[a.Index] <- a.Ctors.Empty
 
         values
 
@@ -258,8 +258,7 @@ let rec loadInto (s: Session) (rows: IReadOnlyList<obj[]>) (nodes: Planner.LoadN
 
             let batchSize =
                 match node.Strategy with
-                | LoadStrategy.BatchedByKeys n
-                | LoadStrategy.PerParentWindow(_, n) -> max 1 n
+                | LoadStrategy.BatchedByKeys n -> max 1 n
 
             match node.Through with
             | None ->
@@ -415,7 +414,7 @@ let private loadOwned (s: Session) (model: Model) (schema: SchemaInfo) (rows: ob
     if rows.IsEmpty || not (schema.Assocs |> Array.exists (fun a -> a.Owned || a.Linked)) then
         Task.FromResult()
     else
-        match Planner.planLoads s.Provider.Dialect model schema [] with
+        match Planner.planLoads s.Provider.Dialect model schema with
         | Ok nodes -> loadInto s (ResizeArray rows) nodes
         | Error e -> invalidOp $"the lists {schema.Name} owns could not be planned: {e}"
 
@@ -447,7 +446,7 @@ let private entityValues (start: int) (schema: SchemaInfo) (optional: bool) (row
                 ))
 
         for a in schema.Assocs do
-            values.[a.Index] <- a.Ctors.NotLoaded
+            values.[a.Index] <- a.Ctors.Empty
 
         values
 
@@ -681,7 +680,7 @@ let rawReader (model: Model) (t: Type) (label: string) : DbDataReader -> obj =
                 | Error m -> fail f.Name (String.Join(", ", raws |> List.map (fun v -> if isNull v then "NULL" else string v))) m
 
             for a in schema.Assocs do
-                values.[a.Index] <- a.Ctors.NotLoaded
+                values.[a.Index] <- a.Ctors.Empty
 
             // A record that owns or links lists: its field values, completed
             // by rawRecords.

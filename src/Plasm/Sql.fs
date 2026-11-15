@@ -6,9 +6,7 @@ open System.Text
 /// What a provider can execute faithfully. The planner rejects requests that
 /// exceed these rather than substituting weaker semantics.
 type ProviderCapabilities =
-    { /// Per-parent limits via window functions.
-      PerParentLimit: bool
-      /// Multi-command reads inside one snapshot (e.g. REPEATABLE READ).
+    { /// Multi-command reads inside one snapshot (e.g. REPEATABLE READ).
       SnapshotReads: bool
       /// Key lists can be sent as one array parameter.
       ArrayParameters: bool

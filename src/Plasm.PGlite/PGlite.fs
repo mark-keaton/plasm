@@ -708,8 +708,7 @@ type internal PGliteDialect(maxKeys: int) =
             | _ -> []
 
         member _.Capabilities =
-            { PerParentLimit = true
-              SnapshotReads = true
+            { SnapshotReads = true
               ArrayParameters = true
               MaxKeysPerCommand = maxKeys
               Returning = true

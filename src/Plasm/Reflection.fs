@@ -17,8 +17,6 @@ let isOption (t: Type) =
 let isList (t: Type) =
     t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<list<_>>
 
-let isAssoc (t: Type) =
-    t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<Assoc<_>>
 
 let elementType (t: Type) = t.GetGenericArguments().[0]
 
@@ -58,36 +56,26 @@ let listItems: Type -> (obj -> obj seq) =
         let f = m.CreateDelegate<Func<obj, obj seq>>()
         fun l -> f.Invoke l)
 
+/// How an owned or linked field holds what is read: `Empty` before its load
+/// fills it.
 type AssocCtors =
-    { NotLoaded: obj
+    { Empty: obj
       Loaded: obj -> obj
       /// Returns Some payload when loaded.
       Read: obj -> obj option }
-
-let assocCtors: Type -> AssocCtors =
-    cache (fun assocType ->
-        let cases = FSharpType.GetUnionCases(assocType)
-        let notLoaded = cases |> Array.find (fun c -> c.Name = "NotLoaded")
-        let loaded = cases |> Array.find (fun c -> c.Name = "Loaded")
-        let loadedCtor = FSharpValue.PreComputeUnionConstructor(loaded)
-        let tagReader = FSharpValue.PreComputeUnionTagReader(assocType)
-        let fieldReader = FSharpValue.PreComputeUnionReader(loaded)
-        { NotLoaded = FSharpValue.MakeUnion(notLoaded, [||])
-          Loaded = fun v -> loadedCtor [| v |]
-          Read = fun v -> if tagReader v = loaded.Tag then Some((fieldReader v).[0]) else None })
 
 /// An owned list (a plain list, always loaded): its "constructors" are the
 /// list itself.
 let listCtors: Type -> AssocCtors =
     cache (fun listType ->
-        { NotLoaded = makeList (elementType listType) Seq.empty
+        { Empty = makeList (elementType listType) Seq.empty
           Loaded = id
           Read = Some })
 
 /// An owned record (`Profile option` or `Settings`): the field is its own
 /// payload, and there is no unloaded state.
 let ownedOneCtors: AssocCtors =
-    { NotLoaded = null
+    { Empty = null
       Loaded = id
       Read = Some }
 

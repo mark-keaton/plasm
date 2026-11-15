@@ -82,20 +82,12 @@ type internal JoinDef =
       OuterKey: Expr
       InnerKey: Expr }
 
-type internal LoadSpec =
-    { Assoc: PropertyInfo
-      Child: QueryDef option
-      /// Set by `replacePreload`: discard earlier loads of this relationship.
-      Replace: bool }
-
-and internal QueryDef =
+type internal QueryDef =
     { Root: Type
       Wheres: Expr list
       Orders: (Expr * SortDirection) list
       Limit: int option
       Offset: int option
-      PerParentLimit: int option
-      Loads: LoadSpec list
       /// Joined sources, in order. The variable space is the root followed by
       /// each joined record (a flat tuple once anything is joined).
       Joins: JoinDef list
@@ -120,8 +112,6 @@ and internal QueryDef =
           Orders = []
           Limit = None
           Offset = None
-          PerParentLimit = None
-          Loads = []
           Joins = []
           GroupBy = []
           Havings = []
@@ -196,13 +186,8 @@ type Query<'T> internal (def: QueryDef) =
     /// Number of filters, for diagnostics and tests.
     member _.FilterCount = def.Wheres.Length
 
-    /// Relationship names loaded directly from this query, in request order.
-    member _.LoadPaths = def.Loads |> List.map (fun l -> l.Assoc.Name)
-
     override _.ToString() =
-        let loads = def.Loads |> List.map (fun l -> l.Assoc.Name) |> String.concat ", "
-
-        $"Query<{typeof<'T>.Name}>(filters={def.Wheres.Length}, orderings={def.Orders.Length}, limit=%A{def.Limit}, offset=%A{def.Offset}, loads=[{loads}])"
+        $"Query<{typeof<'T>.Name}>(filters={def.Wheres.Length}, orderings={def.Orders.Length}, limit=%A{def.Limit}, offset=%A{def.Offset})"
 
 /// A query whose result rows are projected to `'R`. Only the columns used by the
 /// projection are retrieved and no entity is materialised.
@@ -264,24 +249,6 @@ module internal QueryOps =
         | Choice2Of2 i ->
             map q (fun d -> if what = "take" then { d with LimitArg = Some i; Limit = None } else { d with OffsetArg = Some i; Offset = None })
 
-    let preload (q: Query<'T>) (path: Expr) (child: QueryDef option) replace =
-      if not q.Def.Joins.IsEmpty then
-        map q (fun d ->
-            { d with
-                Problems =
-                    d.Problems
-                    @ [ "relationship loads are not supported on joined queries; select the records you need and load their relationships with repo.Preload" ] })
-      else
-        let prop = Paths.property "preload" path
-
-        map q (fun d ->
-            { d with
-                Loads =
-                    d.Loads
-                    @ [ { Assoc = prop
-                          Child = child
-                          Replace = replace } ] })
-
     let join (outer: QueryDef) kind (target: Type) (outerKey: Expr) (innerKey: Expr) : QueryDef =
         { outer with
             Joins =
@@ -299,7 +266,6 @@ module internal QueryOps =
 ///     where (o.Status = Published)
 ///     orderBy o.PlacedAt
 ///     take 20
-///     preload o.Payments
 /// }
 /// ```
 ///
@@ -337,9 +303,7 @@ type QueryBuilder() =
     member _.ThenByDescending(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] key: Expr<'T -> 'K>) =
         QueryOps.order q key SortDirection.Descending
 
-    /// Limits the number of rows of this query. Not allowed in a relationship
-    /// load query, where the meaning would be ambiguous: use limitPerParent.
-    /// In a prepared query, `take size.Value` binds the count per call.
+    /// Limits the number of rows of this query. In a prepared query, `take size.Value` binds the count per call.
     [<CustomOperation("take", MaintainsVariableSpace = true)>]
     member _.Take(q: Query<'T>, [<ReflectedDefinition>] count: Expr<int>) = QueryOps.take "take" q count
 
@@ -359,53 +323,6 @@ type QueryBuilder() =
     [<CustomOperation("having", MaintainsVariableSpace = true)>]
     member _.Having(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] predicate: Expr<'T -> bool>) =
         QueryOps.map q (fun d -> { d with Havings = d.Havings @ [ predicate ] })
-
-    /// In a relationship load query: at most `count` related rows for each
-    /// parent, chosen by the query's ordering.
-    [<CustomOperation("limitPerParent", MaintainsVariableSpace = true)>]
-    member _.LimitPerParent(q: Query<'T>, count: int) =
-        QueryOps.checkCount "limitPerParent" count
-        QueryOps.map q (fun d -> { d with PerParentLimit = Some count })
-
-    /// Loads a relationship with separate batched queries.
-    [<CustomOperation("preload", MaintainsVariableSpace = true)>]
-    member _.Preload(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] assoc: Expr<'T -> Assoc<'R>>) =
-        QueryOps.preload q assoc None false
-
-    /// Loads a has-many relationship using a reusable query for the related
-    /// records (filters, ordering, per-parent limits and nested loads).
-    [<CustomOperation("preload", MaintainsVariableSpace = true)>]
-    member _.Preload
-        (q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C list>>, related: Query<'C>)
-        =
-        QueryOps.preload q assoc (Some related.Def) false
-
-    /// Loads an optional relationship using a query for the related record.
-    [<CustomOperation("preload", MaintainsVariableSpace = true)>]
-    member _.Preload
-        (
-            q: Query<'T>,
-            [<ProjectionParameter; ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C option>>,
-            related: Query<'C>
-        ) =
-        QueryOps.preload q assoc (Some related.Def) false
-
-    /// Loads a required relationship using a query for the related record
-    /// (typically to add nested loads).
-    [<CustomOperation("preload", MaintainsVariableSpace = true)>]
-    member _.Preload(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C>>, related: Query<'C>) =
-        QueryOps.preload q assoc (Some related.Def) false
-
-    /// Replaces every earlier load of a relationship instead of merging with it.
-    [<CustomOperation("replacePreload", MaintainsVariableSpace = true)>]
-    member _.ReplacePreload(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] assoc: Expr<'T -> Assoc<'R>>) =
-        QueryOps.preload q assoc None true
-
-    [<CustomOperation("replacePreload", MaintainsVariableSpace = true)>]
-    member _.ReplacePreload
-        (q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] assoc: Expr<'T -> Assoc<'C list>>, related: Query<'C>)
-        =
-        QueryOps.preload q assoc (Some related.Def) true
 
     /// Inner join: one row per matching pair. Keys are compared with SQL `=`,
     /// so NULL keys never match. Composite keys: `on ((o.A, o.B) = (x.A, x.B))`.
@@ -461,9 +378,6 @@ type QueryBuilder() =
     /// Must be the last operation.
     [<CustomOperation("select")>]
     member _.Select(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] projection: Expr<'T -> 'R>) : Projection<'R> =
-        if not q.Def.Loads.IsEmpty then
-            invalidOp "A projected query cannot load relationships; remove preload or select whole records."
-
         Projection<'R>(q.Def, projection)
 
 module internal Prepared =
@@ -482,9 +396,6 @@ module internal Prepared =
             if mentionsArg o then
                 invalidOp
                     "a prepared query cannot order by an argument: the ordering is part of the query's shape. Prepare one query per ordering"
-
-        for l in d.Loads do
-            l.Child |> Option.iter check
 
     /// Builds the template once with argument placeholders.
     let template (build: unit -> QueryDef) =

@@ -6,7 +6,6 @@
     <NoWarn>$(NoWarn);FS3370</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Assoc.fs" />
     <Compile Include="Errors.fs" />
     <Compile Include="Reflection.fs" />
     <Compile Include="Scalar.fs" />
