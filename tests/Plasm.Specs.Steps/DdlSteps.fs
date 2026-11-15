@@ -50,3 +50,12 @@ type DdlSteps(w: World) =
     member _.Declares(text: string) =
         let ddl = w.Get<string> "ddl"
         check (ddl.Contains text) $"the DDL does not declare {text}:\n{ddl}"
+
+    [<StepDefinition("^it does not declare an index on \"(.*)\"$")>]
+    member _.NoIndex(target: string) =
+        let ddl = w.Get<string> "ddl"
+        check (not (ddl.Contains $"on {target}")) $"the DDL declares an index on {target}:\n{ddl}"
+
+    [<StepDefinition("the payments table has no index on order_id")>]
+    member _.NoPaymentIndex() =
+        w.Db.Exec "drop index if exists payments_order_id_idx" |> unit

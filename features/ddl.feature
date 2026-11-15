@@ -39,6 +39,28 @@ Feature: Plasm prints the DDL its model expects
       Then it declares "constraint customers_email_key unique (email)"
       And it declares "constraint orders_customer_id_fkey foreign key (customer_id) references customers (id)"
 
+  Rule: It indexes the columns the model's reads filter on
+
+    An aggregate's owned rows are read by their owner column, a linked list
+    through its join table's target column, and another aggregate by the typed
+    id that refers to it: each gets an index, unless it already leads a unique
+    constraint or the primary key. The schema check does not report a missing
+    index: a database may have a better one.
+
+    Scenario: Owner columns, link targets and references are indexed
+      When I print the DDL for the test domain
+      Then it declares "create index order_lines_order_id_idx on order_lines (order_id)"
+      And it declares "create index profiles_account_id_idx on profiles (account_id)"
+      And it declares "create index article_tags_tag_id_idx on article_tags (tag_id)"
+      And it declares "create index payments_order_id_idx on payments (order_id)"
+      And it declares "create index orders_customer_id_idx on orders (customer_id)"
+      And it does not declare an index on "article_tags (article_id)"
+
+    Scenario: A missing index is not a schema problem
+      Given the payments table has no index on order_id
+      When I check the model against the database
+      Then no issue is reported for Payment.OrderId
+
     Scenario: Printing the DDL runs nothing
       When I print the DDL for the test domain
       Then no database command is executed

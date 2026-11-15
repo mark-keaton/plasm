@@ -501,4 +501,28 @@ module internal Ddl =
             line
                 $"alter table {name table} add constraint {constraintName} foreign key ({name column}) references {name r.Table} ({name r.Key.Column});"
 
+        // The columns the model's reads filter on (an owned table's owner
+        // column, a reference to another aggregate, a join table's target
+        // column), unless the column already leads a unique constraint or the
+        // primary key: a join table's key leads with its owner column.
+        let leads =
+            set
+                [ for s in schemas do
+                      yield s.Table, s.Key.Column
+
+                      for f in s.Fields do
+                          if f.Unique then
+                              yield s.Table, f.Column
+                  for j, _, _ in joins do
+                      yield j.Table, j.OwnerColumn ]
+
+        let indexed =
+            [ for table, column, _ in references @ joinReferences -> table, column ]
+            |> List.distinct
+            |> List.filter (fun k -> not (leads.Contains k))
+
+        for table, column in indexed do
+            let index = (table.Split('.') |> Array.last) + "_" + column + "_idx"
+            line $"create index {name index} on {name table} ({name column});"
+
         out.ToString()
