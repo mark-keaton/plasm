@@ -38,7 +38,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 
 | Suite | What it proves | Result |
 |---|---|---|
-| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 496 / 496 pass (outline examples counted separately) |
+| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 502 / 502 pass (outline examples counted separately) |
 | `tests/Plasm.Tests`: `Translation.fs` | SQL-shape contracts (options, membership, `exists`, `List.exists`/`forall` over owned lists, pagination), unsupported-expression errors, model-configuration errors | 42 pass |
 | `tests/Plasm.Tests`: `CompileTime.fs` | Typed API acceptance and rejection, checked with FSharp.Compiler.Service against the real assemblies; each rejection pins its error code and has a passing control snippet | 15 pass |
 | `tests/Plasm.Tests`: `Properties.fs` (FsCheck, real database) | Predicate-order equivalence matching F# semantics; extending a query never alters it; an update records exactly the differing fields; the same aggregates for every batch size, with key-proportional command counts; owned lines keep their declared order per owner | 5 properties pass |
@@ -51,7 +51,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 | `koans/browser` | The browser koans (PGlite) | 120 scenarios pass |
 
 Run the library's tests with `dotnet test` from the repository root (Docker is
-required, or set `PLASM_TEST_PG`): 496 scenarios and 128 unit tests.
+required, or set `PLASM_TEST_PG`): 502 scenarios and 128 unit tests.
 
 ## Supported behaviour
 
@@ -229,6 +229,10 @@ required, or set `PLASM_TEST_PG`): 496 scenarios and 128 unit tests.
   tie is the inner record's key or a unique field, and mixes with `including`
   under the same limit; a second match in the database (a unique constraint
   missing) is a materialization error, never a choice (`including.feature`).
+  Two loads of one type at one level (`Payment list` twice, `Customer option`
+  twice) are refused, naming their positions: the result's type is what keeps
+  them apart, so each selects a one-case type of its own (`select (NewestTitle
+  c.Title)`).
 - `referring<Payment> o` and `referredBy<Customer> o`: the tie the typed ids
   prove, so a plain relationship is never written by hand. `referring` is the
   Payments whose one field referring to o's record (plain or an option) holds
@@ -671,6 +675,7 @@ loaded records are in the result's type, not in a field that may be unloaded.
 | 2026-11-16 | Strictness review: reads converted with `Convert.ChangeType`, so a numeric read as an int was rounded and text was parsed into a number; a value now converts only when converting back gives it again (`Reflection.exactly`), otherwise a materialisation error naming both types | `features/raw-sql.feature` |
 | 2026-11-16 | Strictness review: an attribute where Plasm does not read it was dropped silently; the model is now refused, naming it: `[<Table "">]`; `[<Assigned>]` off the key or on a key that is not an integer; `[<OrderedBy>]` off a list; `[<JoinTable>]` off a list of stored records or on an owned list; `[<NotReference>]` on a field of no record's key type; `[<Unique>]` or `[<Generated>]` on a union with fields, a value, a `[<Json>]` field or a list of stored records; and every attribute inside a value, as `[<Column>]` already was | `features/stored-records.feature` |
 | 2026-11-16 | Strictness and elegance reviews: refusal messages and doc comments that named removed API now name what exists: a plain list says to mark it `[<Json>]`, two fields of one column are named, an owned record found twice says so, a key-only versioned change points to `Tx.update`'s `expectVersion`; the doc comments of `Tx`, `transaction`, `BulkWrite`, `repo.All`, `repo.Scaffold`, `referring`/`referredBy` and the misplaced `CheckSchema` summary; README's scenario count | `features/stored-records.feature` |
+| 2026-11-16 | Two loads of one type side by side are refused at translation, so at start-up once queries are checked there, at the user's question ("Is there *any* way we could flag that in the compiler if a user doesn't notice? Or it just a timebomb?"): `Board * Title list * Title list` compiled with its includings in either order. The remedy is the newtype Kanban shows (6f3cfe0, `NewestTitle`, `BlockedTitle`); compared per level, never with the root. The sixteen-list scenario now gives each list a type of its own | `features/including.feature` |
 | 2026-11-16 | `referring<T> o` and `referredBy<T> o`: the tie derived from the typed ids, at the user's request (asked whether F# could generate nine hand-written relationship functions). Reverses "no inferred tie" from the `including` design: with typed ids it is a proof, not a guess; not exactly one candidate field is refused, never picked. Plain ties in koans, README, website, examples and Kanban moved to it | `features/referring.feature` |
 | 2026-11-15 | `[<Json>]`: one jsonb document per field in Plasm's own strict mapping (unknown keys refused, since writes replace the whole document); JSON rendered through `ISqlDialect.Json`, refused at repository creation when absent | `features/json-columns.feature` |
 

@@ -182,6 +182,43 @@ module internal Planner =
                         | _, Error e -> Error e)
                     (Ok [])
 
+            // Two loads of one type at one level could be swapped and still
+            // compile: refused, naming them (including.feature).
+            let rec sameTyped (inner: bool) (ps: Translate.IncludingParts list) =
+                let ordinal n =
+                    match n % 100, n % 10 with
+                    | (11 | 12 | 13), _ -> $"{n}th"
+                    | _, 1 -> $"{n}st"
+                    | _, 2 -> $"{n}nd"
+                    | _, 3 -> $"{n}rd"
+                    | _ -> $"{n}th"
+
+                let indexed = ps |> List.mapi (fun i p -> i + 1, p)
+
+                let clash =
+                    indexed
+                    |> List.tryPick (fun (i, p) ->
+                        indexed |> List.tryFind (fun (j, q) -> j > i && q.HeldType = p.HeldType) |> Option.map (fun (j, _) -> i, j, p))
+
+                match clash with
+                | Some(i, j, p) ->
+                    let where = if inner then " of the inner query" else ""
+                    let typeName = Reflection.fsharpTypeName p.HeldType
+
+                    Some(
+                        TranslationError.InvalidQuery
+                            $"the {ordinal i} and {ordinal j} includings{where} both give a {typeName}, so the result's type cannot tell them apart and the two written in the other order would still compile. Give each a type of its own: select a one-case type in each inner query, as in select (NewestTitle c.Title)"
+                    )
+                | None -> ps |> List.tryPick (fun p -> sameTyped true p.Nested)
+
+            let parts =
+                match parts with
+                | Ok ps ->
+                    match sameTyped false ps with
+                    | Some e -> Error e
+                    | None -> Ok ps
+                | e -> e
+
             match parts with
             | Error e -> Error e
             | Ok parts ->

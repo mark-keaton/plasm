@@ -140,6 +140,21 @@ let fsharpName (t: Type) =
     | t when t = typeof<float32> -> "float32"
     | t -> typeName t
 
+/// A type as F# code writes it, lists, options and tuples included:
+/// `Payment list`, `Customer option`, `(decimal * string) list`.
+let rec fsharpTypeName (t: Type) : string =
+    if t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<list<_>> then
+        $"{inner (t.GetGenericArguments().[0])} list"
+    elif t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<option<_>> then
+        $"{inner (t.GetGenericArguments().[0])} option"
+    elif FSharpType.IsTuple t then
+        FSharpType.GetTupleElements t |> Array.map inner |> String.concat " * "
+    else
+        fsharpName t
+
+and private inner (t: Type) =
+    if FSharpType.IsTuple t then $"({fsharpTypeName t})" else fsharpTypeName t
+
 let private numeric =
     HashSet<Type> [ typeof<byte>; typeof<sbyte>; typeof<int16>; typeof<uint16>; typeof<int>; typeof<uint32>; typeof<int64>; typeof<uint64>; typeof<decimal>; typeof<float32>; typeof<float> ]
 

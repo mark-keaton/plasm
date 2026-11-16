@@ -15,6 +15,28 @@ module Relations =
                 where (p.Status = Succeeded)
         }
 
+/// One-case types that keep two lists of Payments apart.
+type SucceededPayment = SucceededPayment of Payment
+type OtherPayment = OtherPayment of Payment
+
+/// Sixteen lists of Payments side by side, each in a type of its own.
+type AtLeast1 = AtLeast1 of Payment
+type AtLeast2 = AtLeast2 of Payment
+type AtLeast3 = AtLeast3 of Payment
+type AtLeast4 = AtLeast4 of Payment
+type AtLeast5 = AtLeast5 of Payment
+type AtLeast6 = AtLeast6 of Payment
+type AtLeast7 = AtLeast7 of Payment
+type AtLeast8 = AtLeast8 of Payment
+type AtLeast9 = AtLeast9 of Payment
+type AtLeast10 = AtLeast10 of Payment
+type AtLeast11 = AtLeast11 of Payment
+type AtLeast12 = AtLeast12 of Payment
+type AtLeast13 = AtLeast13 of Payment
+type AtLeast14 = AtLeast14 of Payment
+type AtLeast15 = AtLeast15 of Payment
+type AtLeast16 = AtLeast16 of Payment
+
 module IncludingGood =
     let withPayments =
         plasm {
@@ -316,29 +338,29 @@ type IncludingSteps(w: World) =
 
         equal expected actual "customers, their orders and their payments"
 
-    [<StepDefinition("I read the Orders by total, including sixteen lists: their Payments, then their Payments of at least 2 up to at least 16")>]
+    [<StepDefinition("I read the Orders by total, including sixteen lists, each in a type of its own: their Payments of at least 1 up to at least 16")>]
     member _.Sixteen() =
         task {
             let q =
                 plasm {
                     for o in tableOf<Order> do
                         orderBy o.Total
-                        including (referring<Payment> o)
-                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 2m) })
-                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 3m) })
-                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 4m) })
-                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 5m) })
-                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 6m) })
-                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 7m) })
-                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 8m) })
-                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 9m) })
-                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 10m) })
-                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 11m) })
-                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 12m) })
-                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 13m) })
-                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 14m) })
-                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 15m) })
-                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 16m) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 1m); select (AtLeast1 p) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 2m); select (AtLeast2 p) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 3m); select (AtLeast3 p) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 4m); select (AtLeast4 p) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 5m); select (AtLeast5 p) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 6m); select (AtLeast6 p) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 7m); select (AtLeast7 p) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 8m); select (AtLeast8 p) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 9m); select (AtLeast9 p) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 10m); select (AtLeast10 p) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 11m); select (AtLeast11 p) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 12m); select (AtLeast12 p) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 13m); select (AtLeast13 p) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 14m); select (AtLeast14 p) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 15m); select (AtLeast15 p) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 16m); select (AtLeast16 p) })
                 }
 
             let! r = w.Repo.All q
@@ -346,7 +368,7 @@ type IncludingSteps(w: World) =
             let counts =
                 ok r
                 |> List.map (fun (o, l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11, l12, l13, l14, l15, l16) ->
-                    total o.Total, [ l1; l2; l3; l4; l5; l6; l7; l8; l9; l10; l11; l12; l13; l14; l15; l16 ] |> List.map (List.length >> string) |> String.concat " ")
+                    total o.Total, [ l1.Length; l2.Length; l3.Length; l4.Length; l5.Length; l6.Length; l7.Length; l8.Length; l9.Length; l10.Length; l11.Length; l12.Length; l13.Length; l14.Length; l15.Length; l16.Length ] |> List.map string |> String.concat " ")
 
             w.Set("includingSixteen", counts)
         }
@@ -756,6 +778,103 @@ let shown (repo: Repo) = task { let! r = repo.All q in return r |> Result.map sh
     member _.OneRecord() =
         let e = refusal ()
         check (e.Contains "including" && e.Contains "one record") e
+
+    // -- Two loads of one type ---------------------------------------------------
+
+    [<StepDefinition("^I read the Orders, loading (their .+) side by side$")>]
+    member _.SameTyped(loads: string) =
+        let unitOf (t: Threading.Tasks.Task<Result<'a, DbError>>) =
+            task {
+                let! r = t
+                return Result.map ignore r
+            }
+
+        task {
+            let! r =
+                match loads with
+                | "their Payments and their succeeded Payments" ->
+                    w.Repo.All(plasm { for o in tableOf<Order> do including (referring<Payment> o); including (plasm { for p in referring<Payment> o do where (p.Status = Succeeded) }) }) |> unitOf
+                | "their Payments' amounts and their succeeded amounts" ->
+                    w.Repo.All(
+                        plasm {
+                            for o in tableOf<Order> do
+                                including (plasm { for p in referring<Payment> o do select p.Amount })
+                                including (plasm { for p in referring<Payment> o do where (p.Status = Succeeded); select p.Amount })
+                        }
+                    )
+                    |> unitOf
+                | "their Customer twice" ->
+                    w.Repo.All(plasm { for o in tableOf<Order> do includingOne (referredBy<Customer> o); includingOne (referredBy<Customer> o) }) |> unitOf
+                | "their Customer, their Payments and their failed Payments" ->
+                    w.Repo.All(
+                        plasm {
+                            for o in tableOf<Order> do
+                                includingOne (referredBy<Customer> o)
+                                including (referring<Payment> o)
+                                including (plasm { for p in referring<Payment> o do where (p.Status = Failed) })
+                        }
+                    )
+                    |> unitOf
+                | other -> failwithf "no query for %s" other
+
+            w.Set("sameTyped", r)
+        }
+        |> unit
+
+    [<StepDefinition("I read the Customers including their Orders, each including its Payments and its succeeded Payments")>]
+    member _.SameTypedInner() =
+        task {
+            let! r =
+                w.Repo.All(
+                    plasm {
+                        for c in tableOf<Customer> do
+                            including (
+                                plasm {
+                                    for o in referring<Order> c do
+                                        including (referring<Payment> o)
+                                        including (plasm { for p in referring<Payment> o do where (p.Status = Succeeded) })
+                                }
+                            )
+                    }
+                )
+
+            w.Set("sameTyped", r |> Result.map ignore)
+        }
+        |> unit
+
+    [<StepDefinition("^the read is refused, saying the (\\w+) and (\\w+) includings (of the inner query |)both give a (.+), and to select a type of its own in each$")>]
+    member _.SameTypedRefused(first: string, second: string, inner: string, typeName: string) =
+        match w.Get<Result<unit, DbError>> "sameTyped" with
+        | Error(DbError.Translation e) ->
+            let text = string e
+
+            for word in [ $"the {first} and {second} includings"; $"both give a {typeName}"; "select" ] do
+                check (text.Contains word) text
+
+            if inner <> "" then check (text.Contains "inner query") text
+        | other -> failwithf "expected a refusal, got %A" other
+
+    [<StepDefinition("I read the Orders by total, including their succeeded Payments and their other Payments, each in a type of its own")>]
+    member _.Wrapped() =
+        task {
+            let! r =
+                w.Repo.All(
+                    plasm {
+                        for o in tableOf<Order> do
+                            orderBy o.Total
+                            including (plasm { for p in referring<Payment> o do where (p.Status = Succeeded); select (SucceededPayment p) })
+                            including (plasm { for p in referring<Payment> o do where (p.Status <> Succeeded); select (OtherPayment p) })
+                    }
+                )
+
+            w.Set("wrapped", ok r |> List.map (fun (o, s, x) -> total o.Total, string s.Length, string x.Length))
+        }
+        |> unit
+
+    [<StepDefinition("each Order comes with its succeeded and its other Payments:")>]
+    member _.WrappedAre(table: DataTable) =
+        let expected = [ for r in table.Rows -> r.["order"], r.["succeeded"], r.["other"] ]
+        equal expected (w.Get<(string * string * string) list> "wrapped") "orders and their two lists"
 
     [<StepDefinition("I run the Orders with their Payments twice through one repository")>]
     member _.RunTwice() =

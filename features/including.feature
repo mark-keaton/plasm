@@ -189,7 +189,7 @@ Feature: A query can read each record with the records another query finds for i
         | 200   | 200 ()                      |
 
     Scenario: Sixteen lists, past the seven elements where F# nests its tuples
-      When I read the Orders by total, including sixteen lists: their Payments, then their Payments of at least 2 up to at least 16
+      When I read the Orders by total, including sixteen lists, each in a type of its own: their Payments of at least 1 up to at least 16
       Then each Order comes with sixteen lists, the n-th holding its Payments of at least n:
         | order | counts                          |
         | 5     | 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 |
@@ -257,6 +257,40 @@ Feature: A query can read each record with the records another query finds for i
     Scenario: A module's including queries are checked
       When I check the queries of a module whose including queries translate
       Then no problem is reported
+
+  Rule: Two loads of one type side by side are refused
+
+    The result's type is what keeps two loads apart: Order * Payment list *
+    Payment list compiles with its two includings written in either order. So
+    two loads that give the same type at one level are refused, naming them;
+    selecting a one-case type of its own in each inner query (`select
+    (NewestTitle c.Title)`) gives each a type the compiler checks. The root
+    record is not a load, and `Customer option` beside `Customer list` is two
+    types.
+
+    Scenario Outline: <loads> are refused, naming them
+      When I read the Orders, loading <loads> side by side
+      Then the read is refused, saying the <first> and <second> includings both give a <type>, and to select a type of its own in each
+
+      Examples:
+        | loads                                                  | first | second | type            |
+        | their Payments and their succeeded Payments            | 1st   | 2nd    | Payment list    |
+        | their Payments' amounts and their succeeded amounts    | 1st   | 2nd    | decimal list    |
+        | their Customer twice                                   | 1st   | 2nd    | Customer option |
+        | their Customer, their Payments and their failed Payments | 2nd | 3rd    | Payment list    |
+
+    Scenario: The loads of an inner query are compared among themselves
+      When I read the Customers including their Orders, each including its Payments and its succeeded Payments
+      Then the read is refused, saying the 1st and 2nd includings of the inner query both give a Payment list, and to select a type of its own in each
+
+    Scenario: Each in a type of its own, the same records are read side by side
+      When I read the Orders by total, including their succeeded Payments and their other Payments, each in a type of its own
+      Then each Order comes with its succeeded and its other Payments:
+        | order | succeeded | other |
+        | 5     | 0         | 0     |
+        | 10    | 1         | 1     |
+        | 50    | 2         | 1     |
+        | 200   | 0         | 0     |
 
   Rule: What it cannot do is refused
 
