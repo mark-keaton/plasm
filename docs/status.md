@@ -38,7 +38,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 
 | Suite | What it proves | Result |
 |---|---|---|
-| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 436 / 436 pass (outline examples counted separately) |
+| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 437 / 437 pass (outline examples counted separately) |
 | `tests/Plasm.Tests`: `Translation.fs` | SQL-shape contracts (options, membership, `exists`, `List.exists`/`forall` over owned lists, pagination), unsupported-expression errors, model-configuration errors | 42 pass |
 | `tests/Plasm.Tests`: `CompileTime.fs` | Typed API acceptance and rejection, checked with FSharp.Compiler.Service against the real assemblies; each rejection pins its error code and has a passing control snippet | 15 pass |
 | `tests/Plasm.Tests`: `Properties.fs` (FsCheck, real database) | Predicate-order equivalence matching F# semantics; extending a query never alters it; an update records exactly the differing fields; the same aggregates for every batch size, with key-proportional command counts; owned lines keep their declared order per owner | 5 properties pass |
@@ -51,7 +51,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 | `koans/browser` | The browser koans (PGlite) | 120 scenarios pass |
 
 Run the library's tests with `dotnet test` from the repository root (Docker is
-required, or set `PLASM_TEST_PG`): 436 scenarios and 128 unit tests.
+required, or set `PLASM_TEST_PG`): 437 scenarios and 128 unit tests.
 
 ## Supported behaviour
 
@@ -398,12 +398,23 @@ These are medians from a machine shared with other work; times varied by up to
   window functions (use `Raw.fragment` or `repo.Sql` / `Tx.sql`).
 - Join tables with extra columns (model the link as its own record), composite
   keys.
-- In a document: a union with fields, a `Map`, reading a field of an optional
-  document in a query (test `IsSome` and read the field from the records), and
-  a prepared argument looked for with `List.contains`.
 - Bulk writes over joins (`UPDATE ... FROM`), `RETURNING` from bulk updates,
   streaming (`IAsyncEnumerable`) results.
 - `Query.prepare3` for projections.
+
+**Limits of the 2026-11-15 additions** (`including`, `selectDistinct`, values,
+documents), each refused by name rather than guessed:
+
+- `selectDistinct` with `take` or `skip`: in the query they come first and
+  would page the rows, while the database pages the distinct values. A paged
+  list of distinct values is a real need, to be revisited with a real case.
+- `including` after a `join` or `leftJoin`; a tie of more than one column
+  (composite); a second `including` in one query (it is terminal, like
+  `select`).
+- In a value: `[<Unique>]`, `[<Column>]`, a list, or a stored record.
+- In a document: a union with fields and a `Map`; reading a field of an
+  optional document in a query (test `IsSome` and read the field from the
+  records); `List.contains` with a prepared argument over a document list.
 
 **Known limitations:**
 
@@ -418,10 +429,6 @@ These are medians from a machine shared with other work; times varied by up to
   write needs its type written: `repo.Transact(Tx.insert ada: Tx<Customer,
   unit>)`. Stored untyped as a top-level value it becomes `obj`. Transactions
   written as functions with a declared return type need nothing.
-- `take` and `skip` are refused with `selectDistinct`: in the query they come
-  first and would page the rows, while the database pages the distinct values.
-  A paged list of distinct values is a real need, to be revisited with a real
-  case.
 - A query ending in `including` reads its outer records and the included ones
   in separate commands, outside a snapshot (`ReadConsistency.Snapshot` is not
   offered for projections): a write committed between them can be seen by the
