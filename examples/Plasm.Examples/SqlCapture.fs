@@ -239,16 +239,13 @@ let run (connectionString: string) (outputPath: string) =
                 (fun () -> task { let! _ = repo.All(Query.from (tableOf<Order>) |> forCustomer ada.Id |> orderPage 0 20) in () })
 
         // 5 · Other aggregates, by id
-        let! page = repo.All(Query.from (tableOf<Order>) |> orderPage 0 20)
-        let page = ok page
-
         do!
             capture
                 "references"
-                "One command for the payments of every order on the page: the ids are one array parameter, and the status filter and the ordering run in SQL. No orders query is sent again."
+                "The orders, their lines, then one command for the payments of every order on the page: the ids are one array parameter, and the status filter and the ordering run in SQL. No orders query is sent again."
                 [ "\"t0\".\"order_id\" = ANY(@p0)"; "\"t0\".\"status\" = @p1"; "ORDER BY \"t0\".\"created_at\" ASC" ]
                 None
-                (fun () -> task { let! _ = repo.All(succeededPaymentsOf (page |> List.map (fun o -> o.Id))) in () })
+                (fun () -> task { let! _ = repo.All(withSucceededPayments (Query.from (tableOf<Order>) |> orderPage 0 20)) in () })
 
         // 6 · Projections
         do!
@@ -342,8 +339,7 @@ let run (connectionString: string) (outputPath: string) =
                 None
                 (fun () ->
                     task {
-                        let! orders = repo.All(efComparisonPage 20)
-                        let! _ = repo.All(succeededPaymentsOf (ok orders |> List.map (fun o -> o.Id)))
+                        let! _ = repo.All(efComparisonPage 20)
                         ()
                     })
 

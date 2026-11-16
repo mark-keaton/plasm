@@ -41,15 +41,20 @@ let orderPage page size (q: Query<Order>) =
             take size
     }
 
-/// Payments are their own aggregate: read for a page of orders by a second
-/// query, built and planned once.
-let succeededPaymentsOf =
-    Query.prepare (fun (orders: Arg<OrderId list>) ->
-        plasm {
-            for p in tableOf<Payment> do
-                where (List.contains p.OrderId orders.Value && p.Status = Succeeded)
-                orderBy p.CreatedAt
-        })
+/// Payments are their own aggregate: each order of a query with its succeeded
+/// payments, as (Order * Payment list), read with one more command for all of
+/// them.
+let withSucceededPayments (q: Query<Order>) =
+    plasm {
+        for o in q do
+            including (
+                plasm {
+                    for p in tableOf<Payment> do
+                        where (p.OrderId = o.Id && p.Status = Succeeded)
+                        orderBy p.CreatedAt
+                }
+            )
+    }
 
 /// Only the projected columns are read.
 let totals =
@@ -158,7 +163,7 @@ let tagsNamed =
 
 /// The page the EF Core comparison reads, clause for clause like the C# version
 /// (benchmarks/Plasm.Benchmarks.EfModel/Model.cs); the lines come with each
-/// order, and the payments follow with `succeededPaymentsOf`.
+/// order, and the succeeded payments come with `including`.
 let efComparisonPage =
     Query.prepare (fun (size: Arg<int>) ->
         plasm {
@@ -167,4 +172,12 @@ let efComparisonPage =
                 orderByDescending o.PlacedAt
                 thenBy o.Id
                 take size.Value
+
+                including (
+                    plasm {
+                        for p in tableOf<Payment> do
+                            where (p.OrderId = o.Id && p.Status = Succeeded)
+                            orderBy p.CreatedAt
+                    }
+                )
         })

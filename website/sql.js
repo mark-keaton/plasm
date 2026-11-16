@@ -163,15 +163,30 @@ window.PLASM_SQL = {
     ]
   },
   "references": {
-    "caption": "One command for the payments of every order on the page: the ids are one array parameter, and the status filter and the ordering run in SQL. No orders query is sent again.",
+    "caption": "The orders, their lines, then one command for the payments of every order on the page: the ids are one array parameter, and the status filter and the ordering run in SQL. No orders query is sent again.",
     "commands": [
+      {
+        "parameters": [
+          "@p0 = 20",
+          "@p1 = 0"
+        ],
+        "rows": 3,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022 AS \u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nORDER BY \u0022t0\u0022.\u0022placed_at\u0022 DESC, \u0022t0\u0022.\u0022id\u0022 ASC\nLIMIT @p0\nOFFSET @p1"
+      },
+      {
+        "parameters": [
+          "@p0 = [3, 2, 1]"
+        ],
+        "rows": 4,
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022 AS \u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022 AS \u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022 AS \u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0))\nORDER BY \u0022t0\u0022.\u0022id\u0022 ASC"
+      },
       {
         "parameters": [
           "@p0 = [3, 2, 1]",
           "@p1 = succeeded"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022amount\u0022 AS \u0022amount\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022created_at\u0022 AS \u0022created_at\u0022\nFROM \u0022payments\u0022 AS \u0022t0\u0022\nWHERE ((\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)) AND (\u0022t0\u0022.\u0022status\u0022 = @p1))\nORDER BY \u0022t0\u0022.\u0022created_at\u0022 ASC"
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022amount\u0022 AS \u0022amount\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022created_at\u0022 AS \u0022created_at\u0022\nFROM \u0022payments\u0022 AS \u0022t0\u0022\nWHERE ((\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)) AND (\u0022t0\u0022.\u0022status\u0022 = @p1))\nORDER BY \u0022t0\u0022.\u0022created_at\u0022 ASC, \u0022t0\u0022.\u0022id\u0022 ASC"
       }
     ],
     "empty": null,
@@ -381,7 +396,7 @@ window.PLASM_SQL = {
           "@p1 = succeeded"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022amount\u0022 AS \u0022amount\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022created_at\u0022 AS \u0022created_at\u0022\nFROM \u0022payments\u0022 AS \u0022t0\u0022\nWHERE ((\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)) AND (\u0022t0\u0022.\u0022status\u0022 = @p1))\nORDER BY \u0022t0\u0022.\u0022created_at\u0022 ASC"
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022 AS \u0022order_id\u0022,\n    \u0022t0\u0022.\u0022amount\u0022 AS \u0022amount\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022status\u0022,\n    \u0022t0\u0022.\u0022created_at\u0022 AS \u0022created_at\u0022\nFROM \u0022payments\u0022 AS \u0022t0\u0022\nWHERE ((\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)) AND (\u0022t0\u0022.\u0022status\u0022 = @p1))\nORDER BY \u0022t0\u0022.\u0022created_at\u0022 ASC, \u0022t0\u0022.\u0022id\u0022 ASC"
       }
     ],
     "empty": null,

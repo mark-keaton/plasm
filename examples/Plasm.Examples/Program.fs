@@ -126,14 +126,11 @@ let tour (connectionString: string) (ddl: string) =
             )
 
         let page = Query.from (tableOf<Order>) |> forCustomer ada.Id |> orderPage 0 20
-        let! orders = repo.All page
-        let orders = ok orders
+        let! orders = repo.All(withSucceededPayments page)
 
-        for o in orders do
+        for o, payments in ok orders do
             show $"order {o.Id}" (o.Status, o.Lines |> List.map (fun l -> l.ProductId, l.Quantity.Value))
-
-        let! payments = repo.All(succeededPaymentsOf (orders |> List.map (fun o -> o.Id)))
-        show "their succeeded payments, a second query" (ok payments |> List.map (fun p -> p.OrderId, p.Amount))
+            show "  its succeeded payments" (payments |> List.map (fun p -> p.Amount))
 
         let! late = repo.All(overdue ada.Id)
         show "unpaid orders (NOT EXISTS)" (ok late |> List.map (fun o -> o.Id))
