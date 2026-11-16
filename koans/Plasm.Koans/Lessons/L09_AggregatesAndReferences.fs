@@ -247,16 +247,17 @@ let lesson =
                       // paymentsOf (top of this lesson) is the tie, written once. It
                       // works inside exists, and as the start of an inner query that
                       // narrows it further. Inside including, orderBy and take apply to
-                      // each order's payments: here, the newest one of each.
+                      // each order's payments, and select picks what the list holds:
+                      // here, the status of the newest one of each.
                       let paidOrders =
                           plasm {
                               for o in tableOf<Order> do
                                   where (exists (paymentsOf o))
                                   orderBy o.Id
-                                  including (plasm { for p in paymentsOf o do orderByDescending p.CreatedAt; take 1 })
+                                  including (plasm { for p in paymentsOf o do orderByDescending p.CreatedAt; take 1; select p.Status })
                           }
 
                       let! rows = repo.All paidOrders
-                      ok rows |> List.map (fun (o, newest) -> o.Id, newest |> List.map (fun p -> p.Status)) |> shouldBe __
+                      ok rows |> List.map (fun (o, newest) -> o.Id, newest) |> shouldBe __
                   }
           ) ]
