@@ -295,7 +295,7 @@ module internal TxCore =
         let rt = { rt with Session = { rt.Session with Args = projection.Def.Args } }
 
         task {
-          if projection.Def.Including.IsSome then
+          if not projection.Def.Includings.IsEmpty then
             match Planner.including rt.Session.Provider.Dialect rt.Model projection.Def with
             | Error e -> return Error(TxFailure.Failed(DbError.Translation e))
             | Ok plan ->

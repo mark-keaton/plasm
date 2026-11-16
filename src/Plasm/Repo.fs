@@ -244,7 +244,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
 
     /// Describes how a projection would execute. Performs no database access.
     member _.Explain(projection: Projection<'R>) : Result<QueryPlan, TranslationError> =
-      if projection.Def.Including.IsSome then
+      if not projection.Def.Includings.IsEmpty then
         Planner.including provider.Dialect model projection.Def |> Result.map (Planner.describeIncluding provider.Dialect)
       else
         Translate.projection model (ref false) projection.Def (Some projection.Select)
@@ -285,7 +285,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
 
         Execution.guard provider (fun () ->
             task {
-              if projection.Def.Including.IsSome then
+              if not projection.Def.Includings.IsEmpty then
                 match includingFor projection.Def with
                 | Error e -> return Error(DbError.Translation e)
                 | Ok plan ->
@@ -395,7 +395,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
 
         let translates (q: ICheckable) =
             match q.Select with
-            | Some _ when q.Def.Including.IsSome -> Planner.including provider.Dialect model q.Def |> Result.map ignore
+            | Some _ when not q.Def.Includings.IsEmpty -> Planner.including provider.Dialect model q.Def |> Result.map ignore
             | Some select -> Translate.projection model (ref false) q.Def (Some select) |> Result.map ignore
             | None when not q.Def.Joins.IsEmpty -> Translate.projection model (ref false) q.Def None |> Result.map ignore
             | None -> planFor q.Def |> Result.map ignore

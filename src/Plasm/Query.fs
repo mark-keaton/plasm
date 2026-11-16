@@ -102,9 +102,9 @@ type internal QueryDef =
       Args: obj[]
       /// Requests that cannot be honoured, reported when the query is planned.
       Problems: string list
-      /// `including (plasm { ... })`: the inner query, a lambda over the root
-      /// record (including.feature).
-      Including: Expr option
+      /// Each `including (plasm { ... })`, in the order written: the inner
+      /// query, a lambda over the root record (including.feature).
+      Includings: Expr list
       /// `selectDistinct`: each selected value once (distinct.feature).
       Distinct: bool }
 
@@ -125,7 +125,7 @@ type internal QueryDef =
           Template = None
           Args = [||]
           Problems = []
-          Including = None
+          Includings = []
           Distinct = false }
 
 /// Something that can describe a query for display: a `Repo`.
@@ -208,6 +208,12 @@ type Projection<'R> internal (def: QueryDef, select: Expr) =
         member _.Select = Some select
 
 module internal QueryOps =
+    /// One more `including`: a projection built from a query only ever comes
+    /// from the operations above, so its record is the tuple of the outer
+    /// record and the lists in the order written.
+    let including (def: QueryDef) (inner: Expr) : Projection<'R> =
+        Projection<'R>({ def with Includings = def.Includings @ [ inner ] }, inner)
+
     /// A derived query. It is no longer the prepared query it may have come
     /// from, so it is planned from its own description, not the template.
     let inline map (q: Query<'T>) f : Query<'T> = Query<'T>({ f q.Def with Template = None })
@@ -384,18 +390,78 @@ type QueryBuilder() =
     /// Reads each record with the list an inner query finds for it, as
     /// `record * list`. The inner query refers to the record by one equality
     /// between an inner and an outer column; its conditions, order and `take`
-    /// apply per record. One more command per batch of outer values. Must be the
-    /// last operation.
-    [<CustomOperation("including")>]
+    /// apply per record. One more command per batch of outer values. Up to eight
+    /// may follow one another, each adding a list to the tuple in the order
+    /// written; an inner query may end in its own. Nothing else may follow.
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
     member _.Including(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'U list> =
-        Projection<'T * 'U list>({ q.Def with Including = Some(inner :> Expr) }, inner :> Expr)
+        QueryOps.including q.Def inner
 
     /// Reads each record with the values an inner query ending in `select` or
     /// `selectDistinct` gives for it, as `record * value list`: only the
     /// selected columns are read.
-    [<CustomOperation("including")>]
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
     member _.Including(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'U list> =
-        Projection<'T * 'U list>({ q.Def with Including = Some(inner :> Expr) }, inner :> Expr)
+        QueryOps.including q.Def inner
+
+    // One overload per arity, as F# has no variadic generics: the outer record
+    // and up to 8 lists, stated here and in including.feature. A ninth `including` finds no
+    // overload. Each pair below differs only in the inner query's kind.
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A list>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A list * 'U list> =
+        QueryOps.including p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A list>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A list * 'U list> =
+        QueryOps.including p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A list * 'B list>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A list * 'B list * 'U list> =
+        QueryOps.including p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A list * 'B list>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A list * 'B list * 'U list> =
+        QueryOps.including p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A list * 'B list * 'C list>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A list * 'B list * 'C list * 'U list> =
+        QueryOps.including p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A list * 'B list * 'C list>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A list * 'B list * 'C list * 'U list> =
+        QueryOps.including p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A list * 'B list * 'C list * 'D list>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A list * 'B list * 'C list * 'D list * 'U list> =
+        QueryOps.including p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A list * 'B list * 'C list * 'D list>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A list * 'B list * 'C list * 'D list * 'U list> =
+        QueryOps.including p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A list * 'B list * 'C list * 'D list * 'E list>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A list * 'B list * 'C list * 'D list * 'E list * 'U list> =
+        QueryOps.including p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A list * 'B list * 'C list * 'D list * 'E list>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A list * 'B list * 'C list * 'D list * 'E list * 'U list> =
+        QueryOps.including p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A list * 'B list * 'C list * 'D list * 'E list * 'F list>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A list * 'B list * 'C list * 'D list * 'E list * 'F list * 'U list> =
+        QueryOps.including p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A list * 'B list * 'C list * 'D list * 'E list * 'F list>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A list * 'B list * 'C list * 'D list * 'E list * 'F list * 'U list> =
+        QueryOps.including p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A list * 'B list * 'C list * 'D list * 'E list * 'F list * 'G list>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A list * 'B list * 'C list * 'D list * 'E list * 'F list * 'G list * 'U list> =
+        QueryOps.including p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A list * 'B list * 'C list * 'D list * 'E list * 'F list * 'G list>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A list * 'B list * 'C list * 'D list * 'E list * 'F list * 'G list * 'U list> =
+        QueryOps.including p.Def inner
 
     /// Projects each row, keeping each selected value once (as `List.distinct`;
     /// None is one value). Order by selected values only; `take` and `skip`

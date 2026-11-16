@@ -260,4 +260,53 @@ let lesson =
                       let! rows = repo.All paidOrders
                       ok rows |> List.map (fun (o, newest) -> o.Id, newest) |> shouldBe __
                   }
+          )
+
+          Koan.Task(
+              "Each order with its payments and its deliveries",
+              fun repo ->
+                  task {
+                      // A query may end in up to eight includings. Each adds one list
+                      // to the tuple, in the order written, and is one more command:
+                      // two lists never multiply each other's rows.
+                      let withBoth =
+                          plasm {
+                              for o in tableOf<Order> do
+                                  orderBy o.Id
+                                  including (paymentsOf o)
+                                  including (plasm { for d in tableOf<Delivery> do where (d.OrderId = o.Id) })
+                          }
+
+                      let! rows = repo.All withBoth
+                      ok rows |> List.map (fun (o, payments, deliveries) -> o.Id, payments.Length, deliveries |> List.map (fun d -> d.StageName)) |> shouldBe __
+                      sqlSent().Length |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Each customer with their orders, each with its payments",
+              fun repo ->
+                  task {
+                      // An inner query may end in its own including, so its items come
+                      // with their own lists: Customer * (Order * Payment list) list.
+                      // An order's CustomerId is optional, so the tie compares it with
+                      // Some c.Id.
+                      let customers =
+                          plasm {
+                              for c in tableOf<Customer> do
+                                  orderBy c.Id
+
+                                  including (
+                                      plasm {
+                                          for o in tableOf<Order> do
+                                              where (o.CustomerId = Some c.Id)
+                                              orderBy o.Id
+                                              including (paymentsOf o)
+                                      }
+                                  )
+                          }
+
+                      let! rows = repo.All customers
+                      ok rows |> List.map (fun (c, orders) -> c.Name, orders |> List.map (fun (o, payments) -> o.Id, payments.Length)) |> shouldBe __
+                  }
           ) ]

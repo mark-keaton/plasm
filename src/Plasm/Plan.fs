@@ -151,32 +151,54 @@ module internal Planner =
                   Loads = loads
                   Reusable = not vol.Value })
 
-    /// A query ending in `including` (including.feature): the outer plan, and
-    /// the inner query as one more load in batches of outer values.
+    /// One `including` (including.feature): the inner query as one more load
+    /// in batches of its outer level's values.
+    type IncludingLevel =
+        { Parts: Translate.IncludingParts
+          /// What the inner records own or link, loaded with them.
+          Children: LoadNode list
+          /// The inner query's own `including`s, in the order written.
+          Nested: IncludingLevel list }
+
+    /// A query ending in `including`s: the outer plan and each list's level.
     type Including =
         { Outer: Plan
-          Parts: Translate.IncludingParts
-          Strategy: LoadStrategy
-          /// What the inner records own or link, loaded with them.
-          Children: LoadNode list }
+          Levels: IncludingLevel list
+          Strategy: LoadStrategy }
 
     let including (dialect: ISqlDialect) (model: Model) (def: QueryDef) : Result<Including, TranslationError> =
-        match def.Including with
-        | None -> Error(TranslationError.InvalidQuery "the query does not end in including")
-        | Some lambda ->
+        match def.Includings with
+        | [] -> Error(TranslationError.InvalidQuery "the query does not end in including")
+        | lambdas ->
             let vol = ref false
 
-            match Translate.includingParts model vol def lambda with
+            let parts =
+                lambdas
+                |> List.fold
+                    (fun acc l ->
+                        match acc, Translate.includingParts model vol def l with
+                        | Ok ps, Ok p -> Ok(ps @ [ p ])
+                        | (Error _ as e), _ -> e
+                        | _, Error e -> Error e)
+                    (Ok [])
+
+            match parts with
             | Error e -> Error e
             | Ok parts ->
-                match plan dialect model parts.Outer with
+                match plan dialect model { def with Includings = [] } with
                 | Error e -> Error e
                 | Ok outer ->
                     Translate.wrap (fun () ->
+                        let rec level (p: Translate.IncludingParts) =
+                            { Parts = p
+                              Children = if p.Projected.IsSome then [] else planLevel dialect model vol "" p.Target
+                              Nested = p.Nested |> List.map level }
+
+                        let levels = parts |> List.map level
+
                         { Outer = { outer with Reusable = outer.Reusable && not vol.Value }
-                          Parts = parts
-                          Strategy = LoadStrategy.BatchedByKeys dialect.Capabilities.MaxKeysPerCommand
-                          Children = if parts.Projected.IsSome then [] else planLevel dialect model vol "" parts.Target })
+                          Levels = levels
+                          Strategy = LoadStrategy.BatchedByKeys dialect.Capabilities.MaxKeysPerCommand })
 
     let rec private describeNode (dialect: ISqlDialect) (n: LoadNode) : LoadStep =
         let sample = n.Build(Array.CreateInstance(n.KeyField.ProviderType, 1))
@@ -197,14 +219,15 @@ module internal Planner =
 
     let describeIncluding (dialect: ISqlDialect) (p: Including) : QueryPlan =
         let outer = describe dialect p.Outer
-        let sample = p.Parts.Build(Array.CreateInstance(p.Parts.MatchField.ProviderType, 1))
 
-        { outer with
-            Loads =
-                outer.Loads
-                @ [ { Path = "including"
-                      Relationship = "includes"
-                      Target = p.Parts.Target.Name
-                      Strategy = p.Strategy
-                      Sql = (Sql.renderSelect dialect sample).Sql
-                      Children = p.Children |> List.map (describeNode dialect) } ] }
+        let rec step (l: IncludingLevel) : LoadStep =
+            let sample = l.Parts.Build(Array.CreateInstance(l.Parts.MatchField.ProviderType, 1))
+
+            { Path = "including"
+              Relationship = "includes"
+              Target = l.Parts.Target.Name
+              Strategy = p.Strategy
+              Sql = (Sql.renderSelect dialect sample).Sql
+              Children = (l.Children |> List.map (describeNode dialect)) @ (l.Nested |> List.map step) }
+
+        { outer with Loads = outer.Loads @ (p.Levels |> List.map step) }

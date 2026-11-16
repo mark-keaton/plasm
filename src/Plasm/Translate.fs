@@ -1887,10 +1887,13 @@ type IncludingParts =
       /// An inner query ending in `select` or `selectDistinct`: what it reads,
       /// as (value, the matching column's value); None for whole records.
       Projected: Shape option
-      /// The type of the list's items: the inner record, or what it selects.
-      ElementType: Type }
+      /// The type of the list's items: the inner record, what it selects, or
+      /// the inner record with its own lists when it ends in `including`.
+      ElementType: Type
+      /// The inner query's own `including`s, in the order written.
+      Nested: IncludingParts list }
 
-let includingParts (model: Model) (vol: bool ref) (def: QueryDef) (lambda: Expr) : Result<IncludingParts, TranslationError> =
+let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (lambda: Expr) : Result<IncludingParts, TranslationError> =
     wrap (fun () ->
         if not def.Joins.IsEmpty || not def.GroupBy.IsEmpty then
             invalid "including follows a query of one record: it cannot follow join, leftJoin or groupBy"
@@ -1930,9 +1933,12 @@ let includingParts (model: Model) (vol: bool ref) (def: QueryDef) (lambda: Expr)
 
         let mentionsOuter (e: Expr) = e.GetFreeVars() |> Seq.contains o
 
-        let fieldOf (v: Var) (e: Expr) =
+        // A column, or Some of one: an optional column compared with a plain
+        // one (o.CustomerId = Some c.Id) is still one equality of two columns.
+        let rec fieldOf (v: Var) (e: Expr) =
             match e with
             | PropertyGet(Some(Var x), p, []) when x = v -> Some p.Name
+            | NewUnionCase(c, [ x ]) when c.Name = "Some" && c.DeclaringType.IsGenericType && c.DeclaringType.GetGenericTypeDefinition() = typedefof<option<_>> -> fieldOf v x
             | _ -> None
 
         let refersOtherwise (c: Expr) =
@@ -2009,8 +2015,19 @@ let includingParts (model: Model) (vol: bool ref) (def: QueryDef) (lambda: Expr)
                 Where = first @ last
                 OrderBy = orderBy }
 
+        // An inner query ending in `including` reads whole records; its
+        // projection is the tuple the reader builds, not a select.
+        let selected = if inner.Includings.IsEmpty then checkable.Select else None
+
+        let nested =
+            inner.Includings
+            |> List.map (fun l ->
+                match includingParts model vol { inner with Includings = [] } l with
+                | Ok p -> p
+                | Error e -> raise (TranslationFailure e))
+
         let projected =
-            match checkable.Select with
+            match selected with
             | None -> None
             | Some select ->
                 // The projection without the tie, then the matching column
@@ -2067,7 +2084,7 @@ let includingParts (model: Model) (vol: bool ref) (def: QueryDef) (lambda: Expr)
                 let numbered = { filtered with Columns = plain @ [ Sql.RowNumber(matchColumn, ranked), "__rn" ] }
                 page numbered (entityColumns "t0" target) ranked
 
-        { Outer = { def with Including = None }
+        { Outer = { def with Includings = [] }
           OuterField = outerField
           Target = target
           MatchField = matchField
@@ -2077,9 +2094,15 @@ let includingParts (model: Model) (vol: bool ref) (def: QueryDef) (lambda: Expr)
             | None -> buildRecords
           Projected = projected |> Option.map snd
           ElementType =
-            match checkable.Select with
+            match selected with
             | Some select -> snd (FSharpType.GetFunctionElements select.Type)
-            | None -> target.Type })
+            | None when nested.IsEmpty -> target.Type
+            | None ->
+                FSharpType.MakeTupleType(
+                    [| yield target.Type
+                       for n in nested -> typedefof<list<_>>.MakeGenericType n.ElementType |]
+                )
+          Nested = nested })
 
 // ---------------------------------------------------------------------------
 // Bulk writes

@@ -30,3 +30,8 @@ Some(CustomerId 2L)
 3
 # A tie written once serves exists and including
 [ (OrderId 1L, [ Succeeded ]); (OrderId 3L, [ Succeeded ]) ]
+# Each order with its payments and its deliveries
+[ (OrderId 1L, 1, [ "delivered" ]); (OrderId 2L, 0, [ "packing" ]); (OrderId 3L, 2, [ "in transit" ]); (OrderId 4L, 0, []) ]
+4
+# Each customer with their orders, each with its payments
+[ ("Ada", [ (OrderId 1L, 1); (OrderId 2L, 0) ]); ("Bob", [ (OrderId 3L, 2) ]); ("Cy", []) ]

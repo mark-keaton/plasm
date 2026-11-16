@@ -18,6 +18,16 @@ Feature: A query can read each record with the records another query finds for i
   be written once as a reflected function of the outer record (`paymentsOf o`)
   and used in `including` and in `exists` alike.
 
+  A query may end in up to eight `including`s, giving a flat tuple in the order
+  written: `Projection<Order * Payment list * Order list>`. There is a limit
+  only because F# has no variadic generics, so each length of tuple is one more
+  overload of `including`; eight is where they stop. An inner query may
+  itself end in `including`, so its items come with their own lists:
+  `Projection<Order * (Order * Payment list) list>`. Each `including`, at any
+  depth, is one more command per batch, so lists never multiply each other's
+  rows, and each one's condition, order and take apply per record of its own
+  level.
+
   # Order = { Id: OrderId; CustomerId: CustomerId option; Total: decimal; ...; Lines: OrderLine list }
   # Payment = { Id: PaymentId; OrderId: OrderId; Amount: decimal; Status: PaymentStatus; CreatedAt: DateTime }
   Background:
@@ -134,6 +144,58 @@ Feature: A query can read each record with the records another query finds for i
       When I read the Orders including two distinct statuses of their Payments
       Then the read is refused, saying take and skip cannot be used with selectDistinct for each Order either
 
+  Rule: A query may include several lists, and an included query its own
+
+    Scenario: Each Order with its Payments and the Orders of the same Customer
+      When I read the Orders by total, including their Payments by minute and the Orders of the same Customer
+      Then the Orders, their Payments and the totals of the Orders they include are:
+        | order | payments                              | included |
+        | 5     |                                       |          |
+        | 10    | 10 Succeeded, 10 Failed               | 10, 50   |
+        | 50    | 20 Succeeded, 30 Succeeded, 5 Pending | 10, 50   |
+        | 200   |                                       | 200      |
+      And 5 commands are sent: the Orders, their lines, the Payments, and the Orders of the same Customer with their lines
+      And the plan lists the Payments and the Orders of the same Customer as two more loads
+
+    Scenario: Each included Order with its own Payments
+      When I read the Orders by total, including the Orders of the same Customer, each with its Payments by minute
+      Then the Orders and the Orders they include, with their Payments, are:
+        | order | included                                                         |
+        | 5     |                                                                  |
+        | 10    | 10 (10 Succeeded, 10 Failed); 50 (20 Succeeded, 30 Succeeded, 5 Pending) |
+        | 50    | 10 (10 Succeeded, 10 Failed); 50 (20 Succeeded, 30 Succeeded, 5 Pending) |
+        | 200   | 200 ()                                                           |
+      And 5 commands are sent: the Orders and their lines, the Orders of the same Customer and their lines, and the Payments
+
+    Scenario: Each Customer with their Orders, each with its Payments
+      When I read the Customers by name, including their Orders by total, each with its Payments by minute
+      Then the Customers and their Orders, with their Payments, are:
+        | customer | orders                                                           |
+        | Ada      | 10 (10 Succeeded, 10 Failed); 50 (20 Succeeded, 30 Succeeded, 5 Pending) |
+        | Bob      | 200 ()                                                           |
+
+    Scenario: Take applies per record at every level
+      When I read the Orders by total, including the Orders of the same Customer, each with its newest Payment
+      Then the Orders and the Orders they include, with their Payments, are:
+        | order | included                    |
+        | 5     |                             |
+        | 10    | 10 (10 Failed); 50 (5 Pending) |
+        | 50    | 10 (10 Failed); 50 (5 Pending) |
+        | 200   | 200 ()                      |
+
+    Scenario: Eight lists, past the seven elements where F# nests its tuples
+      When I read the Orders by total, including eight lists: their Payments, then their Payments of at least 2 up to at least 8
+      Then each Order comes with eight lists, the n-th holding its Payments of at least n:
+        | order | counts          |
+        | 5     | 0 0 0 0 0 0 0 0 |
+        | 10    | 2 2 2 2 2 2 2 2 |
+        | 50    | 3 3 3 3 3 2 2 2 |
+        | 200   | 0 0 0 0 0 0 0 0 |
+
+    Scenario: The result's type lists the lists in the order written
+      When I compile code that passes Orders with their Payments and same-Customer Orders, and Orders with included Orders and their Payments, to functions of those types
+      Then the code compiles
+
   Rule: It is checked and prepared like any query
 
     Scenario: A prepared query's arguments bind inside the inner query
@@ -164,6 +226,6 @@ Feature: A query can read each record with the records another query finds for i
 
       Examples:
         | use                    | code                                                         |
-        | including twice        | a query includes Payments and then includes Payments again   |
+        | a ninth list           | a query includes nine lists                                  |
         | select after including | a query includes Payments and then selects the Order's total |
         | counting it            | the Orders with their Payments are counted                   |

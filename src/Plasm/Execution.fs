@@ -543,25 +543,17 @@ let readProjection (s: Session) (model: Model) (select: Sql.Select) (shape: Tran
             |> List.ofSeq
     }
 
-/// A query ending in `including` (including.feature): the outer records with
-/// what they own, then the inner records for every outer value in batches,
-/// each outer record paired with the list of those matching its value.
-let readIncluding (s: Session) (model: Model) (p: Planner.Including) : Task<obj list> =
+/// One `including` level (including.feature): reads what it finds for the
+/// `parents` rows, in batches of their values, and its own levels over those;
+/// returns each parent row's list.
+let rec private readLevel (s: Session) (model: Model) (batchSize: int) (parents: IReadOnlyList<obj[]>) (l: Planner.IncludingLevel) : Task<obj[] -> obj> =
     task {
-        let parts = p.Parts
-        let outerSchema = p.Outer.RootSchema
-        let! rows = query s (Sql.renderSelect s.Provider.Dialect p.Outer.Root) (readEntity outerSchema)
-        do! loadInto s rows p.Outer.Loads
-
+        let parts = l.Parts
         let valueOf (r: obj[]) = keyOf parts.OuterField r.[parts.OuterField.Index]
         let keys = HashSet<obj>()
 
-        for r in rows do
+        for r in parents do
             valueOf r |> Option.iter (keys.Add >> ignore)
-
-        let batchSize =
-            match p.Strategy with
-            | LoadStrategy.BatchedByKeys n -> max 1 n
 
         let groups = Dictionary<obj, ResizeArray<obj>>()
 
@@ -592,25 +584,60 @@ let readIncluding (s: Session) (model: Model) (p: Planner.Including) : Task<obj 
 
                 if childRows.Count = 0 then childRows <- got else childRows.AddRange got
 
-            do! loadInto s childRows p.Children
+            do! loadInto s childRows l.Children
+
+            let lists = ResizeArray<obj[] -> obj>()
+
+            for n in l.Nested do
+                let! f = readLevel s model batchSize childRows n
+                lists.Add f
+
+            let element =
+                if lists.Count = 0 then
+                    fun (cr: obj[]) -> parts.Target.Shape.Construct cr
+                else
+                    fun cr -> FSharp.Reflection.FSharpValue.MakeTuple([| yield parts.Target.Shape.Construct cr; for f in lists -> f cr |], parts.ElementType)
 
             for cr in childRows do
-                add (keyOf parts.MatchField cr.[parts.MatchField.Index]) (parts.Target.Shape.Construct cr)
+                add (keyOf parts.MatchField cr.[parts.MatchField.Index]) (element cr)
 
         let makeList = Reflection.makeList parts.ElementType
-        let pair = FSharp.Reflection.FSharpType.MakeTupleType [| outerSchema.Type; typedefof<list<_>>.MakeGenericType parts.ElementType |]
 
         return
-            [ for r in rows ->
-                  let children =
-                      match valueOf r with
-                      | Some k ->
-                          match groups.TryGetValue k with
-                          | true, g -> g :> obj seq
-                          | _ -> Seq.empty
-                      | None -> Seq.empty
+            fun (r: obj[]) ->
+                match valueOf r with
+                | Some k ->
+                    match groups.TryGetValue k with
+                    | true, g -> makeList (g :> obj seq)
+                    | _ -> makeList Seq.empty
+                | None -> makeList Seq.empty
+    }
 
-                  FSharp.Reflection.FSharpValue.MakeTuple([| outerSchema.Shape.Construct r; makeList children |], pair) ]
+/// A query ending in `including`s (including.feature): the outer records,
+/// each in a tuple with the list of each level, in the order written.
+let readIncluding (s: Session) (model: Model) (p: Planner.Including) : Task<obj list> =
+    task {
+        let outerSchema = p.Outer.RootSchema
+        let! rows = query s (Sql.renderSelect s.Provider.Dialect p.Outer.Root) (readEntity outerSchema)
+        do! loadInto s rows p.Outer.Loads
+
+        let batchSize =
+            match p.Strategy with
+            | LoadStrategy.BatchedByKeys n -> max 1 n
+
+        let lists = ResizeArray<obj[] -> obj>()
+
+        for l in p.Levels do
+            let! f = readLevel s model batchSize rows l
+            lists.Add f
+
+        let tuple =
+            FSharp.Reflection.FSharpType.MakeTupleType(
+                [| yield outerSchema.Type
+                   for l in p.Levels -> typedefof<list<_>>.MakeGenericType l.Parts.ElementType |]
+            )
+
+        return [ for r in rows -> FSharp.Reflection.FSharpValue.MakeTuple([| yield outerSchema.Shape.Construct r; for f in lists -> f r |], tuple) ]
     }
 
 // ---------------------------------------------------------------------------

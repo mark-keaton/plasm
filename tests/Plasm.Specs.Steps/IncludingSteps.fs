@@ -44,6 +44,23 @@ module IncludingGood =
                     )
             })
 
+    /// Two lists, the second's items with lists of their own.
+    let withPaymentsAndSameCustomer =
+        plasm {
+            for o in tableOf<Order> do
+                orderBy o.Total
+                including (Relations.paymentsOf o)
+
+                including (
+                    plasm {
+                        for x in tableOf<Order> do
+                            where (x.CustomerId = o.CustomerId)
+                            orderBy x.Total
+                            including (plasm { for p in tableOf<Payment> do where (p.OrderId = x.Id); orderBy p.CreatedAt })
+                    }
+                )
+        }
+
 namespace Plasm.Specs
 
 open System
@@ -206,6 +223,185 @@ type IncludingSteps(w: World) =
                     )
             }
         )
+
+    [<StepDefinition("I read the Orders by total, including their Payments by minute and the Orders of the same Customer")>]
+    member _.TwoLists() =
+        task {
+            let q =
+                plasm {
+                    for o in tableOf<Order> do
+                        orderBy o.Total
+                        including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id); orderBy p.CreatedAt })
+                        including (plasm { for x in tableOf<Order> do where (x.CustomerId = o.CustomerId); orderBy x.Total })
+                }
+
+            w.MarkCommands()
+            let! r = w.Repo.All q
+            w.Set("includingTwo", ok r)
+            w.Set("includingTwoPlan", ok (w.Repo.Explain q))
+        }
+        |> unit
+
+    member private _.Nested(q: Projection<Order * (Order * Payment list) list>) =
+        task {
+            w.MarkCommands()
+            let! r = w.Repo.All q
+            w.Set("includingNested", ok r)
+        }
+        |> unit
+
+    [<StepDefinition("I read the Orders by total, including the Orders of the same Customer, each with its Payments by minute")>]
+    member this.NestedPayments() =
+        this.Nested(
+            plasm {
+                for o in tableOf<Order> do
+                    orderBy o.Total
+
+                    including (
+                        plasm {
+                            for x in tableOf<Order> do
+                                where (x.CustomerId = o.CustomerId)
+                                orderBy x.Total
+                                including (plasm { for p in tableOf<Payment> do where (p.OrderId = x.Id); orderBy p.CreatedAt })
+                        }
+                    )
+            }
+        )
+
+    [<StepDefinition("I read the Orders by total, including the Orders of the same Customer, each with its newest Payment")>]
+    member this.NestedNewest() =
+        this.Nested(
+            plasm {
+                for o in tableOf<Order> do
+                    orderBy o.Total
+
+                    including (
+                        plasm {
+                            for x in tableOf<Order> do
+                                where (x.CustomerId = o.CustomerId)
+                                orderBy x.Total
+                                including (plasm { for p in tableOf<Payment> do where (p.OrderId = x.Id); orderByDescending p.CreatedAt; take 1 })
+                        }
+                    )
+            }
+        )
+
+    [<StepDefinition("I read the Customers by name, including their Orders by total, each with its Payments by minute")>]
+    member _.CustomersOrdersPayments() =
+        task {
+            let q =
+                plasm {
+                    for c in tableOf<Customer> do
+                        orderBy c.Name
+
+                        including (
+                            plasm {
+                                for o in tableOf<Order> do
+                                    where (o.CustomerId = Some c.Id)
+                                    orderBy o.Total
+                                    including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id); orderBy p.CreatedAt })
+                            }
+                        )
+                }
+
+            let! r = w.Repo.All q
+            w.Set("includingCustomers3", r)
+        }
+        |> unit
+
+    [<StepDefinition("the Customers and their Orders, with their Payments, are:")>]
+    member _.CustomersAre(table: DataTable) =
+        let expected = [ for r in table.Rows -> r.["customer"], r.["orders"].Trim() ]
+
+        let actual =
+            [ for c, os in ok (w.Get<Result<(Customer * (Order * Payment list) list) list, DbError>> "includingCustomers3") ->
+                  c.Name,
+                  os
+                  |> List.map (fun (o, ps) -> $"""{total o.Total} ({ps |> List.map (box >> payment) |> String.concat ", "})""")
+                  |> String.concat "; " ]
+
+        equal expected actual "customers, their orders and their payments"
+
+    [<StepDefinition("I read the Orders by total, including eight lists: their Payments, then their Payments of at least 2 up to at least 8")>]
+    member _.Eight() =
+        task {
+            let q =
+                plasm {
+                    for o in tableOf<Order> do
+                        orderBy o.Total
+                        including (paymentsOf o)
+                        including (plasm { for p in paymentsOf o do where (p.Amount >= 2m) })
+                        including (plasm { for p in paymentsOf o do where (p.Amount >= 3m) })
+                        including (plasm { for p in paymentsOf o do where (p.Amount >= 4m) })
+                        including (plasm { for p in paymentsOf o do where (p.Amount >= 5m) })
+                        including (plasm { for p in paymentsOf o do where (p.Amount >= 6m) })
+                        including (plasm { for p in paymentsOf o do where (p.Amount >= 7m) })
+                        including (plasm { for p in paymentsOf o do where (p.Amount >= 8m) })
+                }
+
+            let! r = w.Repo.All q
+
+            let counts =
+                ok r
+                |> List.map (fun (o, a, b, c, d, e, f, g, h) ->
+                    total o.Total, [ a; b; c; d; e; f; g; h ] |> List.map (List.length >> string) |> String.concat " ")
+
+            w.Set("includingEight", counts)
+        }
+        |> unit
+
+    [<StepDefinition("each Order comes with eight lists, the n-th holding its Payments of at least n:")>]
+    member _.EightAre(table: DataTable) =
+        let expected = [ for r in table.Rows -> r.["order"], r.["counts"].Trim() ]
+        equal expected (w.Get<(string * string) list> "includingEight") "orders and the sizes of their eight lists"
+
+    [<StepDefinition("the Orders, their Payments and the totals of the Orders they include are:")>]
+    member _.TwoListsAre(table: DataTable) =
+        let expected = [ for r in table.Rows -> r.["order"], r.["payments"].Trim(), r.["included"].Trim() ]
+
+        let actual =
+            [ for o, ps, xs in w.Get<(Order * Payment list * Order list) list> "includingTwo" ->
+                  total o.Total, ps |> List.map (box >> payment) |> String.concat ", ", xs |> List.map (fun x -> total x.Total) |> String.concat ", " ]
+
+        equal expected actual "orders, payments and included orders"
+
+    [<StepDefinition("the Orders and the Orders they include, with their Payments, are:")>]
+    member _.NestedAre(table: DataTable) =
+        let expected = [ for r in table.Rows -> r.["order"], r.["included"].Trim() ]
+
+        let actual =
+            [ for o, xs in w.Get<(Order * (Order * Payment list) list) list> "includingNested" ->
+                  total o.Total,
+                  xs
+                  |> List.map (fun (x, ps) -> $"""{total x.Total} ({ps |> List.map (box >> payment) |> String.concat ", "})""")
+                  |> String.concat "; " ]
+
+        equal expected actual "orders, included orders and their payments"
+
+    [<StepDefinition("5 commands are sent: the Orders, their lines, the Payments, and the Orders of the same Customer with their lines")>]
+    member _.FlatCommands() =
+        let sql = w.CommandsSinceMark |> List.map (fun e -> e.Sql)
+
+        let table (q: string) =
+            [ "order_lines"; "payments"; "orders" ] |> List.find (fun t -> q.Contains $"\"{t}\"")
+
+        equal [ "orders"; "order_lines"; "payments"; "orders"; "order_lines" ] (sql |> List.map table) $"commands: %A{sql}"
+
+    [<StepDefinition("the plan lists the Payments and the Orders of the same Customer as two more loads")>]
+    member _.TwoLoads() =
+        let plan = w.Get<QueryPlan> "includingTwoPlan"
+        let included = plan.Loads |> List.filter (fun l -> l.Relationship = "includes") |> List.map (fun l -> l.Target)
+        equal [ "Payment"; "Order" ] included $"loads: %A{plan.Loads}"
+
+    [<StepDefinition("5 commands are sent: the Orders and their lines, the Orders of the same Customer and their lines, and the Payments")>]
+    member _.FiveCommands() =
+        let sql = w.CommandsSinceMark |> List.map (fun e -> e.Sql)
+        equal 5 sql.Length $"commands: %A{sql}"
+
+        let table (q: string) =
+            [ "order_lines"; "payments"; "orders" ] |> List.find (fun t -> q.Contains $"\"{t}\"")
+
+        equal [ "orders"; "order_lines"; "orders"; "order_lines"; "payments" ] (sql |> List.map table) $"commands: %A{sql}"
 
     [<StepDefinition("I read the Orders including the Payments made after the Order was placed")>]
     member _.AfterPlaced() =
@@ -440,13 +636,40 @@ let q = plasm { for o in tableOf<Order> do orderBy o.Total }
 let shown (repo: Repo) = task { let! r = repo.All q in return r |> Result.map show }
 """
 
-    [<StepDefinition("I compile code where a query includes Payments and then includes Payments again")>]
-    member _.Twice() =
+    [<StepDefinition("I compile code that passes Orders with their Payments and same-Customer Orders, and Orders with included Orders and their Payments, to functions of those types")>]
+    member _.CompileSeveral() =
+        compiled
+            """
+let flat (rows: (Order * Payment list * Order list) list) = rows.Length
+let nested (rows: (Order * (Order * Payment list) list) list) = rows.Length
+let q1 =
+    plasm {
+        for o in tableOf<Order> do
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
+            including (plasm { for x in tableOf<Order> do where (x.CustomerId = o.CustomerId) })
+    }
+let q2 =
+    plasm {
+        for o in tableOf<Order> do
+            including (plasm { for x in tableOf<Order> do where (x.CustomerId = o.CustomerId); including (plasm { for p in tableOf<Payment> do where (p.OrderId = x.Id) }) })
+    }
+let shown (repo: Repo) = task { let! a = repo.All q1 in let! b = repo.All q2 in return a |> Result.map flat, b |> Result.map nested }
+"""
+
+    [<StepDefinition("I compile code where a query includes nine lists")>]
+    member _.Nine() =
         compiled
             """
 let q =
     plasm {
         for o in tableOf<Order> do
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
             including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
             including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
     }
