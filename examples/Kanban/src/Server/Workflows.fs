@@ -22,7 +22,26 @@ type Refusal =
 /// value, so the application can check them all before it serves anything.
 module Queries =
 
-    let boardsByName = plasm { for b in tableOf<Board> do orderBy b.Name }
+    /// The cards on a board: the tie between the two tables, written once.
+    [<ReflectedDefinition>]
+    let cardsOf (b: Board) = plasm { for c in tableOf<Card> do where (c.Board = b.Id) }
+
+    /// Every board with the three cards created last on it, newest first.
+    /// The cards are another aggregate, so the query asks for them, and its
+    /// type says it did: (Board * Card list).
+    let boardsWithNewest =
+        plasm {
+            for b in tableOf<Board> do
+                orderBy b.Name
+
+                including (
+                    plasm {
+                        for c in cardsOf b do
+                            orderByDescending c.Created
+                            take 3
+                    }
+                )
+        }
 
     /// (board, stage, number of cards), one row per stage a board has cards in.
     let cardCounts =

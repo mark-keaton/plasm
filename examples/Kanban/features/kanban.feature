@@ -161,6 +161,29 @@ Feature: A kanban board with an F# domain at its centre
       When the boards are listed
       Then the board "apollo" is listed with 1 in the backlog, 1 in progress and 1 done
 
+    Scenario: The list of boards shows each board's three newest cards
+      Given the card "First" on "apollo"
+      And the card "Second" on "apollo"
+      And the card "Third" on "apollo"
+      And the card "Fourth" on "apollo"
+      When the boards are listed
+      Then the board "apollo" is listed with the newest cards "Fourth, Third, Second"
+
+    Scenario: A board without cards is listed with no newest cards
+      Given the board "gemini" allows 2 cards in progress
+      And the card "First" on "apollo"
+      When the boards are listed
+      Then the board "gemini" is listed with the newest cards ""
+      And the board "apollo" is listed with the newest cards "First"
+
+    Scenario: However many boards and cards, listing sends the same five queries
+      Given the board "gemini" allows 2 cards in progress
+      And the card "First" on "apollo"
+      And the card "Second" on "apollo"
+      And the card "Third" on "gemini"
+      When the boards are listed
+      Then the database was sent 5 SELECT
+
     Scenario: An unknown board is not found
       When the board "voyager" is read
       Then the board "voyager" is not found

@@ -60,6 +60,14 @@ type KanbanSteps(w: World, d: Driver) =
             equal (backlog, doing, isDone) (b.Backlog, b.Doing, b.Done) "cards by stage"
         | other -> failwithf "expected a list of boards, got %A" other
 
+    [<Then("the board {string} is listed with the newest cards {string}")>]
+    member _.ThenNewest(slug: string, titles: string) =
+        match w.Last with
+        | Ok(:? (BoardSummary[]) as boards) ->
+            let b = boards |> Array.find (fun b -> b.Slug = slug)
+            equal (names titles) (List.ofArray b.Newest) "newest cards"
+        | other -> failwithf "expected a list of boards, got %A" other
+
     [<Then("the board {string} has the cards {string}")>]
     member _.ThenBoardHas(slug: string, titles: string) : Task =
         task {

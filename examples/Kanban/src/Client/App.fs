@@ -385,7 +385,11 @@ let private viewBoardList (model: Model) dispatch =
                                                       Html.span
                                                           [ prop.className "counts"
                                                             prop.text
-                                                                $"{board.Backlog} waiting · {board.Doing} of {board.WipLimit} in progress · {board.Done} done" ] ] ] ] ] ] ]
+                                                                $"{board.Backlog} waiting · {board.Doing} of {board.WipLimit} in progress · {board.Done} done" ]
+                                                      if board.Newest.Length > 0 then
+                                                          Html.span
+                                                              [ prop.className "newest"
+                                                                prop.text ("Newest: " + String.concat " · " board.Newest) ] ] ] ] ] ] ]
           if model.Me.IsSome then
               Html.section
                   [ prop.className "form"

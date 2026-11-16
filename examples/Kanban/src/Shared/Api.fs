@@ -47,7 +47,9 @@ type BoardSummary =
       WipLimit: int
       Backlog: int
       Doing: int
-      Done: int }
+      Done: int
+      /// Titles of the three cards created last, newest first.
+      Newest: string[] }
 
 type ApiError =
     /// Input that is not acceptable, by field.

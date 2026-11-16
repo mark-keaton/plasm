@@ -78,7 +78,7 @@ module private View =
 
     let cards (cards: Card list) : CardView[] = cards |> List.map card |> Array.ofList
 
-    let summary (counts: (BoardId * StageKind * int64) list) (row: Board) : BoardSummary =
+    let summary (counts: (BoardId * StageKind * int64) list) (row: Board, newest: Card list) : BoardSummary =
         let count kind =
             counts
             |> List.tryPick (fun (board, k, n) -> if board = row.Id && k = kind then Some(int n) else None)
@@ -89,7 +89,8 @@ module private View =
           WipLimit = row.WipLimit.Value
           Backlog = count StageKind.Backlog
           Doing = count StageKind.Doing
-          Done = count StageKind.Done }
+          Done = count StageKind.Done
+          Newest = [| for card in newest -> card.Title.Value |] }
 
     /// "WipLimit" (the domain's field, which Plasm names) as the client's "wipLimit".
     let fieldError (e: FieldError) =
@@ -195,7 +196,7 @@ let create (deps: Deps) (session: Session) (ct: CancellationToken) : IKanbanApi 
     { boards =
         fun () ->
             task {
-                let! boards = deps.Repo.All(Queries.boardsByName, cancellationToken = ct)
+                let! boards = deps.Repo.All(Queries.boardsWithNewest, cancellationToken = ct)
                 let! counts = deps.Repo.All(Queries.cardCounts, cancellationToken = ct)
 
                 return
@@ -234,7 +235,11 @@ let create (deps: Deps) (session: Session) (ct: CancellationToken) : IKanbanApi 
 
                     task {
                         let! outcome = transact deps ct (createBoard board cards)
-                        return outcome |> Result.map (View.summary [ board.Id, StageKind.Backlog, int64 cards.Length ])
+                        let newest = cards |> List.rev |> List.truncate 3
+
+                        return
+                            outcome
+                            |> Result.map (fun stored -> View.summary [ board.Id, StageKind.Backlog, int64 cards.Length ] (stored, newest))
                     }
                     |> Async.AwaitTask)
 
