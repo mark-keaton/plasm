@@ -222,11 +222,44 @@ module internal QueryOps =
     /// from, so it is planned from its own description, not the template.
     let inline map (q: Query<'T>) f : Query<'T> = Query<'T>({ f q.Def with Template = None })
 
+    /// The paging clause already written, if any: SQL filters, groups and
+    /// orders before it pages, and pages once, so a clause written after one
+    /// would mean something else than it says (query-semantics.feature).
+    let private paged (d: QueryDef) =
+        if d.Limit.IsSome || d.LimitArg.IsSome then Some "take"
+        elif d.Offset.IsSome || d.OffsetArg.IsSome then Some "skip"
+        else None
+
+    let private problem (d: QueryDef) (p: string option) =
+        match p with
+        | Some p -> { d with Problems = d.Problems @ [ p ] }
+        | None -> d
+
+    /// A clause SQL applies before paging, written after take or skip.
+    let private afterPaging (clause: string) (does: string) (doing: string) (d: QueryDef) =
+        paged d
+        |> Option.map (fun page ->
+            $"{clause} is written after {page}: SQL {does} before it pages, so the query would {doing} every row and then {page}, not the rows {page} keeps. Write {clause} before {page}")
+        |> problem d
+
     let where (q: Query<'T>) (p: Expr) =
-        map q (fun d -> { d with Wheres = d.Wheres @ [ p ] })
+        map q (fun d ->
+            let d = afterPaging "where" "filters" "filter" d
+
+            let d =
+                if d.GroupBy.IsEmpty then d
+                else problem d (Some "where is written after groupBy; use having to filter the groups, or write where before groupBy to filter the rows")
+
+            { d with Wheres = d.Wheres @ [ p ] })
 
     let order (q: Query<'T>) (k: Expr) dir =
-        map q (fun d -> { d with Orders = d.Orders @ [ k, dir ] })
+        map q (fun d -> { afterPaging "orderBy" "orders" "order" d with Orders = d.Orders @ [ k, dir ] })
+
+    let groupBy (q: Query<'T>) (k: Expr) =
+        map q (fun d -> { afterPaging "groupBy" "groups" "group" d with GroupBy = d.GroupBy @ [ k ] })
+
+    let having (q: Query<'T>) (p: Expr) =
+        map q (fun d -> { afterPaging "having" "filters groups" "group and filter" d with Havings = d.Havings @ [ p ] })
 
     let checkCount what (n: int) =
         if n < 0 then invalidArg what $"{what} must be non-negative"
@@ -258,7 +291,24 @@ module internal QueryOps =
 
             Choice1Of2 n
 
+    /// A second take or skip, or skip after take (SQL skips first, so the
+    /// rows read would not be the ones F# reads).
+    let private paging (what: string) (d: QueryDef) =
+        let took = d.Limit.IsSome || d.LimitArg.IsSome
+        let skipped = d.Offset.IsSome || d.OffsetArg.IsSome
+
+        if what = "take" && took then
+            problem d (Some "take is written twice: SQL pages once, so write one take")
+        elif what = "skip" && skipped then
+            problem d (Some "skip is written twice: SQL pages once, so write one skip")
+        elif what = "skip" && took then
+            problem d (Some "skip is written after take: SQL skips before it takes, so take n, then skip m would read the rows after the first m, n of them, where F# reads n - m. Write skip before take")
+        else
+            d
+
     let take what (q: Query<'T>) (e: Expr<int>) =
+        let q = map q (paging what)
+
         match count what e with
         | Choice1Of2 n ->
             checkCount what n
@@ -333,13 +383,13 @@ type QueryBuilder() =
     /// with `select`, using grouped keys and `Agg` functions.
     [<CustomOperation("groupBy", MaintainsVariableSpace = true)>]
     member _.GroupBy(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] key: Expr<'T -> 'K>) =
-        QueryOps.map q (fun d -> { d with GroupBy = d.GroupBy @ [ key ] })
+        QueryOps.groupBy q key
 
     /// Keeps only groups satisfying a condition over grouped keys and `Agg`
     /// functions (SQL HAVING).
     [<CustomOperation("having", MaintainsVariableSpace = true)>]
     member _.Having(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] predicate: Expr<'T -> bool>) =
-        QueryOps.map q (fun d -> { d with Havings = d.Havings @ [ predicate ] })
+        QueryOps.having q predicate
 
     /// Inner join: one row per matching pair. Keys are compared with SQL `=`,
     /// so NULL keys never match. Composite keys: `on ((o.A, o.B) = (x.A, x.B))`.

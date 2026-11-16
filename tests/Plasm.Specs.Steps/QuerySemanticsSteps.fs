@@ -367,3 +367,52 @@ type QuerySemanticsSteps(w: World) =
             let text = string e
             check (text.Contains "null" && text.Contains "option" && text.Contains what) text
         | Ok rows -> failwithf "expected a refusal, got %d Customers" rows.Length
+
+    [<StepDefinition("^I read the Orders, written with (.+)$")>]
+    member _.Clauses(clauses: string) =
+        let unitOf (t: System.Threading.Tasks.Task<Result<'a, DbError>>) =
+            task {
+                let! r = t
+                return Result.map ignore r
+            }
+
+        task {
+            let! r =
+                match clauses with
+                | "take 2, then where" -> w.Repo.All(plasm { for o in tableOf<Order> do orderBy o.Id; take 2; where (o.Total > 0m) }) |> unitOf
+                | "skip 1, then where" -> w.Repo.All(plasm { for o in tableOf<Order> do orderBy o.Id; skip 1; where (o.Total > 0m) }) |> unitOf
+                | "take 2, then orderBy" -> w.Repo.All(plasm { for o in tableOf<Order> do take 2; orderBy o.Id }) |> unitOf
+                | "take 2, then take 3" -> w.Repo.All(plasm { for o in tableOf<Order> do orderBy o.Id; take 2; take 3 }) |> unitOf
+                | "skip 1, then skip 2" -> w.Repo.All(plasm { for o in tableOf<Order> do orderBy o.Id; skip 1; skip 2 }) |> unitOf
+                | "take 2, then skip 1" -> w.Repo.All(plasm { for o in tableOf<Order> do orderBy o.Id; take 2; skip 1 }) |> unitOf
+                | "groupBy, then where" ->
+                    w.Repo.All(plasm { for o in tableOf<Order> do groupBy o.CustomerId; where (o.Total > 0m); select (o.CustomerId, Agg.count ()) }) |> unitOf
+                | "take 2, then groupBy" ->
+                    w.Repo.All(plasm { for o in tableOf<Order> do orderBy o.CustomerId; take 2; groupBy o.CustomerId; select (o.CustomerId, Agg.count ()) }) |> unitOf
+                | other -> failwithf "no query for %s" other
+
+            w.Set("clausesRead", r)
+        }
+        |> unit
+
+    [<StepDefinition("^the read is refused, saying (.+ is written .+)$")>]
+    member _.ClausesRefused(reason: string) =
+        match w.Get<Result<unit, DbError>> "clausesRead" with
+        | Error(DbError.Translation e) ->
+            let text = string e
+            check (text.Contains reason) text
+        | other -> failwithf "expected a refusal saying %s, got %A" reason other
+
+    [<StepDefinition("I read the Orders by id with skip 1, then take 2")>]
+    member _.SkipTake() =
+        task {
+            let! r = w.Repo.All(plasm { for o in tableOf<Order> do orderBy o.Id; skip 1; take 2 })
+            let! all = everyOrder ()
+            w.Set("skipTake", (ids (ok r), all |> ids |> List.skip 1 |> List.take 2))
+        }
+        |> unit
+
+    [<StepDefinition("the second and third Orders by id are read, as F# pages them")>]
+    member _.SecondAndThird() =
+        let got, expected = w.Get<OrderId list * OrderId list> "skipTake"
+        equal expected got "the second and third Orders"

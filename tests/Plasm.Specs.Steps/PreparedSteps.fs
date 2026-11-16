@@ -243,8 +243,8 @@ type PreparedSteps(w: World) =
                     plasm {
                         for o in tableOf<Order> do
                             orderBy o.PlacedAt
-                            take size.Value
                             skip offset.Value
+                            take size.Value
                     })
 
             w.MarkCommands()

@@ -134,3 +134,30 @@ Feature: Queries keep their F# meaning
       When I run a prepared query for the Customers named an argument, with null
       Then the read is refused, saying the argument is null and an option says a value may be absent
 
+  Rule: Clauses keep the order they are written in, or the query is refused
+
+    SQL filters, groups and orders before it pages, and pages once. A clause
+    written after `take` or `skip` that SQL would apply before it, a second
+    `take` or `skip`, and a `where` after `groupBy` (whose rows are groups) mean
+    something else in F# than in SQL, so Plasm refuses them rather than reorder
+    them. `skip` then `take` reads as F# reads it.
+
+    Scenario Outline: <clauses> is refused
+      When I read the Orders, written with <clauses>
+      Then the read is refused, saying <reason>
+
+      Examples:
+        | clauses                 | reason                                      |
+        | take 2, then where      | where is written after take                 |
+        | skip 1, then where      | where is written after skip                 |
+        | take 2, then orderBy    | orderBy is written after take               |
+        | take 2, then take 3     | take is written twice                       |
+        | skip 1, then skip 2     | skip is written twice                       |
+        | take 2, then skip 1     | skip is written after take                  |
+        | groupBy, then where     | where is written after groupBy; use having  |
+        | take 2, then groupBy    | groupBy is written after take               |
+
+    Scenario: skip, then take, is read as F# reads it
+      Given Orders for several Customers
+      When I read the Orders by id with skip 1, then take 2
+      Then the second and third Orders by id are read, as F# pages them
