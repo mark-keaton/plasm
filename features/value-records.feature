@@ -77,6 +77,37 @@ Feature: A record without a table is stored in its owner's row
       When I select the cities of the Customers' addresses, ordered by city
       Then the cities are "Leeds" and "York"
 
+  Rule: The parts of an optional value are read through the option
+
+    Background:
+      Given Ada, living at "1 Main St", "Leeds" (53.8, -1.5), with no billing address
+      And Bob, living at "2 High St", "York" (54.0, -1.1), billed at "PO Box 7", "York" (54.0, -1.1)
+      And Cy, living at "3 Low Rd", "Bath" (51.4, -2.4), billed at "4 Low Rd", "Bath" (51.4, -2.4)
+
+    Scenario: Ordering by a part of an optional value puts None first, as F# does
+      When I read the Customers ordered by their billing city
+      Then the Customers are read in the order Ada, Cy and Bob
+
+    Scenario: Selecting a part of an optional value
+      When I select the billing cities of the Customers, ordered by name
+      Then the billing cities are none, "York" and "Bath"
+
+    Scenario: Option.exists over an optional value
+      When I read the Customers billed in "York"
+      Then the Customers are read in the order Bob
+
+    Scenario: Option.forall over an optional value is true when it is absent
+      When I read the Customers billed nowhere but "York"
+      Then the Customers are read in the order Ada and Bob
+
+    Scenario: .Value reads a part once IsSome has been tested
+      When I read the Customers with a billing address in "Bath", through Value
+      Then the Customers are read in the order Cy
+
+    Scenario: An expression that cannot be translated is named
+      When I read the Customers whose name, passed through id, is "Ada"
+      Then the read is refused, naming c.Name in the reason
+
   Rule: A change writes the value's columns
 
     Scenario: Moving a Customer writes the address columns only

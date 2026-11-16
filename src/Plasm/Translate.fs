@@ -409,6 +409,9 @@ let rec (|RowField|_|) (ctx: Ctx) (e: Expr) =
     // A field of a value stored in the row (value-records.feature): its own column.
     | PropertyGet(Some(RowField ctx (b, f)), prop, []) when not f.IsOption ->
         f.Value |> Option.bind (fun v -> v.Sub prop.Name) |> Option.map (fun sf -> b, sf)
+    // A field of an optional value, through .Value: its column (NULL when absent).
+    | PropertyGet(Some(PropertyGet(Some(RowField ctx (b, f)), v, [])), prop, []) when f.IsOption && v.Name = "Value" ->
+        f.Value |> Option.bind (fun l -> l.Sub prop.Name) |> Option.map (fun sf -> b, sf)
     | _ -> None
 
 /// Whether a field holds nothing: its column is NULL, or for a value every
@@ -542,6 +545,20 @@ let (|OptionalField|_|) (ctx: Ctx) (e: Expr) =
             fail e $"{b.Schema.Name}.{f.Name} is not optional; use Option.map rather than Option.bind"
         | Some f -> Some(b, f)
         | None -> fail e $"property '{prop.Name}' of {b.Schema.Name} is not a mapped column"
+    // A field of an optional value (value-records.feature): its column, as an
+    // option (NULL when the value is absent).
+    | Call(None, mi, [ Lambda(x, PropertyGet(Some(Var x2), prop, [])); RowField ctx (b, f) ]) when
+        f.IsOption && f.Value.IsSome && x = x2 && (isOptionModule mi "Map" || isOptionModule mi "Bind")
+        ->
+        match f.Value.Value.Sub prop.Name with
+        | Some sf when mi.Name = "Map" && sf.IsOption ->
+            fail e $"{b.Schema.Name}.{f.Name}.{sf.Name} is optional; use Option.bind rather than Option.map"
+        | Some sf when mi.Name = "Bind" && not sf.IsOption ->
+            fail e $"{b.Schema.Name}.{f.Name}.{sf.Name} is not optional; use Option.map rather than Option.bind"
+        | Some sf when sf.Composite ->
+            fail e $"{b.Schema.Name}.{f.Name}.{sf.Name} is stored in several columns; read one of its fields"
+        | Some sf -> Some(b, sf)
+        | None -> fail e $"property '{prop.Name}' of {b.Schema.Name}.{f.Name} is not a mapped column"
     | _ -> None
 
 let private keyOf (b: Binding) = Sql.Column(b.Alias, b.Schema.Key.Column)
@@ -636,7 +653,7 @@ let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
         | Call(None, mi, args) when isAggCall mi -> aggregate ctx e mi args
         | Call(None, mi, [ sql; args ]) when isRawCall mi -> fragment ctx e sql args
         | _ when e.Type = typeof<bool> -> predicate ctx e
-        | _ -> fail e "expression cannot be translated to SQL and will not be evaluated in application memory"
+        | _ -> fail e $"{show e} cannot be translated to SQL, and it will not be evaluated in application memory"
 
 /// A value a CASE chooses. A constant that is an identifier (a fieldless
 /// union's stored name) or a number is written into the SQL, so the same
@@ -700,6 +717,18 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
         | Call(None, mi, [ Lambda(x, body); RowBinding ctx b ]) when b.Optional && isOptionModule mi "ForAll" ->
             let inner = { ctx with Vars = ctx.Vars.Add(x, { b with Optional = false }) }
             Sql.Binary("OR", Sql.IsNull(keyOf b), predicate inner body)
+        // Option.exists / Option.forall over an optional value (value-records.feature):
+        // the predicate over its columns, read through .Value.
+        | Call(None, mi, [ Lambda(x, body); (RowField ctx (b, f) as field) ]) when
+            f.IsOption && f.Value.IsSome && (isOptionModule mi "Exists" || isOptionModule mi "ForAll")
+            ->
+            let value = Expr.PropertyGet(field, field.Type.GetProperty "Value")
+            let inner = predicate ctx (body.Substitute(fun v -> if v = x then Some value else None))
+
+            if mi.Name = "Exists" then
+                Sql.Binary("AND", fieldIsNotNull b.Alias f, inner)
+            else
+                Sql.Binary("OR", fieldIsNull b.Alias f, inner)
         | UnionCaseTest(UnionPath ctx (alias, u), case) -> caseIs alias u case
         | PropertyGet(Some(UnionPath ctx (alias, u)), p, []) when
             p.Name.StartsWith "Is" && u.Cases |> Array.exists (fun c -> "Is" + c.Case.Name = p.Name)
@@ -789,7 +818,7 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
             if present then found else Sql.Not found
         | RowField ctx (b, f) when f.ScalarType = typeof<bool> && not f.IsOption -> Sql.Column(b.Alias, f.Column)
         | Call(None, mi, [ sql; args ]) when isRawCall mi -> fragment ctx e sql args
-        | _ -> fail e "predicate cannot be translated to SQL and will not be evaluated in application memory"
+        | _ -> fail e $"the condition {show e} cannot be translated to SQL, and it will not be evaluated in application memory"
 
 and aggregate ctx (e: Expr) (mi: Reflection.MethodInfo) (args: Expr list) : Sql.Expr =
     let arg () =

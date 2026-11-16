@@ -235,6 +235,49 @@ type ValueRecordSteps(w: World) =
     member _.ReadAre(name: string) =
         equal [ name ] (read () |> List.map (fun c -> c.Name)) "customers"
 
+    [<StepDefinition("I read the Customers ordered by their billing city")>]
+    member _.ByBillingCity() =
+        readAll (plasm { for c in tableOf<Customer> do orderBy (c.Billing |> Option.map (fun b -> b.City)) })
+
+    [<StepDefinition("^the Customers are read in the order (.*)$")>]
+    member _.InOrder(text: string) =
+        let names = text.Replace(" and ", ", ").Split(", ") |> List.ofArray
+        equal names (read () |> List.map (fun c -> c.Name)) "customers"
+
+    [<StepDefinition("I select the billing cities of the Customers, ordered by name")>]
+    member _.BillingCities() =
+        task {
+            let! r = repo().All(plasm { for c in tableOf<Customer> do orderBy c.Name; select (c.Billing |> Option.map (fun b -> b.City)) })
+            w.Set("valueBillingCities", ok r)
+        }
+        |> unit
+
+    [<StepDefinition("the billing cities are none, \"(.*)\" and \"(.*)\"")>]
+    member _.BillingCitiesAre(a: string, b: string) =
+        equal [ None; Some a; Some b ] (w.Get<string option list> "valueBillingCities") "billing cities"
+
+    [<StepDefinition("I read the Customers billed in \"(.*)\"")>]
+    member _.BilledIn(city: string) =
+        readAll (plasm { for c in tableOf<Customer> do where (c.Billing |> Option.exists (fun b -> b.City = city)); orderBy c.Name })
+
+    [<StepDefinition("I read the Customers billed nowhere but \"(.*)\"")>]
+    member _.BilledOnlyIn(city: string) =
+        readAll (plasm { for c in tableOf<Customer> do where (c.Billing |> Option.forall (fun b -> b.City = city)); orderBy c.Name })
+
+    [<StepDefinition("I read the Customers with a billing address in \"(.*)\", through Value")>]
+    member _.ThroughValue(city: string) =
+        readAll (plasm { for c in tableOf<Customer> do where (c.Billing.IsSome && c.Billing.Value.City = city); orderBy c.Name })
+
+    [<StepDefinition("I read the Customers whose name, passed through id, is \"(.*)\"")>]
+    member _.ThroughId(name: string) =
+        readAll (plasm { for c in tableOf<Customer> do where (id c.Name = name) })
+
+    [<StepDefinition("the read is refused, naming (\\S+) in the reason")>]
+    member _.NamedInReason(name: string) =
+        match w.Get<Result<Customer list, DbError>> "valueRead" with
+        | Error(DbError.Translation(TranslationError.UnsupportedExpression(_, reason))) -> check (reason.Contains name) reason
+        | other -> failwithf "expected an unsupported expression, got %A" other
+
     [<StepDefinition("I select the cities of the Customers' addresses, ordered by city")>]
     member _.Cities() =
         task {
