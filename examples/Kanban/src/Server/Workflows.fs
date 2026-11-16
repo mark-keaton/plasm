@@ -18,6 +18,12 @@ type Refusal =
     /// The caller's copy of the card is older than the stored one.
     | StaleCopy
 
+/// The title of one of a board's newest cards.
+type NewestTitle = NewestTitle of Title
+
+/// The title of one of a board's blocked cards.
+type BlockedTitle = BlockedTitle of Title
+
 /// Built and planned once; a call only binds its arguments. Every one is a
 /// value, so the application can check them all before it serves anything.
 module Queries =
@@ -28,8 +34,10 @@ module Queries =
     /// needs of them, twice. `referring<Card> b` is the cards that hold this
     /// board's id: a Card has one field of type BoardId, so nothing more
     /// needs saying. The query's type says what it read:
-    /// (Board * Title list * Title list). Each `including` is one more
-    /// command for all the boards.
+    /// (Board * NewestTitle list * BlockedTitle list). Both lists hold
+    /// titles, so each has a type of its own: written in the other order,
+    /// the query no longer fits the code that reads it. Each `including` is
+    /// one more command for all the boards.
     let boardsWithCards =
         plasm {
             for b in tableOf<Board> do
@@ -40,7 +48,7 @@ module Queries =
                         for c in referring<Card> b do
                             orderByDescending c.Created
                             take 3
-                            select c.Title
+                            select (NewestTitle c.Title)
                     }
                 )
 
@@ -49,7 +57,7 @@ module Queries =
                         for c in referring<Card> b do
                             where c.Blocked.IsSome
                             orderBy (c.Blocked |> Option.map (fun blocker -> blocker.Since))
-                            select c.Title
+                            select (BlockedTitle c.Title)
                     }
                 )
         }
