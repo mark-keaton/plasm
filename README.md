@@ -109,10 +109,13 @@ let withProduct (product: ProductId) =
 // Built and planned once; each call binds its argument.
 let orderById = Query.prepare (fun (id: Arg<OrderId>) -> plasm { for o in tableOf<Order> do where (o.Id = id.Value) })
 
-// Payments are their own aggregate: read for a page of orders by a second query.
-let succeededPaymentsOf =
-    Query.prepare (fun (orders: Arg<OrderId list>) ->
-        plasm { for p in tableOf<Payment> do where (List.contains p.OrderId orders.Value && p.Status = Succeeded) })
+// Payments are their own aggregate: each order with its succeeded payments,
+// read as (Order * Payment list) with one more command for the whole page.
+let withSucceededPayments (q: Query<Order>) =
+    plasm {
+        for o in q do
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded); orderBy p.CreatedAt })
+    }
 
 // Writes: read what the decision needs, let the domain decide, write what it decided.
 type Refusal =
@@ -181,8 +184,8 @@ part:
 | Removed | Instead |
 |---|---|
 | `Assoc<'T>`, `NotLoaded`/`Loaded`, `hasMany`/`hasOne`/`belongsTo`/`manyToMany`, the `Assoc` and `Rel` modules | owned and linked records as plain fields, always loaded; typed ids as references; `exists (plasm { ... })`, `List.exists`/`forall` and `Option.exists`/`IsSome`/`IsNone` in queries |
-| `preload`, `replacePreload`, `repo.Preload` | an aggregate loads whole; other aggregates are read by a join or a second query |
-| `limitPerParent` | the latest few rows per parent is a report: hand-written SQL |
+| `preload`, `replacePreload`, `repo.Preload` | an aggregate loads whole; another aggregate's records come with a query ending in `including (plasm { ... })`, its result typed `Order * Payment list` |
+| `limitPerParent` | `take` inside `including`, which applies per record |
 | `Changeset` (now internal), `putChildren`/`replaceChildren`/`putLinks`/`addLinks`/`removeLinks`, `ReplaceScope`, `OnReplace` | `Tx.update (original, changed)`: what a record owns or links is written by difference |
 | `Changeset.validate*`, `cast`, `castWith`, `set`, `clear`, `forKey`, `getField`, `tryGetChange`, `addError` | the domain's constructors; constraints come back as field errors |
 | the pipeline `Query.where`/`select`/... functions | `plasm { }` |
@@ -224,7 +227,7 @@ is a session to send a submission at a time.
 ## Learn Plasm: the koans
 
 `koans/` is an interactive course in the style of Ruby Koans: 22 lessons and
-225 koans, each a small exercise with a blank (`__`) to fill in, run against a
+226 koans, each a small exercise with a blank (`__`) to fill in, run against a
 real PostgreSQL database inside a sandbox, so every koan starts from the same
 data. It teaches the one style. It starts with no Plasm at all (the F# the
 course uses), then what a repo is, the shop's data and the promises Plasm

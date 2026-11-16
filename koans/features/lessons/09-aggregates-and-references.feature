@@ -1,7 +1,7 @@
 # Lesson 09 of the Plasm Koans. Each row is one koan: what the learner discovers,
 # and the acceptance scenario of Plasm it teaches (feature: scenario).
 Feature: About aggregates and references
-  An aggregate is a record with the records it owns, read whole: an Order is always read with its lines, in one more command for any number of orders. Other aggregates are referred to by id and reached with a query, a join, an exists, or a second query.
+  An aggregate is a record with the records it owns, read whole: an Order is always read with its lines, in one more command for any number of orders. Other aggregates are referred to by id and reached with a query, a join, an exists, or including.
 
   Prerequisites: lesson 08.
 
@@ -27,4 +27,5 @@ Feature: About aggregates and references
       | Every line passes, as F# reads it                 | List.forall over o.Lines keeps an order with no lines, as F# would                                         | linked-collections: Cards whose every tag passes, as F# reads a list  |
       | Orders with a succeeded payment                   | exists (an inner query over tableOf<Payment>) reaches another aggregate inside a where                          | query-exists: Orders with a succeeded payment                         |
       | Orders without a succeeded payment                | not (exists ...) keeps the orders no matching payment refers to                                            | query-exists: Orders without a succeeded payment                      |
-      | Another aggregate's records, for a page of orders | the payments of many orders come from one more query with List.contains, grouped in F#                     | elegance: Larger parent sets do not cause N+1 behavior                |
+      | Each order with its payments                      | including pairs each order with its payments, read in one more command for any number of orders             | including: Each Order with its Payments                               |
+      | A tie written once serves exists and including     | a [<ReflectedDefinition>] function of the order is used in exists and narrowed inside including; take 1 is per order | including: A relationship written once as a reflected function serves including and exists |

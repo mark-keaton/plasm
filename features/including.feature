@@ -1,6 +1,7 @@
 # Executable acceptance specification (Reqnroll): reading other aggregates'
 # records with a query, the result type saying what was read. Written before
 # the implementation.
+@implemented
 Feature: A query can read each record with the records another query finds for it
   As an F# application developer
   I want to read each Order with its Payments in one query

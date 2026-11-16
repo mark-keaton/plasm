@@ -103,7 +103,7 @@ describe the one style; "Reworded" means only words changed.
 | ~~Unloaded and empty relationships are distinguishable~~ | Removed | | | Removed (one style, steps a1 and a2): with `Assoc` gone, nothing is ever unloaded; an owned list is a plain list. |
 | ~~Nested loads compose~~ | Removed | | | Removed (one style, steps a1 and a2): there is no `preload` to nest; owned lists of owned items are loaded at every level without being asked for. |
 | ~~A child filter does not implicitly filter parents~~ | Removed | | | Removed (one style, steps a1 and a2): an owned list is always loaded whole, so there is no child filter. |
-| ~~Per-parent limits preserve their stated meaning~~ | Removed | | | Removed (one style, steps a1 and a2): `limitPerParent` was dropped; the latest few rows per parent is a report, written in SQL (raw-sql.feature). |
+| ~~Per-parent limits preserve their stated meaning~~ | Removed | | | Removed (one style, steps a1 and a2): `limitPerParent` was dropped. Restored 2026-11-15 in another form: `take` inside `including` applies per record (including.feature: The newest Payment of each Order). |
 | ~~Unsupported loading semantics are rejected~~ | Removed | | | Removed (one style, steps a1 and a2): it rejected `take` in a load query; there are no load queries. |
 | ~~Conflicting relationship customizations are explicit~~ | Removed | | | Removed (one style, steps a1 and a2): was the one deliberately changed scenario (`LoadConflict`, `replacePreload`); with no customisable loads there is nothing to conflict. |
 | ~~Loading onto existing values preserves the originals~~ | Removed | | | Removed (one style, steps a1 and a2): `repo.Preload` was removed; other aggregates are read by a query of their own. |

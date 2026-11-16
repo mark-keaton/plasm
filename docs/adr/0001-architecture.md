@@ -1,7 +1,27 @@
 # ADR 0001: Ecto's architecture, expressed in F#
 
-- Status: accepted (first delivery); amended 2026-11-14 (strict design, one style) and 2026-11-15 (a record says how it is stored)
+- Status: accepted (first delivery); amended 2026-11-14 (strict design, one style) and 2026-11-15 (a record says how it is stored; `including`)
 - Date: 2026-11-12
+
+## Amendment, 2026-11-15: another aggregate's records, in the result's type
+
+At the user's request a query can end in `including (plasm { ... })`. Each
+record comes paired with the list the inner query finds for it, as
+`Projection<Order * Payment list>`. The record stays whole (what it owns is
+loaded as always) and no field records whether something was loaded: the
+result's type is the proof, so code given a query without `including` does not
+compile where the list is needed. The inner query is tied to the outer record
+by one equality between an inner and an outer column; anything else that reads
+the outer record is refused, naming the expression. Its conditions, order and
+`take` apply per outer record (`ROW_NUMBER() OVER (PARTITION BY ...)`). Plasm
+reads it with one more command per batch of outer values (`= ANY(@values)`)
+and groups the rows. `including` is terminal, like `select`, so a second
+`including`, a `select` after it and `repo.Count` over it do not compile. A
+record owned or linked by another is refused (it comes with its owner), and so
+is `including` after a join. A relationship can be written once as a
+`[<ReflectedDefinition>]` function of the outer record and used in `exists`
+and `including` alike. There is no `withOne`: `leftJoin` already reads a
+single related record.
 
 ## Amendment, 2026-11-15: a record says how it is stored
 
@@ -79,6 +99,8 @@ record says it itself; see the amendment above):
   the `Rel` module (`Rel.any`, `Rel.all`, `Rel.exists`).
 - `limitPerParent` (top-N children per parent) was dropped on purpose: the
   latest few rows per parent is a report, written as hand-written SQL.
+  (Restored 2026-11-15 in another form: `take` inside `including`; see the
+  amendment of that date.)
 
 **Writing an aggregate.** `Tx.update (original, changed)` compares the record
 read with the record the domain decided on. It writes only the columns that

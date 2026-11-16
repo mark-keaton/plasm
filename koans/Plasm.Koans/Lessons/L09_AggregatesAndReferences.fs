@@ -7,15 +7,14 @@ open Plasm.Koans.Shop
 
 let private byId (orders: Order list) (id: int64) = orders |> List.find (fun o -> o.Id = OrderId id)
 
-/// The payments of the orders whose ids it is given: one prepared query
-/// (lesson 19 goes deeper), whatever the number of orders.
-let private paymentsOf =
-    Query.prepare (fun (ids: Arg<OrderId list>) ->
-        plasm {
-            for p in tableOf<Payment> do
-                where (List.contains p.OrderId ids.Value)
-                orderBy p.Id
-        })
+/// An order's payments: the tie between the two aggregates, written once.
+/// [<ReflectedDefinition>] lets Plasm read the function as part of a query.
+[<ReflectedDefinition>]
+let paymentsOf (o: Order) =
+    plasm {
+        for p in tableOf<Payment> do
+            where (p.OrderId = o.Id)
+    }
 
 let lesson =
     Lesson.make
@@ -220,17 +219,44 @@ let lesson =
           )
 
           Koan.Task(
-              "Another aggregate's records, for a page of orders",
+              "Each order with its payments",
               fun repo ->
                   task {
-                      // To show each order with its payments, read the orders, then the
-                      // payments of all of them with one more query (paymentsOf, at the
-                      // top of this lesson), and group them in F#.
-                      let! orders = repo.All(plasm { for o in tableOf<Order> do orderBy o.Id })
-                      let ids = ok orders |> List.map (fun o -> o.Id)
-                      let! payments = repo.All(paymentsOf ids)
-                      let byOrder = ok payments |> List.countBy (fun p -> p.OrderId)
-                      byOrder |> shouldBe __
+                      // A query ending in including reads each order with the list an
+                      // inner query finds for it. The inner query names the tie,
+                      // p.OrderId = o.Id; the result's type, (Order * Payment list),
+                      // says what was read. Plasm reads the payments of every order in
+                      // one more command and pairs them up.
+                      let withPayments =
+                          plasm {
+                              for o in tableOf<Order> do
+                                  orderBy o.Id
+                                  including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id); orderBy p.Id })
+                          }
+
+                      let! rows = repo.All withPayments
+                      ok rows |> List.map (fun (o, payments) -> o.Id, payments.Length) |> shouldBe __
                       sqlSent().Length |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "A tie written once serves exists and including",
+              fun repo ->
+                  task {
+                      // paymentsOf (top of this lesson) is the tie, written once. It
+                      // works inside exists, and as the start of an inner query that
+                      // narrows it further. Inside including, orderBy and take apply to
+                      // each order's payments: here, the newest one of each.
+                      let paidOrders =
+                          plasm {
+                              for o in tableOf<Order> do
+                                  where (exists (paymentsOf o))
+                                  orderBy o.Id
+                                  including (plasm { for p in paymentsOf o do orderByDescending p.CreatedAt; take 1 })
+                          }
+
+                      let! rows = repo.All paidOrders
+                      ok rows |> List.map (fun (o, newest) -> o.Id, newest |> List.map (fun p -> p.Status)) |> shouldBe __
                   }
           ) ]

@@ -55,7 +55,7 @@ F# types and semantics throughout.
   it, one command per list per batch of owners (`= ANY(@keys)`), at every
   level. There is no cartesian explosion to avoid and no `AsSplitQuery` to
   remember. Other aggregates are referred to by id and read by a join,
-  `exists`, or a second query. In Plasm's own benchmark a page of 1,000 orders
+  `exists`, or `including` (each record paired with a list, in the result's type). In Plasm's own benchmark a page of 1,000 orders
   with their lines and payments took 14.5 ms against EF Core's 21 ms (split
   query) and 66 ms (single query) ([benchmarks.md](benchmarks.md)).
 - **No hidden queries.** Owned and linked fields are plain values, always
@@ -98,7 +98,7 @@ In rough order of importance for teams leaving EF Core:
    (same-row) types, JSON columns, composite keys, array columns, inheritance,
    or keyless and view entities. A join table cannot carry columns of its own.
 5. **Querying.** No set operations or `distinct`, no nested collections
-   projected into DTOs, no top-N per parent (hand-written SQL), no streaming, a
+   projected into DTOs, no streaming, a
    fixed set of translated functions, and raw SQL that cannot be composed
    further.
 6. **Writing.** Only what an aggregate owns or links is written with it;

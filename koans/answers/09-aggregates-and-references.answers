@@ -25,6 +25,8 @@ Some(CustomerId 2L)
 [ OrderId 1L; OrderId 3L ]
 # Orders without a succeeded payment
 [ OrderId 2L; OrderId 4L ]
-# Another aggregate's records, for a page of orders
-[ (OrderId 1L, 1); (OrderId 3L, 2) ]
+# Each order with its payments
+[ (OrderId 1L, 1); (OrderId 2L, 0); (OrderId 3L, 2); (OrderId 4L, 0) ]
 3
+# A tie written once serves exists and including
+[ (OrderId 1L, [ Succeeded ]); (OrderId 3L, [ Succeeded ]) ]
