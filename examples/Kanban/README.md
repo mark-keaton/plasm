@@ -105,10 +105,11 @@ dotnet test --project tests/Kanban.Specs
   in one transaction, and nothing is stored if the slug is taken.
 - **Asking for another aggregate.** The list of boards shows each board's
   three newest cards. Cards are not part of a board, so the query asks for
-  them: it ends in `including (plasm { for c in cardsOf b do ... take 3 })`
-  and its result is `(Board * Card list)`, which a query that did not ask
-  could not be mistaken for. `cardsOf` writes the tie between the two tables
-  once. Listing sends five queries however many boards and cards there are.
+  them: it ends in `including (plasm { for c in cardsOf b do ... take 3; select c.Title })`
+  and its result is `(Board * Title list)`, which a query that did not ask
+  could not be mistaken for. The inner query ends in `select c.Title`, so
+  only titles are read. `cardsOf` writes the tie between the two tables
+  once. Listing sends three queries however many boards and cards there are.
 - **A bulk write.** "Send all back" is one `UPDATE` over a board's cards in
   progress (`Bulk.update` with `{ c with Stage = Backlog }`), run as a step of
   a transaction. It runs no per-card decision, and `Workflows.sendAllBack`
@@ -138,10 +139,6 @@ There are still two shapes of a card: the domain's `Card` and the `CardView`
 the browser is sent (`Api.fs`). The browser's input is never trusted as a
 domain value, and what it is sent is a view; that boundary is the
 application's, and Plasm has no part in it.
-
-The newest cards in the list of boards are read whole, with their comments
-and labels, although only their titles are shown: an inner query of
-`including` cannot yet end in `select`.
 
 Authorisation: anyone signed in can change any board. Signing in has no rate
 limit or lockout, and nothing here says where the cookie's keys are kept in a

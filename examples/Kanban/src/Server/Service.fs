@@ -78,7 +78,7 @@ module private View =
 
     let cards (cards: Card list) : CardView[] = cards |> List.map card |> Array.ofList
 
-    let summary (counts: (BoardId * StageKind * int64) list) (row: Board, newest: Card list) : BoardSummary =
+    let summary (counts: (BoardId * StageKind * int64) list) (row: Board, newest: Title list) : BoardSummary =
         let count kind =
             counts
             |> List.tryPick (fun (board, k, n) -> if board = row.Id && k = kind then Some(int n) else None)
@@ -90,7 +90,7 @@ module private View =
           Backlog = count StageKind.Backlog
           Doing = count StageKind.Doing
           Done = count StageKind.Done
-          Newest = [| for card in newest -> card.Title.Value |] }
+          Newest = [| for title in newest -> title.Value |] }
 
     /// "WipLimit" (the domain's field, which Plasm names) as the client's "wipLimit".
     let fieldError (e: FieldError) =
@@ -235,7 +235,7 @@ let create (deps: Deps) (session: Session) (ct: CancellationToken) : IKanbanApi 
 
                     task {
                         let! outcome = transact deps ct (createBoard board cards)
-                        let newest = cards |> List.rev |> List.truncate 3
+                        let newest = cards |> List.rev |> List.truncate 3 |> List.map (fun card -> card.Title)
 
                         return
                             outcome

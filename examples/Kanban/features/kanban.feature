@@ -176,13 +176,13 @@ Feature: A kanban board with an F# domain at its centre
       Then the board "gemini" is listed with the newest cards ""
       And the board "apollo" is listed with the newest cards "First"
 
-    Scenario: However many boards and cards, listing sends the same five queries
+    Scenario: However many boards and cards, listing sends the same three queries
       Given the board "gemini" allows 2 cards in progress
       And the card "First" on "apollo"
       And the card "Second" on "apollo"
       And the card "Third" on "gemini"
       When the boards are listed
-      Then the database was sent 5 SELECT
+      Then the database was sent 3 SELECT
 
     Scenario: An unknown board is not found
       When the board "voyager" is read

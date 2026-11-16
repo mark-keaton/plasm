@@ -26,9 +26,9 @@ module Queries =
     [<ReflectedDefinition>]
     let cardsOf (b: Board) = plasm { for c in tableOf<Card> do where (c.Board = b.Id) }
 
-    /// Every board with the three cards created last on it, newest first.
-    /// The cards are another aggregate, so the query asks for them, and its
-    /// type says it did: (Board * Card list).
+    /// Every board with the titles of the three cards created last on it,
+    /// newest first. The cards are another aggregate, so the query asks for
+    /// what it needs of them, and its type says it did: (Board * Title list).
     let boardsWithNewest =
         plasm {
             for b in tableOf<Board> do
@@ -39,6 +39,7 @@ module Queries =
                         for c in cardsOf b do
                             orderByDescending c.Created
                             take 3
+                            select c.Title
                     }
                 )
         }
