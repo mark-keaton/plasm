@@ -108,6 +108,17 @@ module Queries =
                     take size.Value
             })
 
+    /// A board's cards with something left to do, oldest first. The checklist
+    /// is one JSON document per card; the condition over its items runs in the
+    /// database.
+    let unfinishedOn =
+        Query.prepare (fun (board: Arg<BoardId>) ->
+            plasm {
+                for c in tableOf<Card> do
+                    where (c.Board = board.Value && (c.Checklist |> List.exists (fun item -> not item.Done)))
+                    orderBy c.Created
+            })
+
     /// A board's blocked cards, the longest blocked first. `Blocked` is a
     /// value in the card's row, so its parts are columns to filter and order by.
     let blockedOn =

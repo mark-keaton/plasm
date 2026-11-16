@@ -148,6 +148,31 @@ type KanbanSteps(w: World, d: Driver) =
             equal None card.Blocked "the card's blocker"
         }
 
+    [<StepDefinition("{string} is added to the checklist of {string}")>]
+    member _.AddItem(text: string, title: string) : Task =
+        task {
+            let! ref = reference title
+            return! call (w.Api.addItem { Ref = ref; Text = text })
+        }
+
+    [<StepDefinition("{string} is ticked on {string}")>]
+    member _.Tick(text: string, title: string) : Task =
+        task {
+            let! ref = reference title
+            return! call (w.Api.tick { Ref = ref; Text = text })
+        }
+
+    [<When("the cards on {string} with something left to do are read")>]
+    member _.ReadUnfinished(slug: string) : Task = call (w.Api.unfinished slug)
+
+    [<Then("the checklist of {string} is {string}")>]
+    member _.ThenChecklist(title: string, expected: string) : Task =
+        task {
+            let! card = current title
+            let shown = [ for item in card.Checklist -> (if item.Done then "[x] " else "[ ] ") + item.Text ]
+            equal (names expected) shown "the card's checklist"
+        }
+
     [<StepDefinition("{string} is sent back")>]
     member _.SendBack(title: string) : Task =
         task {

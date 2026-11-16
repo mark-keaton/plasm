@@ -129,6 +129,10 @@ type Stage =
 /// key: it is a value, stored in the card's own row.
 type Blocker = { Reason: string; Since: DateTimeOffset }
 
+/// One thing to do on a card. It has no table either: a card's checklist is
+/// one document in the card's row.
+type ChecklistItem = { Text: string; Done: bool }
+
 [<Table "boards">]
 type Board =
     { Id: BoardId
@@ -162,6 +166,9 @@ type Card =
       Stage: Stage
       /// A card is blocked or it is not: there is no reason without a time.
       Blocked: Blocker option
+      /// What is to do on the card, in the order it was written down.
+      [<Json>]
+      Checklist: ChecklistItem list
       [<OrderedBy(nameof the<Comment>.At)>]
       Comments: Comment list
       [<JoinTable("card_labels", "card_id", "label_id"); OrderedBy(nameof the<Tag>.Name)>]
@@ -212,6 +219,10 @@ type DomainError =
     | DropNeedsReason
     | EmptyComment
     | TooManyLabels of most: int
+    | EmptyItem
+    | NoSuchItem of text: string
+    /// A card does not ship while its checklist has items left.
+    | ItemsLeft of count: int
     | BlockNeedsReason
     | AlreadyBlocked of reason: string
     | NotBlocked
@@ -227,6 +238,7 @@ module Card =
           Title = title
           Stage = Backlog
           Blocked = None
+          Checklist = []
           Comments = []
           Labels = []
           Created = now
@@ -240,6 +252,23 @@ module Card =
         | Done _ -> Error CardClosed
         | Backlog when inProgress >= board.WipLimit.Value -> Error(WipLimitReached board.WipLimit.Value)
         | Backlog -> Ok { card with Stage = Doing(assignee, now) }
+
+    /// The card with one more thing to do, after the ones it has.
+    let addItem (text: string) (card: Card) : Result<Card, DomainError> =
+        match card.Stage with
+        | Done _ -> Error CardClosed
+        | _ when String.IsNullOrWhiteSpace text -> Error EmptyItem
+        | _ -> Ok { card with Checklist = card.Checklist @ [ { Text = text.Trim(); Done = false } ] }
+
+    /// Ticks the item with this text, or unticks it if it is ticked.
+    let tick (text: string) (card: Card) : Result<Card, DomainError> =
+        match card.Stage with
+        | Done _ -> Error CardClosed
+        | _ when card.Checklist |> List.forall (fun item -> item.Text <> text) -> Error(NoSuchItem text)
+        | _ ->
+            Ok
+                { card with
+                    Checklist = [ for item in card.Checklist -> if item.Text = text then { item with Done = not item.Done } else item ] }
 
     /// Says what keeps a card from moving.
     let block (reason: string) (now: DateTimeOffset) (card: Card) : Result<Card, DomainError> =
@@ -255,9 +284,11 @@ module Card =
         | None -> Error NotBlocked
 
     /// Finishes a card. Only work in progress can ship, and not while it is
-    /// blocked; a card can be dropped from the backlog too, but never without
+    /// blocked or has checklist items left; a card can be dropped from the backlog too, but never without
     /// a reason.
     let finish (resolution: Resolution) (now: DateTimeOffset) (card: Card) : Result<Card, DomainError> =
+        let left = card.Checklist |> List.filter (fun item -> not item.Done) |> List.length
+
         match card.Stage, resolution, card.Blocked with
         | Done _, _, _ -> Error CardClosed
         | _, Dropped reason, _ when String.IsNullOrWhiteSpace reason -> Error DropNeedsReason
@@ -265,6 +296,7 @@ module Card =
         // Whatever blocked a dropped card no longer matters.
         | (Backlog | Doing _), Dropped reason, _ -> Ok { card with Stage = Done(Dropped(reason.Trim()), now); Blocked = None }
         | Doing _, Shipped, Some blocker -> Error(CardBlocked blocker.Reason)
+        | Doing _, Shipped, None when left > 0 -> Error(ItemsLeft left)
         | Doing _, Shipped, None -> Ok { card with Stage = Done(Shipped, now) }
 
     /// Puts work in progress back in the backlog.
@@ -328,6 +360,10 @@ module DomainError =
         | DropNeedsReason -> "Say why the card is dropped."
         | EmptyComment -> "A comment cannot be empty."
         | TooManyLabels most -> $"A card carries at most {most} labels."
+        | EmptyItem -> "A checklist item needs some text."
+        | NoSuchItem text -> $"This card has no item called {text}."
+        | ItemsLeft 1 -> "This card has 1 item left to do."
+        | ItemsLeft count -> $"This card has {count} items left to do."
         | BlockNeedsReason -> "Say what blocks the card."
         | AlreadyBlocked reason -> $"This card is already blocked: {reason}."
         | NotBlocked -> "This card is not blocked."

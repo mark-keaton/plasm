@@ -76,6 +76,13 @@ dotnet test --project tests/Kanban.Specs
   `blocked_since`, both empty when the card is not blocked, and the DDL it
   prints includes a constraint that there is no reason without a time. A
   board's blocked cards are a query over those columns.
+- **A document in the card's row.** A card's checklist is a
+  `ChecklistItem list` marked `[<Json>]`: one `jsonb` column, written whole
+  when the list changes. "Cards with something left to do" is
+  `List.exists (fun item -> not item.Done)` over it, which the database
+  runs. A stored document that does not fit the record is an error naming
+  the place, never repaired, so changing `ChecklistItem` needs a migration
+  of the stored documents first.
 - **Queries in the domain's words.** `Card.Assignee` is an ordinary member of
   the domain's record, a `match` on the stage. Marked `[<ReflectedDefinition>]`,
   it can be used in a query (`where (c.Assignee = Some person.Value)`), where

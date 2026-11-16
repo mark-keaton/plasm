@@ -51,6 +51,7 @@ type Drafts =
       Title: string
       Reason: string
       Blocker: string
+      Item: string
       Labels: string }
 
 type CardAction =
@@ -61,6 +62,8 @@ type CardAction =
     | Drop
     | Block
     | Unblock
+    | AddItem
+    | Tick of text: string
     | Rename
     | Comment
     | Relabel
@@ -120,6 +123,7 @@ let private noDrafts =
       Title = ""
       Reason = ""
       Blocker = ""
+      Item = ""
       Labels = "" }
 
 let private emptyForm =
@@ -216,6 +220,8 @@ let private request (action: CardAction) (card: CardView) (model: Model) : Async
     | Drop -> api.drop { Ref = ref; Reason = model.Drafts.Reason }
     | Block -> api.block { Ref = ref; Reason = model.Drafts.Blocker }
     | Unblock -> api.unblock ref
+    | AddItem -> api.addItem { Ref = ref; Text = model.Drafts.Item }
+    | Tick text -> api.tick { Ref = ref; Text = text }
     | Rename -> api.rename { Ref = ref; Title = model.Drafts.Title }
     | Comment -> api.comment { Card = card.Id; Body = model.Drafts.Comment }
     | Relabel -> api.label { Ref = ref; Labels = separated model.Drafts.Labels }
@@ -474,6 +480,21 @@ let private viewCard (model: Model) dispatch (card: CardView) =
                                           prop.text label ] ] ]
                 status
                 blocked
+                if card.Checklist.Length > 0 then
+                    Html.ul
+                        [ prop.className "checklist"
+                          prop.children
+                              [ for item in card.Checklist ->
+                                    Html.li
+                                        [ prop.key item.Text
+                                          prop.children
+                                              [ Html.label
+                                                    [ Html.input
+                                                          [ prop.type'.checkbox
+                                                            prop.isChecked item.Done
+                                                            prop.disabled (not signedIn)
+                                                            prop.onChange (fun (_: bool) -> dispatch (Act(Tick item.Text, card))) ]
+                                                      Html.span item.Text ] ] ] ] ]
                 if signedIn then
                     Html.div [ prop.className "actions"; prop.children actions ]
                 if isOpen then
@@ -508,6 +529,12 @@ let private viewCard (model: Model) dispatch (card: CardView) =
                                                 button "Rename" "plain" true (act Rename) ] ]
 
                                     problem "title" model
+
+                                    Html.div
+                                        [ prop.className "row"
+                                          prop.children
+                                              [ textInput "Something to do" model.Drafts.Item (draft (fun v d -> { d with Item = v })) (act AddItem)
+                                                button "Add item" "plain" true (act AddItem) ] ]
 
                                     Html.div
                                         [ prop.className "row"

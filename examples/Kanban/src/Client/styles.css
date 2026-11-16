@@ -61,6 +61,8 @@ h3 { font-size: 15px; margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 
 .quiet, .counts, .fact { color: var(--quiet); }
 .counts { font-weight: 400; font-size: 13px; font-variant-numeric: tabular-nums; }
+.checklist { list-style: none; margin: 6px 0; padding: 0; font-size: 14px; }
+.checklist label { display: flex; gap: 6px; align-items: baseline; }
 .fact.blocked { color: var(--danger); }
 .newest { display: block; color: var(--quiet); font-weight: 400; font-size: 13px; }
 .fact { margin: 6px 0 0; font-size: 13px; }

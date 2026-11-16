@@ -73,6 +73,7 @@ module private View =
           Title = card.Title.Value
           Stage = stage card.Stage
           Blocked = card.Blocked |> Option.map (fun blocker -> { Reason = blocker.Reason; Since = blocker.Since })
+          Checklist = [| for item in card.Checklist -> { Text = item.Text; Done = item.Done } |]
           Version = card.Version
           Labels = [| for tag in card.Labels -> tag.Name.Value |]
           Comments = card.Comments |> List.map comment |> Array.ofList }
@@ -294,6 +295,18 @@ let create (deps: Deps) (session: Session) (ct: CancellationToken) : IKanbanApi 
         fun slug ->
             task {
                 let! board = readBoard slug (fun board -> Queries.blockedOn board)
+                return board |> Result.map (fun view -> view.Cards)
+            }
+            |> Async.AwaitTask
+
+      addItem = fun input -> change input.Ref (fun _ _ card -> Card.addItem input.Text card)
+
+      tick = fun input -> change input.Ref (fun _ _ card -> Card.tick input.Text card)
+
+      unfinished =
+        fun slug ->
+            task {
+                let! board = readBoard slug (fun board -> Queries.unfinishedOn board)
                 return board |> Result.map (fun view -> view.Cards)
             }
             |> Async.AwaitTask

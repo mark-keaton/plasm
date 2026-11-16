@@ -29,11 +29,14 @@ type CommentView =
 /// What blocks a card, and since when.
 type BlockedView = { Reason: string; Since: DateTimeOffset }
 
+type ChecklistItemView = { Text: string; Done: bool }
+
 type CardView =
     { Id: Guid
       Title: string
       Stage: StageView
       Blocked: BlockedView option
+      Checklist: ChecklistItemView[]
       /// Sent back with every change, so a change based on an old copy is refused.
       Version: int
       Labels: string[]
@@ -82,6 +85,8 @@ type CardRef = { Card: Guid; Version: int }
 
 type DropCard = { Ref: CardRef; Reason: string }
 type BlockCard = { Ref: CardRef; Reason: string }
+/// An item of a card's checklist, by its text.
+type ChecklistChange = { Ref: CardRef; Text: string }
 type RenameCard = { Ref: CardRef; Title: string }
 
 type NewComment = { Card: Guid; Body: string }
@@ -123,6 +128,11 @@ type IKanbanApi =
       rename: RenameCard -> Async<Result<CardView, ApiError>>
       block: BlockCard -> Async<Result<CardView, ApiError>>
       unblock: CardRef -> Async<Result<CardView, ApiError>>
+      addItem: ChecklistChange -> Async<Result<CardView, ApiError>>
+      /// Ticks an item, or unticks one that is ticked.
+      tick: ChecklistChange -> Async<Result<CardView, ApiError>>
+      /// A board's cards with an item left to do, oldest first.
+      unfinished: string -> Async<Result<CardView[], ApiError>>
       /// A board's blocked cards, the longest blocked first.
       blocked: string -> Async<Result<CardView[], ApiError>>
       comment: NewComment -> Async<Result<CardView, ApiError>>

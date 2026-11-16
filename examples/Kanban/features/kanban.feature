@@ -204,6 +204,52 @@ Feature: A kanban board with an F# domain at its centre
       When the blocked cards on "apollo" are read
       Then the cards found are "Third, Second"
 
+  Rule: A card has a checklist
+
+    Scenario: Items are kept in the order they were added
+      Given the card "Write the spec" on "apollo"
+      When "Draft" is added to the checklist of "Write the spec"
+      And "Review" is added to the checklist of "Write the spec"
+      Then the checklist of "Write the spec" is "[ ] Draft, [ ] Review"
+
+    Scenario: Ticking an item keeps the others as they were
+      Given the card "Write the spec" on "apollo"
+      And "Draft" is added to the checklist of "Write the spec"
+      And "Review" is added to the checklist of "Write the spec"
+      When "Draft" is ticked on "Write the spec"
+      Then the checklist of "Write the spec" is "[x] Draft, [ ] Review"
+
+    Scenario: An item needs some text
+      Given the card "Write the spec" on "apollo"
+      When "  " is added to the checklist of "Write the spec"
+      Then the request is refused: "A checklist item needs some text."
+
+    Scenario: Only an item on the card is ticked
+      Given the card "Write the spec" on "apollo"
+      And "Draft" is added to the checklist of "Write the spec"
+      When "Publish" is ticked on "Write the spec"
+      Then the request is refused: "This card has no item called Publish."
+
+    Scenario: A card with something left to do does not ship
+      Given Ada is working on "Write the spec" on "apollo"
+      And "Draft" is added to the checklist of "Write the spec"
+      And "Review" is added to the checklist of "Write the spec"
+      And "Draft" is ticked on "Write the spec"
+      When "Write the spec" is shipped
+      Then the request is refused: "This card has 1 item left to do."
+
+    Scenario: A board's cards with something left to do
+      Given the card "First" on "apollo"
+      And the card "Second" on "apollo"
+      And the card "Third" on "apollo"
+      And "Draft" is added to the checklist of "First"
+      And "Draft" is ticked on "First"
+      And "Draft" is added to the checklist of "Second"
+      And "Review" is added to the checklist of "Second"
+      And "Draft" is ticked on "Second"
+      When the cards on "apollo" with something left to do are read
+      Then the cards found are "Second"
+
   Rule: Boards are summarised by stage
 
     Scenario: The list of boards counts each board's cards by stage
