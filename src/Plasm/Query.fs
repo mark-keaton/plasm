@@ -101,7 +101,10 @@ type internal QueryDef =
       Template: QueryDef option
       Args: obj[]
       /// Requests that cannot be honoured, reported when the query is planned.
-      Problems: string list }
+      Problems: string list
+      /// `including (plasm { ... })`: the inner query, a lambda over the root
+      /// record (including.feature).
+      Including: Expr option }
 
     member d.Paged =
         d.Limit.IsSome || d.Offset.IsSome || d.LimitArg.IsSome || d.OffsetArg.IsSome
@@ -119,7 +122,8 @@ type internal QueryDef =
           OffsetArg = None
           Template = None
           Args = [||]
-          Problems = [] }
+          Problems = []
+          Including = None }
 
 /// Something that can describe a query for display: a `Repo`.
 type internal IQueryDescriber =
@@ -373,6 +377,15 @@ type QueryBuilder() =
             _result: 'T -> 'U option -> 'R
         ) : Query<'R> =
         Query<'R>(QueryOps.join { outer.Def with Template = None } LeftJoin typeof<'U> outerKey innerKey)
+
+    /// Reads each record with the list an inner query finds for it, as
+    /// `record * list`. The inner query refers to the record by one equality
+    /// between an inner and an outer column; its conditions, order and `take`
+    /// apply per record. One more command per batch of outer values. Must be the
+    /// last operation.
+    [<CustomOperation("including")>]
+    member _.Including(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'U list> =
+        Projection<'T * 'U list>({ q.Def with Including = Some(inner :> Expr) }, inner :> Expr)
 
     /// Projects each row. Only the columns the projection uses are retrieved.
     /// Must be the last operation.

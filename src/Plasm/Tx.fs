@@ -290,6 +290,25 @@ module internal TxCore =
                 return Ok(rows |> List.map unbox<'T>)
         }
 
+    /// The rows of a projection, inside the transaction.
+    let projected (rt: TxRuntime) (projection: Projection<'R>) : Task<Result<'R list, TxFailure<'E>>> =
+        let rt = { rt with Session = { rt.Session with Args = projection.Def.Args } }
+
+        task {
+          if projection.Def.Including.IsSome then
+            match Planner.including rt.Session.Provider.Dialect rt.Model projection.Def with
+            | Error e -> return Error(TxFailure.Failed(DbError.Translation e))
+            | Ok plan ->
+                let! rows = Execution.readIncluding rt.Session plan
+                return Ok(rows |> List.map unbox<'R>)
+          else
+            match Translate.projection rt.Model (ref false) projection.Def (Some projection.Select) with
+            | Error e -> return Error(TxFailure.Failed(DbError.Translation e))
+            | Ok(select, shape) ->
+                let! rows = Execution.readProjection rt.Session rt.Model select shape projection.Def.Root.Name
+                return Ok(rows |> List.map unbox<'R>)
+        }
+
 open System.Runtime.CompilerServices
 open System.Runtime.InteropServices
 
@@ -358,6 +377,16 @@ type Tx =
             [<CallerLineNumber; Optional; DefaultParameterValue(0)>] line: int
         ) : Tx<'T list, 'E> =
         TxCore.step (TxCore.at file line $"all {typeof<'T>.Name}") (fun rt -> TxCore.rows rt query)
+
+    /// Every row a projection (a query ending in `select` or `including`)
+    /// returns, inside the transaction.
+    static member all
+        (
+            projection: Projection<'R>,
+            [<CallerFilePath; Optional; DefaultParameterValue("")>] file: string,
+            [<CallerLineNumber; Optional; DefaultParameterValue(0)>] line: int
+        ) : Tx<'R list, 'E> =
+        TxCore.step (TxCore.at file line $"all {projection.Def.Root.Name}") (fun rt -> TxCore.projected rt projection)
 
     /// The one row a query matches, or None; more than one is a failure
     /// (DbError.MoreThanOneRow). Turn None into a rejection with Tx.orReject.

@@ -213,6 +213,9 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
 
     /// Describes how a projection would execute. Performs no database access.
     member _.Explain(projection: Projection<'R>) : Result<QueryPlan, TranslationError> =
+      if projection.Def.Including.IsSome then
+        Planner.including provider.Dialect model projection.Def |> Result.map (Planner.describeIncluding provider.Dialect)
+      else
         Translate.projection model (ref false) projection.Def (Some projection.Select)
         |> Result.map (fun (select, _) ->
             { Sql = (Sql.renderSelect provider.Dialect select).Sql
@@ -251,6 +254,13 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
 
         Execution.guard provider (fun () ->
             task {
+              if projection.Def.Including.IsSome then
+                match Planner.including provider.Dialect model projection.Def with
+                | Error e -> return Error(DbError.Translation e)
+                | Ok plan ->
+                    let! rows = withArgs projection.Def.Args ct false (fun s -> Execution.readIncluding s plan)
+                    return Ok(rows |> List.map unbox<'R>)
+              else
                 match Translate.projection model (ref false) projection.Def (Some projection.Select) with
                 | Error e -> return Error(DbError.Translation e)
                 | Ok(select, shape) ->
@@ -354,6 +364,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
 
         let translates (q: ICheckable) =
             match q.Select with
+            | Some _ when q.Def.Including.IsSome -> Planner.including provider.Dialect model q.Def |> Result.map ignore
             | Some select -> Translate.projection model (ref false) q.Def (Some select) |> Result.map ignore
             | None when not q.Def.Joins.IsEmpty -> Translate.projection model (ref false) q.Def None |> Result.map ignore
             | None -> planFor q.Def |> Result.map ignore

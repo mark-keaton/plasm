@@ -1075,7 +1075,7 @@ and relationship ctx (whole: Expr) (pv: Var) (body: Expr) (assoc: Expr) (all: bo
 /// (its conditions may read the outer rows, so it cannot be evaluated), becomes
 /// a correlated EXISTS.
 and existsQuery ctx (whole: Expr) (q: Expr) : Sql.Expr =
-    let inner = innerQuery ctx whole q
+    let inner = innerQuery "exists" ctx whole q
 
     let refuse () =
         fail whole "an exists query is a condition only: it cannot page, order, join or group"
@@ -1110,7 +1110,7 @@ and existsQuery ctx (whole: Expr) (q: Expr) : Sql.Expr =
 
 /// Rebuilds a query written inside a condition by running its builder calls,
 /// keeping each quoted argument as it is (it may read the outer rows).
-and innerQuery ctx (whole: Expr) (q: Expr) : QueryDef =
+and innerQuery (what: string) ctx (whole: Expr) (q: Expr) : QueryDef =
     let rec build (e: Expr) : obj =
         match e with
         | Call(Some _, mi, args) when mi.DeclaringType = typeof<QueryBuilder> ->
@@ -1130,20 +1130,20 @@ and innerQuery ctx (whole: Expr) (q: Expr) : QueryDef =
                             box x
                         else
                             typeof<Expr>.GetMethod("Cast").MakeGenericMethod(pt.GetGenericArguments().[0]).Invoke(null, [| x |])
-                    | _ when isRowDependent ctx a -> fail a "an exists query can read the outer row only in its conditions"
+                    | _ when isRowDependent ctx a -> fail a $"an {what} query can read the outer row only in its conditions"
                     | _ -> evaluate ctx a)
                 |> Array.ofList
 
             try
                 mi.Invoke(QueryBuilder(), values)
             with :? Reflection.TargetInvocationException as ex when not (isNull ex.InnerException) ->
-                fail e $"the exists query could not be built: {Err.describeExn ex.InnerException}"
-        | _ when isRowDependent ctx e -> fail e "exists takes a query written in place, plasm { for x in source do where (...) }"
+                fail e $"the {what} query could not be built: {Err.describeExn ex.InnerException}"
+        | _ when isRowDependent ctx e -> fail e $"{what} takes a query written in place, plasm {{ for x in source do where (...) }}"
         | _ -> evaluate ctx e
 
     match build q with
     | :? ICheckable as c -> c.Def
-    | _ -> fail whole "exists takes a query"
+    | _ -> fail whole $"{what} takes a query"
 
 // ---------------------------------------------------------------------------
 // Query-level translation
@@ -1351,6 +1351,154 @@ let rootSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Selec
             Limit = limit
             Offset = offset },
         schema)
+
+/// A query ending in `including (plasm { ... })` (including.feature): the
+/// outer query without it, and the inner query as one more load, read in
+/// batches of the outer column's values.
+type IncludingParts =
+    { Outer: QueryDef
+      OuterField: FieldMap
+      Target: SchemaInfo
+      MatchField: FieldMap
+      /// The inner query for one batch of outer values.
+      Build: Array -> Sql.Select }
+
+let includingParts (model: Model) (vol: bool ref) (def: QueryDef) (lambda: Expr) : Result<IncludingParts, TranslationError> =
+    wrap (fun () ->
+        if not def.Joins.IsEmpty || not def.GroupBy.IsEmpty then
+            invalid "including follows a query of one record: it cannot follow join, leftJoin or groupBy"
+
+        let outerSchema = schemaOf model def.Root
+
+        let o, body =
+            match normalize lambda with
+            | Lambda(v, b) -> v, b
+            | other -> fail other "expected a lambda"
+
+        let ctx =
+            { newCtxWith model vol with
+                Vars = Map [ o, { Alias = "outer"; Schema = outerSchema; Optional = false } ] }
+
+        let inner = innerQuery "including" ctx lambda body
+        checkProblems inner
+
+        if not inner.Joins.IsEmpty || not inner.GroupBy.IsEmpty || not inner.Havings.IsEmpty then
+            invalid "an including query reads one record type: it cannot join or group"
+
+        let target = schemaOf model inner.Root
+
+        for t in model.Types do
+            match model.Schema t with
+            | Ok s ->
+                for a in s.Assocs do
+                    if (a.Owned || a.Linked) && a.Target = target.Type then
+                        invalid $"{target.Name} records are loaded with their {s.Name}: read the {s.Name}, which comes with them, instead of including them"
+            | Error _ -> ()
+
+        let rec conjuncts (e: Expr) =
+            match e with
+            | IfThenElse(a, b, Bool false) -> conjuncts a @ conjuncts b
+            | e -> [ e ]
+
+        let mentionsOuter (e: Expr) = e.GetFreeVars() |> Seq.contains o
+
+        let fieldOf (v: Var) (e: Expr) =
+            match e with
+            | PropertyGet(Some(Var x), p, []) when x = v -> Some p.Name
+            | _ -> None
+
+        let refersOtherwise (c: Expr) =
+            fail c "an including query refers to the outer record only by one equality between an inner and an outer column, as in where (p.OrderId = o.Id)"
+
+        let mutable correlation = None
+
+        let wheres =
+            inner.Wheres
+            |> List.choose (fun w ->
+                match normalize w with
+                | Lambda(p, pred) ->
+                    let kept =
+                        conjuncts pred
+                        |> List.filter (fun c ->
+                            if not (mentionsOuter c) then
+                                true
+                            else
+                                let pair =
+                                    match c with
+                                    | SpecificCall <@ (=) @> (_, _, [ a; b ]) ->
+                                        match fieldOf p a, fieldOf o b, fieldOf o a, fieldOf p b with
+                                        | Some i, Some u, _, _ -> Some(i, u)
+                                        | _, _, Some u, Some i -> Some(i, u)
+                                        | _ -> None
+                                    | _ -> None
+
+                                match pair, correlation with
+                                | Some ab, None ->
+                                    correlation <- Some ab
+                                    false
+                                | _ -> refersOtherwise c)
+
+                    match kept with
+                    | [] -> None
+                    | c :: cs -> Some(Expr.Lambda(p, cs |> List.fold (fun acc x -> Expr.IfThenElse(acc, x, Expr.Value false)) c))
+                | other -> fail other "expected a lambda")
+
+        let innerName, outerName =
+            match correlation with
+            | Some c -> c
+            | None -> fail lambda "an including query refers to the outer record by one equality between an inner and an outer column, as in where (p.OrderId = o.Id)"
+
+        let matchField = target.Field innerName
+        let outerField = outerSchema.Field outerName
+        let innerDef = { inner with Wheres = wheres }
+        let iw, io = translateBody (newCtxWith model vol) innerDef "t0" target
+
+        if innerDef.Paged && io.IsEmpty then
+            invalid $"take/skip inside including needs an order: without one, which {target.Name} records come first for each {outerSchema.Name} is not defined"
+
+        let ranked = stableOrder "t0" target io
+        let limit, offset = limitExprs innerDef
+        let matchColumn = Sql.Column("t0", matchField.Column)
+
+        let build (keys: Array) : Sql.Select =
+            let filtered =
+                { Sql.select (Sql.Table(target.Table, "t0")) with
+                    Where = Sql.AnyOf(matchColumn, keys, Sql.storeType matchField) :: iw }
+
+            if not innerDef.Paged then
+                { filtered with
+                    Columns = entityColumns "t0" target
+                    OrderBy = ranked }
+            else
+                // Per outer value: number each one's rows in the inner order.
+                let plain =
+                    [ for f in target.Fields do
+                          for part in f.Parts -> Sql.Column("t0", part.Name), part.Name ]
+
+                let numbered = { filtered with Columns = plain @ [ Sql.RowNumber(matchColumn, ranked), "__rn" ] }
+                let rn = Sql.Column("t0", "__rn")
+
+                let first =
+                    match offset with
+                    | Some off -> [ Sql.Binary(">", rn, off) ]
+                    | None -> []
+
+                let last =
+                    match limit, offset with
+                    | Some l, Some off -> [ Sql.Binary("<=", rn, Sql.Binary("+", off, l)) ]
+                    | Some l, None -> [ Sql.Binary("<=", rn, l) ]
+                    | None, _ -> []
+
+                { Sql.select (Sql.Subquery(numbered, "t0")) with
+                    Columns = entityColumns "t0" target
+                    Where = first @ last
+                    OrderBy = ranked }
+
+        { Outer = { def with Including = None }
+          OuterField = outerField
+          Target = target
+          MatchField = matchField
+          Build = build })
 
 /// True when a SQL expression reads a column outside the grouping keys and
 /// outside any aggregate.
