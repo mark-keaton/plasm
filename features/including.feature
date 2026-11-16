@@ -13,7 +13,8 @@ Feature: A query can read each record with the records another query finds for i
   inner query refers to the outer record by one equality between an inner and an
   outer column, and may filter, order and take: all per outer record. Plasm reads
   the inner records with one more command per batch of outer values, and groups
-  them. The outer record still comes whole, with what it owns. A relationship can
+  them. The inner query may end in `select` or `selectDistinct`, so the list
+  holds only what it selects. The outer record still comes whole, with what it owns. A relationship can
   be written once as a reflected function of the outer record (`paymentsOf o`)
   and used in `including` and in `exists` alike.
 
@@ -98,6 +99,40 @@ Feature: A query can read each record with the records another query finds for i
     Scenario: The inner query refers to the outer record only by one equality
       When I read the Orders including the Payments made after the Order was placed
       Then the read is refused, naming the condition that refers to the Order
+
+  Rule: The inner query may select what the list holds
+
+    Scenario: Each Order with the amounts of its Payments
+      When I read the Orders by total, including the amounts of their Payments by minute
+      Then the Orders and the values they include are:
+        | order | values    |
+        | 5     |           |
+        | 10    | 10, 10    |
+        | 50    | 20, 30, 5 |
+        | 200   |           |
+      And the Payments command reads only the amount and the Order it belongs to
+
+    Scenario: The newest amount of each Order
+      When I read the Orders by total, including the amount of each one's newest Payment
+      Then the Orders and the values they include are:
+        | order | values |
+        | 5     |        |
+        | 10    | 10     |
+        | 50    | 5      |
+        | 200   |        |
+
+    Scenario: The distinct statuses of each Order's Payments
+      When I read the Orders by total, including the distinct statuses of their Payments
+      Then the Orders and the values they include are:
+        | order | values             |
+        | 5     |                    |
+        | 10    | Succeeded, Failed  |
+        | 50    | Pending, Succeeded |
+        | 200   |                    |
+
+    Scenario: Taking distinct values per Order is refused
+      When I read the Orders including two distinct statuses of their Payments
+      Then the read is refused, saying take and skip cannot be used with selectDistinct for each Order either
 
   Rule: It is checked and prepared like any query
 

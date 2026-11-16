@@ -276,6 +276,66 @@ type IncludingSteps(w: World) =
         }
         |> unit
 
+    [<StepDefinition("I read the Orders by total, including the amounts of their Payments by minute")>]
+    member _.Amounts() =
+        read (
+            plasm {
+                for o in tableOf<Order> do
+                    orderBy o.Total
+                    including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id); orderBy p.CreatedAt; select p.Amount })
+            }
+        )
+
+    [<StepDefinition("I read the Orders by total, including the amount of each one's newest Payment")>]
+    member _.NewestAmount() =
+        read (
+            plasm {
+                for o in tableOf<Order> do
+                    orderBy o.Total
+                    including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id); orderByDescending p.CreatedAt; take 1; select p.Amount })
+            }
+        )
+
+    [<StepDefinition("I read the Orders by total, including the distinct statuses of their Payments")>]
+    member _.DistinctStatuses() =
+        read (
+            plasm {
+                for o in tableOf<Order> do
+                    orderBy o.Total
+                    including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id); orderBy p.Status; selectDistinct p.Status })
+            }
+        )
+
+    [<StepDefinition("I read the Orders including two distinct statuses of their Payments")>]
+    member _.TwoDistinct() =
+        read (
+            plasm {
+                for o in tableOf<Order> do
+                    including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id); orderBy p.Status; take 2; selectDistinct p.Status })
+            }
+        )
+
+    [<StepDefinition("the Orders and the values they include are:")>]
+    member _.Values(table: DataTable) =
+        let text (v: obj) =
+            match v with
+            | :? decimal as d -> total d
+            | v -> string v
+
+        let expected = [ for r in table.Rows -> r.["order"], r.["values"].Trim() ]
+        let actual = [ for o, xs in rows () -> total (o :?> Order).Total, xs |> List.map text |> String.concat ", " ]
+        equal expected actual "orders and their values"
+
+    [<StepDefinition("the read is refused, saying take and skip cannot be used with selectDistinct for each Order either")>]
+    member _.NoDistinctPaging() =
+        let e = refusal ()
+        check (e.Contains "take and skip cannot be used with selectDistinct") e
+
+    [<StepDefinition("the Payments command reads only the amount and the Order it belongs to")>]
+    member _.OnlyAmount() =
+        let payments = w.CommandsSinceMark |> List.last
+        check (payments.Sql.Contains "\"amount\"" && payments.Sql.Contains "\"order_id\"" && not (payments.Sql.Contains "\"status\"") && not (payments.Sql.Contains "\"created_at\" AS \"")) payments.Sql
+
     // -- Results ---------------------------------------------------------------
 
     [<StepDefinition("the Orders and their Payments are:")>]

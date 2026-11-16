@@ -390,6 +390,13 @@ type QueryBuilder() =
     member _.Including(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'U list> =
         Projection<'T * 'U list>({ q.Def with Including = Some(inner :> Expr) }, inner :> Expr)
 
+    /// Reads each record with the values an inner query ending in `select` or
+    /// `selectDistinct` gives for it, as `record * value list`: only the
+    /// selected columns are read.
+    [<CustomOperation("including")>]
+    member _.Including(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'U list> =
+        Projection<'T * 'U list>({ q.Def with Including = Some(inner :> Expr) }, inner :> Expr)
+
     /// Projects each row, keeping each selected value once (as `List.distinct`;
     /// None is one value). Order by selected values only; `take` and `skip`
     /// are refused with it. Must be the last operation.

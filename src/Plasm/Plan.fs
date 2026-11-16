@@ -176,7 +176,7 @@ module internal Planner =
                         { Outer = { outer with Reusable = outer.Reusable && not vol.Value }
                           Parts = parts
                           Strategy = LoadStrategy.BatchedByKeys dialect.Capabilities.MaxKeysPerCommand
-                          Children = planLevel dialect model vol "" parts.Target })
+                          Children = if parts.Projected.IsSome then [] else planLevel dialect model vol "" parts.Target })
 
     let rec private describeNode (dialect: ISqlDialect) (n: LoadNode) : LoadStep =
         let sample = n.Build(Array.CreateInstance(n.KeyField.ProviderType, 1))

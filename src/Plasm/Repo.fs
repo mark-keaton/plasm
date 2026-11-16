@@ -258,7 +258,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                 match Planner.including provider.Dialect model projection.Def with
                 | Error e -> return Error(DbError.Translation e)
                 | Ok plan ->
-                    let! rows = withArgs projection.Def.Args ct false (fun s -> Execution.readIncluding s plan)
+                    let! rows = withArgs projection.Def.Args ct false (fun s -> Execution.readIncluding s model plan)
                     return Ok(rows |> List.map unbox<'R>)
               else
                 match Translate.projection model (ref false) projection.Def (Some projection.Select) with

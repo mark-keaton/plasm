@@ -299,7 +299,7 @@ module internal TxCore =
             match Planner.including rt.Session.Provider.Dialect rt.Model projection.Def with
             | Error e -> return Error(TxFailure.Failed(DbError.Translation e))
             | Ok plan ->
-                let! rows = Execution.readIncluding rt.Session plan
+                let! rows = Execution.readIncluding rt.Session rt.Model plan
                 return Ok(rows |> List.map unbox<'R>)
           else
             match Translate.projection rt.Model (ref false) projection.Def (Some projection.Select) with

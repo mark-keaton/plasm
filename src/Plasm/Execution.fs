@@ -407,63 +407,6 @@ let readRoot (s: Session) (plan: Planner.Plan) : Task<obj list> =
         return rows |> Seq.map plan.RootSchema.Shape.Construct |> List.ofSeq
     }
 
-/// A query ending in `including` (including.feature): the outer records with
-/// what they own, then the inner records for every outer value in batches,
-/// each outer record paired with the list of those matching its value.
-let readIncluding (s: Session) (p: Planner.Including) : Task<obj list> =
-    task {
-        let parts = p.Parts
-        let outerSchema = p.Outer.RootSchema
-        let! rows = query s (Sql.renderSelect s.Provider.Dialect p.Outer.Root) (readEntity outerSchema)
-        do! loadInto s rows p.Outer.Loads
-
-        let valueOf (r: obj[]) = keyOf parts.OuterField r.[parts.OuterField.Index]
-        let keys = HashSet<obj>()
-
-        for r in rows do
-            valueOf r |> Option.iter (keys.Add >> ignore)
-
-        let batchSize =
-            match p.Strategy with
-            | LoadStrategy.BatchedByKeys n -> max 1 n
-
-        let childRows = ResizeArray<obj[]>()
-
-        for batch in Seq.chunkBySize batchSize keys do
-            let cmd = Sql.renderSelect s.Provider.Dialect (parts.Build(providerArray parts.MatchField batch))
-            let! got = query s cmd (readEntity parts.Target)
-            childRows.AddRange got
-
-        do! loadInto s childRows p.Children
-
-        let groups = Dictionary<obj, ResizeArray<obj>>()
-
-        for cr in childRows do
-            match keyOf parts.MatchField cr.[parts.MatchField.Index] with
-            | Some k ->
-                let child = parts.Target.Shape.Construct cr
-
-                match groups.TryGetValue k with
-                | true, g -> g.Add child
-                | _ -> groups.[k] <- ResizeArray [ child ]
-            | None -> ()
-
-        let makeList = Reflection.makeList parts.Target.Type
-        let pair = FSharp.Reflection.FSharpType.MakeTupleType [| outerSchema.Type; typedefof<list<_>>.MakeGenericType parts.Target.Type |]
-
-        return
-            [ for r in rows ->
-                  let children =
-                      match valueOf r with
-                      | Some k ->
-                          match groups.TryGetValue k with
-                          | true, g -> g :> obj seq
-                          | _ -> Seq.empty
-                      | None -> Seq.empty
-
-                  FSharp.Reflection.FSharpValue.MakeTuple([| outerSchema.Shape.Construct r; makeList children |], pair) ]
-    }
-
 /// The lists a record owns or links, for records read as field values (a
 /// join's or hand-written SQL's rows): loaded as a query of the records loads
 /// them, one batched command per list (owned-collections.feature).
@@ -588,6 +531,75 @@ let readProjection (s: Session) (model: Model) (select: Sql.Select) (shape: Tran
                     next <- next + 1
                     v))
             |> List.ofSeq
+    }
+
+/// A query ending in `including` (including.feature): the outer records with
+/// what they own, then the inner records for every outer value in batches,
+/// each outer record paired with the list of those matching its value.
+let readIncluding (s: Session) (model: Model) (p: Planner.Including) : Task<obj list> =
+    task {
+        let parts = p.Parts
+        let outerSchema = p.Outer.RootSchema
+        let! rows = query s (Sql.renderSelect s.Provider.Dialect p.Outer.Root) (readEntity outerSchema)
+        do! loadInto s rows p.Outer.Loads
+
+        let valueOf (r: obj[]) = keyOf parts.OuterField r.[parts.OuterField.Index]
+        let keys = HashSet<obj>()
+
+        for r in rows do
+            valueOf r |> Option.iter (keys.Add >> ignore)
+
+        let batchSize =
+            match p.Strategy with
+            | LoadStrategy.BatchedByKeys n -> max 1 n
+
+        let groups = Dictionary<obj, ResizeArray<obj>>()
+
+        let add (key: obj option) (child: obj) =
+            match key with
+            | Some k ->
+                match groups.TryGetValue k with
+                | true, g -> g.Add child
+                | _ -> groups.[k] <- ResizeArray [ child ]
+            | None -> ()
+
+        match parts.Projected with
+        | Some shape ->
+            // Each row is (the selected value, the matching column's value).
+            for batch in Seq.chunkBySize batchSize keys do
+                let select = parts.Build(providerArray parts.MatchField batch)
+                let! got = readProjection s model select shape parts.Target.Name
+
+                for row in got do
+                    let value, key = unbox<obj * obj> row
+                    add (keyOf parts.MatchField key) value
+        | None ->
+            let childRows = ResizeArray<obj[]>()
+
+            for batch in Seq.chunkBySize batchSize keys do
+                let cmd = Sql.renderSelect s.Provider.Dialect (parts.Build(providerArray parts.MatchField batch))
+                let! got = query s cmd (readEntity parts.Target)
+                childRows.AddRange got
+
+            do! loadInto s childRows p.Children
+
+            for cr in childRows do
+                add (keyOf parts.MatchField cr.[parts.MatchField.Index]) (parts.Target.Shape.Construct cr)
+
+        let makeList = Reflection.makeList parts.ElementType
+        let pair = FSharp.Reflection.FSharpType.MakeTupleType [| outerSchema.Type; typedefof<list<_>>.MakeGenericType parts.ElementType |]
+
+        return
+            [ for r in rows ->
+                  let children =
+                      match valueOf r with
+                      | Some k ->
+                          match groups.TryGetValue k with
+                          | true, g -> g :> obj seq
+                          | _ -> Seq.empty
+                      | None -> Seq.empty
+
+                  FSharp.Reflection.FSharpValue.MakeTuple([| outerSchema.Shape.Construct r; makeList children |], pair) ]
     }
 
 // ---------------------------------------------------------------------------
