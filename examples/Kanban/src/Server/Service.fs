@@ -80,7 +80,7 @@ module private View =
 
     let cards (cards: Card list) : CardView[] = cards |> List.map card |> Array.ofList
 
-    let summary (counts: (BoardId * StageKind * int64) list) (row: Board, newest: Title list) : BoardSummary =
+    let summary (counts: (BoardId * StageKind * int64) list) (row: Board, newest: Title list, blocked: Title list) : BoardSummary =
         let count kind =
             counts
             |> List.tryPick (fun (board, k, n) -> if board = row.Id && k = kind then Some(int n) else None)
@@ -92,7 +92,8 @@ module private View =
           Backlog = count StageKind.Backlog
           Doing = count StageKind.Doing
           Done = count StageKind.Done
-          Newest = [| for title in newest -> title.Value |] }
+          Newest = [| for title in newest -> title.Value |]
+          Blocked = [| for title in blocked -> title.Value |] }
 
     /// "WipLimit" (the domain's field, which Plasm names) as the client's "wipLimit".
     let fieldError (e: FieldError) =
@@ -198,7 +199,7 @@ let create (deps: Deps) (session: Session) (ct: CancellationToken) : IKanbanApi 
     { boards =
         fun () ->
             task {
-                let! boards = deps.Repo.All(Queries.boardsWithNewest, cancellationToken = ct)
+                let! boards = deps.Repo.All(Queries.boardsWithCards, cancellationToken = ct)
                 let! counts = deps.Repo.All(Queries.cardCounts, cancellationToken = ct)
 
                 return
@@ -241,7 +242,7 @@ let create (deps: Deps) (session: Session) (ct: CancellationToken) : IKanbanApi 
 
                         return
                             outcome
-                            |> Result.map (fun stored -> View.summary [ board.Id, StageKind.Backlog, int64 cards.Length ] (stored, newest))
+                            |> Result.map (fun stored -> View.summary [ board.Id, StageKind.Backlog, int64 cards.Length ] (stored, newest, []))
                     }
                     |> Async.AwaitTask)
 

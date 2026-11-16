@@ -27,9 +27,12 @@ module Queries =
     let cardsOf (b: Board) = plasm { for c in tableOf<Card> do where (c.Board = b.Id) }
 
     /// Every board with the titles of the three cards created last on it,
-    /// newest first. The cards are another aggregate, so the query asks for
-    /// what it needs of them, and its type says it did: (Board * Title list).
-    let boardsWithNewest =
+    /// newest first, and the titles of its blocked cards, the longest blocked
+    /// first. The cards are another aggregate, so the query asks for what it
+    /// needs of them, twice, and its type says it did:
+    /// (Board * Title list * Title list). Each `including` is one more
+    /// command for all the boards.
+    let boardsWithCards =
         plasm {
             for b in tableOf<Board> do
                 orderBy b.Name
@@ -39,6 +42,15 @@ module Queries =
                         for c in cardsOf b do
                             orderByDescending c.Created
                             take 3
+                            select c.Title
+                    }
+                )
+
+                including (
+                    plasm {
+                        for c in cardsOf b do
+                            where c.Blocked.IsSome
+                            orderBy (c.Blocked |> Option.map (fun blocker -> blocker.Since))
                             select c.Title
                     }
                 )

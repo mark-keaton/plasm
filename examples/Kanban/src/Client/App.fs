@@ -401,7 +401,11 @@ let private viewBoardList (model: Model) dispatch =
                                                       if board.Newest.Length > 0 then
                                                           Html.span
                                                               [ prop.className "newest"
-                                                                prop.text ("Newest: " + String.concat " · " board.Newest) ] ] ] ] ] ] ]
+                                                                prop.text ("Newest: " + String.concat " · " board.Newest) ]
+                                                      if board.Blocked.Length > 0 then
+                                                          Html.span
+                                                              [ prop.className "newest blocked-titles"
+                                                                prop.text ("Blocked: " + String.concat " · " board.Blocked) ] ] ] ] ] ] ]
           if model.Me.IsSome then
               Html.section
                   [ prop.className "form"

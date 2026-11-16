@@ -117,10 +117,12 @@ dotnet test --project tests/Kanban.Specs
   card's labels. A board can be created with its first cards: several inserts
   in one transaction, and nothing is stored if the slug is taken.
 - **Asking for another aggregate.** The list of boards shows each board's
-  three newest cards. Cards are not part of a board, so the query asks for
-  them: it ends in `including (plasm { for c in cardsOf b do ... take 3; select c.Title })`
-  and its result is `(Board * Title list)`, which a query that did not ask
-  could not be mistaken for. The inner query ends in `select c.Title`, so
+  three newest cards and its blocked cards. Cards are not part of a board,
+  so the query asks for them, once for each list: it ends in two
+  `including (plasm { for c in cardsOf b do ... select c.Title })`
+  and its result is `(Board * Title list * Title list)`, which a query that
+  did not ask could not be mistaken for. Each `including` is one more
+  command, however many boards there are. The inner query ends in `select c.Title`, so
   only titles are read. `cardsOf` writes the tie between the two tables
   once. Listing sends three queries however many boards and cards there are.
 - **A bulk write.** "Send all back" is one `UPDATE` over a board's cards in

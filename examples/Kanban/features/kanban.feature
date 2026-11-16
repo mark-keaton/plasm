@@ -275,13 +275,29 @@ Feature: A kanban board with an F# domain at its centre
       Then the board "gemini" is listed with the newest cards ""
       And the board "apollo" is listed with the newest cards "First"
 
-    Scenario: However many boards and cards, listing sends the same three queries
+    Scenario: The list of boards shows each board's blocked cards beside its newest
+      Given the card "First" on "apollo"
+      And the card "Second" on "apollo"
+      And the card "Third" on "apollo"
+      And "Second" is blocked because "no budget"
+      And "First" is blocked because "waiting for the supplier"
+      When the boards are listed
+      Then the board "apollo" is listed with the blocked cards "Second, First"
+      And the board "apollo" is listed with the newest cards "Third, Second, First"
+
+    Scenario: A board with nothing blocked is listed with no blocked cards
+      Given the card "First" on "apollo"
+      When the boards are listed
+      Then the board "apollo" is listed with the blocked cards ""
+
+    Scenario: However many boards and cards, listing sends the same four queries
       Given the board "gemini" allows 2 cards in progress
       And the card "First" on "apollo"
       And the card "Second" on "apollo"
       And the card "Third" on "gemini"
+      And "First" is blocked because "no budget"
       When the boards are listed
-      Then the database was sent 3 SELECT
+      Then the database was sent 4 SELECT
 
     Scenario: An unknown board is not found
       When the board "voyager" is read

@@ -56,7 +56,9 @@ type BoardSummary =
       Doing: int
       Done: int
       /// Titles of the three cards created last, newest first.
-      Newest: string[] }
+      Newest: string[]
+      /// Titles of the board's blocked cards, the longest blocked first.
+      Blocked: string[] }
 
 type ApiError =
     /// Input that is not acceptable, by field.
