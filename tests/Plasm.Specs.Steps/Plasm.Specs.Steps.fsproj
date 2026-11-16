@@ -38,6 +38,7 @@
     <Compile Include="ConventionSteps.fs" />
     <Compile Include="ExistsSteps.fs" />
     <Compile Include="IncludingSteps.fs" />
+    <Compile Include="ReferringSteps.fs" />
     <Compile Include="DistinctSteps.fs" />
     <Compile Include="ValueRecordSteps.fs" />
     <Compile Include="JsonSteps.fs" />

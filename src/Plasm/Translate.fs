@@ -156,6 +156,76 @@ let rec normalize (e: Expr) : Expr =
     | ExprShape.ShapeLambda(v, b) -> Expr.Lambda(v, normalize b)
     | ExprShape.ShapeCombination(o, args) -> ExprShape.RebuildShapeCombination(o, List.map normalize args)
 
+/// `referring<T> o` and `referredBy<T> o` (referring.feature): the marker
+/// condition `Refers(x, o)` or `ReferredBy(x, o)` as the equality the model
+/// proves, `x.OrderId = o.Id` (or `= Some o.Id` for an optional field). The key
+/// is never the tie, so a record referring to its own kind reads its children
+/// one way and its parent the other. Not exactly one candidate is refused.
+let private equalsDef =
+    match <@ 1 = 1 @> with
+    | Call(None, mi, _) -> mi.GetGenericMethodDefinition()
+    | _ -> failwith "unreachable"
+
+let expandTie (model: Model) (mi: Reflection.MethodInfo) (inner: Expr) (outer: Expr) : Expr =
+    let outer =
+        match outer with
+        | Coerce(x, _) -> x
+        | x -> x
+
+    let referring = mi.Name = "Refers"
+    let op = if referring then "referring" else "referredBy"
+    let target = inner.Type
+
+    let schemaOf (t: Type) =
+        match model.Schema t with
+        | Ok s -> s
+        | Error _ ->
+            let name =
+                if t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<option<_>> then
+                    $"{t.GetGenericArguments().[0].Name} option (pass the record, not the option)"
+                else
+                    t.Name
+
+            invalid $"{op}<{target.Name}> takes a stored record: {name} is not one"
+
+    let ts = schemaOf target
+    let os = schemaOf outer.Type
+    // The record whose key is held, and the record whose field holds it.
+    let keyed, holder = if referring then os, ts else ts, os
+    let keyType = keyed.Key.ScalarType
+    let candidates = holder.Fields |> Array.filter (fun f -> f.Name <> holder.Key.Name && f.ScalarType = keyType && f.Parts.Length = 1)
+    let article (n: string) = if "AEIOU".Contains n.[0] then "an" else "a"
+    let byHand = $"write the tie by hand in a where, comparing the field of {holder.Name} with {keyed.Name}.{keyed.Key.Name}"
+
+    let field =
+        match candidates with
+        | [| f |] -> f
+        | [||] -> invalid $"{op}<{target.Name}> needs one field of {holder.Name} holding the key of {keyed.Name}: {holder.Name} has no field holding {article keyType.Name} {keyType.Name}; {byHand}"
+        | many ->
+            let names = many |> Array.map (fun f -> f.Name) |> String.concat " and "
+            invalid $"{op}<{target.Name}> needs one field of {holder.Name} holding the key of {keyed.Name}: {holder.Name} has {many.Length} fields holding {article keyType.Name} {keyType.Name}, {names}; Plasm does not pick one, so {byHand}"
+
+    let key, held = (if referring then outer else inner), (if referring then inner else outer)
+    let keyExpr = Expr.PropertyGet(key, keyed.Type.GetProperty keyed.Key.Name)
+    let heldExpr = Expr.PropertyGet(held, holder.Type.GetProperty field.Name)
+
+    let keyExpr =
+        if field.IsOption then
+            let t = typedefof<option<_>>.MakeGenericType keyExpr.Type
+            Expr.NewUnionCase(FSharpType.GetUnionCases t |> Array.find (fun c -> c.Name = "Some"), [ keyExpr ])
+        else
+            keyExpr
+
+    Expr.Call(equalsDef.MakeGenericMethod heldExpr.Type, [ heldExpr; keyExpr ])
+
+/// `e` with each tie marker replaced by its equality.
+let rec expandTies (model: Model) (e: Expr) : Expr =
+    match e with
+    | Call(None, mi, [ a; b ]) when Ties.isMarker mi -> expandTie model mi a b
+    | ExprShape.ShapeVar _ -> e
+    | ExprShape.ShapeLambda(v, b) -> Expr.Lambda(v, expandTies model b)
+    | ExprShape.ShapeCombination(o, args) -> ExprShape.RebuildShapeCombination(o, List.map (expandTies model) args)
+
 let isAggCall (mi: Reflection.MethodInfo) = mi.DeclaringType.FullName = "Plasm.Agg"
 let isRawCall (mi: Reflection.MethodInfo) = mi.DeclaringType.FullName = "Plasm.Raw"
 
@@ -713,6 +783,9 @@ and mayBeNull (ctx: Ctx) (e: Expr) : bool =
     | ExprShape.ShapeCombination(_, args) -> List.exists (mayBeNull ctx) args
 
 and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
+    match e with
+    | Call(None, mi, [ a; b ]) when Ties.isMarker mi -> predicate ctx (expandTie ctx.Model mi a b)
+    | _ ->
     if not (isRowDependent ctx e) then
         scalar ctx e
     else
@@ -1227,6 +1300,8 @@ and existsQuery ctx (whole: Expr) (q: Expr) : Sql.Expr =
 and innerCheckable (what: string) ctx (whole: Expr) (q: Expr) : ICheckable =
     let rec build (e: Expr) : obj =
         match e with
+        | Call(None, mi, [ x ]) when mi.DeclaringType.FullName = "Plasm.TieQueries" ->
+            Ties.make (mi.GetGenericArguments().[0]) (mi.Name = "referring") x
         | Call(Some _, mi, args) when mi.DeclaringType = typeof<QueryBuilder> ->
             let ps = mi.GetParameters()
 
@@ -1963,7 +2038,7 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
                 match normalize w with
                 | Lambda(p, pred) ->
                     let kept =
-                        conjuncts pred
+                        conjuncts (expandTies model pred)
                         |> List.filter (fun c ->
                             if not (mentionsOuter c) then
                                 true

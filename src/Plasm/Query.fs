@@ -678,6 +678,61 @@ module QueryBuilderInstance =
     let exists (_query: Query<'T>) : bool =
         invalidOp "exists is only meaningful inside a query's condition, where it becomes SQL"
 
+/// The condition `referring` and `referredBy` stand for (referring.feature):
+/// `Refers(x, o)` is "x holds o's key", `ReferredBy(x, o)` is "o holds x's
+/// key". The translator replaces each with the equality the model proves
+/// (Translate.expandTies), so it is never run.
+type internal TieMarkers =
+    static member Refers<'T, 'O>(_inner: 'T, _outer: 'O) : bool = invalidOp "a tie is translated, never run"
+    static member ReferredBy<'T, 'O>(_inner: 'T, _outer: 'O) : bool = invalidOp "a tie is translated, never run"
+
+module internal Ties =
+    /// A query of the `t` records tied to `outer` (an expression of a stored
+    /// record: a value, or a query's variable), as one marker condition.
+    let make (t: Type) (referring: bool) (outer: Expr) : obj =
+        let outer =
+            match outer with
+            | Patterns.Coerce(x, _) -> x
+            | x -> x
+
+        let x = Var("x", t)
+        let marker =
+            match (if referring then <@@ TieMarkers.Refers(0, 0) @@> else <@@ TieMarkers.ReferredBy(0, 0) @@>) with
+            | Patterns.Call(None, m, _) -> m.GetGenericMethodDefinition()
+            | _ -> invalidOp "unreachable"
+
+        let mi = marker.MakeGenericMethod(t, outer.Type)
+        let def = { QueryDef.Empty t with Wheres = [ Expr.Lambda(x, Expr.Call(mi, [ Expr.Var x; outer ])) ] }
+
+        Activator.CreateInstance(
+            typedefof<Query<_>>.MakeGenericType t,
+            Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public,
+            null,
+            [| box def |],
+            null
+        )
+
+    let isMarker (mi: Reflection.MethodInfo) = mi.DeclaringType = typeof<TieMarkers>
+
+/// Ties the typed ids prove (referring.feature).
+[<AutoOpen>]
+module TieQueries =
+    /// The `'T` records that refer to `record`: those whose one field of its key
+    /// type (plain or an option) holds its key. `referring<Payment> o` is
+    /// `plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) }`. A
+    /// query: use it in `including`, `exists`, as a source, or with a record in
+    /// hand. Not exactly one such field is refused, naming them.
+    let referring<'T> (record: obj) : Query<'T> =
+        if isNull record then nullArg "record"
+        Ties.make typeof<'T> true (Expr.Value(record, record.GetType())) :?> Query<'T>
+
+    /// The `'T` record that `record` refers to: the one whose key equals
+    /// `record`'s one field of `'T`'s key type (a None finds nothing). At most
+    /// one, so `includingOne` takes it.
+    let referredBy<'T> (record: obj) : Query<'T> =
+        if isNull record then nullArg "record"
+        Ties.make typeof<'T> false (Expr.Value(record, record.GetType())) :?> Query<'T>
+
 /// The query a read of one row runs (Repo.One, Tx.one).
 module internal OneRow =
 
