@@ -129,7 +129,7 @@ let lesson =
                           Query.prepare (fun (least: Arg<decimal>) ->
                               plasm {
                                   for o in tableOf<Order> do
-                                      where (exists (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id && p.Amount >= least.Value) }))
+                                      where (exists (plasm { for p in referring<Payment> o do where (p.Amount >= least.Value) }))
                                       orderBy o.Id
                               })
 

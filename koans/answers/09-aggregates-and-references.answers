@@ -28,10 +28,12 @@ Some(CustomerId 2L)
 # Each order with its payments
 [ (OrderId 1L, 1); (OrderId 2L, 0); (OrderId 3L, 2); (OrderId 4L, 0) ]
 3
-# A tie written once serves exists and including
+# A relationship that says more is written once
 [ (OrderId 1L, [ Succeeded ]); (OrderId 3L, [ Succeeded ]) ]
 # Each order with its payments and its deliveries
 [ (OrderId 1L, 1, [ "delivered" ]); (OrderId 2L, 0, [ "packing" ]); (OrderId 3L, 2, [ "in transit" ]); (OrderId 4L, 0, []) ]
 4
 # Each customer with their orders, each with its payments
 [ ("Ada", [ (OrderId 1L, 1); (OrderId 2L, 0) ]); ("Bob", [ (OrderId 3L, 2) ]); ("Cy", []) ]
+# Each order with its customer
+[ (OrderId 1L, Some "Ada"); (OrderId 2L, Some "Ada"); (OrderId 3L, Some "Bob"); (OrderId 4L, None) ]

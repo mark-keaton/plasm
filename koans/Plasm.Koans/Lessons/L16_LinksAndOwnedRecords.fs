@@ -210,7 +210,7 @@ let lesson =
                       let writers =
                           plasm {
                               for a in tableOf<Account> do
-                                  where (exists (plasm { for p in tableOf<Profile> do where (p.AccountId = a.Id && p.Bio.Contains "compiler") }))
+                                  where (exists (plasm { for p in referring<Profile> a do where (p.Bio.Contains "compiler") }))
                           }
 
                       let! rows = repo.All writers

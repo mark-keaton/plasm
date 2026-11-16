@@ -6,12 +6,13 @@ open Plasm
 open Plasm.TestDomain.Domain
 
 module Relations =
-    /// An Order's Payments, written once: used in `including` and in `exists`.
+    /// An Order's succeeded Payments: more than the tie, so written once and
+    /// built on it; used in `including` and in `exists`.
     [<ReflectedDefinition>]
-    let paymentsOf (o: Order) =
+    let succeededPaymentsOf (o: Order) =
         plasm {
-            for p in tableOf<Payment> do
-                where (p.OrderId = o.Id)
+            for p in referring<Payment> o do
+                where (p.Status = Succeeded)
         }
 
 module IncludingGood =
@@ -49,7 +50,7 @@ module IncludingGood =
         plasm {
             for o in tableOf<Order> do
                 orderBy o.Total
-                including (Relations.paymentsOf o)
+                including (referring<Payment> o)
 
                 including (
                     plasm {
@@ -157,20 +158,13 @@ type IncludingSteps(w: World) =
     [<StepDefinition("I read the Orders by total, including their Payments by minute")>]
     member _.WithPayments() = read IncludingGood.withPayments
 
-    [<StepDefinition("I read the Orders by total, including their succeeded Payments through paymentsOf")>]
+    [<StepDefinition("I read the Orders by total, including what succeededPaymentsOf finds for each")>]
     member _.Succeeded() =
         read (
             plasm {
                 for o in tableOf<Order> do
                     orderBy o.Total
-
-                    including (
-                        plasm {
-                            for p in paymentsOf o do
-                                where (p.Status = Succeeded)
-                                orderBy p.CreatedAt
-                        }
-                    )
+                    including (plasm { for p in succeededPaymentsOf o do orderBy p.CreatedAt })
             }
         )
 
@@ -329,14 +323,14 @@ type IncludingSteps(w: World) =
                 plasm {
                     for o in tableOf<Order> do
                         orderBy o.Total
-                        including (paymentsOf o)
-                        including (plasm { for p in paymentsOf o do where (p.Amount >= 2m) })
-                        including (plasm { for p in paymentsOf o do where (p.Amount >= 3m) })
-                        including (plasm { for p in paymentsOf o do where (p.Amount >= 4m) })
-                        including (plasm { for p in paymentsOf o do where (p.Amount >= 5m) })
-                        including (plasm { for p in paymentsOf o do where (p.Amount >= 6m) })
-                        including (plasm { for p in paymentsOf o do where (p.Amount >= 7m) })
-                        including (plasm { for p in paymentsOf o do where (p.Amount >= 8m) })
+                        including (referring<Payment> o)
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 2m) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 3m) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 4m) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 5m) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 6m) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 7m) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 8m) })
                 }
 
             let! r = w.Repo.All q
@@ -395,7 +389,7 @@ type IncludingSteps(w: World) =
                         for o in tableOf<Order> do
                             orderBy o.Total
                             includingOne (plasm { for c in tableOf<Customer> do where (Some c.Id = o.CustomerId); select c.Name })
-                            including (paymentsOf o)
+                            including (referring<Payment> o)
                     }
                 )
 
@@ -595,10 +589,10 @@ let shown (repo: Repo) = task { let! r = repo.All q in return r |> Result.map sh
         }
         |> unit
 
-    [<StepDefinition("I read the Orders with a Payment through paymentsOf in exists")>]
+    [<StepDefinition("I read the Orders that succeededPaymentsOf finds something for, in exists")>]
     member _.Exists() =
         task {
-            let! r = w.Repo.All(plasm { for o in tableOf<Order> do where (exists (paymentsOf o)); orderBy o.Total })
+            let! r = w.Repo.All(plasm { for o in tableOf<Order> do where (exists (succeededPaymentsOf o)); orderBy o.Total })
             w.Set("includingExists", ok r)
         }
         |> unit

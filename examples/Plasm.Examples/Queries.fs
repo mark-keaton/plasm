@@ -19,7 +19,7 @@ let forCustomer customerId (q: Query<Order>) =
 let unpaid (q: Query<Order>) =
     plasm {
         for o in q do
-            where (not (exists (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) })))
+            where (not (exists (plasm { for p in referring<Payment> o do where (p.Status = Succeeded) })))
     }
 
 /// The domain's own member, and the order's own lines, as F# reads them.
@@ -49,8 +49,8 @@ let withSucceededPayments (q: Query<Order>) =
         for o in q do
             including (
                 plasm {
-                    for p in tableOf<Payment> do
-                        where (p.OrderId = o.Id && p.Status = Succeeded)
+                    for p in referring<Payment> o do
+                        where (p.Status = Succeeded)
                         orderBy p.CreatedAt
                 }
             )
@@ -175,8 +175,8 @@ let efComparisonPage =
 
                 including (
                     plasm {
-                        for p in tableOf<Payment> do
-                            where (p.OrderId = o.Id && p.Status = Succeeded)
+                        for p in referring<Payment> o do
+                            where (p.Status = Succeeded)
                             orderBy p.CreatedAt
                     }
                 )

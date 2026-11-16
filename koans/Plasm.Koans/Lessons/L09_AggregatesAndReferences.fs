@@ -7,13 +7,14 @@ open Plasm.Koans.Shop
 
 let private byId (orders: Order list) (id: int64) = orders |> List.find (fun o -> o.Id = OrderId id)
 
-/// An order's payments: the tie between the two aggregates, written once.
-/// [<ReflectedDefinition>] lets Plasm read the function as part of a query.
+/// An order's succeeded payments: a relationship that says more than the tie,
+/// written once. [<ReflectedDefinition>] lets Plasm read the function as part
+/// of a query.
 [<ReflectedDefinition>]
-let paymentsOf (o: Order) =
+let succeededPaymentsOf (o: Order) =
     plasm {
-        for p in tableOf<Payment> do
-            where (p.OrderId = o.Id)
+        for p in referring<Payment> o do
+            where (p.Status = Succeeded)
     }
 
 let lesson =
@@ -187,12 +188,14 @@ let lesson =
               fun repo ->
                   task {
                       // A Payment is another aggregate: it refers to its order by OrderId.
-                      // exists (an inner query) inside a where asks whether any payment
-                      // matches this order, in the same command.
+                      // referring<Payment> o is the payments that refer to this order:
+                      // Payment has one field holding an OrderId, so Plasm writes the
+                      // tie, p.OrderId = o.Id, itself. exists (an inner query) inside a
+                      // where asks whether any of them matches, in the same command.
                       let paid =
                           plasm {
                               for o in tableOf<Order> do
-                                  where (exists (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) }))
+                                  where (exists (plasm { for p in referring<Payment> o do where (p.Status = Succeeded) }))
                                   orderBy o.Id
                           }
 
@@ -209,7 +212,7 @@ let lesson =
                       let unpaid =
                           plasm {
                               for o in tableOf<Order> do
-                                  where (not (exists (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) })))
+                                  where (not (exists (plasm { for p in referring<Payment> o do where (p.Status = Succeeded) })))
                                   orderBy o.Id
                           }
 
@@ -223,15 +226,15 @@ let lesson =
               fun repo ->
                   task {
                       // A query ending in including reads each order with the list an
-                      // inner query finds for it. The inner query names the tie,
-                      // p.OrderId = o.Id; the result's type, (Order * Payment list),
-                      // says what was read. Plasm reads the payments of every order in
-                      // one more command and pairs them up.
+                      // inner query finds for it, here the payments referring to it.
+                      // The result's type, (Order * Payment list), says what was read.
+                      // Plasm reads the payments of every order in one more command and
+                      // pairs them up.
                       let withPayments =
                           plasm {
                               for o in tableOf<Order> do
                                   orderBy o.Id
-                                  including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id); orderBy p.Id })
+                                  including (plasm { for p in referring<Payment> o do orderBy p.Id })
                           }
 
                       let! rows = repo.All withPayments
@@ -241,10 +244,11 @@ let lesson =
           )
 
           Koan.Task(
-              "A tie written once serves exists and including",
+              "A relationship that says more is written once",
               fun repo ->
                   task {
-                      // paymentsOf (top of this lesson) is the tie, written once. It
+                      // succeededPaymentsOf (top of this lesson) says more than the tie,
+                      // so it is a function, written once and built on referring. It
                       // works inside exists, and as the start of an inner query that
                       // narrows it further. Inside including, orderBy and take apply to
                       // each order's payments, and select picks what the list holds:
@@ -252,9 +256,9 @@ let lesson =
                       let paidOrders =
                           plasm {
                               for o in tableOf<Order> do
-                                  where (exists (paymentsOf o))
+                                  where (exists (succeededPaymentsOf o))
                                   orderBy o.Id
-                                  including (plasm { for p in paymentsOf o do orderByDescending p.CreatedAt; take 1; select p.Status })
+                                  including (plasm { for p in succeededPaymentsOf o do orderByDescending p.CreatedAt; take 1; select p.Status })
                           }
 
                       let! rows = repo.All paidOrders
@@ -273,8 +277,8 @@ let lesson =
                           plasm {
                               for o in tableOf<Order> do
                                   orderBy o.Id
-                                  including (paymentsOf o)
-                                  including (plasm { for d in tableOf<Delivery> do where (d.OrderId = o.Id) })
+                                  including (referring<Payment> o)
+                                  including (referring<Delivery> o)
                           }
 
                       let! rows = repo.All withBoth
@@ -289,24 +293,37 @@ let lesson =
                   task {
                       // An inner query may end in its own including, so its items come
                       // with their own lists: Customer * (Order * Payment list) list.
-                      // An order's CustomerId is optional, so the tie compares it with
-                      // Some c.Id.
+                      // An order's CustomerId is optional; referring finds it all the
+                      // same, as o.CustomerId = Some c.Id.
                       let customers =
                           plasm {
                               for c in tableOf<Customer> do
                                   orderBy c.Id
 
-                                  including (
-                                      plasm {
-                                          for o in tableOf<Order> do
-                                              where (o.CustomerId = Some c.Id)
-                                              orderBy o.Id
-                                              including (paymentsOf o)
-                                      }
-                                  )
+                                  including (plasm { for o in referring<Order> c do orderBy o.Id; including (referring<Payment> o) })
                           }
 
                       let! rows = repo.All customers
                       ok rows |> List.map (fun (c, orders) -> c.Name, orders |> List.map (fun (o, payments) -> o.Id, payments.Length)) |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "Each order with its customer",
+              fun repo ->
+                  task {
+                      // referredBy<Customer> o is the customer this order refers to: the
+                      // one whose key is the order's CustomerId. A key finds at most one,
+                      // so includingOne takes it and gives an option; an order with no
+                      // customer comes with None.
+                      let withCustomer =
+                          plasm {
+                              for o in tableOf<Order> do
+                                  orderBy o.Id
+                                  includingOne (plasm { for c in referredBy<Customer> o do select c.Name })
+                          }
+
+                      let! rows = repo.All withCustomer
+                      ok rows |> List.map (fun (o, name) -> o.Id, name) |> shouldBe __
                   }
           ) ]

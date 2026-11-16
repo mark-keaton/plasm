@@ -100,7 +100,7 @@ let published = plasm { for o in tableOf<Order> do where (o.Status = Published) 
 let unpaid (q: Query<Order>) =
     plasm {
         for o in q do
-            where (not (exists (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) })))
+            where (not (exists (plasm { for p in referring<Payment> o do where (p.Status = Succeeded) })))
     }
 
 let withProduct (product: ProductId) =
@@ -111,10 +111,12 @@ let orderById = Query.prepare (fun (id: Arg<OrderId>) -> plasm { for o in tableO
 
 // Payments are their own aggregate: each order with its succeeded payments,
 // read as (Order * Payment list) with one more command for the whole page.
+// referring<Payment> o is the payments that refer to o: Payment's one field of
+// type OrderId is the tie, so it is not written by hand.
 let withSucceededPayments (q: Query<Order>) =
     plasm {
         for o in q do
-            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded); orderBy p.CreatedAt })
+            including (plasm { for p in referring<Payment> o do where (p.Status = Succeeded); orderBy p.CreatedAt })
     }
 
 // Writes: read what the decision needs, let the domain decide, write what it decided.
@@ -227,7 +229,7 @@ is a session to send a submission at a time.
 ## Learn Plasm: the koans
 
 `koans/` is an interactive course in the style of Ruby Koans: 22 lessons and
-231 koans, each a small exercise with a blank (`__`) to fill in, run against a
+232 koans, each a small exercise with a blank (`__`) to fill in, run against a
 real PostgreSQL database inside a sandbox, so every koan starts from the same
 data. It teaches the one style. It starts with no Plasm at all (the F# the
 course uses), then what a repo is, the shop's data and the promises Plasm

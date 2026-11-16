@@ -14,9 +14,10 @@ Feature: A query can read each record with the records another query finds for i
   outer column, and may filter, order and take: all per outer record. Plasm reads
   the inner records with one more command per batch of outer values, and groups
   them. The inner query may end in `select` or `selectDistinct`, so the list
-  holds only what it selects. The outer record still comes whole, with what it owns. A relationship can
-  be written once as a reflected function of the outer record (`paymentsOf o`)
-  and used in `including` and in `exists` alike.
+  holds only what it selects. The outer record still comes whole, with what it owns. A tie the typed ids
+  prove is written `referring<Payment> o` (referring.feature); a relationship
+  that says more than the tie is written once as a reflected function built on
+  it (`succeededPaymentsOf o`) and used in `including` and in `exists` alike.
 
   `includingOne` reads the one record the inner query can find, as an option
   (`Order * Customer option`); the tie must prove there is at most one, by
@@ -70,15 +71,15 @@ Feature: A query can read each record with the records another query finds for i
       When I compile code that passes the Orders read without them to that function
       Then the code does not compile
 
-    Scenario: A relationship written once as a reflected function serves including and exists
-      When I read the Orders by total, including their succeeded Payments through paymentsOf
+    Scenario: A relationship that says more than the tie is written once and serves including and exists
+      When I read the Orders by total, including what succeededPaymentsOf finds for each
       Then the Orders and their Payments are:
         | order | payments                  |
         | 5     |                           |
         | 10    | 10 Succeeded              |
         | 50    | 20 Succeeded, 30 Succeeded |
         | 200   |                           |
-      When I read the Orders with a Payment through paymentsOf in exists
+      When I read the Orders that succeededPaymentsOf finds something for, in exists
       Then the Orders found are those of 10 and 50
 
     Scenario: Inside a transaction

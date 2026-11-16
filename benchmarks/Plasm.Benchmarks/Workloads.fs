@@ -64,8 +64,8 @@ let plasmPageWithPayments (n: int) =
         for o in plasmPage n do
             including (
                 plasm {
-                    for p in tableOf<Payment> do
-                        where (p.OrderId = o.Id && p.Status = Succeeded)
+                    for p in referring<Payment> o do
+                        where (p.Status = Succeeded)
                         orderBy p.CreatedAt
                 }
             )
