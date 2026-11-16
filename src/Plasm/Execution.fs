@@ -365,7 +365,7 @@ let rec loadInto (s: Session) (rows: IReadOnlyList<obj[]>) (nodes: Planner.LoadN
                                     { Model = node.Parent.Name
                                       Property = a.Name
                                       Value = $"{found.Count} rows"
-                                      Message = $"a has-one relationship matched {found.Count} records for the {node.Parent.Name} with key {key.Value}" }
+                                      Message = $"the {node.Parent.Name} with key {key.Value} owns at most one {node.Target.Name}, and the database holds {found.Count} (is a unique constraint missing?)" }
                             )
 
                         if found.Count = 0 then
@@ -380,7 +380,7 @@ let rec loadInto (s: Session) (rows: IReadOnlyList<obj[]>) (nodes: Planner.LoadN
                                       Property = a.Name
                                       Value = string key
                                       Message =
-                                        $"a required relationship found {found.Count} matching {node.Target.Name} records (filtered load or missing row)" }
+                                        $"the {node.Parent.Name} with key {key} owns exactly one {node.Target.Name}, and the database holds {found.Count}" }
                             )
 
                         found.[0]

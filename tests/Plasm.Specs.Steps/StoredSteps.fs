@@ -311,9 +311,25 @@ module Ineffective =
     [<Table "json_in_values">]
     type JsonInValue = { Id: JsonInValueId; Price: MoneyWithJson }
 
+    type StringyId = StringyId of int64
+
+    [<Table "stringies">]
+    type Stringy = { Id: StringyId; Tags: string list }
+
+    type TwinnedId = TwinnedId of int64
+
+    [<Table "twinneds">]
+    type Twinned =
+        { Id: TwinnedId
+          Name: string
+          [<Column "name">]
+          Title: string }
+
     let models =
         Map
-            [ "a table named by an empty string", [ typeof<Blank> ]
+            [ "a list of strings", [ typeof<Stringy> ]
+              "two fields of one column", [ typeof<Twinned> ]
+              "a table named by an empty string", [ typeof<Blank> ]
               "an Assigned field that is not the key", [ typeof<Misassigned> ]
               "an Assigned key that is not an integer", [ typeof<AssignedGuid> ]
               "an OrderedBy on a field that is not a list", [ typeof<OrderedScalar> ]

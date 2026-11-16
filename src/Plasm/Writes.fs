@@ -227,7 +227,7 @@ let rec check (model: Model) (s: CsState) : CsState =
                     st
                     v.Name
                     (FieldErrorKind.Custom "version")
-                    "a key-only change to a versioned record must state the expected version (Changeset.expectVersion)"
+                    "a change to a versioned record must say which version it was made from: pass expectVersion to Tx.update"
         | None when s.ExpectedVersion.IsSome ->
             st <-
                 err

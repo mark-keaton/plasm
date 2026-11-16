@@ -252,7 +252,8 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
             { Sql = (Sql.renderSelect provider.Dialect select).Sql
               Loads = [] })
 
-    /// Executes a query, loading requested relationships with batched queries.
+    /// Reads a query's records, each with what it owns or links, in batched
+    /// commands.
     member _.All(query: Query<'T>, ?consistency: ReadConsistency, ?cancellationToken: CancellationToken) =
         let ct = defaultArg cancellationToken CancellationToken.None
         let consistency = defaultArg consistency ReadConsistency.Independent
@@ -362,12 +363,6 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                 return Ok(rows |> Seq.map unbox<'R> |> List.ofSeq)
             })
 
-    /// Compares the model with the live database catalogue and reports every
-    /// difference that would make a mapped read or write fail: missing tables
-    /// and columns (join tables included), incompatible column types,
-    /// non-optional fields over nullable columns, and NOT NULL columns the
-    /// model cannot write. An empty list means none was found. Reads only the
-    /// catalogue; it does not create or migrate anything.
     /// Translates every query an assembly defines as a value in its modules
     /// (queries, projections and prepared queries, with their arguments as
     /// parameters), without running any, and returns those Plasm cannot
@@ -417,6 +412,12 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
     /// by. It is printed, never run: write the migration that reaches it.
     member _.Ddl() : string = Ddl.print model provider.Dialect
 
+    /// Compares the model with the live database catalogue and reports every
+    /// difference that would make a mapped read or write fail: missing tables
+    /// and columns (join tables included), incompatible column types,
+    /// non-optional fields over nullable columns, and NOT NULL columns the
+    /// model cannot write. An empty list means none was found. Reads only the
+    /// catalogue; it does not create or migrate anything.
     member _.CheckSchema(?cancellationToken: CancellationToken) : Task<Result<SchemaIssue list, DbError>> =
         let ct = defaultArg cancellationToken CancellationToken.None
 
@@ -426,11 +427,10 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                 return Ok issues
             })
 
-    /// F# source for a record and a schema that map `table`, generated from the
+    /// F# source for a [<Table>] record that maps `table`, generated from the
     /// database catalogue: column types become F# types, nullable columns
-    /// become options, the primary key becomes `key` (or `identityKey` when the
-    /// database generates it), and columns with no F# type in this dialect are
-    /// left out with a comment. Reads only the catalogue.
+    /// become options, the primary key becomes the field named Id, and columns
+    /// with no F# type in this dialect are left out with a comment. Reads only the catalogue.
     member _.Scaffold(table: string, ?cancellationToken: CancellationToken) : Task<Result<Scaffold, ScaffoldError>> =
         let ct = defaultArg cancellationToken CancellationToken.None
 

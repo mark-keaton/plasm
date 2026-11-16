@@ -553,7 +553,7 @@ module Model =
                 match def.Key with
                 | Some(p, g) -> Some p.Name, g
                 | None ->
-                    err None "no primary key declared (use key or identityKey)"
+                    err None "has no field named Id, and a stored record's key is its field named Id"
                     None, false
 
             let fields = ResizeArray<FieldMap>()
@@ -665,11 +665,9 @@ module Model =
                     elif Reflection.isOption scalarType then
                         err (Some prop.Name) "nested options cannot be stored unambiguously"
                     elif FSharpType.IsRecord(scalarType, true) && defs.ContainsKey scalarType then
-                        let op = if isOpt then "ownsOptional" else "ownsOne"
-
                         err
                             (Some prop.Name)
-                            $"{prop.Name} is a {scalarType.Name}, a record with its own schema, so it must be owned to be stored: declare `{op} (fun x -> x.{prop.Name}) (fun item -> item.Owner)`, or hold its id instead to refer to it"
+                            $"{prop.Name} is a {scalarType.Name}, a stored record: to own it, give {scalarType.Name} a field holding {def.Type.Name}'s key; to refer to it, hold its id instead"
                     elif FSharpType.IsRecord(scalarType, true) && (scalarMapping scalars scalarType |> Result.isError) then
                         let column = def.Columns.TryFind prop.Name |> Option.defaultValue (Paths.snakeCase prop.Name)
 
@@ -686,7 +684,7 @@ module Model =
                     elif Reflection.isList t then
                         err
                             (Some prop.Name)
-                            $"{prop.Name} is a list, and a list must be owned to be stored: declare `owns (fun x -> x.{prop.Name}) (fun item -> item.Owner)`, or links for shared records through a join table"
+                            $"{prop.Name} is a {Reflection.typeName t}: a list is stored as owned or linked records, or as one document; mark it [<Json>] to store it as one JSON document"
                     else
                         let column = def.Columns.TryFind prop.Name |> Option.defaultValue (Paths.snakeCase prop.Name)
 
@@ -760,8 +758,10 @@ module Model =
 
             let columns = fieldArr |> Array.map (fun f -> f.Column)
 
-            if Array.length (Array.distinct columns) <> columns.Length then
-                err None "two fields map to the same column"
+            for column, sharing in fieldArr |> Array.groupBy (fun f -> f.Column) do
+                if sharing.Length > 1 then
+                    let names = sharing |> Array.map (fun f -> f.Name) |> String.concat " and "
+                    err None $"{names} both map to the column {column}; give each field its own column"
 
             if errors.Count > 0 then
                 Error(List.ofSeq errors)

@@ -15,11 +15,10 @@ type internal BulkDef =
 
 /// A set-based write: one statement over every row a query matches, or many
 /// records inserted at once. Like a query, it is a value: building it touches
-/// nothing; run it with `repo.Execute` or `Tx.execute`, inspect it with
-/// `repo.Explain`.
+/// nothing; run it with `Tx.execute`, inspect it with `repo.Explain`.
 ///
-/// Bulk writes do not run changeset validations. Database constraints still
-/// apply, and versioned rows have their version incremented.
+/// Database constraints apply to bulk writes as to any write, and versioned
+/// rows have their version incremented.
 [<Sealed>]
 type BulkWrite<'R> internal (def: BulkDef, finish: obj -> 'R) =
     member internal _.Def = def

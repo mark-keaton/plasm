@@ -804,7 +804,7 @@ type internal PreparedProjection2<'A, 'B, 'R>(template: QueryDef, select: Expr) 
         member _.Def = { template with Args = Array.zeroCreate 2 }
         member _.Select = Some select
 
-/// Queries over a whole schema, and prepared queries.
+/// Prepared queries.
 type Query =
     /// Prepares a query with one argument. The description is built and
     /// translated once; each call only binds the argument as a parameter:
@@ -895,8 +895,8 @@ module internal Ties =
 /// Ties the typed ids prove (referring.feature).
 [<AutoOpen>]
 module TieQueries =
-    /// The `'T` records that refer to `record`: those whose one field of its key
-    /// type (plain or an option) holds its key. `referring<Payment> o` is
+    /// The `'T` records that refer to `record`: those whose one field referring
+    /// to its record (plain or an option) holds its key. `referring<Payment> o` is
     /// `plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) }`. A
     /// query: use it in `including`, `exists`, as a source, or with a record in
     /// hand. Not exactly one such field is refused, naming them.
@@ -905,7 +905,7 @@ module TieQueries =
         Ties.make typeof<'T> true (Expr.Value(record, record.GetType())) :?> Query<'T>
 
     /// The `'T` record that `record` refers to: the one whose key equals
-    /// `record`'s one field of `'T`'s key type (a None finds nothing). At most
+    /// `record`'s one field referring to a `'T` (a None finds nothing). At most
     /// one, so `includingOne` takes it.
     let referredBy<'T> (record: obj) : Query<'T> =
         if isNull record then nullArg "record"

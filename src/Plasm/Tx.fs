@@ -25,7 +25,7 @@ type TxStep =
 type TxFailure<'E> =
     /// `Tx.fail`, `Tx.orReject`, `Tx.ofResult`, or a `Tx.run` step returning Error.
     | Rejected of 'E
-    /// Validation or declared-constraint errors of the step's changeset.
+    /// Declared-constraint errors of the step's record, by field.
     | InvalidChanges of entity: string * errors: FieldError list
     /// Optimistic concurrency conflict (or the row no longer exists).
     | Conflict of entity: string
@@ -314,7 +314,7 @@ open System.Runtime.InteropServices
 
 /// The steps of a transaction. Each is located by where it is written (its
 /// caller's file and line), so none needs a name:
-/// `transaction { let! o = Tx.insert (Changeset.insert order) ... }`.
+/// `transaction { let! o = Tx.insert order ... }`.
 [<AbstractClass; Sealed>]
 type Tx =
 
@@ -549,5 +549,5 @@ type TxBuilder() =
 
 [<AutoOpen>]
 module TxBuilderInstance =
-    /// Describes a transaction: `transaction { let! o = Tx.insert cs ... }`.
+    /// Describes a transaction: `transaction { let! o = Tx.insert order ... }`.
     let transaction = TxBuilder()
