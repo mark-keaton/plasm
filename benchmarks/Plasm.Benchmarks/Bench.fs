@@ -14,7 +14,7 @@ open Plasm.Benchmarks.Workloads
 type GraphLoad() =
     let mutable repo: Repo = Unchecked.defaultof<_>
     let mutable cs = ""
-    let mutable page: Query<Order> = Unchecked.defaultof<_>
+    let mutable page: Projection<Order * Payment list> = Unchecked.defaultof<_>
 
     [<Params(20, 100, 1000)>]
     member val Parents = 20 with get, set
@@ -24,7 +24,7 @@ type GraphLoad() =
         let db = database.Force().GetAwaiter().GetResult()
         repo <- Repo(db.Model, db.Provider)
         cs <- db.ConnectionString
-        page <- plasmPage this.Parents
+        page <- plasmPageWithPayments this.Parents
 
     [<Benchmark(Baseline = true)>]
     member _.Plasm() : Task<Order list * Payment list> = runPage repo page

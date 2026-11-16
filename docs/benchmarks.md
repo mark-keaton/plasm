@@ -62,11 +62,14 @@ payments. A third of the payments are `succeeded`; the rest are `failed` or
 
 The variants are:
 
-- **Plasm:** `repo.All (plasmPage n)` gives the orders with their lines (two
-  commands: orders, then the lines of exactly those orders). The payments are a
-  second query, prepared once:
-  `succeededPaymentsOf (orders |> List.map (fun o -> o.Id))`, which is
-  `List.contains p.OrderId ids && p.Status = Succeeded`, one array parameter.
+- **Plasm:** `repo.All (plasmPageWithPayments n)` gives each order with its
+  lines and its succeeded payments: three commands (the orders, the lines of
+  exactly those orders, and their succeeded payments through `including`, the
+  order ids as one array parameter).
+
+  Until 2026-11-15 the payments were a second query prepared once,
+  `succeededPaymentsOf (orders |> List.map (fun o -> o.Id))`, sending the same
+  three commands; the sections after the next one were measured that way.
   For the siblings workload there are two Plasm variants: both queries built
   for each call, and both prepared (`orderById`, `paymentsOfOrder`). See
   `Workloads.fs`.
@@ -120,6 +123,25 @@ payments counts). They did.
 Plasm and EF split query now read the same rows in the same number of commands.
 EF single query multiplies lines by succeeded payments per order (10 × 3 = 30
 rows per order), and in the siblings case the full 10 × 10 cross product.
+
+### Time and allocations with `including` (`counts`, 2026-11-16)
+
+The page read as one query ending in `including`. The first measurement found
+`including` planned again on every call (about 520 KB more per call, whatever
+the page size); its plan is now cached like any query's
+(`including.feature`: A query ending in including is planned once). Medians of
+three `counts` runs on an otherwise idle machine:
+
+| Workload | Plasm | EF single | EF split |
+|---|---:|---:|---:|
+| page 20 | 1.99 to 2.10 ms / 304 KB | 3.50 ms / 511 KB | 4.18 to 4.40 ms / 248 KB |
+| page 100 | 3.73 to 4.12 ms / 1,067 KB | 17.53 ms / 2,217 KB | 12.17 to 13.27 ms / 815 KB |
+| page 1000 | 19.78 to 24.91 ms / 9,692 KB | 65.29 ms / 21,410 KB | 20.67 to 20.95 ms / 7,671 KB |
+
+Against the second-query form (next section): the same at 20 and 100 orders,
+about 10% more allocation (each order is paired with a list of its payments),
+and at 1,000 orders slower than the 14.5 ms recorded then, with a wide spread
+between runs. Not yet investigated.
 
 ### Time and allocations after the convention fix (`counts`, commit dc6832f)
 

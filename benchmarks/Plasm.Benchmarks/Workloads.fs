@@ -57,14 +57,19 @@ let plasmPage (n: int) =
             take n
     }
 
-/// The succeeded payments of the given orders, built and planned once.
-let succeededPaymentsOf =
-    Query.prepare (fun (orders: Arg<OrderId list>) ->
-        plasm {
-            for p in tableOf<Payment> do
-                where (List.contains p.OrderId orders.Value && p.Status = Succeeded)
-                orderBy p.CreatedAt
-        })
+/// The page, each order with its succeeded payments: one query ending in
+/// `including`, whose payments come in one more command for the whole page.
+let plasmPageWithPayments (n: int) =
+    plasm {
+        for o in plasmPage n do
+            including (
+                plasm {
+                    for p in tableOf<Payment> do
+                        where (p.OrderId = o.Id && p.Status = Succeeded)
+                        orderBy p.CreatedAt
+                }
+            )
+    }
 
 let siblingOrderId = 1L
 
@@ -96,12 +101,12 @@ let private all (repo: Repo) (q: Query<'T>) =
         | Error e -> return failwithf "Plasm query failed: %O" e
     }
 
-/// A page of orders with their lines, then the succeeded payments of those orders.
-let runPage (repo: Repo) (page: Query<Order>) : Task<Order list * Payment list> =
+/// A page of orders with their lines and their succeeded payments.
+let runPage (repo: Repo) (page: Projection<Order * Payment list>) : Task<Order list * Payment list> =
     task {
-        let! orders = all repo page
-        let! payments = all repo (succeededPaymentsOf (orders |> List.map (fun o -> o.Id)))
-        return orders, payments
+        match! repo.All page with
+        | Ok rows -> return rows |> List.map fst, rows |> List.collect snd
+        | Error e -> return failwithf "Plasm query failed: %O" e
     }
 
 let runSiblings (repo: Repo) (id: OrderId) : Task<Order list * Payment list> =

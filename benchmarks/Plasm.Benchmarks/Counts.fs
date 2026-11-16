@@ -116,7 +116,7 @@ let all () =
 
         for n in [ 20; 100; 1000 ] do
             let name = $"page of {n} orders (lines, successful payments)"
-            let page = plasmPage n
+            let page = plasmPageWithPayments n
             let! p = plasmVariant name "Plasm" (fun repo -> runPage repo page)
             results.Add p
 
@@ -177,7 +177,7 @@ let profile () =
     task {
         let! db = database.Force()
         let repo = db.RepoWith()
-        let q = plasmPage 1000
+        let q = plasmPageWithPayments 1000
 
         for _ in 1..60 do
             let! _ = runPage repo q
