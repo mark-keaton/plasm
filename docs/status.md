@@ -38,7 +38,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 
 | Suite | What it proves | Result |
 |---|---|---|
-| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 463 / 463 pass (outline examples counted separately) |
+| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 466 / 466 pass (outline examples counted separately) |
 | `tests/Plasm.Tests`: `Translation.fs` | SQL-shape contracts (options, membership, `exists`, `List.exists`/`forall` over owned lists, pagination), unsupported-expression errors, model-configuration errors | 42 pass |
 | `tests/Plasm.Tests`: `CompileTime.fs` | Typed API acceptance and rejection, checked with FSharp.Compiler.Service against the real assemblies; each rejection pins its error code and has a passing control snippet | 15 pass |
 | `tests/Plasm.Tests`: `Properties.fs` (FsCheck, real database) | Predicate-order equivalence matching F# semantics; extending a query never alters it; an update records exactly the differing fields; the same aggregates for every batch size, with key-proportional command counts; owned lines keep their declared order per owner | 5 properties pass |
@@ -51,7 +51,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 | `koans/browser` | The browser koans (PGlite) | 120 scenarios pass |
 
 Run the library's tests with `dotnet test` from the repository root (Docker is
-required, or set `PLASM_TEST_PG`): 463 scenarios and 128 unit tests.
+required, or set `PLASM_TEST_PG`): 466 scenarios and 128 unit tests.
 
 ## Supported behaviour
 
@@ -157,6 +157,9 @@ required, or set `PLASM_TEST_PG`): 463 scenarios and 128 unit tests.
   - equality with `None` (`IS NULL`), and option-to-option equality
     (`IS NOT DISTINCT FROM`); `.IsSome`, `.IsNone`, `.Value`,
     `Option.get`/`isSome`/`isNone`
+  - a null that is not an option (a captured null string, or a null prepared
+    argument) is refused, never read as `IS NULL` or `= NULL`
+    (`query-semantics.feature`)
   - `List`/`Seq`/`Array.contains` and `Contains` over captured collections
     (`= ANY`, or `FALSE` when empty)
   - `StartsWith`, `EndsWith` and `Contains` (escaped `LIKE`); `ToLower`,
@@ -655,6 +658,7 @@ loaded records are in the result's type, not in a field that may be unloaded.
 | 2026-11-16 | The limit of side-by-side `including`s and `includingOne`s raised from eight to sixteen at the user's word ("Raise it to 16."): 64 overloads; type checking measured unchanged within the spread (60 queries: median 2.64 s at 8, 2.86 s at 16); only an inner that is not a query gives a longer error | `features/including.feature` |
 | 2026-11-16 | **Reversal** (strictness review): `includingOne` took the first of several matches when the database broke the uniqueness the tie proves; a second match is now a materialization error naming the records and the tie, as for an owned optional record | `features/including.feature` |
 | 2026-11-16 | **Reversal** (strictness review): `referring` and `referredBy` chose the tie by scalar type alone, so a field marked [<NotReference>], or any lone int64 beside an int64 key, became the tie; the tie is now a field the model counts as a reference to the keyed record | `features/referring.feature` |
+| 2026-11-16 | Strictness review: a captured null of a type that is not an option became `IS NULL` in an equality, and a null prepared argument `= NULL` (so `<>` found no rows where F# finds every one); both are refused, as string patterns and membership already were | `features/query-semantics.feature` |
 | 2026-11-16 | `referring<T> o` and `referredBy<T> o`: the tie derived from the typed ids, at the user's request (asked whether F# could generate nine hand-written relationship functions). Reverses "no inferred tie" from the `including` design: with typed ids it is a proof, not a guess; not exactly one candidate field is refused, never picked. Plain ties in koans, README, website, examples and Kanban moved to it | `features/referring.feature` |
 | 2026-11-15 | `[<Json>]`: one jsonb document per field in Plasm's own strict mapping (unknown keys refused, since writes replace the whole document); JSON rendered through `ISqlDialect.Json`, refused at repository creation when absent | `features/json-columns.feature` |
 

@@ -415,6 +415,10 @@ let private argFunction (e: Expr) : obj[] -> obj =
 
         f
 
+/// The refusal of a null where F# has no absent value (query-semantics.feature).
+let private nullMessage (what: string) (e: Expr) =
+    $"the {what} {show e} is null, and a {Reflection.fsharpName e.Type} has no absent value in F#: compared with null, every row is unequal, which SQL cannot say. An option says a value may be absent: compare with an option, or leave the condition out"
+
 /// A parameter bound from the arguments each time the query runs. `transform`
 /// adjusts the domain value (e.g. LIKE escaping) before conversion.
 let private argParamWith (ctx: Ctx) (e: Expr) (valueType: Type) (transform: obj -> obj) : Sql.Expr =
@@ -426,7 +430,7 @@ let private argParamWith (ctx: Ctx) (e: Expr) (valueType: Type) (transform: obj 
         let v = f args
         let inner =
             if Reflection.isOption valueType then Reflection.getOptionValue valueType v
-            elif isNull v then None
+            elif isNull v then fail e (nullMessage "argument" e)
             else Some v
 
         match inner with
@@ -1125,6 +1129,10 @@ and equality ctx (whole: Expr) (a: Expr) (b: Expr) (negate: bool) : Sql.Expr =
             let v = evaluate ctx b
 
             match unwrapOption b.Type v with
+            | None when not (Reflection.isOption b.Type) ->
+                // A null string (or other reference) is no absent value in F#:
+                // `c.Name = null` is false for every row, never IS NULL.
+                fail whole (nullMessage "value" b)
             | None ->
                 // F# `= None` means "is absent": SQL IS NULL, never `= NULL`.
                 let col = scalar ctx a

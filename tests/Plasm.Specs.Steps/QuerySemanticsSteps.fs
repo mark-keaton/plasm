@@ -335,3 +335,35 @@ type QuerySemanticsSteps(w: World) =
         check
             (sql.Contains "ORDER BY (CASE \"t0\".\"status\" WHEN 'draft' THEN 0 WHEN 'published' THEN 1 WHEN 'cancelled' THEN 2 END)")
             $"the ordering is not by declaration position: {sql}"
+
+    [<StepDefinition("^I read the Customers whose name (=|<>) a captured null string$")>]
+    member _.CapturedNull(op: string) =
+        task {
+            let name: string = null
+
+            let! r =
+                if op = "=" then
+                    w.Repo.All(plasm { for c in tableOf<Customer> do where (c.Name = name) })
+                else
+                    w.Repo.All(plasm { for c in tableOf<Customer> do where (c.Name <> name) })
+
+            w.Set("nullRead", r)
+        }
+        |> unit
+
+    [<StepDefinition("I run a prepared query for the Customers named an argument, with null")>]
+    member _.PreparedNull() =
+        task {
+            let named = Query.prepare (fun (name: Arg<string>) -> plasm { for c in tableOf<Customer> do where (c.Name = name.Value) })
+            let! r = w.Repo.All(named null)
+            w.Set("nullRead", r)
+        }
+        |> unit
+
+    [<StepDefinition("^the read is refused, saying the (value|argument) is null and an option says a value may be absent$")>]
+    member _.NullRefused(what: string) =
+        match w.Get<Result<Customer list, DbError>> "nullRead" with
+        | Error e ->
+            let text = string e
+            check (text.Contains "null" && text.Contains "option" && text.Contains what) text
+        | Ok rows -> failwithf "expected a refusal, got %d Customers" rows.Length

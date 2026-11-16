@@ -114,3 +114,23 @@ Feature: Queries keep their F# meaning
     Scenario: The ordering is done by the database
       When I explain a query that orders Orders by Status
       Then the SQL orders by the position of each stored name in the declaration
+
+  Rule: A null where F# has no absent value is refused, never read as IS NULL
+
+    A string (or any reference type that is not an option) has no absent value
+    in F#: `c.Name = name` with a null `name` is false for every Customer, while
+    SQL's IS NULL would mean "has no name". An option says a value may be absent.
+
+    Scenario Outline: A captured null compared with <op> is refused
+      When I read the Customers whose name <op> a captured null string
+      Then the read is refused, saying the value is null and an option says a value may be absent
+
+      Examples:
+        | op  |
+        | =   |
+        | <>  |
+
+    Scenario: A null prepared argument is refused when the query runs
+      When I run a prepared query for the Customers named an argument, with null
+      Then the read is refused, saying the argument is null and an option says a value may be absent
+
