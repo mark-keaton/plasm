@@ -117,6 +117,37 @@ type KanbanSteps(w: World, d: Driver) =
             return! call (w.Api.drop { Ref = ref; Reason = reason })
         }
 
+    [<StepDefinition("{string} is blocked because {string}")>]
+    member _.Block(title: string, reason: string) : Task =
+        task {
+            let! ref = reference title
+            return! call (w.Api.block { Ref = ref; Reason = reason })
+        }
+
+    [<StepDefinition("{string} is unblocked")>]
+    member _.Unblock(title: string) : Task =
+        task {
+            let! ref = reference title
+            return! call (w.Api.unblock ref)
+        }
+
+    [<When("the blocked cards on {string} are read")>]
+    member _.ReadBlocked(slug: string) : Task = call (w.Api.blocked slug)
+
+    [<Then("""^the card "(.*)" is blocked since (\d{4}-\d\d-\d\d \d\d:\d\d) because "(.*)"$""")>]
+    member _.ThenBlocked(title: string, since: string, reason: string) : Task =
+        task {
+            let! card = current title
+            equal (Some { Reason = reason; Since = time since }: BlockedView option) card.Blocked "the card's blocker"
+        }
+
+    [<Then("the card {string} is not blocked")>]
+    member _.ThenNotBlocked(title: string) : Task =
+        task {
+            let! card = current title
+            equal None card.Blocked "the card's blocker"
+        }
+
     [<StepDefinition("{string} is sent back")>]
     member _.SendBack(title: string) : Task =
         task {

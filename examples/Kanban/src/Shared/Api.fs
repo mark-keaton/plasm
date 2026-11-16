@@ -26,10 +26,14 @@ type CommentView =
       Body: string
       At: DateTimeOffset }
 
+/// What blocks a card, and since when.
+type BlockedView = { Reason: string; Since: DateTimeOffset }
+
 type CardView =
     { Id: Guid
       Title: string
       Stage: StageView
+      Blocked: BlockedView option
       /// Sent back with every change, so a change based on an old copy is refused.
       Version: int
       Labels: string[]
@@ -77,6 +81,7 @@ type NewCard = { Board: string; Title: string }
 type CardRef = { Card: Guid; Version: int }
 
 type DropCard = { Ref: CardRef; Reason: string }
+type BlockCard = { Ref: CardRef; Reason: string }
 type RenameCard = { Ref: CardRef; Title: string }
 
 type NewComment = { Card: Guid; Body: string }
@@ -116,6 +121,10 @@ type IKanbanApi =
       sendBack: CardRef -> Async<Result<CardView, ApiError>>
       reopen: CardRef -> Async<Result<CardView, ApiError>>
       rename: RenameCard -> Async<Result<CardView, ApiError>>
+      block: BlockCard -> Async<Result<CardView, ApiError>>
+      unblock: CardRef -> Async<Result<CardView, ApiError>>
+      /// A board's blocked cards, the longest blocked first.
+      blocked: string -> Async<Result<CardView[], ApiError>>
       comment: NewComment -> Async<Result<CardView, ApiError>>
       label: LabelCard -> Async<Result<CardView, ApiError>>
       /// A board's cards that carry a label.

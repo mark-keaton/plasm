@@ -61,6 +61,7 @@ h3 { font-size: 15px; margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 
 .quiet, .counts, .fact { color: var(--quiet); }
 .counts { font-weight: 400; font-size: 13px; font-variant-numeric: tabular-nums; }
+.fact.blocked { color: var(--danger); }
 .newest { display: block; color: var(--quiet); font-weight: 400; font-size: 13px; }
 .fact { margin: 6px 0 0; font-size: 13px; }
 .problem { color: var(--danger); margin: 4px 0 0; font-size: 13px; }

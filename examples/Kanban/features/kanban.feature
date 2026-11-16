@@ -151,6 +151,59 @@ Feature: A kanban board with an F# domain at its centre
       When Grace comments "One more thing" on "Write the spec"
       Then the request is refused: "This card is done. Reopen it to change it."
 
+  Rule: A card can be blocked, with a reason and since when
+
+    Scenario: Blocking a card records why and since when
+      Given Ada is working on "Write the spec" on "apollo"
+      And the time is 2026-11-15 09:00
+      When "Write the spec" is blocked because "waiting for the supplier"
+      Then the card "Write the spec" is blocked since 2026-11-15 09:00 because "waiting for the supplier"
+
+    Scenario: An unblocked card has no blocker any more
+      Given Ada is working on "Write the spec" on "apollo"
+      And "Write the spec" is blocked because "waiting for the supplier"
+      When "Write the spec" is unblocked
+      Then the card "Write the spec" is not blocked
+
+    Scenario: A blocked card does not ship
+      Given Ada is working on "Write the spec" on "apollo"
+      And "Write the spec" is blocked because "waiting for the supplier"
+      When "Write the spec" is shipped
+      Then the request is refused: "This card is blocked: waiting for the supplier. Unblock it first."
+
+    Scenario: A card is not blocked without a reason
+      Given the card "Write the spec" on "apollo"
+      When "Write the spec" is blocked because "  "
+      Then the request is refused: "Say what blocks the card."
+
+    Scenario: A card is not blocked twice
+      Given the card "Write the spec" on "apollo"
+      And "Write the spec" is blocked because "waiting for the supplier"
+      When "Write the spec" is blocked because "no budget"
+      Then the request is refused: "This card is already blocked: waiting for the supplier."
+
+    Scenario: Only a blocked card is unblocked
+      Given the card "Write the spec" on "apollo"
+      When "Write the spec" is unblocked
+      Then the request is refused: "This card is not blocked."
+
+    Scenario: A dropped card is no longer blocked
+      Given the card "Write the spec" on "apollo"
+      And "Write the spec" is blocked because "waiting for the supplier"
+      When "Write the spec" is dropped because "out of scope"
+      Then the card "Write the spec" is not blocked
+
+    Scenario: A board's blocked cards, the longest blocked first
+      Given the card "First" on "apollo"
+      And the card "Second" on "apollo"
+      And the card "Third" on "apollo"
+      And the time is 2026-11-15 10:00
+      And "Second" is blocked because "no budget"
+      And the time is 2026-11-15 09:00
+      And "Third" is blocked because "waiting for the supplier"
+      When the blocked cards on "apollo" are read
+      Then the cards found are "Third, Second"
+
   Rule: Boards are summarised by stage
 
     Scenario: The list of boards counts each board's cards by stage

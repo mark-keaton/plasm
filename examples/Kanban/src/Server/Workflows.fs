@@ -108,6 +108,16 @@ module Queries =
                     take size.Value
             })
 
+    /// A board's blocked cards, the longest blocked first. `Blocked` is a
+    /// value in the card's row, so its parts are columns to filter and order by.
+    let blockedOn =
+        Query.prepare (fun (board: Arg<BoardId>) ->
+            plasm {
+                for c in tableOf<Card> do
+                    where (c.Board = board.Value && c.Blocked.IsSome)
+                    orderBy (c.Blocked |> Option.map (fun blocker -> blocker.Since))
+            })
+
     /// What someone is working on, each card joined to its board: one command.
     let workOf =
         Query.prepare (fun (person: Arg<Person>) ->

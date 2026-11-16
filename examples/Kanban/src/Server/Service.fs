@@ -72,6 +72,7 @@ module private View =
         { Id = id
           Title = card.Title.Value
           Stage = stage card.Stage
+          Blocked = card.Blocked |> Option.map (fun blocker -> { Reason = blocker.Reason; Since = blocker.Since })
           Version = card.Version
           Labels = [| for tag in card.Labels -> tag.Name.Value |]
           Comments = card.Comments |> List.map comment |> Array.ofList }
@@ -281,6 +282,21 @@ let create (deps: Deps) (session: Session) (ct: CancellationToken) : IKanbanApi 
             match Input.field "title" Title.create input.Title with
             | Error fields -> refuse (Invalid(Array.ofList fields))
             | Ok title -> change input.Ref (fun _ _ card -> Card.rename title card)
+
+      block =
+        fun input ->
+            let now = deps.Clock()
+            change input.Ref (fun _ _ card -> Card.block input.Reason now card)
+
+      unblock = fun ref -> change ref (fun _ _ card -> Card.unblock card)
+
+      blocked =
+        fun slug ->
+            task {
+                let! board = readBoard slug (fun board -> Queries.blockedOn board)
+                return board |> Result.map (fun view -> view.Cards)
+            }
+            |> Async.AwaitTask
 
       comment =
         fun input ->

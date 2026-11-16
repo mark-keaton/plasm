@@ -70,6 +70,12 @@ dotnet test --project tests/Kanban.Specs
   `stage_since`, `stage_resolution`, `stage_resolution_reason` and
   `stage_at`, and refuses to read a row whose columns contradict each other:
   it is reported as an error, never repaired.
+- **A value in the card's row.** A card can be blocked: `Blocked` is a
+  `Blocker option`, a plain record of a reason and a time with no table and
+  no attribute. Plasm stores it as the columns `blocked_reason` and
+  `blocked_since`, both empty when the card is not blocked, and the DDL it
+  prints includes a constraint that there is no reason without a time. A
+  board's blocked cards are a query over those columns.
 - **Queries in the domain's words.** `Card.Assignee` is an ordinary member of
   the domain's record, a `match` on the stage. Marked `[<ReflectedDefinition>]`,
   it can be used in a query (`where (c.Assignee = Some person.Value)`), where

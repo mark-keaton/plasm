@@ -125,6 +125,10 @@ type Stage =
     | Doing of assignee: Person * since: DateTimeOffset
     | Done of resolution: Resolution * at: DateTimeOffset
 
+/// What keeps a card from moving, and since when. It has no table and no
+/// key: it is a value, stored in the card's own row.
+type Blocker = { Reason: string; Since: DateTimeOffset }
+
 [<Table "boards">]
 type Board =
     { Id: BoardId
@@ -156,6 +160,8 @@ type Card =
       Board: BoardId
       Title: Title
       Stage: Stage
+      /// A card is blocked or it is not: there is no reason without a time.
+      Blocked: Blocker option
       [<OrderedBy(nameof the<Comment>.At)>]
       Comments: Comment list
       [<JoinTable("card_labels", "card_id", "label_id"); OrderedBy(nameof the<Tag>.Name)>]
@@ -206,6 +212,11 @@ type DomainError =
     | DropNeedsReason
     | EmptyComment
     | TooManyLabels of most: int
+    | BlockNeedsReason
+    | AlreadyBlocked of reason: string
+    | NotBlocked
+    /// A blocked card does not ship until it is unblocked.
+    | CardBlocked of reason: string
 
 [<RequireQualifiedAccess>]
 module Card =
@@ -215,6 +226,7 @@ module Card =
           Board = board.Id
           Title = title
           Stage = Backlog
+          Blocked = None
           Comments = []
           Labels = []
           Created = now
@@ -229,15 +241,31 @@ module Card =
         | Backlog when inProgress >= board.WipLimit.Value -> Error(WipLimitReached board.WipLimit.Value)
         | Backlog -> Ok { card with Stage = Doing(assignee, now) }
 
-    /// Finishes a card. Only work in progress can ship; a card can be dropped
-    /// from the backlog too, but never without a reason.
-    let finish (resolution: Resolution) (now: DateTimeOffset) (card: Card) : Result<Card, DomainError> =
-        match card.Stage, resolution with
+    /// Says what keeps a card from moving.
+    let block (reason: string) (now: DateTimeOffset) (card: Card) : Result<Card, DomainError> =
+        match card.Stage, card.Blocked with
         | Done _, _ -> Error CardClosed
-        | _, Dropped reason when String.IsNullOrWhiteSpace reason -> Error DropNeedsReason
-        | Backlog, Shipped -> Error NotInProgress
-        | (Backlog | Doing _), Dropped reason -> Ok { card with Stage = Done(Dropped(reason.Trim()), now) }
-        | Doing _, Shipped -> Ok { card with Stage = Done(Shipped, now) }
+        | _, Some blocker -> Error(AlreadyBlocked blocker.Reason)
+        | _ when String.IsNullOrWhiteSpace reason -> Error BlockNeedsReason
+        | _ -> Ok { card with Blocked = Some { Reason = reason.Trim(); Since = now } }
+
+    let unblock (card: Card) : Result<Card, DomainError> =
+        match card.Blocked with
+        | Some _ -> Ok { card with Blocked = None }
+        | None -> Error NotBlocked
+
+    /// Finishes a card. Only work in progress can ship, and not while it is
+    /// blocked; a card can be dropped from the backlog too, but never without
+    /// a reason.
+    let finish (resolution: Resolution) (now: DateTimeOffset) (card: Card) : Result<Card, DomainError> =
+        match card.Stage, resolution, card.Blocked with
+        | Done _, _, _ -> Error CardClosed
+        | _, Dropped reason, _ when String.IsNullOrWhiteSpace reason -> Error DropNeedsReason
+        | Backlog, Shipped, _ -> Error NotInProgress
+        // Whatever blocked a dropped card no longer matters.
+        | (Backlog | Doing _), Dropped reason, _ -> Ok { card with Stage = Done(Dropped(reason.Trim()), now); Blocked = None }
+        | Doing _, Shipped, Some blocker -> Error(CardBlocked blocker.Reason)
+        | Doing _, Shipped, None -> Ok { card with Stage = Done(Shipped, now) }
 
     /// Puts work in progress back in the backlog.
     let sendBack (card: Card) : Result<Card, DomainError> =
@@ -300,3 +328,7 @@ module DomainError =
         | DropNeedsReason -> "Say why the card is dropped."
         | EmptyComment -> "A comment cannot be empty."
         | TooManyLabels most -> $"A card carries at most {most} labels."
+        | BlockNeedsReason -> "Say what blocks the card."
+        | AlreadyBlocked reason -> $"This card is already blocked: {reason}."
+        | NotBlocked -> "This card is not blocked."
+        | CardBlocked reason -> $"This card is blocked: {reason}. Unblock it first."

@@ -50,6 +50,7 @@ type Drafts =
     { Comment: string
       Title: string
       Reason: string
+      Blocker: string
       Labels: string }
 
 type CardAction =
@@ -58,6 +59,8 @@ type CardAction =
     | SendBack
     | Reopen
     | Drop
+    | Block
+    | Unblock
     | Rename
     | Comment
     | Relabel
@@ -116,6 +119,7 @@ let private noDrafts =
     { Comment = ""
       Title = ""
       Reason = ""
+      Blocker = ""
       Labels = "" }
 
 let private emptyForm =
@@ -210,6 +214,8 @@ let private request (action: CardAction) (card: CardView) (model: Model) : Async
     | SendBack -> api.sendBack ref
     | Reopen -> api.reopen ref
     | Drop -> api.drop { Ref = ref; Reason = model.Drafts.Reason }
+    | Block -> api.block { Ref = ref; Reason = model.Drafts.Blocker }
+    | Unblock -> api.unblock ref
     | Rename -> api.rename { Ref = ref; Title = model.Drafts.Title }
     | Comment -> api.comment { Card = card.Id; Body = model.Drafts.Comment }
     | Relabel -> api.label { Ref = ref; Labels = separated model.Drafts.Labels }
@@ -427,6 +433,11 @@ let private viewCard (model: Model) dispatch (card: CardView) =
         | WasShipped at -> Html.p [ prop.className "fact"; prop.text $"Shipped {clock at}" ]
         | WasDropped(reason, at) -> Html.p [ prop.className "fact"; prop.text $"Dropped {clock at}: {reason}" ]
 
+    let blocked =
+        match card.Blocked with
+        | Some blocker -> Html.p [ prop.className "fact blocked"; prop.text $"Blocked since {clock blocker.Since}: {blocker.Reason}" ]
+        | None -> Html.none
+
     let actions =
         match card.Stage with
         | InBacklog -> [ button "Start" "primary" true (act Start) ]
@@ -462,6 +473,7 @@ let private viewCard (model: Model) dispatch (card: CardView) =
                                           prop.onClick (fun _ -> dispatch (FilterBy(Some label)))
                                           prop.text label ] ] ]
                 status
+                blocked
                 if signedIn then
                     Html.div [ prop.className "actions"; prop.children actions ]
                 if isOpen then
@@ -496,6 +508,15 @@ let private viewCard (model: Model) dispatch (card: CardView) =
                                                 button "Rename" "plain" true (act Rename) ] ]
 
                                     problem "title" model
+
+                                    Html.div
+                                        [ prop.className "row"
+                                          prop.children
+                                              [ match card.Blocked with
+                                                | Some _ -> button "Unblock" "plain" true (act Unblock)
+                                                | None ->
+                                                    textInput "What blocks it?" model.Drafts.Blocker (draft (fun v d -> { d with Blocker = v })) (act Block)
+                                                    button "Block" "plain" true (act Block) ] ]
 
                                     Html.div
                                         [ prop.className "row"
