@@ -106,7 +106,8 @@ module internal Sql =
           /// Row count expressions (a parameter, possibly bound per execution).
           Limit: Expr option
           Offset: Expr option
-          ForUpdate: bool }
+          ForUpdate: bool
+          Distinct: bool }
 
     let select source =
         { Columns = []
@@ -118,7 +119,8 @@ module internal Sql =
           OrderBy = []
           Limit = None
           Offset = None
-          ForUpdate = false }
+          ForUpdate = false
+          Distinct = false }
 
     /// A fixed row count, sent as a 64-bit parameter.
     let count (n: int) = Param(box (int64 n))
@@ -387,7 +389,7 @@ module internal Sql =
 
         member r.Select(s: Select) =
             let w (x: string) = sb.Append(x) |> ignore
-            w "SELECT "
+            w (if s.Distinct then "SELECT DISTINCT " else "SELECT ")
 
             s.Columns
             |> List.iteri (fun i (e, alias) ->

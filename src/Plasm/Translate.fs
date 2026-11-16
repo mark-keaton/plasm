@@ -1651,6 +1651,106 @@ type Shape =
 
 /// Translates a projection, or (with `select = None`) a joined query whose rows
 /// are the tuple of its sources.
+/// `selectDistinct` (distinct.feature): SELECT DISTINCT, ordered only by
+/// selected values, never paged.
+let private distinct (def: QueryDef) (sel: Sql.Select) (shape: Shape) : Sql.Select * Shape =
+    let rec wholeRecord (s: Shape) =
+        match s with
+        | EntityLeaf(_, schema, _) -> Some schema.Name
+        | Build(_, parts) -> parts |> List.tryPick wholeRecord
+        | _ -> None
+
+    match wholeRecord shape with
+    | Some name -> invalid $"a whole {name} is unique by its key, so selectDistinct would keep every one; select the values to make distinct"
+    | None -> ()
+
+    if def.Paged then
+        invalid
+            "take and skip cannot be used with selectDistinct: in the query they come first and would page the rows, but the database pages the values after removing duplicates"
+
+    let rec bare (e: Sql.Expr) =
+        match e with
+        | Sql.AsText x -> bare x
+        | Sql.Cast(x, _, _) -> bare x
+        | x -> x
+
+    let label (i: int) =
+        match List.tryItem i def.Orders with
+        | Some(lambda, _) ->
+            match normalize lambda with
+            | Lambda(_, body) -> show body
+            | other -> show other
+        | None -> "the order"
+
+    // The database orders distinct rows only by what they hold: the order is
+    // applied outside, over the selected columns ("d"), and an order that
+    // still reads any other column is refused.
+    let selected = sel.Columns |> List.map (fun (c, alias) -> bare c, alias)
+
+    let rec over (e: Sql.Expr) : Sql.Expr =
+        match selected |> List.tryFind (fun (c, _) -> c = bare e) with
+        | Some(_, alias) -> Sql.Column("d", alias)
+        | None ->
+            match e with
+            | Sql.Binary(op, x, y) -> Sql.Binary(op, over x, over y)
+            | Sql.Not x -> Sql.Not(over x)
+            | Sql.IsNotTrue x -> Sql.IsNotTrue(over x)
+            | Sql.IsNull x -> Sql.IsNull(over x)
+            | Sql.IsNotNull x -> Sql.IsNotNull(over x)
+            | Sql.NotDistinctFrom(x, y) -> Sql.NotDistinctFrom(over x, over y)
+            | Sql.DistinctFrom(x, y) -> Sql.DistinctFrom(over x, over y)
+            | Sql.Cast(x, t, arr) -> Sql.Cast(over x, t, arr)
+            | Sql.AsText x -> Sql.AsText(over x)
+            | Sql.Like(x, y) -> Sql.Like(over x, over y)
+            | Sql.Func(f, xs) -> Sql.Func(f, List.map over xs)
+            | Sql.Case(branches, otherwise) -> Sql.Case(branches |> List.map (fun (c, v) -> over c, over v), over otherwise)
+            | Sql.AnyOf(x, vs, cast) -> Sql.AnyOf(over x, vs, cast)
+            | Sql.Fragment parts -> Sql.Fragment(parts |> List.map (function Choice2Of2 x -> Choice2Of2(over x) | text -> text))
+            | other -> other
+
+    let rec readsOther (e: Sql.Expr) =
+        match e with
+        | Sql.Column(alias, _) -> alias <> "d"
+        | Sql.Binary(_, x, y)
+        | Sql.NotDistinctFrom(x, y)
+        | Sql.DistinctFrom(x, y)
+        | Sql.Like(x, y) -> readsOther x || readsOther y
+        | Sql.Not x
+        | Sql.IsNotTrue x
+        | Sql.IsNull x
+        | Sql.IsNotNull x
+        | Sql.Cast(x, _, _)
+        | Sql.AsText x
+        | Sql.AnyOf(x, _, _) -> readsOther x
+        | Sql.Func(_, xs) -> List.exists readsOther xs
+        | Sql.Case(branches, otherwise) -> branches |> List.exists (fun (c, v) -> readsOther c || readsOther v) || readsOther otherwise
+        | Sql.Fragment parts -> parts |> List.exists (function Choice2Of2 x -> readsOther x | _ -> false)
+        | Sql.Aggregate _
+        | Sql.Exists _
+        | Sql.RowNumber _ -> true
+        | _ -> false
+
+    let orders =
+        sel.OrderBy
+        |> List.mapi (fun i o ->
+            let e = over o.Expr
+
+            if readsOther e then
+                invalid
+                    $"selectDistinct can order only by values it selects; {label i} is not selected (select it too, or order by a selected value)"
+
+            { o with Expr = e })
+
+    if orders.IsEmpty then
+        { sel with Distinct = true }, shape
+    else
+        let inner = { sel with Distinct = true; OrderBy = [] }
+
+        { Sql.select (Sql.Subquery(inner, "d")) with
+            Columns = sel.Columns |> List.map (fun (_, alias) -> Sql.Column("d", alias), alias)
+            OrderBy = orders },
+        shape
+
 let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr option) : Result<Sql.Select * Shape, TranslationError> =
     wrap (fun () ->
         let c = core model vol def
@@ -1799,7 +1899,12 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
                     invalid
                         $"{labels.[i]} is neither grouped nor aggregated; add it to groupBy or wrap it in an Agg function")
 
-        c.Select(List.ofSeq columns), s)
+        let sel = c.Select(List.ofSeq columns)
+
+        if def.Distinct then
+            distinct def sel s
+        else
+            sel, s)
 
 // ---------------------------------------------------------------------------
 // Bulk writes

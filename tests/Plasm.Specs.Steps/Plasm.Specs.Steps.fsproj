@@ -38,6 +38,7 @@
     <Compile Include="ConventionSteps.fs" />
     <Compile Include="ExistsSteps.fs" />
     <Compile Include="IncludingSteps.fs" />
+    <Compile Include="DistinctSteps.fs" />
     <Compile Include="OwnedOneSteps.fs" />
     <Compile Include="DdlSteps.fs" />
     <Compile Include="StoredSteps.fs" />

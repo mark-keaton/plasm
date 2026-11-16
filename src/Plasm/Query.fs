@@ -104,7 +104,9 @@ type internal QueryDef =
       Problems: string list
       /// `including (plasm { ... })`: the inner query, a lambda over the root
       /// record (including.feature).
-      Including: Expr option }
+      Including: Expr option
+      /// `selectDistinct`: each selected value once (distinct.feature).
+      Distinct: bool }
 
     member d.Paged =
         d.Limit.IsSome || d.Offset.IsSome || d.LimitArg.IsSome || d.OffsetArg.IsSome
@@ -123,7 +125,8 @@ type internal QueryDef =
           Template = None
           Args = [||]
           Problems = []
-          Including = None }
+          Including = None
+          Distinct = false }
 
 /// Something that can describe a query for display: a `Repo`.
 type internal IQueryDescriber =
@@ -386,6 +389,13 @@ type QueryBuilder() =
     [<CustomOperation("including")>]
     member _.Including(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'U list> =
         Projection<'T * 'U list>({ q.Def with Including = Some(inner :> Expr) }, inner :> Expr)
+
+    /// Projects each row, keeping each selected value once (as `List.distinct`;
+    /// None is one value). Order by selected values only; `take` and `skip`
+    /// are refused with it. Must be the last operation.
+    [<CustomOperation("selectDistinct")>]
+    member _.SelectDistinct(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] projection: Expr<'T -> 'R>) : Projection<'R> =
+        Projection<'R>({ q.Def with Distinct = true }, projection)
 
     /// Projects each row. Only the columns the projection uses are retrieved.
     /// Must be the last operation.
