@@ -6,6 +6,7 @@ open System
 open System.Diagnostics
 open System.Threading.Tasks
 open Npgsql
+open Plasm
 open Plasm.TestDomain.Domain
 open Plasm.Benchmarks.Workloads
 type EfOrder = Plasm.Benchmarks.EfModel.Order
@@ -262,4 +263,95 @@ let planning () =
                 name
                 (sw.Elapsed.TotalMilliseconds * 1000.0 / float n)
                 (float (GC.GetTotalAllocatedBytes(true) - before) / 1024.0 / float n)
+    }
+
+/// Counts large-object allocation ticks (each about 100 KB) and the reasons
+/// collections ran, from the runtime's own events.
+type private GcListener() =
+    inherit Diagnostics.Tracing.EventListener()
+    member val LargeTicks = 0 with get, set
+    member val LargeBytes = 0L with get, set
+    member val Reasons = Collections.Generic.Dictionary<string, int>()
+    member this.Reset() =
+        this.LargeTicks <- 0
+        this.LargeBytes <- 0L
+        this.Reasons.Clear()
+    override this.OnEventSourceCreated(source) =
+        if source.Name = "Microsoft-Windows-DotNETRuntime" then
+            this.EnableEvents(source, Diagnostics.Tracing.EventLevel.Verbose, LanguagePrimitives.EnumOfValue<int64, Diagnostics.Tracing.EventKeywords> 1L)
+    override this.OnEventWritten(e) =
+        let get (n: string) = let i = e.PayloadNames.IndexOf n in if i >= 0 then e.Payload.[i] else null
+        if e.EventName <> null && e.EventName.StartsWith "GCAllocationTick" then
+            if Convert.ToInt32(get "AllocationKind") = 1 then
+                lock this (fun () ->
+                    this.LargeTicks <- this.LargeTicks + 1
+                    this.LargeBytes <- this.LargeBytes + Convert.ToInt64(get "AllocationAmount64")
+                    let tn = get "TypeName"
+                    let t = $"LOH {tn}"
+                    this.Reasons.[t] <- (match this.Reasons.TryGetValue t with | true, n -> n + 1 | _ -> 1))
+        elif e.EventName <> null && e.EventName.StartsWith "GCStart" then
+            let depth, reason = get "Depth", get "Reason"
+            let key = $"gen{depth}:{reason}"
+            lock this (fun () -> this.Reasons.[key] <- (match this.Reasons.TryGetValue key with | true, n -> n + 1 | _ -> 1))
+
+/// `spread` mode: the page of 1,000 three ways in one process, interleaved,
+/// with min/median/p90 and the collections that ran (docs/benchmarks.md).
+let spread () =
+    task {
+        let! db = database.Force()
+        let repo = db.RepoWith()
+        let inc = plasmPageWithPayments 1000
+        let page = plasmPage 1000
+
+        let second =
+            Query.prepare (fun (orders: Arg<OrderId list>) ->
+                plasm {
+                    for p in tableOf<Payment> do
+                        where (List.contains p.OrderId orders.Value && p.Status = Succeeded)
+                        orderBy p.CreatedAt
+                })
+
+        let a () = task { let! r = runPage repo inc in return plasmShape r }
+
+        let b () =
+            task {
+                match! repo.All page with
+                | Ok orders ->
+                    match! repo.All(second (orders |> List.map (fun o -> o.Id))) with
+                    | Ok ps -> return plasmShape (orders, ps)
+                    | Error e -> return failwithf "%O" e
+                | Error e -> return failwithf "%O" e
+            }
+
+        let c () = task { let! r = efPage db.ConnectionString null 1000 true in return efShape r }
+        let variants = [ "including", a; "second query", b; "EF split", c ]
+
+        for _, op in variants do
+            for _ in 1..60 do
+                let! _ = op ()
+                ()
+
+        for name, op in variants |> List.take 2 do
+            db.Recorder.Clear()
+            let! s = op ()
+            printfn "== %s %A" name s
+            for e in db.Recorder.Events do
+                printfn "  %.1f ms, %d rows: %s" e.Duration.TotalMilliseconds e.Rows (e.Sql.Substring(0, min 400 e.Sql.Length))
+
+        use gc = new GcListener()
+        printfn "| round | variant | min | median | p90 | max | gen0 | gen1 | gen2 | KB/call | LOH ticks | reasons |"
+        for round in 1..8 do
+            for name, op in variants do
+                let g0, g1, g2 = GC.CollectionCount 0, GC.CollectionCount 1, GC.CollectionCount 2
+                let before = GC.GetTotalAllocatedBytes(true)
+                let times = ResizeArray<float>()
+                gc.Reset()
+                for _ in 1..31 do
+                    let sw = Stopwatch.StartNew()
+                    let! _ = op ()
+                    times.Add sw.Elapsed.TotalMilliseconds
+                let kb = float (GC.GetTotalAllocatedBytes(true) - before) / 1024.0 / 31.0
+                let t = times |> Seq.sort |> Seq.toArray
+                let reasons = lock gc (fun () -> gc.Reasons |> Seq.map (fun kv -> $"{kv.Key}x{kv.Value}") |> String.concat " ")
+                printfn "| %d | %s | %.1f | %.1f | %.1f | %.1f | %d | %d | %d | %.0f | %d | %s |" round name t.[0] t.[15] t.[27] t.[30] (GC.CollectionCount 0 - g0) (GC.CollectionCount 1 - g1) (GC.CollectionCount 2 - g2) kb gc.LargeTicks reasons
     }

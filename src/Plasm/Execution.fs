@@ -251,10 +251,14 @@ let rec loadInto (s: Session) (rows: IReadOnlyList<obj[]>) (nodes: Planner.LoadN
                 | Some k -> keys.Add k |> ignore
                 | None -> ()
 
-            // (owner key, child row); for many-to-many one target row may
-            // belong to several owners and is materialised once.
+            // For many-to-many, (owner key, child row): one target row may
+            // belong to several owners and is materialised once. A plain list
+            // groups its rows by their own column instead, keeping no second
+            // buffer of them: at thousands of rows each such buffer is a
+            // large-object allocation, and those bring on gen2 collections
+            // (docs/benchmarks.md, "The page of 1,000").
             let entries = ResizeArray<obj * obj[]>()
-            let childRows = ResizeArray<obj[]>()
+            let mutable childRows = ResizeArray<obj[]>()
 
             let batchSize =
                 match node.Strategy with
@@ -266,12 +270,11 @@ let rec loadInto (s: Session) (rows: IReadOnlyList<obj[]>) (nodes: Planner.LoadN
                     let select = node.Build(providerArray node.KeyField batch)
                     let cmd = Sql.renderSelect s.Provider.Dialect select
                     let! got = query s cmd (readEntity node.Target)
-                    childRows.AddRange got
 
-                for cr in childRows do
-                    match keyOf node.MatchField cr.[node.MatchField.Index] with
-                    | Some k -> entries.Add(k, cr)
-                    | None -> ()
+                    if childRows.Count = 0 then
+                        childRows <- got
+                    else
+                        childRows.AddRange got
             | Some _ ->
                 let read = readEntity node.Target
                 let ownerAt = node.Target.Fields |> Array.sumBy (fun f -> f.Parts.Length)
@@ -315,22 +318,29 @@ let rec loadInto (s: Session) (rows: IReadOnlyList<obj[]>) (nodes: Planner.LoadN
 
             do! loadInto s childRows node.Children
 
-            let built = Dictionary<obj[], obj>(HashIdentity.Reference)
-
-            let construct (row: obj[]) =
-                match built.TryGetValue row with
-                | true, v -> v
-                | _ ->
-                    let v = node.Target.Shape.Construct row
-                    built.[row] <- v
-                    v
-
             let groups = Dictionary<obj, ResizeArray<obj>>()
 
-            for k, cr in entries do
+            let add (k: obj) (v: obj) =
                 match groups.TryGetValue k with
-                | true, g -> g.Add(construct cr)
-                | _ -> groups.[k] <- ResizeArray [ construct cr ]
+                | true, g -> g.Add v
+                | _ -> groups.[k] <- ResizeArray [ v ]
+
+            match node.Through with
+            | None ->
+                for cr in childRows do
+                    match keyOf node.MatchField cr.[node.MatchField.Index] with
+                    | Some k -> add k (node.Target.Shape.Construct cr)
+                    | None -> ()
+            | Some _ ->
+                let built = Dictionary<obj[], obj>(HashIdentity.Reference)
+
+                for k, cr in entries do
+                    match built.TryGetValue cr with
+                    | true, v -> add k v
+                    | _ ->
+                        let v = node.Target.Shape.Construct cr
+                        built.[cr] <- v
+                        add k v
 
             let a = node.Assoc
 
@@ -574,12 +584,13 @@ let readIncluding (s: Session) (model: Model) (p: Planner.Including) : Task<obj 
                     let value, key = unbox<obj * obj> row
                     add (keyOf parts.MatchField key) value
         | None ->
-            let childRows = ResizeArray<obj[]>()
+            let mutable childRows = ResizeArray<obj[]>()
 
             for batch in Seq.chunkBySize batchSize keys do
                 let cmd = Sql.renderSelect s.Provider.Dialect (parts.Build(providerArray parts.MatchField batch))
                 let! got = query s cmd (readEntity parts.Target)
-                childRows.AddRange got
+
+                if childRows.Count = 0 then childRows <- got else childRows.AddRange got
 
             do! loadInto s childRows p.Children
 

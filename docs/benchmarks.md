@@ -14,6 +14,7 @@ cd benchmarks/Plasm.Benchmarks
 dotnet run -c Release -- counts    # commands, rows, allocations, median time, EF SQL
 dotnet run -c Release -- bench     # BenchmarkDotNet (time + allocations)
 dotnet run -c Release -- profile   # planning cost, raw-driver floor, per-command time
+dotnet run -c Release -- spread    # page of 1,000 three ways, interleaved: min/median/p90 and GC
 ```
 
 A PostgreSQL 18.4 container is started by Testcontainers (Docker required), or
@@ -139,9 +140,45 @@ three `counts` runs on an otherwise idle machine:
 | page 1000 | 19.78 to 24.91 ms / 9,692 KB | 65.29 ms / 21,410 KB | 20.67 to 20.95 ms / 7,671 KB |
 
 Against the second-query form (next section): the same at 20 and 100 orders,
-about 10% more allocation (each order is paired with a list of its payments),
-and at 1,000 orders slower than the 14.5 ms recorded then, with a wide spread
-between runs. Not yet investigated.
+about 10% more allocation (each order is paired with a list of its payments).
+At 1,000 orders the medians spread widely between runs; the next section
+explains why.
+
+### The page of 1,000: garbage collection, not `including` (`spread`, 2026-11-16)
+
+`spread` runs the page of 1,000 three ways in one process, interleaved: the
+query ending in `including`, the earlier form (the page, then a prepared second
+query for the payments) and EF split query. Each round is 31 calls per variant,
+8 rounds, with the collections the runtime reports during them. A lone median
+misleads here, so min, median and p90 are given (ranges across rounds).
+
+Both Plasm forms are bimodal: about 8 ms for a call in which no collection
+lands, 16 to 25 ms for one in which a gen2 collection does. With the default
+(workstation, background) collector about half the calls are hit, so a median
+falls on either mode from run to run: that was the 19.8 to 24.9 ms spread.
+With `DOTNET_gcConcurrent=0` or `DOTNET_gcServer=1` both Plasm forms have a
+median of about 8 to 8.7 ms; EF split stays at 20 to 22 ms. `including` itself
+costs about 0.5 ms and 10% allocation over the second-query form.
+
+The runtime's GC events showed about half the gen2 collections were started by
+large-object allocations (reason AllocLarge), about four per call of 85 KB or
+more: the lines' row buffer, a second buffer of (key, row) pairs, and the two
+arrays of a dictionary that ensures a row shared by several owners is built
+once. Only a many-to-many list can share a row, so a plain list now groups its
+rows by their own column with no second buffer and no dictionary:
+
+| page 1000 | min | median | p90 | KB/call | large-object ticks per 31 calls | gen2 per 31 calls |
+|---|---:|---:|---:|---:|---:|---:|
+| `including`, before | 10.6 to 13.2 | 15.9 to 17.0 | 24.6 to 27.8 | 9,720 | 116 to 125 | 8 to 9 (3 to 4 from large objects) |
+| `including`, after | 8.0 to 9.3 | 13.2 to 13.8 | 22.8 to 29.1 | 8,124 | 28 to 46 | 6 to 7 (none from large objects) |
+| second query, before | 8.1 to 11.4 | 14.2 to 15.6 | 22.7 to 27.8 | 8,832 | 116 to 128 | 8 to 9 |
+| second query, after | 7.6 to 7.8 | 12.6 to 13.1 | 21.2 to 27.1 | 7,257 | 26 to 34 | 6 to 7 |
+| EF split query | 19.7 to 20.2 | 20.9 to 22.1 | 22.3 to 36.9 | 7,715 | 140 to 167 | 9 to 11 |
+
+`counts` after the change: page 1000, Plasm 14.53 ms / 8,101 KB against EF split
+21.19 ms / 7,671 KB. Not yet done: the one large-object array left per call is
+the lines' row buffer growing past 85 KB, and the remaining gen2 collections
+are ordinary promotion, so the p90 is still about twice the minimum.
 
 ### Time and allocations after the convention fix (`counts`, commit dc6832f)
 

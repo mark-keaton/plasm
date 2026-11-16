@@ -17,6 +17,9 @@ let main argv =
         (Counts.floor ()).GetAwaiter().GetResult()
         (Counts.profile ()).GetAwaiter().GetResult()
         0
+    | [ "spread" ] ->
+        (Counts.spread ()).GetAwaiter().GetResult()
+        0
     | [ "counts" ]
     | [] ->
         let results = (Counts.all ()).GetAwaiter().GetResult()
