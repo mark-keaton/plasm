@@ -199,8 +199,8 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, registered:
             | _ -> Error $"type {Reflection.typeName t} has no scalar mapping"
 
     /// Converts a value read from the database (any provider type, or NULL) to
-    /// the domain type `t`, which may be an option. Numeric provider values are
-    /// converted to the requested numeric type (e.g. COUNT's bigint to int).
+    /// the domain type `t`, which may be an option. A provider value converts
+    /// only when the type holds it exactly (Reflection.exactly).
     member internal this.ScalarFromDb(t: Type, value: obj) : Result<obj, string> =
         let isNullValue = isNull value || value = box DBNull.Value
 
@@ -213,14 +213,7 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, registered:
         elif isNullValue then
             Error $"NULL read for non-optional {Reflection.typeName t}"
         else
-            let convert (target: Type) (v: obj) =
-                if target.IsInstanceOfType v then
-                    Ok v
-                else
-                    try
-                        Ok(Convert.ChangeType(v, target, Globalization.CultureInfo.InvariantCulture))
-                    with ex ->
-                        Error $"cannot convert {v.GetType().Name} to {Reflection.typeName target}: {ex.Message}"
+            let convert (target: Type) (v: obj) = Reflection.exactly target v
 
             if Scalar.isBuiltIn t then
                 convert t value

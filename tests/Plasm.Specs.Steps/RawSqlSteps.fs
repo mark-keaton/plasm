@@ -130,6 +130,26 @@ type RawSqlSteps(w: World) =
     member _.NotInText() =
         check (not ((w.CommandsSinceMark |> List.exactlyOne).Sql.Contains "DELETE")) "value not spliced"
 
+    [<StepDefinition("^I read an int with the hand-written SQL \"(.+)\"$")>]
+    member _.ReadInt(sql: string) =
+        task {
+            let! r = w.Repo.Sql<int>(Runtime.CompilerServices.FormattableStringFactory.Create sql)
+            w.Set("rawInt", r)
+        }
+        |> unit
+
+    [<StepDefinition("^the read gives (\\d+)$")>]
+    member _.ReadIntGives(n: int) =
+        equal [ n ] (ok (w.Get<Result<int list, DbError>> "rawInt")) "the int read"
+
+    [<StepDefinition("^the read fails, saying a (\\w+) (.+) is not an int$")>]
+    member _.ReadIntFails(source: string, value: string) =
+        match w.Get<Result<int list, DbError>> "rawInt" with
+        | Error(DbError.Materialization m) ->
+            let text = string (DbError.Materialization m)
+            check (text.Contains source && text.Contains value && text.Contains "int") text
+        | other -> failwithf "expected a materialization error, got %A" other
+
     [<StepDefinition("hand-written SQL omits a column the record requires")>]
     member _.OmitsColumn() =
         task {

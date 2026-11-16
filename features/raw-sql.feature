@@ -45,6 +45,23 @@ Feature: Typed SQL escape hatches
       When hand-written SQL omits a column the record requires
       Then execution fails with the missing column identified
 
+  Rule: A value is read only as a type that holds it exactly
+
+    A number is read as another number type when the value survives the trip:
+    a bigint 4 or a numeric 3 is an int. A value that would be rounded, or text
+    that would be parsed, is a materialization error naming both types.
+
+    Scenario Outline: <sql> is read as an int: <outcome>
+      When I read an int with the hand-written SQL "<sql>"
+      Then the read <outcome>
+
+      Examples:
+        | sql                      | outcome                                    |
+        | SELECT 4::bigint         | gives 4                                    |
+        | SELECT 3::numeric        | gives 3                                    |
+        | SELECT 2.5::numeric      | fails, saying a Decimal 2.5 is not an int  |
+        | SELECT '42'::text        | fails, saying a String 42 is not an int    |
+
   Rule: SQL fragments extend typed queries
 
     Scenario: A fragment inside a typed query

@@ -806,8 +806,12 @@ let rawReader (model: Model) (t: Type) (label: string) : DbDataReader -> obj =
                         let raw = value r ordinals.[j]
                         j <- j + 1
 
-                        if isNull raw || p.ProviderType.IsInstanceOfType raw then raw
-                        else Convert.ChangeType(raw, p.ProviderType, Globalization.CultureInfo.InvariantCulture))
+                        if isNull raw || p.ProviderType.IsInstanceOfType raw then
+                            raw
+                        else
+                            match Reflection.exactly p.ProviderType raw with
+                            | Ok v -> v
+                            | Error m -> fail f.Name (string raw) m)
 
                 match f.FromColumns raws with
                 | Ok v -> values.[f.Index] <- v

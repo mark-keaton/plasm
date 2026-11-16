@@ -3,6 +3,7 @@ module internal Plasm.Reflection
 
 open System
 open System.Collections.Concurrent
+open System.Collections.Generic
 open System.Reflection
 open System.Linq.Expressions
 open Microsoft.FSharp.Reflection
@@ -138,6 +139,32 @@ let fsharpName (t: Type) =
     | t when t = typeof<float> -> "float"
     | t when t = typeof<float32> -> "float32"
     | t -> typeName t
+
+let private numeric =
+    HashSet<Type> [ typeof<byte>; typeof<sbyte>; typeof<int16>; typeof<uint16>; typeof<int>; typeof<uint32>; typeof<int64>; typeof<uint64>; typeof<decimal>; typeof<float32>; typeof<float> ]
+
+/// Converts a value read from the database to `target` only when `target`
+/// holds it exactly: a number into another number type when converting back
+/// gives the same value (a bigint 4 or a numeric 3 is an int; a numeric 2.5
+/// is not). Text is never parsed and nothing is rounded.
+let exactly (target: Type) (v: obj) : Result<obj, string> =
+    if target.IsInstanceOfType v then
+        Ok v
+    else
+        let source = v.GetType()
+        let name = fsharpName target
+        let article = if "AEIOUaeiou".Contains name.[0] then "an" else "a"
+        let refuse () = Error $"a {source.Name} {v} is not {article} {name}: Plasm reads a value only as a type that holds it exactly"
+
+        if numeric.Contains source && numeric.Contains target then
+            try
+                let converted = Convert.ChangeType(v, target, Globalization.CultureInfo.InvariantCulture)
+                let back = Convert.ChangeType(converted, source, Globalization.CultureInfo.InvariantCulture)
+                if back.Equals v then Ok converted else refuse ()
+            with
+            | :? OverflowException -> refuse ()
+        else
+            refuse ()
 
 /// Types defined in F# Interactive live in one generated module per submission
 /// (FSI_0004.Domain+Customer). Re-evaluating a definition creates a new,
