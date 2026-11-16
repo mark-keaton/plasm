@@ -18,7 +18,10 @@ Feature: A query can read each record with the records another query finds for i
   be written once as a reflected function of the outer record (`paymentsOf o`)
   and used in `including` and in `exists` alike.
 
-  A query may end in up to eight `including`s, giving a flat tuple in the order
+  `includingOne` reads the one record the inner query can find, as an option
+  (`Order * Customer option`); the tie must prove there is at most one, by
+  being the inner record's key or a [<Unique>] field, or the query is refused.
+  The two mix in any order. A query may end in up to eight `including`s and `includingOne`s, giving a flat tuple in the order
   written: `Projection<Order * Payment list * Order list>`. There is a limit
   only because F# has no variadic generics, so each length of tuple is one more
   overload of `including`; eight is where they stop. An inner query may
@@ -194,6 +197,43 @@ Feature: A query can read each record with the records another query finds for i
 
     Scenario: The result's type lists the lists in the order written
       When I compile code that passes Orders with their Payments and same-Customer Orders, and Orders with included Orders and their Payments, to functions of those types
+      Then the code compiles
+
+  Rule: includingOne reads the one record a tie can find, as an option
+
+    Scenario: Each Order with its Customer
+      When I read the Orders by total, including one Customer each
+      Then the Orders and their Customers are:
+        | order | customer |
+        | 5     | none     |
+        | 10    | Ada      |
+        | 50    | Ada      |
+        | 200   | Bob      |
+      And 3 commands are sent: the Orders, their lines, and the Customers
+
+    Scenario: Each Order with its Customer's name and its Payments
+      When I read the Orders by total, including one Customer's name each and their Payments
+      Then the Orders, their Customers' names and how many Payments each has are:
+        | order | customer | payments |
+        | 5     | none     | 0        |
+        | 10    | Ada      | 2        |
+        | 50    | Ada      | 3        |
+        | 200   | Bob      | 0        |
+
+    Scenario: A unique column proves at most one too
+      When I read the Customers by name, including one Customer with the same email each
+      Then each Customer comes with itself
+
+    Scenario: A tie that could find several is refused, naming the column
+      When I read the Orders including one Order of the same Customer each
+      Then the read is refused, saying Order.CustomerId is neither the key of Order nor unique
+
+    Scenario: Taking inside includingOne is refused
+      When I read the Orders including one Customer each, taking 1
+      Then the read is refused, saying take and skip mean nothing in includingOne
+
+    Scenario: The result's type has an option where includingOne is written
+      When I compile code that passes Orders with their Customer and their Payments to a function of Order * Customer option * Payment list
       Then the code compiles
 
   Rule: It is checked and prepared like any query

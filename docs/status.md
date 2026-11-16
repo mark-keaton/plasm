@@ -38,7 +38,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 
 | Suite | What it proves | Result |
 |---|---|---|
-| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 443 / 443 pass (outline examples counted separately) |
+| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 449 / 449 pass (outline examples counted separately) |
 | `tests/Plasm.Tests`: `Translation.fs` | SQL-shape contracts (options, membership, `exists`, `List.exists`/`forall` over owned lists, pagination), unsupported-expression errors, model-configuration errors | 42 pass |
 | `tests/Plasm.Tests`: `CompileTime.fs` | Typed API acceptance and rejection, checked with FSharp.Compiler.Service against the real assemblies; each rejection pins its error code and has a passing control snippet | 15 pass |
 | `tests/Plasm.Tests`: `Properties.fs` (FsCheck, real database) | Predicate-order equivalence matching F# semantics; extending a query never alters it; an update records exactly the differing fields; the same aggregates for every batch size, with key-proportional command counts; owned lines keep their declared order per owner | 5 properties pass |
@@ -51,7 +51,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 | `koans/browser` | The browser koans (PGlite) | 120 scenarios pass |
 
 Run the library's tests with `dotnet test` from the repository root (Docker is
-required, or set `PLASM_TEST_PG`): 443 scenarios and 128 unit tests.
+required, or set `PLASM_TEST_PG`): 449 scenarios and 128 unit tests.
 
 ## Supported behaviour
 
@@ -216,7 +216,10 @@ required, or set `PLASM_TEST_PG`): 443 scenarios and 128 unit tests.
   giving a flat tuple in the order written (`Order * Payment list * Order list`),
   and an inner query may end in its own (`Customer * (Order * Payment list)
   list`), each one more command per batch at any depth. A tie to an optional
-  column is written `o.CustomerId = Some c.Id` (`including.feature`).
+  column is written `o.CustomerId = Some c.Id`. `includingOne` gives the one
+  record a tie can find as an option (`Order * Customer option`), only when the
+  tie is the inner record's key or a unique field, and mixes with `including`
+  under the same limit (`including.feature`).
 
 **Writes** (only through `repo.Transact`):
 
@@ -413,7 +416,8 @@ documents), each refused by name rather than guessed:
   would page the rows, while the database pages the distinct values. A paged
   list of distinct values is a real need, to be revisited with a real case.
 - `including` after a `join` or `leftJoin`; a tie of more than one column
-  (composite); a ninth `including` in one query. Eight is a limit only because
+  (composite); a ninth `including` or `includingOne` in one query; `take` or
+  `skip` inside `includingOne`. Eight is a limit only because
   F# has no variadic generics: each length of tuple is one more overload of
   `including`, and there they stop (a ninth does not compile).
 - In a value: `[<Unique>]`, `[<Column>]`, a list, or a stored record.
@@ -624,6 +628,7 @@ loaded records are in the result's type, not in a field that may be unloaded.
 | 2026-11-15 | `selectDistinct` as a second terminal operation (not a `distinct` flag, which could only be refused at translation); ordered outside the distinct rows; `take`/`skip` with it refused in v1 | `features/distinct.feature` |
 | 2026-11-15 | A record with no table and no Id is a value in its owner's row (`<field>_<subfield>`); an optional one is all or nothing, printed as a CHECK by `Ddl()`; a registered scalar mapping over a record still wins | `features/value-records.feature` |
 | 2026-11-16 | Several `including`s (up to eight, a flat tuple in the order written, at the user's request: "We can only do one including whereas EF Core can do as many includes as it wants?") and an inner query ending in its own (EF's `ThenInclude`); a tie may compare an optional column with `Some` of a plain one | `features/including.feature` |
+| 2026-11-16 | `includingOne`: the one record a tie can find, as an option, only when the tie proves at most one (the inner key or a unique field), never checked at run time; chained sources take any element type, so it mixes with `including` under the one limit of eight | `features/including.feature` |
 | 2026-11-15 | `[<Json>]`: one jsonb document per field in Plasm's own strict mapping (unknown keys refused, since writes replace the whole document); JSON rendered through `ISqlDialect.Json`, refused at repository creation when absent | `features/json-columns.feature` |
 
 ## Suggested next steps

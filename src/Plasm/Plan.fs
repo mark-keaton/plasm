@@ -224,7 +224,7 @@ module internal Planner =
             let sample = l.Parts.Build(Array.CreateInstance(l.Parts.MatchField.ProviderType, 1))
 
             { Path = "including"
-              Relationship = "includes"
+              Relationship = if l.Parts.One then "includes one" else "includes"
               Target = l.Parts.Target.Name
               Strategy = p.Strategy
               Sql = (Sql.renderSelect dialect sample).Sql

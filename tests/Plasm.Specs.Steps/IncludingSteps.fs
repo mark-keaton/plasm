@@ -355,6 +355,137 @@ type IncludingSteps(w: World) =
         let expected = [ for r in table.Rows -> r.["order"], r.["counts"].Trim() ]
         equal expected (w.Get<(string * string) list> "includingEight") "orders and the sizes of their eight lists"
 
+    // -- includingOne -----------------------------------------------------------
+
+    [<StepDefinition("I read the Orders by total, including one Customer each")>]
+    member _.OneCustomer() =
+        task {
+            w.MarkCommands()
+
+            let! r =
+                w.Repo.All(
+                    plasm {
+                        for o in tableOf<Order> do
+                            orderBy o.Total
+                            includingOne (plasm { for c in tableOf<Customer> do where (Some c.Id = o.CustomerId) })
+                    }
+                )
+
+            w.Set("includingOne", r |> Result.map (List.map (fun (o, c) -> total o.Total, c |> Option.map (fun (c: Customer) -> c.Name))))
+        }
+        |> unit
+
+    [<StepDefinition("the Orders and their Customers are:")>]
+    member _.OneCustomerAre(table: DataTable) =
+        let expected = [ for r in table.Rows -> r.["order"], (match r.["customer"] with "none" -> None | n -> Some n) ]
+        equal expected (ok (w.Get<Result<(string * string option) list, DbError>> "includingOne")) "orders and their customers"
+
+    [<StepDefinition("3 commands are sent: the Orders, their lines, and the Customers")>]
+    member _.OneCommands() =
+        let sql = w.CommandsSinceMark |> List.map (fun e -> e.Sql)
+        equal 3 sql.Length $"commands: %A{sql}"
+        check (sql.[2].Contains "\"customers\"" && sql.[2].Contains "ANY(") $"commands: %A{sql}"
+
+    [<StepDefinition("I read the Orders by total, including one Customer's name each and their Payments")>]
+    member _.OneNameAndPayments() =
+        task {
+            let! r =
+                w.Repo.All(
+                    plasm {
+                        for o in tableOf<Order> do
+                            orderBy o.Total
+                            includingOne (plasm { for c in tableOf<Customer> do where (Some c.Id = o.CustomerId); select c.Name })
+                            including (paymentsOf o)
+                    }
+                )
+
+            w.Set("includingOneName", ok r |> List.map (fun (o, name, ps) -> total o.Total, defaultArg name "none", string ps.Length))
+        }
+        |> unit
+
+    [<StepDefinition("the Orders, their Customers' names and how many Payments each has are:")>]
+    member _.OneNameAre(table: DataTable) =
+        let expected = [ for r in table.Rows -> r.["order"], r.["customer"], r.["payments"] ]
+        equal expected (w.Get<(string * string * string) list> "includingOneName") "orders, customers' names and payments"
+
+    [<StepDefinition("I read the Customers by name, including one Customer with the same email each")>]
+    member _.SameEmail() =
+        task {
+            let! r =
+                w.Repo.All(
+                    plasm {
+                        for c in tableOf<Customer> do
+                            orderBy c.Name
+                            includingOne (plasm { for x in tableOf<Customer> do where (x.Email = c.Email) })
+                    }
+                )
+
+            w.Set("includingSelf", ok r)
+        }
+        |> unit
+
+    [<StepDefinition("each Customer comes with itself")>]
+    member _.Itself() =
+        let rows = w.Get<(Customer * Customer option) list> "includingSelf"
+        equal 2 rows.Length "customers"
+
+        for c, x in rows do
+            equal (Some c) x $"the customer included with {c.Name}"
+
+    [<StepDefinition("I read the Orders including one Order of the same Customer each")>]
+    member _.OneAmbiguous() =
+        task {
+            let! r =
+                w.Repo.All(
+                    plasm {
+                        for o in tableOf<Order> do
+                            includingOne (plasm { for x in tableOf<Order> do where (x.CustomerId = o.CustomerId) })
+                    }
+                )
+
+            w.Set("including", r |> Result.map (List.map (fun (o, x) -> box o, Option.toList x |> List.map box)))
+        }
+        |> unit
+
+    [<StepDefinition("I read the Orders including one Customer each, taking 1")>]
+    member _.OneTaking() =
+        task {
+            let! r =
+                w.Repo.All(
+                    plasm {
+                        for o in tableOf<Order> do
+                            includingOne (plasm { for c in tableOf<Customer> do where (Some c.Id = o.CustomerId); orderBy c.Name; take 1 })
+                    }
+                )
+
+            w.Set("including", r |> Result.map (List.map (fun (o, x) -> box o, Option.toList x |> List.map box)))
+        }
+        |> unit
+
+    [<StepDefinition("the read is refused, saying Order.CustomerId is neither the key of Order nor unique")>]
+    member _.NotProven() =
+        let e = refusal ()
+        check (e.Contains "Order.CustomerId" && e.Contains "neither the key of Order nor unique") e
+
+    [<StepDefinition("the read is refused, saying take and skip mean nothing in includingOne")>]
+    member _.OneNoTake() =
+        let e = refusal ()
+        check (e.Contains "take and skip" && e.Contains "includingOne") e
+
+    [<StepDefinition("^I compile code that passes Orders with their Customer and their Payments to a function of Order \\* Customer option \\* Payment list$")>]
+    member _.CompileOne() =
+        compiled
+            """
+let show (rows: (Order * Customer option * Payment list) list) = rows.Length
+let q =
+    plasm {
+        for o in tableOf<Order> do
+            includingOne (plasm { for c in tableOf<Customer> do where (Some c.Id = o.CustomerId) })
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
+    }
+let shown (repo: Repo) = task { let! r = repo.All q in return r |> Result.map show }
+"""
+
     [<StepDefinition("the Orders, their Payments and the totals of the Orders they include are:")>]
     member _.TwoListsAre(table: DataTable) =
         let expected = [ for r in table.Rows -> r.["order"], r.["payments"].Trim(), r.["included"].Trim() ]

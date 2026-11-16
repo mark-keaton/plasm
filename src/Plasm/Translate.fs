@@ -1891,9 +1891,20 @@ type IncludingParts =
       /// the inner record with its own lists when it ends in `including`.
       ElementType: Type
       /// The inner query's own `including`s, in the order written.
-      Nested: IncludingParts list }
+      Nested: IncludingParts list
+      /// `includingOne`: at most one item, as an option.
+      One: bool }
 
-let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (lambda: Expr) : Result<IncludingParts, TranslationError> =
+    /// What the outer tuple holds for this level: a list of its items, or an
+    /// option of the one.
+    member p.HeldType =
+        if p.One then typedefof<option<_>>.MakeGenericType p.ElementType
+        else typedefof<list<_>>.MakeGenericType p.ElementType
+
+let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including: IncludingDef) : Result<IncludingParts, TranslationError> =
+    let lambda = including.Inner
+    let op = if including.One then "includingOne" else "including"
+
     wrap (fun () ->
         if not def.Joins.IsEmpty || not def.GroupBy.IsEmpty then
             invalid "including follows a query of one record: it cannot follow join, leftJoin or groupBy"
@@ -1909,7 +1920,7 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (lambda: E
             { newCtxWith model vol with
                 Vars = Map [ o, { Alias = "outer"; Schema = outerSchema; Optional = false } ] }
 
-        let checkable = innerCheckable "including" ctx lambda body
+        let checkable = innerCheckable op ctx lambda body
         let inner = checkable.Def
         checkProblems inner
 
@@ -1985,6 +1996,13 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (lambda: E
         let matchField = target.Field innerName
         let outerField = outerSchema.Field outerName
         let innerDef = { inner with Wheres = wheres }
+
+        if including.One then
+            if innerDef.Paged then
+                invalid "take and skip mean nothing in includingOne: it finds at most one record for each, by its tie"
+
+            if matchField.Name <> target.Key.Name && not matchField.Unique then
+                fail lambda $"includingOne needs a tie that finds at most one {target.Name}: {target.Name}.{matchField.Name} is neither the key of {target.Name} nor unique. Use including for a list"
         let iw, io = translateBody (newCtxWith model vol) innerDef "t0" target
 
         if innerDef.Paged && io.IsEmpty then
@@ -2100,9 +2118,10 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (lambda: E
             | None ->
                 FSharpType.MakeTupleType(
                     [| yield target.Type
-                       for n in nested -> typedefof<list<_>>.MakeGenericType n.ElementType |]
+                       for n in nested -> n.HeldType |]
                 )
-          Nested = nested })
+          Nested = nested
+          One = including.One })
 
 // ---------------------------------------------------------------------------
 // Bulk writes
