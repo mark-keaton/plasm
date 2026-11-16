@@ -175,6 +175,160 @@ module Unclear =
               "a list of records that are not stored", [ typeof<Plain> ]
               "a record with two version fields", [ typeof<Doubled> ] ]
 
+/// Records with an attribute where it has no effect, one model each.
+module Ineffective =
+    type Shape =
+        | Circle of radius: float
+        | Square of side: float
+
+    type Money = { Amount: decimal; Currency: string }
+
+    type MoneyWithVersion =
+        { Amount: decimal
+          [<Version>]
+          Revision: int }
+
+    type MoneyWithGenerated =
+        { Amount: decimal
+          [<Generated>]
+          Stamp: DateTime }
+
+    type MoneyWithJson =
+        { Amount: decimal
+          [<Json>]
+          Notes: string list }
+
+    type BlankId = BlankId of int64
+
+    [<Table "">]
+    type Blank = { Id: BlankId; Name: string }
+
+    type MisassignedId = MisassignedId of int64
+
+    [<Table "misassigned">]
+    type Misassigned =
+        { Id: MisassignedId
+          [<Assigned>]
+          Code: int64 }
+
+    [<Table "assigned_guids">]
+    type AssignedGuid =
+        { [<Assigned>]
+          Id: Guid
+          Name: string }
+
+    type OrderedScalarId = OrderedScalarId of int64
+
+    [<Table "ordered_scalars">]
+    type OrderedScalar =
+        { Id: OrderedScalarId
+          [<OrderedBy "Name">]
+          Name: string }
+
+    type NotAnIdId = NotAnIdId of int64
+
+    [<Table "not_an_ids">]
+    type NotAnId =
+        { Id: NotAnIdId
+          [<NotReference>]
+          Count: int64 }
+
+    type JoinedOwnerId = JoinedOwnerId of int64
+    type JoinedItemId = JoinedItemId of int64
+
+    [<Table "joined_items">]
+    type JoinedItem = { Id: JoinedItemId; Owner: JoinedOwnerId; Name: string }
+
+    [<Table "joined_owners">]
+    type JoinedOwner =
+        { Id: JoinedOwnerId
+          [<JoinTable "joined_owner_items">]
+          Items: JoinedItem list }
+
+    type JoinedScalarId = JoinedScalarId of int64
+
+    [<Table "joined_scalars">]
+    type JoinedScalar =
+        { Id: JoinedScalarId
+          [<JoinTable "joined_scalar_names">]
+          Name: string }
+
+    type UniqueUnionId = UniqueUnionId of int64
+
+    [<Table "unique_unions">]
+    type UniqueUnion =
+        { Id: UniqueUnionId
+          [<Unique>]
+          Shape: Shape }
+
+    type UniqueValueId = UniqueValueId of int64
+
+    [<Table "unique_values">]
+    type UniqueValue =
+        { Id: UniqueValueId
+          [<Unique>]
+          Price: Money }
+
+    type UniqueJsonId = UniqueJsonId of int64
+
+    [<Table "unique_jsons">]
+    type UniqueJson =
+        { Id: UniqueJsonId
+          [<Unique; Json>]
+          Tags: string list }
+
+    type GeneratedJsonId = GeneratedJsonId of int64
+
+    [<Table "generated_jsons">]
+    type GeneratedJson =
+        { Id: GeneratedJsonId
+          [<Generated; Json>]
+          Tags: string list }
+
+    type UniqueOwnedId = UniqueOwnedId of int64
+
+    [<Table "unique_owned_items">]
+    type UniqueOwnedItem = { Id: JoinedItemId; Owner: UniqueOwnedId }
+
+    [<Table "unique_owneds">]
+    type UniqueOwned =
+        { Id: UniqueOwnedId
+          [<Unique>]
+          Items: UniqueOwnedItem list }
+
+    type VersionInValueId = VersionInValueId of int64
+
+    [<Table "version_in_values">]
+    type VersionInValue = { Id: VersionInValueId; Price: MoneyWithVersion }
+
+    type GeneratedInValueId = GeneratedInValueId of int64
+
+    [<Table "generated_in_values">]
+    type GeneratedInValue = { Id: GeneratedInValueId; Price: MoneyWithGenerated }
+
+    type JsonInValueId = JsonInValueId of int64
+
+    [<Table "json_in_values">]
+    type JsonInValue = { Id: JsonInValueId; Price: MoneyWithJson }
+
+    let models =
+        Map
+            [ "a table named by an empty string", [ typeof<Blank> ]
+              "an Assigned field that is not the key", [ typeof<Misassigned> ]
+              "an Assigned key that is not an integer", [ typeof<AssignedGuid> ]
+              "an OrderedBy on a field that is not a list", [ typeof<OrderedScalar> ]
+              "a NotReference on a field that is not an id", [ typeof<NotAnId> ]
+              "a JoinTable on an owned list", [ typeof<JoinedOwner> ]
+              "a JoinTable on a field that is not a list", [ typeof<JoinedScalar> ]
+              "a Unique union field", [ typeof<UniqueUnion> ]
+              "a Unique value field", [ typeof<UniqueValue> ]
+              "a Unique Json field", [ typeof<UniqueJson> ]
+              "a Generated Json field", [ typeof<GeneratedJson> ]
+              "a Unique owned list", [ typeof<UniqueOwned> ]
+              "a Version inside a value", [ typeof<VersionInValue> ]
+              "a Generated field inside a value", [ typeof<GeneratedInValue> ]
+              "a Json field inside a value", [ typeof<JsonInValue> ] ]
+
 namespace Plasm.Specs
 
 open System
@@ -440,7 +594,12 @@ type StoredSteps(w: World) =
 
     [<StepDefinition("^I build a stored model of (.+)$")>]
     member _.Build(records: string) =
-        w.Set("storedBuild", Model.build [] Unclear.models.[records])
+        let types =
+            match Unclear.models.TryFind records with
+            | Some ts -> ts
+            | None -> Ineffective.models.[records]
+
+        w.Set("storedBuild", Model.build [] types)
 
     [<StepDefinition("^the model is refused for (\\w+), saying \"(.*)\"$")>]
     member _.Refused(model: string, message: string) =

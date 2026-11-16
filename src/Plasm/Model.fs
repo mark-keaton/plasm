@@ -395,15 +395,26 @@ module Model =
                 let partColumn = column + "_" + Paths.snakeCase p.Name
                 let has (a: Type) = p.GetCustomAttributes(a, true).Length > 0
 
-                if has typeof<UniqueAttribute> then
-                    Error $"{t.Name}.{p.Name} is marked Unique, but Unique is not supported inside a value"
-                elif has typeof<ColumnAttribute> then
+                let unread =
+                    [ "Unique", typeof<UniqueAttribute>
+                      "Json", typeof<JsonAttribute>
+                      "Version", typeof<VersionAttribute>
+                      "Generated", typeof<GeneratedAttribute>
+                      "Assigned", typeof<AssignedAttribute>
+                      "NotReference", typeof<NotReferenceAttribute>
+                      "OrderedBy", typeof<OrderedByAttribute>
+                      "JoinTable", typeof<JoinTableAttribute> ]
+                    |> List.tryFind (snd >> has)
+
+                match unread with
+                | Some(name, _) -> Error $"{t.Name}.{p.Name} is marked {name}, but {name} is not supported inside a value"
+                | None when has typeof<ColumnAttribute> ->
                     Error $"{t.Name}.{p.Name} names its column, but Column is not supported inside a value (its column is {partColumn})"
-                elif Reflection.isList ft || (inner.IsArray && inner <> typeof<byte[]>) then
+                | None when Reflection.isList ft || (inner.IsArray && inner <> typeof<byte[]>) ->
                     Error $"{t.Name}.{p.Name} is a {Reflection.typeName ft}: a value cannot hold a list"
-                elif Derive.isStored inner then
+                | None when Derive.isStored inner ->
                     Error $"{t.Name}.{p.Name} is a {inner.Name}, a stored record: a value cannot hold a stored record (hold its id instead)"
-                else
+                | None ->
                     match scalarMapping scalars inner with
                     | Ok mapping -> Ok { scalarField p.Name i partColumn ft mapping with Index = i }
                     | Error _ when FSharpType.IsRecord(inner, true) ->
@@ -662,6 +673,10 @@ module Model =
                     elif FSharpType.IsRecord(scalarType, true) && (scalarMapping scalars scalarType |> Result.isError) then
                         let column = def.Columns.TryFind prop.Name |> Option.defaultValue (Paths.snakeCase prop.Name)
 
+                        for name, marked in [ "Unique", def.Unique.Contains prop.Name; "Generated", def.Generated.Contains prop.Name ] do
+                            if marked then
+                                err (Some prop.Name) $"is marked {name}, but a value is stored in several columns: {name} is read only on one column"
+
                         match valueLayout scalars def.Type.Name scalarType column isOpt with
                         | Error reason -> err (Some prop.Name) reason
                         | Ok layout ->
@@ -688,6 +703,10 @@ module Model =
                         match mapping with
                         | Error reason -> err (Some prop.Name) reason
                         | Ok(Choice2Of2 layout) ->
+                            for name, marked in [ "Unique", def.Unique.Contains prop.Name; "Generated", def.Generated.Contains prop.Name ] do
+                                if marked then
+                                    err (Some prop.Name) $"is marked {name}, but a union with fields is stored in several columns: {name} is read only on one column"
+
                             fields.Add
                                 { scalarField prop.Name i column t None with
                                     ProviderType = typeof<string>
@@ -828,6 +847,16 @@ module Model =
 
         for t in List.ofSeq resolved.Keys do
             let s = resolved.[t]
+
+            for f in s.Fields do
+                if defs.[t].NotReference.Contains f.Name && not (keysOf.ContainsKey f.ScalarType) then
+                    let name = Reflection.fsharpName f.ScalarType
+                    let article = if "AEIOUaeiou".Contains name.[0] then "an" else "a"
+
+                    errors.Add
+                        { Model = t.Name
+                          Property = Some f.Name
+                          Message = $"is marked NotReference, but {article} {name} refers to nothing already: only a field of a record's key type (a typed id) is a reference" }
 
             let fields =
                 s.Fields

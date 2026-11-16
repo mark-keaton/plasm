@@ -99,3 +99,31 @@ Feature: A record says how it is stored
         | an owned list ordered by a field it does not have | Misordered | has no field named Missing                     |
         | a list of records that are not stored            | Plain      | is a list of Unstored, which names no table      |
         | a record with two version fields                 | Doubled    | two fields marked Version                       |
+
+  Rule: An attribute where it has no effect is refused
+
+    Every attribute is read where it is written. One where Plasm would not read
+    it says something the model does not do, so the model is refused, naming
+    the attribute, rather than built without it.
+
+    Scenario Outline: <records> is refused
+      When I build a stored model of <records>
+      Then the model is refused for <model>, saying "<message>"
+
+      Examples:
+        | records                                     | model            | message                                            |
+        | a table named by an empty string            | Blank            | names an empty table                               |
+        | an Assigned field that is not the key       | Misassigned      | is marked Assigned, but only a key is assigned     |
+        | an Assigned key that is not an integer      | AssignedGuid     | is marked Assigned, but a Guid key is assigned already |
+        | an OrderedBy on a field that is not a list  | OrderedScalar    | is marked OrderedBy, but only a list has an order  |
+        | a NotReference on a field that is not an id | NotAnId          | is marked NotReference, but an int64 refers to nothing already |
+        | a JoinTable on an owned list                | JoinedOwner      | is marked JoinTable, but its JoinedItems hold its key, so it is owned |
+        | a JoinTable on a field that is not a list   | JoinedScalar     | is marked JoinTable, but only a list of stored records is linked |
+        | a Unique union field                        | UniqueUnion      | is marked Unique, but a union with fields          |
+        | a Unique value field                        | UniqueValue      | is marked Unique, but a value                      |
+        | a Unique Json field                         | UniqueJson       | is marked Unique, but a Json document              |
+        | a Generated Json field                      | GeneratedJson    | is marked Generated, but a Json document           |
+        | a Unique owned list                         | UniqueOwned      | is marked Unique, but a list of stored records     |
+        | a Version inside a value                    | VersionInValue   | is marked Version, but Version is not supported inside a value |
+        | a Generated field inside a value            | GeneratedInValue | is marked Generated, but Generated is not supported inside a value |
+        | a Json field inside a value                 | JsonInValue      | is marked Json, but Json is not supported inside a value |
