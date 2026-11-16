@@ -152,7 +152,11 @@ type TestDb =
     /// Runs raw SQL (setup and assertions bypass the library).
     member db.Exec(sql: string, ?args: (string * obj) list) =
         task {
-            use conn = new NpgsqlConnection(db.ConnectionString)
+            // Unpooled: Npgsql's global pool would keep a connection to every
+            // scenario's database open until the run ends; and not the
+            // scenario's data source, whose type catalogue must be read after
+            // setup has created its types.
+            use conn = new NpgsqlConnection(db.ConnectionString + ";Pooling=false")
             do! conn.OpenAsync()
             use cmd = conn.CreateCommand()
             cmd.CommandText <- sql
@@ -166,7 +170,11 @@ type TestDb =
 
     member db.Scalar<'T>(sql: string, ?args: (string * obj) list) =
         task {
-            use conn = new NpgsqlConnection(db.ConnectionString)
+            // Unpooled: Npgsql's global pool would keep a connection to every
+            // scenario's database open until the run ends; and not the
+            // scenario's data source, whose type catalogue must be read after
+            // setup has created its types.
+            use conn = new NpgsqlConnection(db.ConnectionString + ";Pooling=false")
             do! conn.OpenAsync()
             use cmd = conn.CreateCommand()
             cmd.CommandText <- sql
