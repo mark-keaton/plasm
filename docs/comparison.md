@@ -97,7 +97,7 @@ In rough order of importance for teams leaving EF Core:
 4. **Modelling.** Owned records live in their own tables: no embedded
    (same-row) types, JSON columns, composite keys, array columns, inheritance,
    or keyless and view entities. A join table cannot carry columns of its own.
-5. **Querying.** No set operations or `distinct`, no nested collections
+5. **Querying.** No set operations, no nested collections
    projected into DTOs, no streaming, a
    fixed set of translated functions, and raw SQL that cannot be composed
    further.

@@ -24,4 +24,5 @@ Feature: About aggregates and grouping
       | No rows is explicit             | sum over no rows is 0; max over no rows is None              | aggregates: Aggregates over no rows are explicit |
       | Grouping by a key               | groupBy and select give one row per Customer                 | aggregates: Grouping Orders by Customer          |
       | Filtering groups                | having keeps only groups that satisfy an aggregate condition | aggregates: Filtering groups                     |
+      | Each value once                 | selectDistinct gives each customer once, None included; Agg.countDistinct leaves None out | distinct: No customer is one value, as List.distinct has it |
       | Grouping mistakes are refused   | selecting an ungrouped column is refused before execution    | aggregates: Grouping mistakes are explicit       |

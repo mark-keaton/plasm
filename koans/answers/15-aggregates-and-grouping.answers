@@ -16,6 +16,9 @@ Some 99m
 [ None, 1L; Some(CustomerId 1L), 2L; Some(CustomerId 2L), 1L ]
 # Filtering groups
 [ Some(CustomerId 1L), 2L ]
+# Each value once
+3
+2L
 # Grouping mistakes are refused
 true
 0

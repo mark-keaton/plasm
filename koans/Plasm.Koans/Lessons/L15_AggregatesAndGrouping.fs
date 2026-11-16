@@ -120,6 +120,22 @@ let lesson =
           )
 
           Koan.Task(
+              "Each value once",
+              fun repo ->
+                  task {
+                      // selectDistinct keeps each selected value once, as List.distinct
+                      // would: the order with no customer gives None, one value of its
+                      // own. Agg.countDistinct counts the distinct values that are not
+                      // None, as SQL's COUNT(DISTINCT ...) does.
+                      let! customers = repo.All(plasm { for o in tableOf<Order> do selectDistinct o.CustomerId })
+                      (ok customers).Length |> shouldBe __
+
+                      let! counted = repo.One(plasm { for o in tableOf<Order> do select (Agg.countDistinct o.CustomerId) })
+                      ok counted |> shouldBe (Some __)
+                  }
+          )
+
+          Koan.Task(
               "Grouping mistakes are refused",
               fun repo ->
                   task {

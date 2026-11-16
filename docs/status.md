@@ -38,7 +38,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 
 | Suite | What it proves | Result |
 |---|---|---|
-| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 374 / 374 pass (outline examples counted separately) |
+| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 385 / 385 pass (outline examples counted separately) |
 | `tests/Plasm.Tests`: `Translation.fs` | SQL-shape contracts (options, membership, `exists`, `List.exists`/`forall` over owned lists, pagination), unsupported-expression errors, model-configuration errors | 42 pass |
 | `tests/Plasm.Tests`: `CompileTime.fs` | Typed API acceptance and rejection, checked with FSharp.Compiler.Service against the real assemblies; each rejection pins its error code and has a passing control snippet | 15 pass |
 | `tests/Plasm.Tests`: `Properties.fs` (FsCheck, real database) | Predicate-order equivalence matching F# semantics; extending a query never alters it; an update records exactly the differing fields; the same aggregates for every batch size, with key-proportional command counts; owned lines keep their declared order per owner | 5 properties pass |
@@ -47,11 +47,11 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 | `tests/Plasm.Tests`: `Behaviour.fs` (real database) | Edge paths: `One`, projections, materialisation errors, snapshot reads, key and version changes refused, owned items of another owner refused and rolled back, `Tx.traverse`, cancellation | 11 pass |
 | `tests/Plasm.Tests`: `Batch2.fs` (SQL shape and real database) | Aggregates and grouping errors; bulk misuse errors, foreign-key failures, a 40,000-row insert split into two commands that roll back together, composite conflict targets; raw SQL with list, option and domain parameters; prepared patterns; join-table type checks | 26 pass |
 | `tests/Plasm.Tests`: `ConventionCost.fs`, `Smoke.fs`, `WriteSmoke.fs` | A value read by convention allocates no more than a registered mapping (three types); a page read and a write path end to end | 5 pass |
-| `koans/Plasm.Koans.Specs` | Every koan (22 lessons, 226 koans) passes with its reference answer and stops at its blank as shipped; the notebook runs in a hosted session and a real kernel | 251 checks pass |
+| `koans/Plasm.Koans.Specs` | Every koan (22 lessons, 227 koans) passes with its reference answer and stops at its blank as shipped; the notebook runs in a hosted session and a real kernel | 252 checks pass |
 | `koans/browser` | The browser koans (PGlite) | 120 scenarios pass |
 
 Run the library's tests with `dotnet test` from the repository root (Docker is
-required, or set `PLASM_TEST_PG`): 374 scenarios and 128 unit tests.
+required, or set `PLASM_TEST_PG`): 385 scenarios and 128 unit tests.
 
 ## Supported behaviour
 
@@ -166,6 +166,8 @@ required, or set `PLASM_TEST_PG`): 374 scenarios and 128 unit tests.
 
 - `repo.Count` (one row transferred; a page counts the page, a grouped query its
   groups), `repo.Exists` (reads at most one row), and `Tx.count`.
+- `selectDistinct (...)`: each selected value once, as `List.distinct` (None
+  is one value); ordered by selected values only (`distinct.feature`).
 - `Agg.count`, `countDistinct`, `sum`, `min`, `max` and `avg` in `select`,
   `having` and orderings. `Agg.sum` of no rows is 0, as `List.sum []`; `min`,
   `max` and `avg` return options. Summing text or averaging an integer key does
@@ -185,6 +187,9 @@ required, or set `PLASM_TEST_PG`): 374 scenarios and 128 unit tests.
   `repo.Exists`, `repo.Explain` (the plan and its loads, with no database
   access).
 - `ReadConsistency.Snapshot` reads a query and what it owns in one snapshot.
+- `including (plasm { ... })`: each record paired with the list an inner query
+  finds for it, `Projection<Order * Payment list>`, with conditions, order and
+  `take` per record (`including.feature`).
 
 **Writes** (only through `repo.Transact`):
 
@@ -366,10 +371,8 @@ These are medians from a machine shared with other work; times varied by up to
   against the model, but generates no migration. Keep your migration tool.
 - Right and full outer joins, joins on non-equality conditions, joins to
   subqueries.
-- `distinct`, subqueries in `select`, unions, CTEs and window functions (use
-  `Raw.fragment` or `repo.Sql` / `Tx.sql`).
-- The latest few rows per parent (top-N per group): dropped on purpose with
-  `limitPerParent`; write it as hand-written SQL.
+- Subqueries in `select`, set operations (UNION, INTERSECT, EXCEPT), CTEs and
+  window functions (use `Raw.fragment` or `repo.Sql` / `Tx.sql`).
 - Join tables with extra columns (model the link as its own record), composite
   keys, JSON columns.
 - Bulk writes over joins (`UPDATE ... FROM`), `RETURNING` from bulk updates,
@@ -389,6 +392,15 @@ These are medians from a machine shared with other work; times varied by up to
   write needs its type written: `repo.Transact(Tx.insert ada: Tx<Customer,
   unit>)`. Stored untyped as a top-level value it becomes `obj`. Transactions
   written as functions with a declared return type need nothing.
+- `take` and `skip` are refused with `selectDistinct`: in the query they come
+  first and would page the rows, while the database pages the distinct values.
+  A paged list of distinct values is a real need, to be revisited with a real
+  case.
+- A query ending in `including` reads its outer records and the included ones
+  in separate commands, outside a snapshot (`ReadConsistency.Snapshot` is not
+  offered for projections): a write committed between them can be seen by the
+  second and not the first, as for what a record owns. Read it with `Tx.all`
+  inside a transaction when that matters.
 - What a record owns or links is always read with it: every query of the owner
   pays one more command per list. A relationship read only sometimes is
   another aggregate, reached by a query.
@@ -564,6 +576,7 @@ loaded records are in the result's type, not in a field that may be unloaded.
 | 2026-11-14 | **One style.** "There should not be two styles." G1 (1cf93bd): `exists (plasm { ... })` as a correlated `EXISTS`. 1c5e90a: the schema check reports a misnamed constraint, with the rename. G2 (7e70c31): `ownsOptional` and `ownsOne`. G3 (f09a66e): `Tx.insert`, `Tx.update (original, changed, ?expectVersion)` and `Tx.delete` take records. Step b (1cf5872): Plasm validates no input; `Changeset.validate*`, `cast`, `castWith`, `set`, `clear`, `forKey`, `getField`, `tryGetChange` and `addError` removed. Step c (d6435f7): `plasm { }` is the only query syntax; the pipeline `Query.*` functions and `query-pipeline.feature` removed. Step a1 (15e2297): the test domain in the one style (an Order owns its lines; customers, payments and products referred to by id); a joined or hand-written-SQL record comes with what it owns; an owned item with another owner's key is refused; `has-one.feature` and `many-to-many.feature` folded into `owned-records.feature` and `linked-collections.feature`. Koans, examples, F# Interactive tour and website rewritten (98a60d2 to c884ed7, 24e14e6, e1179ae, 66180ab, 137f385). dc6832f: scalar conventions compiled once per type (reads were 5× slower). ba9f042: the same stored record listed twice in an owned list is refused; `Option` predicates over an owned optional record translate. Step a2 (f37403d): `Assoc`, `NotLoaded`/`Loaded`, `hasMany`/`hasOne`/`belongsTo`/`manyToMany`, `preload`/`replacePreload`/`limitPerParent`, `repo.Preload`, `Rel`, `putChildren`/`replaceChildren`/`putLinks`/`addLinks`/`removeLinks`, `ReplaceScope` and `OnReplace` removed; `AssocKind` internal. Step d (84b971b): `repo.Insert`/`Update`/`Delete`/`Execute`/`ExecuteSql`, `WriteError` and `Tx.write` removed; `Changeset`, `ChangeAction` and `FieldChange` internal; a `TransactionError` displays as what failed and where. 11a6895: `repo.Ddl()` prints an index on each column the model's reads filter on | the ledger above, ADR 0001 amendment, `docs/acceptance.md` |
 | 2026-11-14 to 15 | **A record says how it is stored.** The user asked why a `Card` needs a `schema<Card>` beside it. 567f734: a typed id that is the key of two schemas is a model error. Step a: `Plasm.Annotations` (attribute classes only, no dependencies, compiled by Fable from its sources) with `[<Table>]`, `[<Unique>]`, `[<Version>]`, `[<Generated>]`, `[<Assigned>]`, `[<NotReference>]`, `[<OrderedBy>]` and `[<JoinTable>]`; `Model.build scalars [ typeof<...> ]` derives the model from the types, owned records coming with their owner; `tableOf<'T>` is the query source; `schema { }` stayed as `Model.buildSchemas` until everything was converted. Every table name is written (a join table's too); every column name is derived. **Reversal:** key versus identityKey was called a fact to state; the key's generation is now read from its type (an integer key, or a typed id over one, is generated by the database; any other key is assigned), with `[<Assigned>]` for an integer key the application assigns. A `[<Generated>]` column's default is not printed by `repo.Ddl()`: the model cannot know it. Step b: the test domain and every step file in the attribute style, `repo.Scaffold` prints a `[<Table>]` record, and `[<Column>]` was added for a column that is not its field's snake case (a scaffolded table's key column, say), cc3d0ec. Step c (e480562): the koans, lesson 05 now About stored records; `stored<'T>` renamed `tableOf<'T>`, because a local named `stored` shadowed it eight times in our own code. Step d (9b03362): README, ADR 0001 amendment of 2026-11-15, comparisons, website, examples and the F# Interactive tour. Step e: `schema<'T> { }`, `SchemaBuilder`, every schema operation and `Model.buildSchemas` removed; the query source's type is `Table<'T>`; `ISchema` is internal. Kanban was converted by the architecture session at each step (bc974d8, be6c6d7) | `features/stored-records.feature`, `src/Plasm/Stored.fs` |
 | 2026-11-15 | `including (plasm { ... })`: another aggregate's records in the result's type (`Order * Payment list`), tied by one equality, read with one more command per batch, `take` per record; restores per-query loading and top-N per parent without field state, at the user's request | `features/including.feature`, ADR 0001 amendment |
+| 2026-11-15 | `selectDistinct` as a second terminal operation (not a `distinct` flag, which could only be refused at translation); ordered outside the distinct rows; `take`/`skip` with it refused in v1 | `features/distinct.feature` |
 
 ## Suggested next steps
 
