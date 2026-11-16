@@ -406,6 +406,16 @@ type IncludingSteps(w: World) =
         let e = refusal ()
         check (e.Contains "including" && e.Contains "one record") e
 
+    [<StepDefinition("I run the Orders with their Payments twice through one repository")>]
+    member _.RunTwice() =
+        task {
+            let repo = w.Db.RepoWith()
+            let! _ = repo.All IncludingGood.withPayments
+            let! _ = repo.All IncludingGood.withPayments
+            w.Set("plans", repo.PlansMade)
+        }
+        |> unit
+
     [<StepDefinition("I check the queries of a module whose including queries translate")>]
     member _.Check() =
         w.Set("problems", w.Repo.CheckQueries(typeof<IncludingSteps>.Assembly, "Plasm.Specs.Including.IncludingGood"))

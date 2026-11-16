@@ -134,6 +134,23 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                 Ok p
             | other -> other
 
+    // A query ending in `including`, planned once per value like any query.
+    let includingPlans = ConditionalWeakTable<QueryDef, Planner.Including>()
+
+    let includingFor (def: QueryDef) =
+        let def = defaultArg def.Template def
+
+        match includingPlans.TryGetValue def with
+        | true, p -> Ok p
+        | _ ->
+            Threading.Interlocked.Increment(&planned) |> ignore
+
+            match Planner.including provider.Dialect model def with
+            | Ok p when p.Outer.Reusable ->
+                includingPlans.AddOrUpdate(def, p)
+                Ok p
+            | other -> other
+
     let withArgs (args: obj[]) (ct: CancellationToken) (snapshot: bool) (body: Execution.Session -> Task<'a>) : Task<'a> =
         task {
             use! conn = provider.OpenConnection ct
@@ -269,7 +286,7 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
         Execution.guard provider (fun () ->
             task {
               if projection.Def.Including.IsSome then
-                match Planner.including provider.Dialect model projection.Def with
+                match includingFor projection.Def with
                 | Error e -> return Error(DbError.Translation e)
                 | Ok plan ->
                     let! rows = withArgs projection.Def.Args ct false (fun s -> Execution.readIncluding s model plan)

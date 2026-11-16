@@ -140,6 +140,10 @@ Feature: A query can read each record with the records another query finds for i
       When I read the Orders including their Payments of at least 25, through a prepared query
       Then the Order of 50 comes with the Payments 30 Succeeded
 
+    Scenario: A query ending in including is planned once
+      When I run the Orders with their Payments twice through one repository
+      Then it is translated once
+
     Scenario: A module's including queries are checked
       When I check the queries of a module whose including queries translate
       Then no problem is reported
