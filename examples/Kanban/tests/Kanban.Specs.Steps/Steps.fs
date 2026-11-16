@@ -142,6 +142,15 @@ type KanbanSteps(w: World, d: Driver) =
     [<When("the blocked cards on {string} are read")>]
     member _.ReadBlocked(slug: string) : Task = call (w.Api.blocked slug)
 
+    [<When("the blocked cards everywhere are read")>]
+    member _.ReadBlockedEverywhere() : Task = call (w.Api.blockedEverywhere ())
+
+    [<Then("the blocked cards are {string}")>]
+    member _.ThenBlockedEverywhere(expected: string) =
+        match w.Last with
+        | Ok(:? (BlockedSomewhere[]) as found) -> equal (names expected) [ for b in found -> $"{b.Card.Title} on {b.Slug}" ] "blocked cards and their boards"
+        | other -> failwithf "expected blocked cards, got %A" other
+
     [<Then("""^the card "(.*)" is blocked since (\d{4}-\d\d-\d\d \d\d:\d\d) because "(.*)"$""")>]
     member _.ThenBlocked(title: string, since: string, reason: string) : Task =
         task {

@@ -204,6 +204,18 @@ Feature: A kanban board with an F# domain at its centre
       When the blocked cards on "apollo" are read
       Then the cards found are "Third, Second"
 
+    Scenario: Every blocked card, whichever board it is on, with its board
+      Given the board "gemini" allows 2 cards in progress
+      And the card "First" on "apollo"
+      And the card "Second" on "gemini"
+      And the card "Third" on "gemini"
+      And the time is 2026-11-15 10:00
+      And "First" is blocked because "no budget"
+      And the time is 2026-11-15 09:00
+      And "Second" is blocked because "waiting for the supplier"
+      When the blocked cards everywhere are read
+      Then the blocked cards are "Second on gemini, First on apollo"
+
   Rule: A card has a checklist
 
     Scenario: Items are kept in the order they were added

@@ -74,6 +74,8 @@ type Model =
       Me: string option
       Sign: Credentials'
       Boards: BoardSummary[] option
+      /// Every blocked card, whichever board it is on.
+      BlockedEverywhere: BlockedSomewhere[]
       Board: BoardView option
       /// The label the board is narrowed to, and the cards that carry it.
       Filter: (string * CardView[]) option
@@ -94,6 +96,7 @@ type Msg =
     | SignedIn of Result<string, ApiError>
     | SignedOut of Result<unit, ApiError>
     | GotBoards of Result<BoardSummary[], ApiError>
+    | GotBlockedEverywhere of Result<BlockedSomewhere[], ApiError>
     | GotBoard of Result<BoardView, ApiError>
     | GotFiltered of string * Result<CardView[], ApiError>
     | GotFinished of Result<CardPage, ApiError>
@@ -143,7 +146,10 @@ let private loadFiltered (slug: string) (label: string) : Cmd<Msg> =
 
 let private load (page: Page) : Cmd<Msg> =
     match page with
-    | BoardList -> Cmd.OfAsync.either api.boards () GotBoards Failed
+    | BoardList ->
+        Cmd.batch
+            [ Cmd.OfAsync.either api.boards () GotBoards Failed
+              Cmd.OfAsync.either api.blockedEverywhere () GotBlockedEverywhere Failed ]
     | BoardPage slug -> Cmd.batch [ Cmd.OfAsync.either api.board slug GotBoard Failed; loadFinished slug 1 ]
     | WorkPage -> Cmd.OfAsync.either api.myWork () GotWork Failed
 
@@ -166,6 +172,7 @@ let private init () =
       Me = None
       Sign = { Name = ""; Password = "" }
       Boards = None
+      BlockedEverywhere = [||]
       Board = None
       Filter = None
       Finished = None
@@ -261,6 +268,7 @@ let private update (msg: Msg) (model: Model) : Model * Cmd<Msg> =
     | SignedIn(Error error) -> { model with Notice = Some(explain error) }, Cmd.none
     | SignedOut _ -> { model with Me = None; Work = None; Open = None }, Cmd.none
     | GotBoards(Ok boards) -> { model with Boards = Some boards }, Cmd.none
+    | GotBlockedEverywhere(Ok blocked) -> { model with BlockedEverywhere = blocked }, Cmd.none
     | GotBoard(Ok board) -> { model with Board = Some board }, Cmd.none
     | GotFiltered(label, Ok cards) -> { model with Filter = Some(label, cards) }, Cmd.none
     | GotFinished(Ok page) -> { model with Finished = Some page }, Cmd.none
@@ -289,6 +297,7 @@ let private update (msg: Msg) (model: Model) : Model * Cmd<Msg> =
     // Asking for one's work while signed out is shown as such by the page.
     | GotWork(Error SignInRequired) -> { model with Work = None }, Cmd.none
     | GotBoards(Error error)
+    | GotBlockedEverywhere(Error error)
     | GotBoard(Error error)
     | GotFiltered(_, Error error)
     | GotFinished(Error error)
@@ -406,6 +415,28 @@ let private viewBoardList (model: Model) dispatch =
                                                           Html.span
                                                               [ prop.className "newest blocked-titles"
                                                                 prop.text ("Blocked: " + String.concat " · " board.Blocked) ] ] ] ] ] ] ]
+          if model.BlockedEverywhere.Length > 0 then
+              Html.section
+                  [ Html.h2 "Blocked, longest first"
+                    Html.ul
+                        [ prop.className "boards"
+                          prop.children
+                              [ for blocked in model.BlockedEverywhere ->
+                                    Html.li
+                                        [ prop.key (string blocked.Card.Id)
+                                          prop.children
+                                              [ Html.a
+                                                    [ prop.href $"#/{blocked.Slug}"
+                                                      prop.children
+                                                          [ Html.strong blocked.Card.Title
+                                                            Html.span
+                                                                [ prop.className "counts"
+                                                                  prop.text (
+                                                                      blocked.Board
+                                                                      + (match blocked.Card.Blocked with
+                                                                         | Some b -> " · " + b.Reason
+                                                                         | None -> "")
+                                                                  ) ] ] ] ] ] ] ] ]
           if model.Me.IsSome then
               Html.section
                   [ prop.className "form"

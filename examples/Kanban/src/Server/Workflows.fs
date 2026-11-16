@@ -22,14 +22,12 @@ type Refusal =
 /// value, so the application can check them all before it serves anything.
 module Queries =
 
-    /// The cards on a board: the tie between the two tables, written once.
-    [<ReflectedDefinition>]
-    let cardsOf (b: Board) = plasm { for c in tableOf<Card> do where (c.Board = b.Id) }
-
     /// Every board with the titles of the three cards created last on it,
     /// newest first, and the titles of its blocked cards, the longest blocked
     /// first. The cards are another aggregate, so the query asks for what it
-    /// needs of them, twice, and its type says it did:
+    /// needs of them, twice. `referring<Card> b` is the cards that hold this
+    /// board's id: a Card has one field of type BoardId, so nothing more
+    /// needs saying. The query's type says what it read:
     /// (Board * Title list * Title list). Each `including` is one more
     /// command for all the boards.
     let boardsWithCards =
@@ -39,7 +37,7 @@ module Queries =
 
                 including (
                     plasm {
-                        for c in cardsOf b do
+                        for c in referring<Card> b do
                             orderByDescending c.Created
                             take 3
                             select c.Title
@@ -48,7 +46,7 @@ module Queries =
 
                 including (
                     plasm {
-                        for c in cardsOf b do
+                        for c in referring<Card> b do
                             where c.Blocked.IsSome
                             orderBy (c.Blocked |> Option.map (fun blocker -> blocker.Since))
                             select c.Title
@@ -140,6 +138,17 @@ module Queries =
                     where (c.Board = board.Value && c.Blocked.IsSome)
                     orderBy (c.Blocked |> Option.map (fun blocker -> blocker.Since))
             })
+
+    /// Every blocked card, the longest blocked first, each with the board it
+    /// is on. A card holds its board's id, so there is at most one board:
+    /// the result is (Card * Board option), not a list to take the head of.
+    let blockedEverywhere =
+        plasm {
+            for c in tableOf<Card> do
+                where c.Blocked.IsSome
+                orderBy (c.Blocked |> Option.map (fun blocker -> blocker.Since))
+                includingOne (referredBy<Board> c)
+        }
 
     /// What someone is working on, each card joined to its board: one command.
     let workOf =

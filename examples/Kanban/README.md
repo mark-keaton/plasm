@@ -119,12 +119,16 @@ dotnet test --project tests/Kanban.Specs
 - **Asking for another aggregate.** The list of boards shows each board's
   three newest cards and its blocked cards. Cards are not part of a board,
   so the query asks for them, once for each list: it ends in two
-  `including (plasm { for c in cardsOf b do ... select c.Title })`
+  `including (plasm { for c in referring<Card> b do ... select c.Title })`
   and its result is `(Board * Title list * Title list)`, which a query that
-  did not ask could not be mistaken for. Each `including` is one more
-  command, however many boards there are. The inner query ends in `select c.Title`, so
-  only titles are read. `cardsOf` writes the tie between the two tables
-  once. Listing sends three queries however many boards and cards there are.
+  did not ask could not be mistaken for. `referring<Card> b` is the cards
+  that hold the board's id; a `Card` has one field of type `BoardId`, so the
+  tie is never written out. Each inner query ends in `select c.Title`, so
+  only titles are read, and each `including` is one more command: listing
+  sends four queries however many boards and cards there are. The page also
+  lists every blocked card with its board. A card holds one board's id, so
+  that query ends in `includingOne (referredBy<Board> c)` and its result is
+  `(Card * Board option)`.
 - **A bulk write.** "Send all back" is one `UPDATE` over a board's cards in
   progress (`Bulk.update` with `{ c with Stage = Backlog }`), run as a step of
   a transaction. It runs no per-card decision, and `Workflows.sendAllBack`

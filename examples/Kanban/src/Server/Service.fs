@@ -300,6 +300,22 @@ let create (deps: Deps) (session: Session) (ct: CancellationToken) : IKanbanApi 
             }
             |> Async.AwaitTask
 
+      blockedEverywhere =
+        fun () ->
+            task {
+                match! deps.Repo.All(Queries.blockedEverywhere, cancellationToken = ct) with
+                | Error e -> return Error(unavailable deps "Reading blocked cards failed" e)
+                | Ok rows ->
+                    return
+                        Ok
+                            [| for card, board in rows do
+                                   // A card's board is deleted only with its cards.
+                                   match board with
+                                   | Some board -> { Slug = board.Slug.Value; Board = board.Name.Value; Card = View.card card }
+                                   | None -> () |]
+            }
+            |> Async.AwaitTask
+
       addItem = fun input -> change input.Ref (fun _ _ card -> Card.addItem input.Text card)
 
       tick = fun input -> change input.Ref (fun _ _ card -> Card.tick input.Text card)

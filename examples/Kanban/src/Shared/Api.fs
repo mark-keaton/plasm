@@ -48,6 +48,12 @@ type BoardView =
       WipLimit: int
       Cards: CardView[] }
 
+/// A blocked card and the board it is on.
+type BlockedSomewhere =
+    { Slug: string
+      Board: string
+      Card: CardView }
+
 type BoardSummary =
     { Slug: string
       Name: string
@@ -137,6 +143,8 @@ type IKanbanApi =
       unfinished: string -> Async<Result<CardView[], ApiError>>
       /// A board's blocked cards, the longest blocked first.
       blocked: string -> Async<Result<CardView[], ApiError>>
+      /// Every blocked card, whichever board it is on, the longest blocked first.
+      blockedEverywhere: unit -> Async<Result<BlockedSomewhere[], ApiError>>
       comment: NewComment -> Async<Result<CardView, ApiError>>
       label: LabelCard -> Async<Result<CardView, ApiError>>
       /// A board's cards that carry a label.
