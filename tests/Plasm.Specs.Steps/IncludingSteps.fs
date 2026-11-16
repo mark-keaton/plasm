@@ -316,8 +316,8 @@ type IncludingSteps(w: World) =
 
         equal expected actual "customers, their orders and their payments"
 
-    [<StepDefinition("I read the Orders by total, including eight lists: their Payments, then their Payments of at least 2 up to at least 8")>]
-    member _.Eight() =
+    [<StepDefinition("I read the Orders by total, including sixteen lists: their Payments, then their Payments of at least 2 up to at least 16")>]
+    member _.Sixteen() =
         task {
             let q =
                 plasm {
@@ -331,23 +331,31 @@ type IncludingSteps(w: World) =
                         including (plasm { for p in referring<Payment> o do where (p.Amount >= 6m) })
                         including (plasm { for p in referring<Payment> o do where (p.Amount >= 7m) })
                         including (plasm { for p in referring<Payment> o do where (p.Amount >= 8m) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 9m) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 10m) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 11m) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 12m) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 13m) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 14m) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 15m) })
+                        including (plasm { for p in referring<Payment> o do where (p.Amount >= 16m) })
                 }
 
             let! r = w.Repo.All q
 
             let counts =
                 ok r
-                |> List.map (fun (o, a, b, c, d, e, f, g, h) ->
-                    total o.Total, [ a; b; c; d; e; f; g; h ] |> List.map (List.length >> string) |> String.concat " ")
+                |> List.map (fun (o, l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11, l12, l13, l14, l15, l16) ->
+                    total o.Total, [ l1; l2; l3; l4; l5; l6; l7; l8; l9; l10; l11; l12; l13; l14; l15; l16 ] |> List.map (List.length >> string) |> String.concat " ")
 
-            w.Set("includingEight", counts)
+            w.Set("includingSixteen", counts)
         }
         |> unit
 
-    [<StepDefinition("each Order comes with eight lists, the n-th holding its Payments of at least n:")>]
-    member _.EightAre(table: DataTable) =
+    [<StepDefinition("each Order comes with sixteen lists, the n-th holding its Payments of at least n:")>]
+    member _.SixteenAre(table: DataTable) =
         let expected = [ for r in table.Rows -> r.["order"], r.["counts"].Trim() ]
-        equal expected (w.Get<(string * string) list> "includingEight") "orders and the sizes of their eight lists"
+        equal expected (w.Get<(string * string) list> "includingSixteen") "orders and the sizes of their sixteen lists"
 
     // -- includingOne -----------------------------------------------------------
 
@@ -781,13 +789,21 @@ let q2 =
 let shown (repo: Repo) = task { let! a = repo.All q1 in let! b = repo.All q2 in return a |> Result.map flat, b |> Result.map nested }
 """
 
-    [<StepDefinition("I compile code where a query includes nine lists")>]
-    member _.Nine() =
+    [<StepDefinition("I compile code where a query includes seventeen lists")>]
+    member _.Seventeen() =
         compiled
             """
 let q =
     plasm {
         for o in tableOf<Order> do
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
+            including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
             including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
             including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })
             including (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) })

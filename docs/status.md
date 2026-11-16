@@ -212,7 +212,7 @@ required, or set `PLASM_TEST_PG`): 460 scenarios and 128 unit tests.
 - `including (plasm { ... })`: each record paired with the list an inner query
   finds for it, `Projection<Order * Payment list>`, with conditions, order and
   `take` per record; the inner query may end in `select` or `selectDistinct`,
-  and then reads only what it selects. Up to eight may follow one another,
+  and then reads only what it selects. Up to sixteen may follow one another,
   giving a flat tuple in the order written (`Order * Payment list * Order list`),
   and an inner query may end in its own (`Customer * (Order * Payment list)
   list`), each one more command per batch at any depth. A tie to an optional
@@ -427,10 +427,13 @@ documents), each refused by name rather than guessed:
   would page the rows, while the database pages the distinct values. A paged
   list of distinct values is a real need, to be revisited with a real case.
 - `including` after a `join` or `leftJoin`; a tie of more than one column
-  (composite); a ninth `including` or `includingOne` in one query; `take` or
-  `skip` inside `includingOne`. Eight is a limit only because
+  (composite); a seventeenth `including` or `includingOne` in one query; `take` or
+  `skip` inside `includingOne`. Sixteen is a limit only because
   F# has no variadic generics: each length of tuple is one more overload of
-  `including`, and there they stop (a ninth does not compile).
+  `including`, and there they stop (a seventeenth does not compile). Each
+  overload is listed when an argument fits none, so passing a non-query to
+  `including` gives an error naming all 64 (about 9 KB, twice the 8-wide one); a type
+  error inside the inner query is reported exactly, as before.
 - In a value: `[<Unique>]`, `[<Column>]`, a list, or a stored record.
 - In a document: a union with fields and a `Map`; reading a field of an
   optional document in a query (test `IsSome` and read the field from the
@@ -646,6 +649,7 @@ loaded records are in the result's type, not in a field that may be unloaded.
 | 2026-11-15 | A record with no table and no Id is a value in its owner's row (`<field>_<subfield>`); an optional one is all or nothing, printed as a CHECK by `Ddl()`; a registered scalar mapping over a record still wins | `features/value-records.feature` |
 | 2026-11-16 | Several `including`s (up to eight, a flat tuple in the order written, at the user's request: "We can only do one including whereas EF Core can do as many includes as it wants?") and an inner query ending in its own (EF's `ThenInclude`); a tie may compare an optional column with `Some` of a plain one | `features/including.feature` |
 | 2026-11-16 | `includingOne`: the one record a tie can find, as an option, only when the tie proves at most one (the inner key or a unique field), never checked at run time; chained sources take any element type, so it mixes with `including` under the one limit of eight | `features/including.feature` |
+| 2026-11-16 | The limit of side-by-side `including`s and `includingOne`s raised from eight to sixteen at the user's word ("Raise it to 16."): 64 overloads; type checking measured unchanged within the spread (60 queries: median 2.64 s at 8, 2.86 s at 16); only an inner that is not a query gives a longer error | `features/including.feature` |
 | 2026-11-16 | `referring<T> o` and `referredBy<T> o`: the tie derived from the typed ids, at the user's request (asked whether F# could generate nine hand-written relationship functions). Reverses "no inferred tie" from the `including` design: with typed ids it is a proof, not a guess; not exactly one candidate field is refused, never picked. Plain ties in koans, README, website, examples and Kanban moved to it | `features/referring.feature` |
 | 2026-11-15 | `[<Json>]`: one jsonb document per field in Plasm's own strict mapping (unknown keys refused, since writes replace the whole document); JSON rendered through `ISqlDialect.Json`, refused at repository creation when absent | `features/json-columns.feature` |
 

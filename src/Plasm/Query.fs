@@ -401,8 +401,8 @@ type QueryBuilder() =
     /// tie must be the inner record's key or a unique field.
     ///
     /// One overload per arity, as F# has no variadic generics: the outer record
-    /// and up to 8 lists or options, mixed in any order (the number is stated
-    /// here and in including.feature). A ninth finds no overload. A projection
+    /// and up to 16 lists or options, mixed in any order (the number is stated
+    /// here and in including.feature). A seventeenth finds no overload. A projection
     /// can be followed only by these, since only they keep the query's
     /// variable in scope, so its earlier elements may be of any type.
 
@@ -532,6 +532,134 @@ type QueryBuilder() =
 
     [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
     member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'U option> =
+        QueryOps.including true p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'U list> =
+        QueryOps.including false p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'U list> =
+        QueryOps.including false p.Def inner
+
+    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
+    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'U option> =
+        QueryOps.including true p.Def inner
+
+    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
+    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'U option> =
+        QueryOps.including true p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'U list> =
+        QueryOps.including false p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'U list> =
+        QueryOps.including false p.Def inner
+
+    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
+    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'U option> =
+        QueryOps.including true p.Def inner
+
+    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
+    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'U option> =
+        QueryOps.including true p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'U list> =
+        QueryOps.including false p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'U list> =
+        QueryOps.including false p.Def inner
+
+    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
+    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'U option> =
+        QueryOps.including true p.Def inner
+
+    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
+    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'U option> =
+        QueryOps.including true p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'U list> =
+        QueryOps.including false p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'U list> =
+        QueryOps.including false p.Def inner
+
+    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
+    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'U option> =
+        QueryOps.including true p.Def inner
+
+    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
+    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'U option> =
+        QueryOps.including true p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'U list> =
+        QueryOps.including false p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'U list> =
+        QueryOps.including false p.Def inner
+
+    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
+    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'U option> =
+        QueryOps.including true p.Def inner
+
+    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
+    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'U option> =
+        QueryOps.including true p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'U list> =
+        QueryOps.including false p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'U list> =
+        QueryOps.including false p.Def inner
+
+    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
+    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'U option> =
+        QueryOps.including true p.Def inner
+
+    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
+    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'U option> =
+        QueryOps.including true p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'U list> =
+        QueryOps.including false p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'U list> =
+        QueryOps.including false p.Def inner
+
+    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
+    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'U option> =
+        QueryOps.including true p.Def inner
+
+    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
+    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'U option> =
+        QueryOps.including true p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'O>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'O * 'U list> =
+        QueryOps.including false p.Def inner
+
+    [<CustomOperation("including", MaintainsVariableSpace = true)>]
+    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'O>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'O * 'U list> =
+        QueryOps.including false p.Def inner
+
+    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
+    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'O>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'O * 'U option> =
+        QueryOps.including true p.Def inner
+
+    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
+    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'O>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'O * 'U option> =
         QueryOps.including true p.Def inner
 
     /// Projects each row, keeping each selected value once (as `List.distinct`;

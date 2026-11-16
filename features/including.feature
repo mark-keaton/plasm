@@ -22,10 +22,10 @@ Feature: A query can read each record with the records another query finds for i
   `includingOne` reads the one record the inner query can find, as an option
   (`Order * Customer option`); the tie must prove there is at most one, by
   being the inner record's key or a [<Unique>] field, or the query is refused.
-  The two mix in any order. A query may end in up to eight `including`s and `includingOne`s, giving a flat tuple in the order
+  The two mix in any order. A query may end in up to sixteen `including`s and `includingOne`s, giving a flat tuple in the order
   written: `Projection<Order * Payment list * Order list>`. There is a limit
   only because F# has no variadic generics, so each length of tuple is one more
-  overload of `including`; eight is where they stop. An inner query may
+  overload of `including`; sixteen is where they stop. An inner query may
   itself end in `including`, so its items come with their own lists:
   `Projection<Order * (Order * Payment list) list>`. Each `including`, at any
   depth, is one more command per batch, so lists never multiply each other's
@@ -187,14 +187,14 @@ Feature: A query can read each record with the records another query finds for i
         | 50    | 10 (10 Failed); 50 (5 Pending) |
         | 200   | 200 ()                      |
 
-    Scenario: Eight lists, past the seven elements where F# nests its tuples
-      When I read the Orders by total, including eight lists: their Payments, then their Payments of at least 2 up to at least 8
-      Then each Order comes with eight lists, the n-th holding its Payments of at least n:
-        | order | counts          |
-        | 5     | 0 0 0 0 0 0 0 0 |
-        | 10    | 2 2 2 2 2 2 2 2 |
-        | 50    | 3 3 3 3 3 2 2 2 |
-        | 200   | 0 0 0 0 0 0 0 0 |
+    Scenario: Sixteen lists, past the seven elements where F# nests its tuples
+      When I read the Orders by total, including sixteen lists: their Payments, then their Payments of at least 2 up to at least 16
+      Then each Order comes with sixteen lists, the n-th holding its Payments of at least n:
+        | order | counts                          |
+        | 5     | 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 |
+        | 10    | 2 2 2 2 2 2 2 2 2 2 0 0 0 0 0 0 |
+        | 50    | 3 3 3 3 3 2 2 2 2 2 2 2 2 2 2 2 |
+        | 200   | 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 |
 
     Scenario: The result's type lists the lists in the order written
       When I compile code that passes Orders with their Payments and same-Customer Orders, and Orders with included Orders and their Payments, to functions of those types
@@ -267,6 +267,6 @@ Feature: A query can read each record with the records another query finds for i
 
       Examples:
         | use                    | code                                                         |
-        | a ninth list           | a query includes nine lists                                  |
+        | a seventeenth list     | a query includes seventeen lists                             |
         | select after including | a query includes Payments and then selects the Order's total |
         | counting it            | the Orders with their Payments are counted                   |

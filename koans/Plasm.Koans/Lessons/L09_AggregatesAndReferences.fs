@@ -270,7 +270,7 @@ let lesson =
               "Each order with its payments and its deliveries",
               fun repo ->
                   task {
-                      // A query may end in up to eight includings. Each adds one list
+                      // A query may end in up to sixteen includings. Each adds one list
                       // to the tuple, in the order written, and is one more command:
                       // two lists never multiply each other's rows.
                       let withBoth =
