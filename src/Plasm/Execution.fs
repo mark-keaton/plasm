@@ -601,23 +601,43 @@ let rec private readLevel (s: Session) (model: Model) (batchSize: int) (parents:
             for cr in childRows do
                 add (keyOf parts.MatchField cr.[parts.MatchField.Index]) (element cr)
 
-        // A list of the items, or for includingOne an option of the one (the
-        // tie is the inner key or a unique field, so there is never a second).
-        let hold: obj seq -> obj =
+        // A list of the items, or for includingOne an option of the one. The
+        // tie is the inner key or a unique field, which proves at most one
+        // only as far as the database keeps it: a second is an error, as for
+        // an owned optional record, never a choice.
+        let outer = parts.Outer.Root.Name
+        let none = ResizeArray<obj>()
+
+        let some =
+            lazy (FSharp.Reflection.FSharpType.GetUnionCases(parts.HeldType) |> Array.find (fun c -> c.Name = "Some"))
+
+        let hold (key: obj) (items: ResizeArray<obj>) : obj =
             if parts.One then
-                let some = FSharp.Reflection.FSharpType.GetUnionCases(parts.HeldType) |> Array.find (fun c -> c.Name = "Some")
-                fun items -> match Seq.tryHead items with Some v -> FSharp.Reflection.FSharpValue.MakeUnion(some, [| v |]) | None -> null
+                if items.Count > 1 then
+                    raise (
+                        MaterializationFailure
+                            { Model = outer
+                              Property = parts.OuterField.Name
+                              Value = $"{items.Count} rows"
+                              Message =
+                                $"includingOne found {items.Count} {parts.Target.Name}s for one {outer} (its {parts.OuterField.Name} is {key}) where its tie on {parts.Target.Name}.{parts.MatchField.Name} proves at most one; the database holds more than the model says (is a unique constraint missing?)" }
+                    )
+
+                if items.Count = 0 then
+                    null
+                else
+                    FSharp.Reflection.FSharpValue.MakeUnion(some.Value, [| items.[0] |])
             else
-                Reflection.makeList parts.ElementType
+                Reflection.makeList parts.ElementType (items :> obj seq)
 
         return
             fun (r: obj[]) ->
                 match valueOf r with
                 | Some k ->
                     match groups.TryGetValue k with
-                    | true, g -> hold (g :> obj seq)
-                    | _ -> hold Seq.empty
-                | None -> hold Seq.empty
+                    | true, g -> hold k g
+                    | _ -> hold k none
+                | None -> hold null none
     }
 
 /// A query ending in `including`s (including.feature): the outer records,

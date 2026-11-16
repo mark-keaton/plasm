@@ -21,7 +21,8 @@ Feature: A query can read each record with the records another query finds for i
 
   `includingOne` reads the one record the inner query can find, as an option
   (`Order * Customer option`); the tie must prove there is at most one, by
-  being the inner record's key or a [<Unique>] field, or the query is refused.
+  being the inner record's key or a [<Unique>] field, or the query is refused;
+  a second match in the database is an error, never a choice.
   The two mix in any order. A query may end in up to sixteen `including`s and `includingOne`s, giving a flat tuple in the order
   written: `Projection<Order * Payment list * Order list>`. There is a limit
   only because F# has no variadic generics, so each length of tuple is one more
@@ -224,6 +225,12 @@ Feature: A query can read each record with the records another query finds for i
     Scenario: A unique column proves at most one too
       When I read the Customers by name, including one Customer with the same email each
       Then each Customer comes with itself
+
+    Scenario: A second match in the database is an error, never a choice
+      Given the customers table has lost its unique constraint on email
+      And a Customer "Ann" with Ada's email
+      When I read the Customers by name, including one Customer with the same email each
+      Then the read fails, saying includingOne found 2 Customers for one Customer where its tie on Email proves at most one
 
     Scenario: A tie that could find several is refused, naming the column
       When I read the Orders including one Order of the same Customer each

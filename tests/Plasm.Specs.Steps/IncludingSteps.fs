@@ -422,9 +422,31 @@ type IncludingSteps(w: World) =
                     }
                 )
 
-            w.Set("includingSelf", ok r)
+            w.Set("includingSelfResult", r)
+
+            match r with
+            | Ok rows -> w.Set("includingSelf", rows)
+            | Error _ -> ()
         }
         |> unit
+
+    [<StepDefinition("^a Customer \"Ann\" with Ada's email$")>]
+    member _.Ann() =
+        task {
+            let! _ = Seed.customer w.Db "Ann" "ada@example.com"
+            ()
+        }
+        |> unit
+
+    [<StepDefinition("the read fails, saying includingOne found 2 Customers for one Customer where its tie on Email proves at most one")>]
+    member _.SecondMatch() =
+        match w.Get<Result<(Customer * Customer option) list, DbError>> "includingSelfResult" with
+        | Error(DbError.Materialization m) ->
+            let text = string (DbError.Materialization m)
+
+            for word in [ "includingOne"; "2 Customers"; "Email" ] do
+                check (text.Contains word) text
+        | other -> failwithf "expected a materialization error, got %A" other
 
     [<StepDefinition("each Customer comes with itself")>]
     member _.Itself() =
