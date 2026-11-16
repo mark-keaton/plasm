@@ -38,7 +38,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 
 | Suite | What it proves | Result |
 |---|---|---|
-| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 406 / 406 pass (outline examples counted separately) |
+| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 436 / 436 pass (outline examples counted separately) |
 | `tests/Plasm.Tests`: `Translation.fs` | SQL-shape contracts (options, membership, `exists`, `List.exists`/`forall` over owned lists, pagination), unsupported-expression errors, model-configuration errors | 42 pass |
 | `tests/Plasm.Tests`: `CompileTime.fs` | Typed API acceptance and rejection, checked with FSharp.Compiler.Service against the real assemblies; each rejection pins its error code and has a passing control snippet | 15 pass |
 | `tests/Plasm.Tests`: `Properties.fs` (FsCheck, real database) | Predicate-order equivalence matching F# semantics; extending a query never alters it; an update records exactly the differing fields; the same aggregates for every batch size, with key-proportional command counts; owned lines keep their declared order per owner | 5 properties pass |
@@ -47,11 +47,11 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 | `tests/Plasm.Tests`: `Behaviour.fs` (real database) | Edge paths: `One`, projections, materialisation errors, snapshot reads, key and version changes refused, owned items of another owner refused and rolled back, `Tx.traverse`, cancellation | 11 pass |
 | `tests/Plasm.Tests`: `Batch2.fs` (SQL shape and real database) | Aggregates and grouping errors; bulk misuse errors, foreign-key failures, a 40,000-row insert split into two commands that roll back together, composite conflict targets; raw SQL with list, option and domain parameters; prepared patterns; join-table type checks | 26 pass |
 | `tests/Plasm.Tests`: `ConventionCost.fs`, `Smoke.fs`, `WriteSmoke.fs` | A value read by convention allocates no more than a registered mapping (three types); a page read and a write path end to end | 5 pass |
-| `koans/Plasm.Koans.Specs` | Every koan (22 lessons, 228 koans) passes with its reference answer and stops at its blank as shipped; the notebook runs in a hosted session and a real kernel | 253 checks pass |
+| `koans/Plasm.Koans.Specs` | Every koan (22 lessons, 229 koans) passes with its reference answer and stops at its blank as shipped; the notebook runs in a hosted session and a real kernel | 254 checks pass |
 | `koans/browser` | The browser koans (PGlite) | 120 scenarios pass |
 
 Run the library's tests with `dotnet test` from the repository root (Docker is
-required, or set `PLASM_TEST_PG`): 406 scenarios and 128 unit tests.
+required, or set `PLASM_TEST_PG`): 436 scenarios and 128 unit tests.
 
 ## Supported behaviour
 
@@ -82,6 +82,19 @@ required, or set `PLASM_TEST_PG`): 406 scenarios and 128 unit tests.
   optional value is all or nothing (`value-records.feature`). Selecting a whole
   value in a projection is not supported (select its fields, or the record), and
   a value cannot hold a list, a stored record, `[<Unique>]` or `[<Column>]`.
+- `[<Json>]` on a field stores it as one jsonb document: a record with no
+  table and no Id, a list of them, a list of scalars, or an option of these
+  (`json-columns.feature`). Plasm owns the mapping: a record is an object keyed
+  in snake case, None is a missing key, a list is an array, a scalar is stored
+  as its column would be (a typed id as its number, a fieldless union as its
+  case name, a `DateTime` as UTC ISO 8601 text, a `DateTimeOffset` with its
+  offset). Reads are strict and name the path: a missing or mistyped key, an
+  unknown case, and a key the record does not have are all refused. Queries
+  read document fields (`c.Settings.Theme`), `List.exists`/`List.forall` over a
+  document list, `List.contains` over a document list of scalars, and compare
+  whole documents; a change writes the whole document. `Ddl()` prints `jsonb`,
+  `CheckSchema` requires it, and a provider without JSON (`ISqlDialect.Json =
+  None`) refuses such a model when the repository is made.
 - Registered mappings override the conventions: `Scalar.wrap`,
   `Scalar.tryWrap`, `Scalar.enum`, and `Scalar.asPgEnum "type"` to store a
   fieldless union as a PostgreSQL enum type (sent as text cast to the type, read
@@ -384,7 +397,10 @@ These are medians from a machine shared with other work; times varied by up to
 - Subqueries in `select`, set operations (UNION, INTERSECT, EXCEPT), CTEs and
   window functions (use `Raw.fragment` or `repo.Sql` / `Tx.sql`).
 - Join tables with extra columns (model the link as its own record), composite
-  keys, JSON columns.
+  keys.
+- In a document: a union with fields, a `Map`, reading a field of an optional
+  document in a query (test `IsSome` and read the field from the records), and
+  a prepared argument looked for with `List.contains`.
 - Bulk writes over joins (`UPDATE ... FROM`), `RETURNING` from bulk updates,
   streaming (`IAsyncEnumerable`) results.
 - `Query.prepare3` for projections.
@@ -411,6 +427,13 @@ These are medians from a machine shared with other work; times varied by up to
   offered for projections): a write committed between them can be seen by the
   second and not the first, as for what a record owns. Read it with `Tx.all`
   inside a transaction when that matters.
+- A document is read strictly and written whole, so its shape changes need a
+  data migration first: before removing a field from the record, remove the
+  key from the stored documents (`update t set col = col - 'key'`); before
+  adding a field that is not optional, add the key to them. A tolerant read
+  would let the next write delete keys another writer added.
+- An `int64` in a document (a typed id) is a JSON number: exact in
+  PostgreSQL's jsonb, but not in a JavaScript reader beyond 2^53.
 - What a record owns or links is always read with it: every query of the owner
   pays one more command per list. A relationship read only sometimes is
   another aggregate, reached by a query.
@@ -588,6 +611,7 @@ loaded records are in the result's type, not in a field that may be unloaded.
 | 2026-11-15 | `including (plasm { ... })`: another aggregate's records in the result's type (`Order * Payment list`), tied by one equality, read with one more command per batch, `take` per record; restores per-query loading and top-N per parent without field state, at the user's request | `features/including.feature`, ADR 0001 amendment |
 | 2026-11-15 | `selectDistinct` as a second terminal operation (not a `distinct` flag, which could only be refused at translation); ordered outside the distinct rows; `take`/`skip` with it refused in v1 | `features/distinct.feature` |
 | 2026-11-15 | A record with no table and no Id is a value in its owner's row (`<field>_<subfield>`); an optional one is all or nothing, printed as a CHECK by `Ddl()`; a registered scalar mapping over a record still wins | `features/value-records.feature` |
+| 2026-11-15 | `[<Json>]`: one jsonb document per field in Plasm's own strict mapping (unknown keys refused, since writes replace the whole document); JSON rendered through `ISqlDialect.Json`, refused at repository creation when absent | `features/json-columns.feature` |
 
 ## Suggested next steps
 

@@ -25,3 +25,5 @@ Some "duplicate"
 [ Some "Wishes" ]
 # One record without a table lives in its owner's row
 true
+# A field marked Json is one document
+true

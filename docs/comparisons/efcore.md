@@ -309,7 +309,7 @@ The gap list for an EF Core replacement. Plasm status is from `docs/status.md` (
 
 **Modelling**
 8. Inheritance: TPH, TPT, TPC.
-9. Owned and complex types (table splitting, value objects across several columns, optional complex types, structs) and JSON columns (`ToJson`, query into JSON, `ExecuteUpdate` on JSON). Plasm's owned records live in their own tables; it has no embedded types or JSON columns.
+9. Owned and complex types (table splitting, value objects across several columns, optional complex types, structs) and JSON columns (`ToJson`, query into JSON, `ExecuteUpdate` on JSON). Plasm's owned records live in their own tables; a record with no table is stored in its owner's row (like a complex type), and a field marked `[<Json>]` is one jsonb document that queries can read into. Plasm has no table splitting, structs as values, or bulk updates into a document.
 10. Composite primary and foreign keys, alternate keys, shadow properties, backing fields, property access modes.
 11. Primitive collections as columns, queryable (PostgreSQL arrays: `= ANY`, `@>`). Plasm rejects collections as columns.
 12. Many-to-many with payload or skip navigations, and has-through equivalents. Plasm has plain linked lists (`links`) only.

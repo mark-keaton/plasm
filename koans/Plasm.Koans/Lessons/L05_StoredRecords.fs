@@ -27,6 +27,16 @@ type Place = { Street: string; City: string }
 [<Table "depots">]
 type Depot = { Id: int64; Name: string; Place: Place }
 
+/// A chore's steps: kept as one JSON document in the chore's row.
+type Step = { Text: string; Done: bool }
+
+[<Table "chores">]
+type Chore =
+    { Id: int64
+      Title: string
+      [<Json>]
+      Steps: Step list }
+
 let lesson =
     Lesson.make
         "About stored records"
@@ -176,4 +186,15 @@ let lesson =
                   // model expects, without touching the database.
                   let ddl = Repo(Model.buildOrFail [] [ typeof<Depot> ], repo.Provider).Ddl()
                   ddl.Contains "place_city text not null" |> shouldBe __
+          )
+
+          Koan.Sync(
+              "A field marked Json is one document",
+              fun repo ->
+                  // Chore (under Given) marks its Steps [<Json>]: the whole list is kept
+                  // as one jsonb document in the chores row, each step an object keyed
+                  // in snake case, {"text": ..., "done": ...}. Queries can still reach
+                  // into it: List.exists (fun s -> not s.Done) c.Steps runs in SQL.
+                  let ddl = Repo(Model.buildOrFail [] [ typeof<Chore> ], repo.Provider).Ddl()
+                  ddl.Contains "steps jsonb not null" |> shouldBe __
           ) ]

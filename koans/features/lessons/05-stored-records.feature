@@ -26,3 +26,4 @@ Feature: About stored records
       | A model reports every mistake at once | Model.build lists every field it cannot store, not just the first                                             | core: Unsupported model representations fail during configuration              |
       | A list is stored only if its records are | a list of records that name no table is refused when the model is built, naming the field                | stored-records: A model the types cannot describe is refused                   |
       | One record without a table lives in its owner's row | a record with no table held as one field is stored in its owner's row, as <field>_<subfield> columns | value-records: Ddl prints a value's columns and the CHECK for an optional one |
+      | A field marked Json is one document | a [<Json>] list of records is one jsonb column in its owner's row | json-columns: Ddl prints a jsonb column |
