@@ -20,6 +20,13 @@ type Wish = { Item: string }
 [<Table "wishlists">]
 type Wishlist = { Id: int64; Wishes: Wish list }
 
+/// A depot's place: a record that names no table and has no Id. As one field
+/// of a stored record it is a value, kept in its owner's row.
+type Place = { Street: string; City: string }
+
+[<Table "depots">]
+type Depot = { Id: int64; Name: string; Place: Place }
+
 let lesson =
     Lesson.make
         "About stored records"
@@ -158,4 +165,15 @@ let lesson =
                   match Model.build [] [ typeof<Wishlist> ] with
                   | Ok _ -> failwith "expected a configuration error"
                   | Error errors -> errors |> List.map (fun e -> e.Property) |> shouldBe __
+          )
+
+          Koan.Sync(
+              "One record without a table lives in its owner's row",
+              fun repo ->
+                  // Place (under Given) names no table, but a Depot holds one Place,
+                  // not a list: it is stored in the depots row, each of its fields in
+                  // a column named <field>_<subfield>. repo.Ddl prints the tables a
+                  // model expects, without touching the database.
+                  let ddl = Repo(Model.buildOrFail [] [ typeof<Depot> ], repo.Provider).Ddl()
+                  ddl.Contains "place_city text not null" |> shouldBe __
           ) ]

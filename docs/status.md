@@ -38,7 +38,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 
 | Suite | What it proves | Result |
 |---|---|---|
-| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 389 / 389 pass (outline examples counted separately) |
+| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 406 / 406 pass (outline examples counted separately) |
 | `tests/Plasm.Tests`: `Translation.fs` | SQL-shape contracts (options, membership, `exists`, `List.exists`/`forall` over owned lists, pagination), unsupported-expression errors, model-configuration errors | 42 pass |
 | `tests/Plasm.Tests`: `CompileTime.fs` | Typed API acceptance and rejection, checked with FSharp.Compiler.Service against the real assemblies; each rejection pins its error code and has a passing control snippet | 15 pass |
 | `tests/Plasm.Tests`: `Properties.fs` (FsCheck, real database) | Predicate-order equivalence matching F# semantics; extending a query never alters it; an update records exactly the differing fields; the same aggregates for every batch size, with key-proportional command counts; owned lines keep their declared order per owner | 5 properties pass |
@@ -47,11 +47,11 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 | `tests/Plasm.Tests`: `Behaviour.fs` (real database) | Edge paths: `One`, projections, materialisation errors, snapshot reads, key and version changes refused, owned items of another owner refused and rolled back, `Tx.traverse`, cancellation | 11 pass |
 | `tests/Plasm.Tests`: `Batch2.fs` (SQL shape and real database) | Aggregates and grouping errors; bulk misuse errors, foreign-key failures, a 40,000-row insert split into two commands that roll back together, composite conflict targets; raw SQL with list, option and domain parameters; prepared patterns; join-table type checks | 26 pass |
 | `tests/Plasm.Tests`: `ConventionCost.fs`, `Smoke.fs`, `WriteSmoke.fs` | A value read by convention allocates no more than a registered mapping (three types); a page read and a write path end to end | 5 pass |
-| `koans/Plasm.Koans.Specs` | Every koan (22 lessons, 227 koans) passes with its reference answer and stops at its blank as shipped; the notebook runs in a hosted session and a real kernel | 252 checks pass |
+| `koans/Plasm.Koans.Specs` | Every koan (22 lessons, 228 koans) passes with its reference answer and stops at its blank as shipped; the notebook runs in a hosted session and a real kernel | 253 checks pass |
 | `koans/browser` | The browser koans (PGlite) | 120 scenarios pass |
 
 Run the library's tests with `dotnet test` from the repository root (Docker is
-required, or set `PLASM_TEST_PG`): 389 scenarios and 128 unit tests.
+required, or set `PLASM_TEST_PG`): 406 scenarios and 128 unit tests.
 
 ## Supported behaviour
 
@@ -73,6 +73,15 @@ required, or set `PLASM_TEST_PG`): 389 scenarios and 128 unit tests.
   column, each case field in `<column>_<case field>`, nested unions likewise. A
   row that is no case, or holds a value in another case's column, is refused
   when read, naming the field.
+- A record with no `[<Table>]` and no Id, held as one field (or an option of
+  one), is a value stored in its owner's row: each field in `<field>_<subfield>`,
+  nested values chaining the prefix. An optional value is None when every
+  column is NULL and must have a field that is not optional; a partly stored
+  value is refused when read, naming the field. `c.Address.City` is a column in
+  queries; `c.Address = a` compares every column; `Ddl()` prints a CHECK that an
+  optional value is all or nothing (`value-records.feature`). Selecting a whole
+  value in a projection is not supported (select its fields, or the record), and
+  a value cannot hold a list, a stored record, `[<Unique>]` or `[<Column>]`.
 - Registered mappings override the conventions: `Scalar.wrap`,
   `Scalar.tryWrap`, `Scalar.enum`, and `Scalar.asPgEnum "type"` to store a
   fieldless union as a PostgreSQL enum type (sent as text cast to the type, read
@@ -578,6 +587,7 @@ loaded records are in the result's type, not in a field that may be unloaded.
 | 2026-11-14 to 15 | **A record says how it is stored.** The user asked why a `Card` needs a `schema<Card>` beside it. 567f734: a typed id that is the key of two schemas is a model error. Step a: `Plasm.Annotations` (attribute classes only, no dependencies, compiled by Fable from its sources) with `[<Table>]`, `[<Unique>]`, `[<Version>]`, `[<Generated>]`, `[<Assigned>]`, `[<NotReference>]`, `[<OrderedBy>]` and `[<JoinTable>]`; `Model.build scalars [ typeof<...> ]` derives the model from the types, owned records coming with their owner; `tableOf<'T>` is the query source; `schema { }` stayed as `Model.buildSchemas` until everything was converted. Every table name is written (a join table's too); every column name is derived. **Reversal:** key versus identityKey was called a fact to state; the key's generation is now read from its type (an integer key, or a typed id over one, is generated by the database; any other key is assigned), with `[<Assigned>]` for an integer key the application assigns. A `[<Generated>]` column's default is not printed by `repo.Ddl()`: the model cannot know it. Step b: the test domain and every step file in the attribute style, `repo.Scaffold` prints a `[<Table>]` record, and `[<Column>]` was added for a column that is not its field's snake case (a scaffolded table's key column, say), cc3d0ec. Step c (e480562): the koans, lesson 05 now About stored records; `stored<'T>` renamed `tableOf<'T>`, because a local named `stored` shadowed it eight times in our own code. Step d (9b03362): README, ADR 0001 amendment of 2026-11-15, comparisons, website, examples and the F# Interactive tour. Step e: `schema<'T> { }`, `SchemaBuilder`, every schema operation and `Model.buildSchemas` removed; the query source's type is `Table<'T>`; `ISchema` is internal. Kanban was converted by the architecture session at each step (bc974d8, be6c6d7) | `features/stored-records.feature`, `src/Plasm/Stored.fs` |
 | 2026-11-15 | `including (plasm { ... })`: another aggregate's records in the result's type (`Order * Payment list`), tied by one equality, read with one more command per batch, `take` per record; restores per-query loading and top-N per parent without field state, at the user's request | `features/including.feature`, ADR 0001 amendment |
 | 2026-11-15 | `selectDistinct` as a second terminal operation (not a `distinct` flag, which could only be refused at translation); ordered outside the distinct rows; `take`/`skip` with it refused in v1 | `features/distinct.feature` |
+| 2026-11-15 | A record with no table and no Id is a value in its owner's row (`<field>_<subfield>`); an optional one is all or nothing, printed as a CHECK by `Ddl()`; a registered scalar mapping over a record still wins | `features/value-records.feature` |
 
 ## Suggested next steps
 

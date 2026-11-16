@@ -23,3 +23,5 @@ Some "duplicate"
 [ Some "Page"; Some "Referrer" ]
 # A list is stored only if its records are
 [ Some "Wishes" ]
+# One record without a table lives in its owner's row
+true

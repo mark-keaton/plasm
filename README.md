@@ -227,7 +227,7 @@ is a session to send a submission at a time.
 ## Learn Plasm: the koans
 
 `koans/` is an interactive course in the style of Ruby Koans: 22 lessons and
-227 koans, each a small exercise with a blank (`__`) to fill in, run against a
+228 koans, each a small exercise with a blank (`__`) to fill in, run against a
 real PostgreSQL database inside a sandbox, so every koan starts from the same
 data. It teaches the one style. It starts with no Plasm at all (the F# the
 course uses), then what a repo is, the shop's data and the promises Plasm
