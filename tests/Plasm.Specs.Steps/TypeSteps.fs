@@ -7,8 +7,11 @@ open Plasm.TestDomain
 open Plasm.TestDomain.Domain
 open Plasm.TestDomain.Database
 
-/// A record with a field type that has no persistence mapping.
-type Address = { Street: string; City: string }
+/// A field type that has no persistence mapping: a class (a record with no
+/// table would be a value, stored in its owner's row).
+type Address(street: string, city: string) =
+    member _.Street = street
+    member _.City = city
 
 [<Table "shipments">]
 type Shipment =

@@ -318,4 +318,4 @@ type OwnedOneSteps(w: World) =
     [<StepDefinition("^the model is refused for (\\w+), saying how to make it owned$")>]
     member _.RefusedNotOwned(field: string) =
         let errors = w.Get<ConfigError list> "accountRefusal"
-        check (errors |> List.exists (fun e -> e.Property = Some field && e.Message.Contains "to make it owned")) $"%A{errors}"
+        check (errors |> List.exists (fun e -> e.Property = Some field && e.Message.Contains "as an owned record it needs a field of type")) $"%A{errors}"

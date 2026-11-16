@@ -121,7 +121,10 @@ type internal FieldMap =
       ReadOption: obj -> obj option
       /// For a union with fields: how it is stored across columns (Column is
       /// then its case-name column). None for every other field.
-      Union: UnionLayout option }
+      Union: UnionLayout option
+      /// For a value (a record with no table, value-records.feature): its
+      /// fields, stored in the owner's row (Column is then only their prefix).
+      Value: ValueLayout option }
 
     /// Field value (possibly an option) to a provider value or DBNull.
     member f.ToDb(value: obj) : obj =
@@ -161,26 +164,81 @@ type internal FieldMap =
             else
                 scalar
 
-    /// The columns the field is stored in: one, or a union's several.
+    /// The columns the field is stored in: one, or a union's or a value's several.
     member f.Parts: ColumnPart list =
-        match f.Union with
-        | None ->
+        match f.Union, f.Value with
+        | Some u, _ -> u.Columns
+        | None, Some v -> v.Columns
+        | None, None ->
             [ { Name = f.Column
                 ProviderType = f.ProviderType
                 Mapping = f.Mapping } ]
-        | Some u -> u.Columns
+
+    /// Stored in more than one column (a union with fields, or a value).
+    member f.Composite = f.Union.IsSome || f.Value.IsSome
+
+    /// Whether a column of Parts must hold a value (NOT NULL).
+    member f.Requires(column: string) : bool =
+        match f.Union, f.Value with
+        | Some _, _ -> column = f.Column
+        | None, Some v -> not f.IsOption && v.Requires column
+        | None, None -> not f.IsOption
 
     /// The field's value as one provider value (or DBNull) per column of Parts.
     member f.ToColumns(value: obj) : obj list =
-        match f.Union with
-        | None -> [ f.ToDb value ]
-        | Some u -> u.ToColumns value
+        match f.Union, f.Value with
+        | Some u, _ -> u.ToColumns value
+        | None, Some v ->
+            let inner = if f.IsOption then f.ReadOption value elif isNull value then None else Some value
+
+            match inner with
+            | None -> v.Columns |> List.map (fun _ -> box DBNull.Value)
+            | Some x -> List.zip v.Fields (List.ofArray (v.Read x)) |> List.collect (fun (sf, sv) -> sf.ToColumns sv)
+        | None, None -> [ f.ToDb value ]
 
     /// The field's value from one provider value (or NULL) per column of Parts.
     member f.FromColumns(values: obj list) : Result<obj, string> =
-        match f.Union with
-        | None -> f.FromDb values.Head
-        | Some u -> u.FromColumns values
+        match f.Union, f.Value with
+        | Some u, _ -> u.FromColumns values
+        | None, Some v ->
+            let isNull' (x: obj) = isNull x || x = box DBNull.Value
+
+            if f.IsOption && values |> List.forall isNull' then
+                Ok null
+            else
+                let rec split (fields: FieldMap list) (rest: obj list) =
+                    match fields with
+                    | [] -> []
+                    | sf :: more ->
+                        let n = sf.Parts.Length
+                        (sf, List.take n rest) :: split more (List.skip n rest)
+
+                let read =
+                    split v.Fields values
+                    |> List.map (fun (sf, chunk) -> sf.FromColumns chunk |> Result.mapError (fun m -> $"{sf.Name}: {m}"))
+
+                match read |> List.tryPick (function Error m -> Some m | _ -> None) with
+                | Some m -> Error(if f.IsOption then $"stored partly ({m}); an absent {f.Name} has every column NULL" else m)
+                | None ->
+                    let record = v.Make(read |> List.map (function Ok x -> x | Error _ -> null) |> Array.ofList)
+                    Ok(if f.IsOption then f.WrapSome record else record)
+        | None, None -> f.FromDb values.Head
+
+/// A value (value-records.feature): a record with no table, stored in its
+/// owner's row. Each field is a FieldMap whose Column is `<prefix>_<field>`; a
+/// nested value is a field with its own layout.
+and internal ValueLayout =
+    { Type: Type
+      Fields: FieldMap list
+      Make: obj[] -> obj
+      Read: obj -> obj[] }
+
+    member v.Columns: ColumnPart list = v.Fields |> List.collect (fun f -> f.Parts)
+
+    member v.Sub(name: string) = v.Fields |> List.tryFind (fun f -> f.Name = name)
+
+    member v.Requires(column: string) =
+        v.Fields |> List.exists (fun f -> f.Parts |> List.exists (fun p -> p.Name = column) && f.Requires column)
 
 /// One stored column of a field.
 and internal ColumnPart =

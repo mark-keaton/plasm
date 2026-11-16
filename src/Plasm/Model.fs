@@ -305,7 +305,8 @@ module Model =
             | None -> scalarType
           WrapSome = if isOpt then Reflection.makeSome t else id
           ReadOption = if isOpt then Reflection.getOptionValue t else fun v -> if isNull v then None else Some v
-          Union = None }
+          Union = None
+          Value = None }
 
     /// A union with fields (one no scalar mapping or convention covers), stored
     /// across columns (union-fields.feature).
@@ -385,6 +386,55 @@ module Model =
                               Mapping = None }
                             :: (partColumns |> List.distinctBy (fun p -> p.Name))
                           Tag = FSharpValue.PreComputeUnionTagReader(t, true) }
+
+    /// A value (value-records.feature): a record with no table and no Id,
+    /// stored in its owner's row as `<column>_<field>` columns.
+    let rec private valueLayout (scalars: IReadOnlyDictionary<Type, ScalarMapping>) (owner: string) (t: Type) (column: string) (optional: bool) : Result<ValueLayout, string> =
+        let props = FSharpType.GetRecordFields(t, true)
+
+        if props |> Array.exists (fun p -> p.Name = "Id") then
+            Error $"is a {t.Name}, which looks like a stored record without its table (it has an Id): give {t.Name} a [<Table>] to store it on its own, or remove its Id to store it in {owner}'s row"
+        else
+            let field (i: int) (p: Reflection.PropertyInfo) : Result<FieldMap, string> =
+                let ft = p.PropertyType
+                let inner = if Reflection.isOption ft then Reflection.elementType ft else ft
+                let partColumn = column + "_" + Paths.snakeCase p.Name
+                let has (a: Type) = p.GetCustomAttributes(a, true).Length > 0
+
+                if has typeof<UniqueAttribute> then
+                    Error $"{t.Name}.{p.Name} is marked Unique, but Unique is not supported inside a value"
+                elif has typeof<ColumnAttribute> then
+                    Error $"{t.Name}.{p.Name} names its column, but Column is not supported inside a value (its column is {partColumn})"
+                elif Reflection.isList ft || (inner.IsArray && inner <> typeof<byte[]>) then
+                    Error $"{t.Name}.{p.Name} is a {Reflection.typeName ft}: a value cannot hold a list"
+                elif Derive.isStored inner then
+                    Error $"{t.Name}.{p.Name} is a {inner.Name}, a stored record: a value cannot hold a stored record (hold its id instead)"
+                else
+                    match scalarMapping scalars inner with
+                    | Ok mapping -> Ok { scalarField p.Name i partColumn ft mapping with Index = i }
+                    | Error _ when FSharpType.IsRecord(inner, true) ->
+                        valueLayout scalars owner inner partColumn (Reflection.isOption ft)
+                        |> Result.map (fun v ->
+                            { scalarField p.Name i partColumn ft None with
+                                Index = i
+                                Value = Some v })
+                    | Error reason -> Error $"{t.Name}.{p.Name}: {reason}"
+
+            let fields = props |> Array.mapi field |> List.ofArray
+
+            match fields |> List.tryPick (function Error e -> Some e | _ -> None) with
+            | Some e -> Error e
+            | None ->
+                let fs = fields |> List.map (function Ok f -> f | Error _ -> failwith "unreachable")
+
+                if optional && fs |> List.forall (fun f -> f.IsOption) then
+                    Error $"is an optional {t.Name}, which needs a field that is not optional: with every field optional, a {t.Name} with nothing in it could not be told from None"
+                else
+                    Ok
+                        { Type = t
+                          Fields = fs
+                          Make = FSharpValue.PreComputeRecordConstructor(t, true)
+                          Read = FSharpValue.PreComputeRecordReader(t, true) }
 
     let private resolveSchema
         (scalars: IReadOnlyDictionary<Type, ScalarMapping>)
@@ -517,6 +567,15 @@ module Model =
                         err
                             (Some prop.Name)
                             $"{prop.Name} is a {scalarType.Name}, a record with its own schema, so it must be owned to be stored: declare `{op} (fun x -> x.{prop.Name}) (fun item -> item.Owner)`, or hold its id instead to refer to it"
+                    elif FSharpType.IsRecord(scalarType, true) && (scalarMapping scalars scalarType |> Result.isError) then
+                        let column = def.Columns.TryFind prop.Name |> Option.defaultValue (Paths.snakeCase prop.Name)
+
+                        match valueLayout scalars def.Type.Name scalarType column isOpt with
+                        | Error reason -> err (Some prop.Name) reason
+                        | Ok layout ->
+                            fields.Add
+                                { scalarField prop.Name i column t None with
+                                    Value = Some layout }
                     elif Reflection.isList t then
                         err
                             (Some prop.Name)
@@ -565,7 +624,8 @@ module Model =
                                         Reflection.getOptionValue t
                                     else
                                         fun v -> if isNull v then None else Some v
-                                  Union = None }
+                                  Union = None
+                                  Value = None }
 
             for a in def.Assocs do
                 if not (shape.Fields |> Array.exists (fun f -> f.Name = a.Property.Name)) then

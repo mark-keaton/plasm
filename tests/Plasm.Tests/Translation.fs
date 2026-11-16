@@ -232,7 +232,9 @@ let ``SQL injection attempt is inert against a real database`` () =
 
 // -- Model configuration -----------------------------------------------------
 
-type Address = { Street: string }
+/// A class: no scalar mapping, and not a record (a record would be a value).
+type Address(street: string) =
+    member _.Street = street
 
 [<Table "w">]
 type WithAddress = { [<Assigned>] Id: int; Home: Address }

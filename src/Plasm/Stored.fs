@@ -147,7 +147,9 @@ module internal Derive =
                                         Linked = false
                                         Order = o }
                           elif not isList then
-                              err (Some p.Name) $"is a {target.Name}, a stored record that does not hold the key of {t.Name}: hold its id instead to refer to it, or give {target.Name} a field of type {k.PropertyType.Name} to make it owned"
+                              err
+                                  (Some p.Name)
+                                  $"is a {target.Name}, which has [<Table>]: as an owned record it needs a field of type {k.PropertyType.Name} to hold its {t.Name}'s key, and it has none. To store it in {t.Name}'s row instead, remove [<Table>] and its Id from {target.Name}; to refer to it, hold its id"
                           else
                               match attr<JoinTableAttribute> p, keyField target with
                               | None, _ ->

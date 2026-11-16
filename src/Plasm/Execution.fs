@@ -163,8 +163,8 @@ let readEntity (schema: SchemaInfo) : DbDataReader -> obj[] =
         let mutable j = 0
 
         for f in schema.Fields do
-          match f.Union with
-          | None ->
+          match f.Composite with
+          | false ->
             // One column: read it and convert it, with nothing allocated per row
             // beyond the value itself.
             let at = j
@@ -192,8 +192,8 @@ let readEntity (schema: SchemaInfo) : DbDataReader -> obj[] =
                           Value = describe raw
                           Message = msg }
                 )
-          | Some _ ->
-            // A union with fields reads its several columns.
+          | true ->
+            // A union with fields, or a value, reads its several columns.
             let raws =
                 f.Parts
                 |> List.map (fun p ->

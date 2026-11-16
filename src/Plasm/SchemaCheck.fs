@@ -59,6 +59,12 @@ module internal SchemaCheck =
           Nullable: bool
           HasDefault: bool }
 
+    /// The scalar fields of a value, nested values flattened (value-records.feature).
+    let rec private valueLeaves (g: FieldMap) : FieldMap list =
+        match g.Value with
+        | Some v -> v.Fields |> List.collect valueLeaves
+        | None -> [ g ]
+
     let run (model: Model) (s: Execution.Session) : Task<SchemaIssue list> =
         task {
             let dialect = s.Provider.Dialect
@@ -280,7 +286,27 @@ module internal SchemaCheck =
                                         (Some c.Name)
                                         $"column is NOT NULL, but {Reflection.typeName f.ScalarType}'s other cases store NULL in it"
 
-                    for f in sc.Fields do
+                    // A value: each of its fields' columns, NOT NULL where the
+                    // value requires it (value-records.feature).
+                    for f in sc.Fields |> Array.filter (fun f -> f.Value.IsSome) do
+                        for sf in valueLeaves f do
+                            match columns |> List.tryFind (fun c -> c.Name = sf.Column) with
+                            | None -> add SchemaIssueKind.MissingColumn sc.Name (Some f.Name) sc.Table (Some sf.Column) "column does not exist"
+                            | Some c ->
+                                match sf.Mapping |> Option.bind (fun m -> m.StoreType |> Option.map (fun t -> m, t)) with
+                                | Some(m, t) -> enumCheck sc.Name sf sc.Table c m t
+                                | None -> typeCheck sc.Name (Some f.Name) sc.Table c sf.ProviderType
+
+                                if c.Nullable && f.Requires sf.Column then
+                                    add
+                                        SchemaIssueKind.NullableColumn
+                                        sc.Name
+                                        (Some f.Name)
+                                        sc.Table
+                                        (Some c.Name)
+                                        $"column is nullable but {sc.Name}.{f.Name}.{sf.Name} is not optional; a NULL would fail to load. Make the field an option, or the column NOT NULL"
+
+                    for f in sc.Fields |> Array.filter (fun f -> f.Value.IsNone) do
                         match columns |> List.tryFind (fun c -> c.Name = f.Column) with
                         | None -> add SchemaIssueKind.MissingColumn sc.Name (Some f.Name) sc.Table (Some f.Column) "column does not exist"
                         | Some c ->
@@ -451,8 +477,7 @@ module internal Ddl =
             let columns =
                 [ for f in s.Fields do
                       for p in f.Parts do
-                          let isTag = f.Union.IsSome && p.Name = f.Column
-                          let required = if f.Union.IsSome then isTag else not f.IsOption
+                          let required = f.Requires p.Name
 
                           let key =
                               if f.Name = s.Key.Name then
@@ -463,6 +488,20 @@ module internal Ddl =
                           let version = if s.Version |> Option.exists (fun v -> v.Name = f.Name) then " default 1" else ""
                           let notNull = if required then " not null" else ""
                           yield $"  {name p.Name} {columnType p}{notNull}{version}{key}"
+
+                  // An optional value: all its columns NULL, or every column it
+                  // requires present (value-records.feature).
+                  for f in s.Fields do
+                      match f.Value with
+                      | Some v when f.IsOption && f.Parts.Length > 1 ->
+                          let absent = f.Parts |> List.map (fun p -> $"{name p.Name} is null") |> String.concat " and "
+
+                          let present =
+                              f.Parts |> List.filter (fun p -> v.Requires p.Name) |> List.map (fun p -> $"{name p.Name} is not null") |> String.concat " and "
+
+                          let constraintName = name (s.Table + "_" + f.Column + "_present")
+                          yield $"  constraint {constraintName} check (({absent}) or ({present}))"
+                      | _ -> ()
 
                   for f in s.Fields do
                       if f.Unique then

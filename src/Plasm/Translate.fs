@@ -402,11 +402,35 @@ let (|RowBinding|_|) (ctx: Ctx) (e: Expr) =
         | _ -> None
     | _ -> None
 
-let (|RowField|_|) (ctx: Ctx) (e: Expr) =
+let rec (|RowField|_|) (ctx: Ctx) (e: Expr) =
     match e with
     | PropertyGet(Some(RowBinding ctx b), prop, []) when not b.Optional ->
         b.Schema.TryField prop.Name |> Option.map (fun f -> b, f)
+    // A field of a value stored in the row (value-records.feature): its own column.
+    | PropertyGet(Some(RowField ctx (b, f)), prop, []) when not f.IsOption ->
+        f.Value |> Option.bind (fun v -> v.Sub prop.Name) |> Option.map (fun sf -> b, sf)
     | _ -> None
+
+/// Whether a field holds nothing: its column is NULL, or for a value every
+/// column is.
+let private fieldIsNull (alias: string) (f: FieldMap) =
+    match f.Value with
+    | Some _ -> Sql.conj (f.Parts |> List.map (fun p -> Sql.IsNull(Sql.Column(alias, p.Name))))
+    | None -> Sql.IsNull(Sql.Column(alias, f.Column))
+
+let private fieldIsNotNull (alias: string) (f: FieldMap) =
+    match f.Value with
+    | Some _ -> Sql.Not(fieldIsNull alias f)
+    | None -> Sql.IsNotNull(Sql.Column(alias, f.Column))
+
+/// A value in the row equals a value: every column equals its part.
+let private valueEquals (alias: string) (f: FieldMap) (value: obj) : Sql.Expr =
+    List.zip f.Parts (f.ToColumns value)
+    |> List.map (fun (p, v) ->
+        if isNull v || v = box DBNull.Value then Sql.IsNull(Sql.Column(alias, p.Name))
+        elif f.Requires p.Name then Sql.Binary("=", Sql.Column(alias, p.Name), Sql.partValue p v)
+        else Sql.NotDistinctFrom(Sql.Column(alias, p.Name), Sql.partValue p v))
+    |> Sql.conj
 
 let (|RowAssoc|_|) (ctx: Ctx) (e: Expr) =
     match e with
@@ -565,6 +589,8 @@ let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
         match e with
         | UnionPath ctx _ ->
             fail e "a union with fields is stored in several columns; test its case (c.Stage.IsDoing, match) or compare it with a value"
+        | RowField ctx (b, f) when f.Value.IsSome ->
+            fail e $"{b.Schema.Name}.{f.Name} is a {f.ScalarType.Name} stored in several columns; use one of its fields here, or compare it whole with ="
         | RowField ctx (b, f) -> Sql.Column(b.Alias, f.Column)
         | OptionalField ctx (b, f) -> Sql.Column(b.Alias, f.Column)
         | UnionLeaf ctx (alias, f) -> Sql.Column(alias, f.Column)
@@ -685,6 +711,12 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
         | SpecificCall <@ (<>) @> (_, _, [ UnionPath ctx (alias, u); v ])
         | SpecificCall <@ (<>) @> (_, _, [ v; UnionPath ctx (alias, u) ]) when not (isRowDependent ctx v) ->
             Sql.Not(Sql.conj (unionEquals alias u (evaluate ctx v)))
+        | SpecificCall <@ (=) @> (_, _, [ RowField ctx (b, f); v ])
+        | SpecificCall <@ (=) @> (_, _, [ v; RowField ctx (b, f) ]) when f.Value.IsSome && not (isRowDependent ctx v) ->
+            valueEquals b.Alias f (evaluate ctx v)
+        | SpecificCall <@ (<>) @> (_, _, [ RowField ctx (b, f); v ])
+        | SpecificCall <@ (<>) @> (_, _, [ v; RowField ctx (b, f) ]) when f.Value.IsSome && not (isRowDependent ctx v) ->
+            Sql.IsNotTrue(valueEquals b.Alias f (evaluate ctx v))
         | SpecificCall <@ (=) @> (_, _, [ a; b ]) -> equality ctx e a b false
         | SpecificCall <@ (<>) @> (_, _, [ a; b ]) -> equality ctx e a b true
         | Call(None, mi, [ a; b ]) when comparisonOps.ContainsKey mi.Name ->
@@ -695,18 +727,18 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
 
             Sql.Binary(comparisonOps.[mi.Name], ordered ctx a, ordered ctx b)
         | PropertyGet(Some(RowField ctx (b, f)), p, []) when f.IsOption && p.Name = "IsSome" ->
-            Sql.IsNotNull(Sql.Column(b.Alias, f.Column))
+            fieldIsNotNull b.Alias f
         | PropertyGet(Some(RowField ctx (b, f)), p, []) when f.IsOption && p.Name = "IsNone" ->
-            Sql.IsNull(Sql.Column(b.Alias, f.Column))
+            fieldIsNull b.Alias f
         // x.IsSome / x.IsNone compile to static calls on the option type.
         | Call(None, mi, [ RowField ctx (b, f) ]) when f.IsOption && Reflection.isOption mi.DeclaringType && mi.Name = "get_IsSome" ->
-            Sql.IsNotNull(Sql.Column(b.Alias, f.Column))
+            fieldIsNotNull b.Alias f
         | Call(None, mi, [ RowField ctx (b, f) ]) when f.IsOption && Reflection.isOption mi.DeclaringType && mi.Name = "get_IsNone" ->
-            Sql.IsNull(Sql.Column(b.Alias, f.Column))
+            fieldIsNull b.Alias f
         | Call(None, mi, [ RowField ctx (b, f) ]) when f.IsOption && mi.DeclaringType.Name = "OptionModule" ->
             match mi.Name with
-            | "IsSome" -> Sql.IsNotNull(Sql.Column(b.Alias, f.Column))
-            | "IsNone" -> Sql.IsNull(Sql.Column(b.Alias, f.Column))
+            | "IsSome" -> fieldIsNotNull b.Alias f
+            | "IsNone" -> fieldIsNull b.Alias f
             | n -> fail e $"Option.{n} has no SQL translation"
         | Call(Some s, mi, [ arg ]) when s.Type = typeof<string> && arg.Type = typeof<string> ->
             if isRowDependent ctx arg then
@@ -1635,6 +1667,8 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
 
         let addLeaf (ctx: Ctx) (e: Expr) =
             match e with
+            | RowField ctx (b, f) when f.Value.IsSome ->
+                fail e $"{b.Schema.Name}.{f.Name} is a {f.ScalarType.Name} stored in several columns; select its fields, or the whole {b.Schema.Name}"
             | RowField ctx (b, f) ->
                 let i = add (Sql.readColumn f (Sql.Column(b.Alias, f.Column))) (show e)
                 Leaf(i, f.ProviderType, f.FromDb, f.Name)
@@ -1995,8 +2029,9 @@ let private assignments (ctx: Ctx) (schema: SchemaInfo) (row: Var) (body: Expr) 
             | Some f when schema.Version |> Option.exists (fun v -> v.Name = f.Name) ->
                 invalid $"{schema.Name}.{f.Name} is the version; bulk writes increment it automatically"
             | Some f when f.Generated -> invalid $"{schema.Name}.{f.Name} is generated by the database and cannot be assigned"
-            // A union with fields is assigned a whole value, set in all its columns.
-            | Some f when f.Union.IsSome ->
+            // A union with fields, or a value, is assigned a whole value, set in
+            // all its columns.
+            | Some f when f.Composite ->
                 if isRowDependent ctx value then
                     invalid $"{schema.Name}.{f.Name} is stored in several columns; a bulk write assigns it a value, not one computed from the row"
                 else
