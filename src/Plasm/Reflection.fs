@@ -126,6 +126,19 @@ let typeName (t: Type) =
     else
         t.Name
 
+/// A type as F# code spells it: int64 for Int64, string for String.
+let fsharpName (t: Type) =
+    match t with
+    | t when t = typeof<int16> -> "int16"
+    | t when t = typeof<int> -> "int"
+    | t when t = typeof<int64> -> "int64"
+    | t when t = typeof<string> -> "string"
+    | t when t = typeof<bool> -> "bool"
+    | t when t = typeof<decimal> -> "decimal"
+    | t when t = typeof<float> -> "float"
+    | t when t = typeof<float32> -> "float32"
+    | t -> typeName t
+
 /// Types defined in F# Interactive live in one generated module per submission
 /// (FSI_0004.Domain+Customer). Re-evaluating a definition creates a new,
 /// unrelated type with the same name.

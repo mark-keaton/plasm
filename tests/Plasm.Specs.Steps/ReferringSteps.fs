@@ -26,8 +26,29 @@ type Transfer =
       To: AccountId
       Amount: decimal }
 
+type MemoId = MemoId of int64
+
+[<Table "ref_memos">]
+type Memo =
+    { Id: MemoId
+      [<NotReference>]
+      Account: AccountId
+      Text: string }
+
+[<Table "ref_shelves">]
+type Shelf = { Id: int64; Name: string }
+
+type BookId = BookId of int64
+
+[<Table "ref_books">]
+type Book =
+    { Id: BookId
+      Shelf: int64
+      Title: string }
+
 module Schemas =
-    let model = Model.buildOrFail [] [ typeof<Category>; typeof<Account>; typeof<Transfer> ]
+    let model =
+        Model.buildOrFail [] [ typeof<Category>; typeof<Account>; typeof<Transfer>; typeof<Memo>; typeof<Shelf>; typeof<Book> ]
 
     let tables =
         "drop table if exists ref_categories;
@@ -259,6 +280,40 @@ type ReferringSteps(w: World) =
         | Error(DbError.Translation e) ->
             let text = string e
             check (text.Contains "Customer" && text.Contains "no field" && text.Contains "OrderId") text
+        | other -> failwithf "expected a refusal, got %A" other
+
+    [<StepDefinition("I read the Memos referring to an Account, where Memo's one AccountId field is marked NotReference")>]
+    member _.NotReference() =
+        task {
+            let repo = w.Db.RepoWith(model = Schemas.model)
+            let! r = repo.All(referring<Memo> { Account.Id = AccountId 1L; Name = "Main" })
+            w.Set("referringMemo", r |> Result.map ignore)
+        }
+        |> unit
+
+    [<StepDefinition("the read is refused, saying Memo has no field referring to an Account")>]
+    member _.NotReferenceRefused() =
+        match w.Get<Result<unit, DbError>> "referringMemo" with
+        | Error(DbError.Translation e) ->
+            let text = string e
+            check (text.Contains "Memo has no field referring to an Account") text
+        | other -> failwithf "expected a refusal, got %A" other
+
+    [<StepDefinition("I read the Books referring to a Shelf, where Shelf's key and Book's one other field are int64")>]
+    member _.BuiltIn() =
+        task {
+            let repo = w.Db.RepoWith(model = Schemas.model)
+            let! r = repo.All(referring<Book> { Shelf.Id = 1L; Name = "Top" })
+            w.Set("referringBook", r |> Result.map ignore)
+        }
+        |> unit
+
+    [<StepDefinition("the read is refused, saying Book has no field referring to a Shelf, as a Shelf's key is an int64")>]
+    member _.BuiltInRefused() =
+        match w.Get<Result<unit, DbError>> "referringBook" with
+        | Error(DbError.Translation e) ->
+            let text = string e
+            check (text.Contains "Book has no field referring to a Shelf" && text.Contains "int64") text
         | other -> failwithf "expected a refusal, got %A" other
 
     [<StepDefinition("I read the Payments referring to the Order of 50 as an option")>]

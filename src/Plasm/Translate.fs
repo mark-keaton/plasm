@@ -193,17 +193,27 @@ let expandTie (model: Model) (mi: Reflection.MethodInfo) (inner: Expr) (outer: E
     // The record whose key is held, and the record whose field holds it.
     let keyed, holder = if referring then os, ts else ts, os
     let keyType = keyed.Key.ScalarType
-    let candidates = holder.Fields |> Array.filter (fun f -> f.Name <> holder.Key.Name && f.ScalarType = keyType && f.Parts.Length = 1)
+    // The tie is a field the model counts as a reference to the keyed record:
+    // never the key, never one marked [<NotReference>], never a built-in type
+    // (an int64 says nothing about whose key it holds).
+    let candidates = holder.Fields |> Array.filter (fun f -> f.References = Some keyed.Type)
     let article (n: string) = if "AEIOU".Contains n.[0] then "an" else "a"
     let byHand = $"write the tie by hand in a where, comparing the field of {holder.Name} with {keyed.Name}.{keyed.Key.Name}"
 
     let field =
         match candidates with
         | [| f |] -> f
-        | [||] -> invalid $"{op}<{target.Name}> needs one field of {holder.Name} holding the key of {keyed.Name}: {holder.Name} has no field holding {article keyType.Name} {keyType.Name}; {byHand}"
+        | [||] ->
+            let why =
+                if Scalar.isBuiltIn keyType then
+                    $", as {article keyed.Name} {keyed.Name}'s key is {article (Reflection.fsharpName keyType)} {Reflection.fsharpName keyType}: only a typed id says whose key a field holds"
+                else
+                    $" (a field of type {keyType.Name}, not marked [<NotReference>])"
+
+            invalid $"{op}<{target.Name}> needs one field of {holder.Name} referring to {keyed.Name}: {holder.Name} has no field referring to {article keyed.Name} {keyed.Name}{why}; {byHand}"
         | many ->
             let names = many |> Array.map (fun f -> f.Name) |> String.concat " and "
-            invalid $"{op}<{target.Name}> needs one field of {holder.Name} holding the key of {keyed.Name}: {holder.Name} has {many.Length} fields holding {article keyType.Name} {keyType.Name}, {names}; Plasm does not pick one, so {byHand}"
+            invalid $"{op}<{target.Name}> needs one field of {holder.Name} referring to {keyed.Name}: {holder.Name} has {many.Length} fields holding {article keyType.Name} {keyType.Name}, {names}; Plasm does not pick one, so {byHand}"
 
     let key, held = (if referring then outer else inner), (if referring then inner else outer)
     let keyExpr = Expr.PropertyGet(key, keyed.Type.GetProperty keyed.Key.Name)

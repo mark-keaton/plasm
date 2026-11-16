@@ -6,17 +6,19 @@ Feature: A tie that the typed ids prove is left to Plasm
   I want to read the Payments of an Order without writing p.OrderId = o.Id
   So that nine relationships do not need nine hand-written functions
 
-  `referring<Payment> o` is the Payments whose one field of o's key type (plain
-  or an option) equals o's key: exactly `plasm { for p in tableOf<Payment> do
+  `referring<Payment> o` is the Payments whose one field referring to o's
+  record (of its key's typed id, plain or an option) equals o's key: exactly `plasm { for p in tableOf<Payment> do
   where (p.OrderId = o.Id) }`. `referredBy<Customer> o` is the Customer whose
-  key equals o's one field of the Customer's key type; it finds at most one, so
+  key equals o's one field referring to a Customer; it finds at most one, so
   `includingOne` takes it. Both are queries: they serve in `including`,
   `includingOne` and `exists`, as the source of a query that narrows them, and
   with a record in hand. The key itself is never the tie, so a record that
   refers to its own kind (a Category's Parent) reads its children with
   `referring` and its parent with `referredBy`. When there is not exactly one
   such field, the query is refused, naming the record and the fields: Plasm
-  never picks one. A named function stays for a relationship that says more
+  never picks one. A field is such a field exactly when the model counts it as a
+  reference: never one marked [<NotReference>], and never a field of a
+  built-in type such as int64, which says nothing about whose key it holds. A named function stays for a relationship that says more
   than the tie, built on it.
 
   # Order = { Id: OrderId; CustomerId: CustomerId option; Total: decimal; ...; Lines: OrderLine list }
@@ -102,6 +104,14 @@ Feature: A tie that the typed ids prove is left to Plasm
     Scenario: No field of the key's type
       When I read the Customers referring to an Order
       Then the read is refused, saying Customer has no field holding an OrderId
+
+    Scenario: A field the model does not count as a reference is not a tie
+      When I read the Memos referring to an Account, where Memo's one AccountId field is marked NotReference
+      Then the read is refused, saying Memo has no field referring to an Account
+
+    Scenario: A built-in key says nothing about whose key a field holds
+      When I read the Books referring to a Shelf, where Shelf's key and Book's one other field are int64
+      Then the read is refused, saying Book has no field referring to a Shelf, as a Shelf's key is an int64
 
     Scenario: An option of a record is not a record
       When I read the Payments referring to the Order of 50 as an option
