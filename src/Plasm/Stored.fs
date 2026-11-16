@@ -121,7 +121,7 @@ module internal Derive =
                     err (Some v.Name) "is marked Version, so it must be an int"
 
             let assocs =
-                [ for p in fields t do
+                [ for p in fields t |> Array.filter (fun p -> not (has<JsonAttribute> p)) do
                       match shapeOf p, key with
                       | ListOfUnstored e, _ ->
                           err (Some p.Name) $"is a list of {e.Name}, which names no table; a list of records is stored only if its records are (give {e.Name} a [<Table>])"

@@ -18,6 +18,7 @@ type LimitedProvider(inner: IProvider) =
             member _.ColumnTypes t = inner.Dialect.ColumnTypes t
             member _.NullSafeComparison negated = inner.Dialect.NullSafeComparison negated
             member _.FunctionName name = inner.Dialect.FunctionName name
+            member _.Json = inner.Dialect.Json
 
             member _.Capabilities =
                 { inner.Dialect.Capabilities with

@@ -19,6 +19,22 @@ type ProviderCapabilities =
       /// SELECT ... FOR UPDATE (deleting an owner locks what it owns first).
       RowLocking: bool }
 
+/// How a provider stores and reads JSON documents (json-columns.feature).
+/// Each member writes SQL through `write`; `doc`, `value` and `condition`
+/// write their own sub-expressions.
+type IJsonDialect =
+    /// A document's member: `(doc -> 'key')`.
+    abstract Member: write: (string -> unit) * doc: (unit -> unit) * key: string -> unit
+    /// A document holding a scalar, as text: `(doc #>> '{}')`.
+    abstract Text: write: (string -> unit) * doc: (unit -> unit) -> unit
+    /// Whether an element of an array document, named `alias`, meets `condition`.
+    abstract AnyElement: write: (string -> unit) * doc: (unit -> unit) * alias: string * condition: (unit -> unit) -> unit
+    /// The element named `alias`, inside AnyElement's condition.
+    abstract Element: write: (string -> unit) * alias: string -> unit
+    /// Whether an array document contains every element of `value` (a document
+    /// sent as text).
+    abstract Contains: write: (string -> unit) * doc: (unit -> unit) * value: (unit -> unit) -> unit
+
 /// Dialect-specific rendering hooks.
 type ISqlDialect =
     abstract Name: string
@@ -34,6 +50,9 @@ type ISqlDialect =
     /// The dialect's name for a function the core uses (char_length, btrim,
     /// lower, upper, COALESCE, ...); return the name unchanged if it is the same.
     abstract FunctionName: string -> string
+    /// JSON documents ([<Json>] fields); None when the provider has none, and
+    /// then a repository refuses a model with a [<Json>] field.
+    abstract Json: IJsonDialect option
 
 module internal Sql =
 
@@ -79,6 +98,15 @@ module internal Sql =
         | Fragment of parts: Choice<string, Expr> list
         /// CASE WHEN condition THEN value ... ELSE otherwise END.
         | Case of branches: (Expr * Expr) list * otherwise: Expr
+        /// A member of a document (json-columns.feature).
+        | JsonMember of document: Expr * key: string
+        /// A document holding a scalar, as text, cast to a provider type's column type.
+        | JsonText of document: Expr * castTo: Type option
+        /// Whether an element of an array document meets a condition over JsonElement alias.
+        | JsonAny of document: Expr * alias: string * condition: Expr
+        | JsonElement of alias: string
+        /// Whether an array document contains every element of a document parameter.
+        | JsonContains of document: Expr * value: Expr
 
     and OrderItem =
         { Expr: Expr
@@ -230,6 +258,11 @@ module internal Sql =
         let ps = ResizeArray<obj>()
         let q (s: string) = d.QuoteIdentifier s
 
+        let json () =
+            match d.Json with
+            | Some j -> j
+            | None -> failwith $"{d.Name} has no JSON documents"
+
         member _.Param(v: obj) =
             ps.Add v
             d.ParameterName(ps.Count - 1)
@@ -333,6 +366,20 @@ module internal Sql =
                 w "EXISTS ("
                 r.Select s
                 w ")"
+            | JsonMember(doc, key) -> json().Member(w, (fun () -> r.Expr doc), key)
+            | JsonText(doc, castTo) ->
+                match castTo with
+                | Some t when t <> typeof<string> ->
+                    w "CAST("
+                    json().Text(w, (fun () -> r.Expr doc))
+
+                    match d.ColumnTypes t with
+                    | name :: _ -> w $" AS {name})"
+                    | [] -> failwith $"{d.Name} has no column type for {t.Name}"
+                | _ -> json().Text(w, (fun () -> r.Expr doc))
+            | JsonAny(doc, alias, condition) -> json().AnyElement(w, (fun () -> r.Expr doc), alias, (fun () -> r.Expr condition))
+            | JsonElement alias -> json().Element(w, alias)
+            | JsonContains(doc, value) -> json().Contains(w, (fun () -> r.Expr doc), (fun () -> r.Expr value))
             | RowNumber(p, order) ->
                 w "ROW_NUMBER() OVER (PARTITION BY "
                 r.Expr p

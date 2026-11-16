@@ -99,6 +99,187 @@ and internal ISchema =
 // Resolved metadata (produced by Model.build)
 // ---------------------------------------------------------------------------
 
+/// How a [<Json>] field's value is a document (json-columns.feature).
+type internal JsonShape =
+    /// A scalar, stored as its column would be: its provider value as a JSON
+    /// string, number or boolean.
+    | JScalar of providerType: Type * mapping: ScalarMapping option
+    /// A record: an object keyed by its fields in snake case.
+    | JRecord of recordType: Type * keys: JsonKey list * make: (obj[] -> obj) * read: (obj -> obj[])
+    /// A list: an array.
+    | JList of element: JsonShape * elementType: Type
+
+and internal JsonKey =
+    { Field: string
+      Key: string
+      /// An option: None is a missing key.
+      Optional: bool
+      Shape: JsonShape
+      ReadOption: obj -> obj option
+      WrapSome: obj -> obj }
+
+/// Plasm's own mapping between values and documents: the same in every
+/// application, and strict when reading (json-columns.feature).
+module internal JsonDoc =
+    open System.Globalization
+    open System.Text.Json
+    open System.Text.Json.Nodes
+
+    let private dateTime = "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'"
+    let private dateTimeOffset = "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFzzz"
+
+    /// The provider types a document can hold.
+    let supports (t: Type) =
+        [ typeof<string>; typeof<bool>; typeof<int16>; typeof<int>; typeof<int64>; typeof<decimal>; typeof<float>
+          typeof<Guid>; typeof<DateTime>; typeof<DateTimeOffset>; typeof<DateOnly> ]
+        |> List.contains t
+
+    let private scalarNode (v: obj) : JsonNode =
+        match v with
+        | :? string as x -> JsonValue.Create x
+        | :? bool as x -> JsonValue.Create x
+        | :? int16 as x -> JsonValue.Create x
+        | :? int as x -> JsonValue.Create x
+        | :? int64 as x -> JsonValue.Create x
+        | :? decimal as x -> JsonValue.Create x
+        | :? float as x -> JsonValue.Create x
+        | :? Guid as x -> JsonValue.Create(x.ToString())
+        | :? DateTime as x -> JsonValue.Create(x.ToUniversalTime().ToString(dateTime, CultureInfo.InvariantCulture))
+        | :? DateTimeOffset as x -> JsonValue.Create(x.ToString(dateTimeOffset, CultureInfo.InvariantCulture))
+        | :? DateOnly as x -> JsonValue.Create(x.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
+        | other -> failwith $"a document cannot hold a {other.GetType().Name}"
+
+    /// The value as a document.
+    let rec write (shape: JsonShape) (value: obj) : JsonNode =
+        match shape with
+        | JScalar(_, mapping) ->
+            scalarNode (
+                match mapping with
+                | Some m -> m.ToProvider value
+                | None -> value
+            )
+        | JList(element, elementType) ->
+            let a = JsonArray()
+
+            for x in Reflection.listItems elementType value do
+                a.Add(write element x)
+
+            a
+        | JRecord(_, keys, _, read) ->
+            let o = JsonObject()
+            let values = read value
+
+            keys
+            |> List.iteri (fun i k ->
+                if k.Optional then
+                    match k.ReadOption values.[i] with
+                    | Some x -> o.[k.Key] <- write k.Shape x
+                    | None -> ()
+                else
+                    o.[k.Key] <- write k.Shape values.[i])
+
+            o
+
+    let private describe (node: JsonNode) =
+        if isNull node then "null"
+        else
+            let text = node.ToJsonString()
+            if text.Length > 40 then text.Substring(0, 40) + "..." else text
+
+    let private readScalar (t: Type) (path: string) (node: JsonNode) : Result<obj, string> =
+        let wrong what = Error $"{path}: expected {what}, found {describe node}"
+
+        match node with
+        | :? JsonValue as v ->
+            let kind = v.GetValueKind()
+            let text () = v.GetValue<string>()
+
+            let parsed (what: string) (f: unit -> obj) =
+                if kind <> JsonValueKind.String then wrong what
+                else
+                    try Ok(f ()) with _ -> wrong what
+
+            let number (what: string) (f: unit -> obj) =
+                if kind <> JsonValueKind.Number then wrong what
+                else
+                    try Ok(f ()) with _ -> wrong what
+
+            if t = typeof<string> then (if kind = JsonValueKind.String then Ok(box (text ())) else wrong "a string")
+            elif t = typeof<bool> then
+                match kind with
+                | JsonValueKind.True -> Ok(box true)
+                | JsonValueKind.False -> Ok(box false)
+                | _ -> wrong "true or false"
+            elif t = typeof<int16> then number "a whole number" (fun () -> box (v.GetValue<int16>()))
+            elif t = typeof<int> then number "a whole number" (fun () -> box (v.GetValue<int>()))
+            elif t = typeof<int64> then number "a whole number" (fun () -> box (v.GetValue<int64>()))
+            elif t = typeof<decimal> then number "a number" (fun () -> box (v.GetValue<decimal>()))
+            elif t = typeof<float> then number "a number" (fun () -> box (v.GetValue<float>()))
+            elif t = typeof<Guid> then parsed "a GUID" (fun () -> box (Guid.Parse(text ())))
+            elif t = typeof<DateTime> then
+                parsed "an ISO 8601 date and time" (fun () ->
+                    box (DateTime.Parse(text (), CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal ||| DateTimeStyles.AssumeUniversal)))
+            elif t = typeof<DateTimeOffset> then
+                parsed "an ISO 8601 date and time with an offset" (fun () -> box (DateTimeOffset.Parse(text (), CultureInfo.InvariantCulture)))
+            elif t = typeof<DateOnly> then
+                parsed "an ISO 8601 date" (fun () -> box (DateOnly.ParseExact(text (), "yyyy-MM-dd", CultureInfo.InvariantCulture)))
+            else
+                Error $"{path}: a document cannot hold a {t.Name}"
+        | _ -> wrong $"a {t.Name}"
+
+    let private firstError (results: Result<obj, string> list) =
+        results |> List.tryPick (function Error e -> Some e | Ok _ -> None)
+
+    /// The document as a value, or an error naming the path where it does not fit.
+    let rec read (shape: JsonShape) (path: string) (node: JsonNode) : Result<obj, string> =
+        if isNull node then
+            Error $"{path} is null, but it is not optional"
+        else
+            match shape with
+            | JScalar(t, mapping) ->
+                readScalar t path node
+                |> Result.bind (fun v ->
+                    match mapping with
+                    | Some m -> m.FromProvider v |> Result.mapError (fun e -> $"{path}: {e}")
+                    | None -> Ok v)
+            | JList(element, elementType) ->
+                match node with
+                | :? JsonArray as a ->
+                    let items = a |> Seq.mapi (fun i n -> read element $"{path}[{i}]" n) |> List.ofSeq
+
+                    match firstError items with
+                    | Some e -> Error e
+                    | None -> Ok(Reflection.makeList elementType (items |> List.map (function Ok x -> x | Error _ -> null)))
+                | _ -> Error $"{path}: expected an array, found {describe node}"
+            | JRecord(t, keys, make, _) ->
+                match node with
+                | :? JsonObject as o ->
+                    let known = keys |> List.map (fun k -> k.Key) |> set
+
+                    match o |> Seq.tryFind (fun kv -> not (known.Contains kv.Key)) with
+                    | Some kv ->
+                        Error
+                            $"{path}.{kv.Key}, a key {t.Name} does not have: the document holds more than the record (remove the key from the stored documents first)"
+                    | None ->
+                        let values =
+                            keys
+                            |> List.map (fun k ->
+                                let at = $"{path}.{k.Key}"
+
+                                let mutable n: JsonNode = null
+
+                                if o.TryGetPropertyValue(k.Key, &n) && not (isNull n) then
+                                    read k.Shape at n |> Result.map (fun v -> if k.Optional then k.WrapSome v else v)
+                                elif k.Optional then
+                                    Ok null
+                                else
+                                    Error $"{at} is missing")
+
+                        match firstError values with
+                        | Some e -> Error e
+                        | None -> Ok(make (values |> List.map (function Ok x -> x | Error _ -> null) |> Array.ofList))
+                | _ -> Error $"{path}: expected an object, found {describe node}"
+
 type internal FieldMap =
     { Name: string
       Index: int
@@ -124,7 +305,9 @@ type internal FieldMap =
       Union: UnionLayout option
       /// For a value (a record with no table, value-records.feature): its
       /// fields, stored in the owner's row (Column is then only their prefix).
-      Value: ValueLayout option }
+      Value: ValueLayout option
+      /// For a [<Json>] field: its document's shape (json-columns.feature).
+      Json: JsonShape option }
 
     /// Field value (possibly an option) to a provider value or DBNull.
     member f.ToDb(value: obj) : obj =

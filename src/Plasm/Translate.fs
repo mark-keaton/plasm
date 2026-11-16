@@ -35,6 +35,9 @@ type Ctx =
       Vars: Map<Var, Binding>
       /// Tuple-typed row variables (after joins).
       Spaces: Map<Var, Space>
+      /// Variables standing for a document or one of its elements (a lambda
+      /// over a [<Json>] list, json-columns.feature): its SQL and its shape.
+      Docs: Map<Var, Sql.Expr * JsonShape>
       Aliases: int ref
       /// Set when a closed subexpression may evaluate differently next time
       /// (e.g. DateTime.UtcNow), which makes the translated plan non-reusable.
@@ -48,6 +51,7 @@ let newCtxWith model (vol: bool ref) =
     { Model = model
       Vars = Map.empty
       Spaces = Map.empty
+      Docs = Map.empty
       Aliases = ref 0
       Volatile = vol }
 
@@ -164,7 +168,7 @@ let isExistsCall (mi: Reflection.MethodInfo) =
 let rec private mentions (ctx: Ctx) (e: Expr) =
     match e with
     | Call(None, mi, _) when isAggCall mi || isRawCall mi || isExistsCall mi -> true
-    | ExprShape.ShapeVar v -> ctx.Vars.ContainsKey v || ctx.Spaces.ContainsKey v
+    | ExprShape.ShapeVar v -> ctx.Vars.ContainsKey v || ctx.Spaces.ContainsKey v || ctx.Docs.ContainsKey v
     | ExprShape.ShapeLambda(_, b) -> mentions ctx b
     | ExprShape.ShapeCombination(_, args) -> List.exists (mentions ctx) args
 
@@ -414,6 +418,25 @@ let rec (|RowField|_|) (ctx: Ctx) (e: Expr) =
         f.Value |> Option.bind (fun l -> l.Sub prop.Name) |> Option.map (fun sf -> b, sf)
     | _ -> None
 
+/// A document, or a part of one, in the row (json-columns.feature): its SQL
+/// and its shape. Reading through an optional document's .Value is refused.
+let rec (|JsonPath|_|) (ctx: Ctx) (e: Expr) : (Sql.Expr * JsonShape) option =
+    match e with
+    | RowField ctx (b, f) when f.Json.IsSome && not f.IsOption -> Some(Sql.Column(b.Alias, f.Column), f.Json.Value)
+    | Var v when ctx.Docs.ContainsKey v -> Some ctx.Docs.[v]
+    | PropertyGet(Some(PropertyGet(Some(RowField ctx (b, f)), v, [])), _, []) when f.Json.IsSome && f.IsOption && v.Name = "Value" ->
+        raise (
+            TranslationFailure(
+                TranslationError.UnsupportedExpression(
+                    string e,
+                    $"{b.Schema.Name}.{f.Name} is an optional document, whose fields cannot be read in a query; test {b.Schema.Name}.{f.Name}.IsSome in the query and read the field from the records it returns"
+                )
+            )
+        )
+    | PropertyGet(Some(JsonPath ctx (doc, JRecord(_, keys, _, _))), prop, []) ->
+        keys |> List.tryFind (fun k -> k.Field = prop.Name) |> Option.map (fun k -> Sql.JsonMember(doc, k.Key), k.Shape)
+    | _ -> None
+
 /// Whether a field holds nothing: its column is NULL, or for a value every
 /// column is.
 let private fieldIsNull (alias: string) (f: FieldMap) =
@@ -604,6 +627,7 @@ let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
         | Some inner -> toParam ctx e (scalarType e.Type) inner
     else
         match e with
+        | JsonPath ctx (doc, JScalar(t, _)) -> Sql.JsonText(doc, Some t)
         | UnionPath ctx _ ->
             fail e "a union with fields is stored in several columns; test its case (c.Stage.IsDoing, match) or compare it with a value"
         | RowField ctx (b, f) when f.Value.IsSome ->
@@ -740,6 +764,12 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
         | SpecificCall <@ (<>) @> (_, _, [ UnionPath ctx (alias, u); v ])
         | SpecificCall <@ (<>) @> (_, _, [ v; UnionPath ctx (alias, u) ]) when not (isRowDependent ctx v) ->
             Sql.Not(Sql.conj (unionEquals alias u (evaluate ctx v)))
+        // A whole document equals a value: jsonb compares documents by content.
+        | SpecificCall <@ (=) @> (_, _, [ RowField ctx (b, f); v ])
+        | SpecificCall <@ (=) @> (_, _, [ v; RowField ctx (b, f) ]) when f.Json.IsSome && not (isRowDependent ctx v) && not (mentionsArg v) ->
+            match f.ToDb(evaluate ctx v) with
+            | x when x = box DBNull.Value -> Sql.IsNull(Sql.Column(b.Alias, f.Column))
+            | x -> Sql.Binary("=", Sql.Column(b.Alias, f.Column), Sql.partValue f.Parts.Head x)
         | SpecificCall <@ (=) @> (_, _, [ RowField ctx (b, f); v ])
         | SpecificCall <@ (=) @> (_, _, [ v; RowField ctx (b, f) ]) when f.Value.IsSome && not (isRowDependent ctx v) ->
             valueEquals b.Alias f (evaluate ctx v)
@@ -798,6 +828,28 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
                 | n -> fail e $"string method '{n}' has no SQL translation"
 
             Sql.Like(scalar ctx s, Sql.Param pattern)
+        // A [<Json>] list of scalars contains a value: the document contains [value].
+        | Call(None, mi, [ x; JsonPath ctx (doc, JList(element, _)) ]) when
+            mi.Name = "Contains" && mi.DeclaringType.Name = "ListModule" && not (isRowDependent ctx x)
+            ->
+            if mentionsArg x then
+                fail e "a prepared argument cannot yet be looked for in a document list; compare it with a field instead"
+
+            let one = System.Text.Json.Nodes.JsonArray()
+            one.Add(JsonDoc.write element (evaluate ctx x))
+            Sql.JsonContains(doc, Sql.Param(box (one.ToJsonString())))
+        // List.exists / List.forall over a [<Json>] list: over its elements.
+        | Call(None, mi, [ Lambda(x, body); JsonPath ctx (doc, JList(element, _)) ]) when
+            mi.DeclaringType.Name = "ListModule" && (mi.Name = "Exists" || mi.Name = "ForAll")
+            ->
+            let alias = ctx.Fresh()
+            let inner = { ctx with Docs = ctx.Docs.Add(x, (Sql.JsonElement alias, element)) }
+            let condition = predicate inner body
+
+            if mi.Name = "Exists" then
+                Sql.JsonAny(doc, alias, condition)
+            else
+                Sql.Not(Sql.JsonAny(doc, alias, Sql.IsNotTrue condition))
         | Call(None, mi, [ x; coll ]) when mi.Name = "Contains" && isCollectionModule mi -> membership ctx e x coll
         | Call(Some coll, mi, [ x ]) when mi.Name = "Contains" && not (isRowDependent ctx coll) -> membership ctx e x coll
         // An owned or linked list is a plain list: F#'s own List.exists and
@@ -817,6 +869,7 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
             let found = relationship ctx e v (Expr.Value true) assoc false
             if present then found else Sql.Not found
         | RowField ctx (b, f) when f.ScalarType = typeof<bool> && not f.IsOption -> Sql.Column(b.Alias, f.Column)
+        | JsonPath ctx (doc, JScalar(t, _)) when t = typeof<bool> -> Sql.JsonText(doc, Some t)
         | Call(None, mi, [ sql; args ]) when isRawCall mi -> fragment ctx e sql args
         | _ -> fail e $"the condition {show e} cannot be translated to SQL, and it will not be evaluated in application memory"
 

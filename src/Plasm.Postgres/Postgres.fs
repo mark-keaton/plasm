@@ -15,6 +15,38 @@ type PostgresOptions =
 
     static member Default = { MaxKeysPerCommand = 5000 }
 
+/// jsonb documents (json-columns.feature).
+type internal PostgresJson() =
+    static member val Instance: IJsonDialect = PostgresJson()
+
+    interface IJsonDialect with
+        member _.Member(w, doc, key) =
+            w "("
+            doc ()
+            let quoted = key.Replace("'", "''")
+            w $" -> '{quoted}')"
+
+        member _.Text(w, doc) =
+            w "("
+            doc ()
+            w " #>> '{}')"
+
+        member _.AnyElement(w, doc, alias, condition) =
+            w "EXISTS (SELECT 1 FROM jsonb_array_elements("
+            doc ()
+            w $") AS {alias}(element) WHERE "
+            condition ()
+            w ")"
+
+        member _.Element(w, alias) = w $"{alias}.element"
+
+        member _.Contains(w, doc, value) =
+            w "("
+            doc ()
+            w " @> CAST("
+            value ()
+            w " AS jsonb))"
+
 type internal PostgresDialect(options: PostgresOptions) =
     interface ISqlDialect with
         member _.Name = "PostgreSQL"
@@ -52,6 +84,7 @@ type internal PostgresDialect(options: PostgresOptions) =
             if negated then "IS DISTINCT FROM" else "IS NOT DISTINCT FROM"
 
         member _.FunctionName name = name
+        member _.Json = Some PostgresJson.Instance
 
 module internal Classify =
 

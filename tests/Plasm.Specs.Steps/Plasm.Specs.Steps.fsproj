@@ -40,6 +40,7 @@
     <Compile Include="IncludingSteps.fs" />
     <Compile Include="DistinctSteps.fs" />
     <Compile Include="ValueRecordSteps.fs" />
+    <Compile Include="JsonSteps.fs" />
     <Compile Include="OwnedOneSteps.fs" />
     <Compile Include="DdlSteps.fs" />
     <Compile Include="StoredSteps.fs" />

@@ -681,6 +681,38 @@ and PGliteConnection internal (bridge: IPGliteBridge, release: unit -> unit) =
         if disposing then close ()
         base.Dispose disposing
 
+/// jsonb documents, rendered as the Postgres provider renders them.
+type internal PGliteJson() =
+    static member val Instance: IJsonDialect = PGliteJson()
+
+    interface IJsonDialect with
+        member _.Member(w, doc, key) =
+            let quoted = key.Replace("'", "''")
+            w "("
+            doc ()
+            w $" -> '{quoted}')"
+
+        member _.Text(w, doc) =
+            w "("
+            doc ()
+            w " #>> '{}')"
+
+        member _.AnyElement(w, doc, alias, condition) =
+            w "EXISTS (SELECT 1 FROM jsonb_array_elements("
+            doc ()
+            w $") AS {alias}(element) WHERE "
+            condition ()
+            w ")"
+
+        member _.Element(w, alias) = w $"{alias}.element"
+
+        member _.Contains(w, doc, value) =
+            w "("
+            doc ()
+            w " @> CAST("
+            value ()
+            w " AS jsonb))"
+
 type internal PGliteDialect(maxKeys: int) =
     // PostgreSQL SQL, rendered as the Postgres provider renders it.
     interface ISqlDialect with
@@ -719,6 +751,7 @@ type internal PGliteDialect(maxKeys: int) =
             if negated then "IS DISTINCT FROM" else "IS NOT DISTINCT FROM"
 
         member _.FunctionName name = name
+        member _.Json = Some PGliteJson.Instance
 
 module internal Classify =
     let private kindOf (state: string) =

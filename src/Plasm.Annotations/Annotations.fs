@@ -54,6 +54,14 @@ type AssignedAttribute() =
 type NotReferenceAttribute() =
     inherit Attribute()
 
+/// A field stored as one jsonb document (json-columns.feature): a record with no
+/// table and no Id, a list of them, a list of scalars, or an option of these.
+/// Plasm maps it the same way everywhere: records as objects keyed in snake
+/// case, None as a missing key, lists as arrays.
+[<AttributeUsage(AttributeTargets.Property, AllowMultiple = false)>]
+type JsonAttribute() =
+    inherit Attribute()
+
 /// On an owned or linked list: the field of its records they are read in
 /// order of. Name it with `nameof the<Comment>.At`, so a misspelt or renamed
 /// field is a compile error. Without it, the records are read in order of

@@ -97,6 +97,20 @@ type QueryProblem =
 type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
     let options = defaultArg options RepoOptions.Default
 
+    // A provider without JSON documents cannot store a [<Json>] field: refused
+    // now, at start-up, rather than at the first query (json-columns.feature).
+    do
+        if provider.Dialect.Json.IsNone then
+            let documents =
+                [ for s in model.Schemas.Values do
+                      for f in s.Fields do
+                          if f.Json.IsSome then
+                              yield $"{s.Name}.{f.Name}" ]
+
+            if not documents.IsEmpty then
+                Err.config
+                    $"""{provider.Dialect.Name} has no JSON documents, so it cannot store {String.concat ", " documents} ([<Json>]); use a provider that has them, or store these fields another way"""
+
     // Queries are immutable values, so a plan can be reused for the same value,
     // unless translation evaluated something volatile (Plan.Reusable = false).
     let plans = ConditionalWeakTable<QueryDef, Planner.Plan>()

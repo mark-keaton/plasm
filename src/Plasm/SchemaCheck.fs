@@ -104,6 +104,7 @@ module internal SchemaCheck =
                 |> List.collect (fun sc ->
                     sc.Fields
                     |> Array.toList
+                    |> List.filter (fun f -> f.Json.IsNone)
                     |> List.choose (fun f -> f.Mapping |> Option.bind (fun m -> m.StoreType)))
 
             let! currentSchema =
@@ -311,6 +312,15 @@ module internal SchemaCheck =
                         | None -> add SchemaIssueKind.MissingColumn sc.Name (Some f.Name) sc.Table (Some f.Column) "column does not exist"
                         | Some c ->
                             match f.Mapping |> Option.bind (fun m -> m.StoreType |> Option.map (fun t -> m, t)) with
+                            | Some _ when f.Json.IsSome ->
+                                if c.DataType <> "jsonb" then
+                                    add
+                                        SchemaIssueKind.IncompatibleType
+                                        sc.Name
+                                        (Some f.Name)
+                                        sc.Table
+                                        (Some c.Name)
+                                        $"column is {c.DataType}; {sc.Name}.{f.Name} is a document and needs jsonb"
                             | Some(m, t) -> enumCheck sc.Name f sc.Table c m t
                             | None -> typeCheck sc.Name (Some f.Name) sc.Table c f.ProviderType
 
@@ -449,6 +459,8 @@ module internal Ddl =
             schemas
             |> List.collect (fun s -> s.Fields |> Array.toList |> List.collect (fun f -> f.Parts))
             |> List.choose (fun p -> p.Mapping |> Option.bind (fun m -> m.StoreType |> Option.map (fun t -> t, m)))
+            // Documents (jsonb) have a store type but no labels: not enums.
+            |> List.filter (fun (_, m) -> not m.Cases.IsEmpty)
             |> List.distinctBy fst
 
         for t, m in enums do

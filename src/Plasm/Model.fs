@@ -306,7 +306,8 @@ module Model =
           WrapSome = if isOpt then Reflection.makeSome t else id
           ReadOption = if isOpt then Reflection.getOptionValue t else fun v -> if isNull v then None else Some v
           Union = None
-          Value = None }
+          Value = None
+          Json = None }
 
     /// A union with fields (one no scalar mapping or convention covers), stored
     /// across columns (union-fields.feature).
@@ -436,6 +437,98 @@ module Model =
                           Make = FSharpValue.PreComputeRecordConstructor(t, true)
                           Read = FSharpValue.PreComputeRecordReader(t, true) }
 
+    /// How a [<Json>] field's type is a document (json-columns.feature).
+    let rec private jsonShape (scalars: IReadOnlyDictionary<Type, ScalarMapping>) (t: Type) : Result<JsonShape, string> =
+        if Reflection.isList t then
+            let e = Reflection.elementType t
+            jsonShape scalars e |> Result.map (fun s -> JList(s, e))
+        elif t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<Map<_, _>> then
+            Error "Map is not supported in a document"
+        elif Reflection.isOption t then
+            Error $"{Reflection.typeName t} nests an option, which a document cannot store unambiguously"
+        elif Derive.isStored t then
+            Error $"{t.Name} is a stored record, which cannot be part of a document: hold its id instead"
+        elif FSharpType.IsRecord(t, true) && (scalarMapping scalars t |> Result.isError) then
+            let props = FSharpType.GetRecordFields(t, true)
+
+            if props |> Array.exists (fun p -> p.Name = "Id") then
+                Error $"{t.Name} looks like a stored record (it has an Id): give it a [<Table>] and hold its id, or remove its Id"
+            else
+                let keys =
+                    props
+                    |> Array.toList
+                    |> List.map (fun p ->
+                        let ft = p.PropertyType
+                        let optional = Reflection.isOption ft
+                        let inner = if optional then Reflection.elementType ft else ft
+
+                        jsonShape scalars inner
+                        |> Result.mapError (fun e -> $"{t.Name}.{p.Name}: {e}")
+                        |> Result.map (fun shape ->
+                            { Field = p.Name
+                              Key = Paths.snakeCase p.Name
+                              Optional = optional
+                              Shape = shape
+                              ReadOption = if optional then Reflection.getOptionValue ft else (fun v -> Some v)
+                              WrapSome = if optional then Reflection.makeSome ft else id }))
+
+                match keys |> List.tryPick (function Error e -> Some e | _ -> None) with
+                | Some e -> Error e
+                | None ->
+                    Ok(
+                        JRecord(
+                            t,
+                            keys |> List.map (function Ok k -> k | Error _ -> failwith "unreachable"),
+                            FSharpValue.PreComputeRecordConstructor(t, true),
+                            FSharpValue.PreComputeRecordReader(t, true)
+                        )
+                    )
+        else
+            match scalarMapping scalars t with
+            | Ok mapping ->
+                let provider = mapping |> Option.map (fun m -> m.ProviderType) |> Option.defaultValue t
+
+                if JsonDoc.supports provider then
+                    Ok(JScalar(provider, mapping))
+                else
+                    Error $"a document cannot hold a {Reflection.typeName t}"
+            | Error _ when FSharpType.IsUnion(t, true) ->
+                Error $"{t.Name} is a union with fields, which a document cannot hold yet; give it no fields, or store it outside the document"
+            | Error reason -> Error reason
+
+    /// A [<Json>] field: one jsonb column holding its value as a document,
+    /// sent as text cast to jsonb and read back as text.
+    let private jsonField (scalars: IReadOnlyDictionary<Type, ScalarMapping>) (prop: Reflection.PropertyInfo) (i: int) (column: string) : Result<FieldMap, string> =
+        let t = prop.PropertyType
+        let inner = if Reflection.isOption t then Reflection.elementType t else t
+
+        match jsonShape scalars inner with
+        | Error e -> Error e
+        | Ok(JScalar _) ->
+            Error $"is a {Reflection.typeName t}: a scalar is stored in its own column; [<Json>] is for a record, a list, or an option of these"
+        | Ok shape ->
+            let mapping =
+                { DomainType = inner
+                  ProviderType = typeof<string>
+                  ToProvider = fun v -> box ((JsonDoc.write shape v).ToJsonString())
+                  FromProvider =
+                    fun raw ->
+                        let parsed =
+                            try
+                                Ok(System.Text.Json.Nodes.JsonNode.Parse(string raw))
+                            with ex ->
+                                Error $"{prop.Name}: the column does not hold JSON ({ex.Message})"
+
+                        parsed |> Result.bind (JsonDoc.read shape prop.Name)
+                  Ordered = None
+                  Cases = []
+                  StoreType = Some [ "jsonb" ]
+                  Description = $"{Reflection.typeName inner} as a jsonb document" }
+
+            Ok
+                { scalarField prop.Name i column t (Some mapping) with
+                    Json = Some shape }
+
     let private resolveSchema
         (scalars: IReadOnlyDictionary<Type, ScalarMapping>)
         (defs: IReadOnlyDictionary<Type, SchemaDef>)
@@ -559,7 +652,13 @@ module Model =
                     let isOpt = Reflection.isOption t
                     let scalarType = if isOpt then Reflection.elementType t else t
 
-                    if Reflection.isOption scalarType then
+                    if prop.GetCustomAttributes(typeof<JsonAttribute>, true).Length > 0 then
+                        let column = def.Columns.TryFind prop.Name |> Option.defaultValue (Paths.snakeCase prop.Name)
+
+                        match jsonField scalars prop i column with
+                        | Error reason -> err (Some prop.Name) reason
+                        | Ok field -> fields.Add field
+                    elif Reflection.isOption scalarType then
                         err (Some prop.Name) "nested options cannot be stored unambiguously"
                     elif FSharpType.IsRecord(scalarType, true) && defs.ContainsKey scalarType then
                         let op = if isOpt then "ownsOptional" else "ownsOne"
@@ -625,7 +724,8 @@ module Model =
                                     else
                                         fun v -> if isNull v then None else Some v
                                   Union = None
-                                  Value = None }
+                                  Value = None
+                                  Json = None }
 
             for a in def.Assocs do
                 if not (shape.Fields |> Array.exists (fun f -> f.Name = a.Property.Name)) then

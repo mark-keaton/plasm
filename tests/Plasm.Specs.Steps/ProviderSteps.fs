@@ -23,6 +23,8 @@ type TestDialectProvider(inner: IProvider) =
                 | "char_length" -> "length"
                 | n -> n
 
+            member _.Json = None
+
             member _.Capabilities =
                 { inner.Dialect.Capabilities with
                     ArrayParameters = false
