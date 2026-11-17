@@ -15,7 +15,10 @@ type CommandEvent =
       Duration: TimeSpan
       /// Rows read (queries) or affected (writes).
       Rows: int
-      Succeeded: bool }
+      Succeeded: bool
+      /// The round trip the command travelled in: commands sent together
+      /// share it, and Duration is that round trip's (round-trips.feature).
+      RoundTrip: int64 }
 
 /// Raised (and classified as `DbFailureKind.RepositoryClosed`) when a
 /// sandbox's or playground's repository is used after it ended.

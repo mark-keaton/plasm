@@ -74,6 +74,8 @@ type internal SandboxConnection(inner: DbConnection, onDispose: unit -> unit) =
         invalidOp "begin transactions in a sandbox through the repo (repo.Transact)"
 
     override _.CreateDbCommand() = inner.CreateCommand()
+    override _.CanCreateBatch = inner.CanCreateBatch
+    override _.CreateDbBatch() = inner.CreateBatch()
 
     override _.Dispose(disposing: bool) =
         if disposing && not disposed then

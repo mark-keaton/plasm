@@ -33,8 +33,10 @@ let private versionValue (schema: SchemaInfo) (s: CsState) : int option =
 
 /// For a record without a version field, the update or delete applies only if
 /// every column still holds what the change was made from (concurrency.feature).
-/// A change made from a key alone has nothing to compare.
-let private originalWhere (schema: SchemaInfo) (s: CsState) =
+/// A change made from a key alone has nothing to compare. A column `scope`
+/// already compares with the same value (an owned record's owner) is compared
+/// once.
+let private originalWhere (schema: SchemaInfo) (scope: Sql.Expr list) (s: CsState) =
     match schema.Version, s.Data with
     | None, Some d ->
         let values = schema.Shape.Deconstruct d
@@ -44,6 +46,7 @@ let private originalWhere (schema: SchemaInfo) (s: CsState) =
         |> Array.toList
         |> List.collect (fun f ->
             Sql.fieldColumns f values.[f.Index]
+            |> List.filter (fun (column, value) -> not (List.contains (Sql.Binary("=", Sql.Column(schema.Table, column), value)) scope))
             |> List.map (fun (column, value) -> Sql.Binary("IS NOT DISTINCT FROM", Sql.Column(schema.Table, column), value)))
     | _ -> []
 
@@ -316,23 +319,52 @@ let private constraintError (schema: SchemaInfo) (s: CsState) (f: DbFailure) : C
         conventional schema name |> Option.map (fun (field, kind, message) -> Cs.addError s field kind message)
     | None -> None
 
-/// Runs a command, translating declared constraint violations into
-/// changeset errors. Other database failures stay database failures.
-let private guarded (sess: Session) (schema: SchemaInfo) (s: CsState) (f: unit -> Task<'a>) : Task<Result<'a, Failure>> =
-    task {
-        try
-            let! v = f ()
-            return Ok v
-        with
-        | :? OperationCanceledException as ex -> return Err.rethrow ex
-        | MaterializationFailure _ as ex -> return Err.rethrow ex
-        | ex ->
-            let failure = classifyOrRaise sess ex
+/// Why a write's statement failed; or that it was not sent, because one
+/// before it failed (round-trips.feature).
+type private Problem =
+    | Fail of Failure
+    | NotSent
 
-            match constraintError schema s failure with
-            | Some withError -> return Error(Invalid withError)
-            | None -> return Error(Failed failure)
-    }
+type private Written<'a> = Result<'a, Problem>
+
+/// The database failure an exception is; cancellation and a row that could
+/// not be read are raised as they are.
+let private dbFailure (sess: Session) (ex: exn) : DbFailure =
+    match ex with
+    | :? OperationCanceledException
+    | MaterializationFailure _ -> Err.rethrow ex
+    | _ -> classifyOrRaise sess ex
+
+/// A failed statement of the write of `s`: a violated constraint of one of its
+/// fields is that field's error; any other is a database failure.
+let private failedWrite (schema: SchemaInfo) (s: CsState) (f: DbFailure) : Problem =
+    match constraintError schema s f with
+    | Some withError -> Fail(Invalid withError)
+    | None -> Fail(Failed f)
+
+let private replied (sess: Session) (fail: DbFailure -> Problem) (reply: Reply<'a>) : Written<'a> =
+    match reply with
+    | Ok v -> Ok v
+    | Error None -> Error NotSent
+    | Error(Some ex) -> Error(fail (dbFailure sess ex))
+
+let private asFailed (f: DbFailure) = Fail(Failed f)
+
+/// The values, or the first failure in the order the statements were sent;
+/// a statement not sent only stands for a failure when nothing else does.
+let private together (results: Written<'a> list) : Written<'a list> =
+    match results |> List.tryPick (function | Error(Fail f) -> Some f | _ -> None) with
+    | Some f -> Error(Fail f)
+    | None when results |> List.exists Result.isError -> Error NotSent
+    | None -> Ok(results |> List.choose Result.toOption)
+
+let private pair (a: Written<'a>) (b: Written<'b>) : Written<'a * 'b> =
+    match a, b with
+    | Error(Fail f), _
+    | _, Error(Fail f) -> Error(Fail f)
+    | Error NotSent, _
+    | _, Error NotSent -> Error NotSent
+    | Ok x, Ok y -> Ok(x, y)
 
 let private returning (schema: SchemaInfo) = Sql.returningFields schema.Table schema.Fields
 
@@ -379,394 +411,361 @@ let unsupported (c: ProviderCapabilities) (s: CsState) : string option =
     | [] -> None
     | missing -> Some(String.concat "; " missing)
 
-let rec write (model: Model) (sess: Session) (s: CsState) : Task<Result<obj, Failure>> = writeWithin model sess [] s
+/// The statements of a write of `s` (with what it owns and links), as round
+/// trips: its own statement with what it owns, after the key that needs
+/// (round-trips.feature).
+let rec private write (model: Model) (sess: Session) (s: CsState) : Round<Written<obj>> = writeWithin model sess [] s
 
 /// A write whose update or delete also requires `scope`: an owned child's
 /// owner, so that one command both checks and writes it.
-and private writeWithin (model: Model) (sess: Session) (scope: Sql.Expr list) (s: CsState) : Task<Result<obj, Failure>> =
-    task {
-      match unsupported sess.Provider.Dialect.Capabilities s with
-      | Some op -> return Error(Unsupported op)
-      | None ->
+and private writeWithin (model: Model) (sess: Session) (scope: Sql.Expr list) (s: CsState) : Round<Written<obj>> =
+    match unsupported sess.Provider.Dialect.Capabilities s with
+    | Some op -> Done(Error(Fail(Unsupported op)))
+    | None ->
         let schema = schemaOf model s.Type
 
         match s.Action with
-        | ChangeAction.Insert -> return! insert model sess schema s
-        | ChangeAction.Update -> return! update model sess schema scope s
-        | ChangeAction.Delete -> return! delete model sess schema scope s
-    }
+        | ChangeAction.Insert -> insert model sess schema s
+        | ChangeAction.Update -> update model sess schema scope s
+        | ChangeAction.Delete -> delete model sess schema scope s
 
-and private insert model sess schema s =
-    task {
-        let proposed = s.Proposed.Value
-        let values = schema.Shape.Deconstruct proposed
+/// Inserts a record, then what it owns: with it when its key is the
+/// application's, after it when the database generates the key.
+and private insert model (sess: Session) (schema: SchemaInfo) (s: CsState) : Round<Written<obj>> =
+    let values = schema.Shape.Deconstruct s.Proposed.Value
 
-        let columns =
-            schema.Fields
-            |> Array.filter (fun f -> not f.Generated)
-            |> Array.toList
-            |> List.collect (fun f -> Sql.fieldColumns f values.[f.Index])
+    let columns =
+        schema.Fields
+        |> Array.filter (fun f -> not f.Generated)
+        |> Array.toList
+        |> List.collect (fun f -> Sql.fieldColumns f values.[f.Index])
 
-        let cmd =
-            Sql.renderInsert
-                sess.Provider.Dialect
-                { Table = schema.Table
-                  Columns = columns |> List.map fst
-                  Values = columns |> List.map snd
-                  Returning = returning schema }
+    let cmd =
+        Sql.renderInsert
+            sess.Provider.Dialect
+            { Table = schema.Table
+              Columns = columns |> List.map fst
+              Values = columns |> List.map snd
+              Returning = returning schema }
 
-        let! inserted = guarded sess schema s (fun () -> query sess cmd (readEntity schema))
+    let inserted =
+        Round.fetch sess cmd (readEntity schema)
+        |> Round.map (replied sess (failedWrite schema s) >> Result.map (fun rows -> rows.[0]))
 
-        match inserted with
-        | Error e -> return Error e
-        | Ok rows ->
-            let row = rows.[0]
-            let key = row.[schema.Key.Index]
-            let! children = writeChildren model sess schema s key true
+    // Keep relationship values supplied on the inserted record, then what
+    // its own writes produced.
+    let complete (row: obj[]) (written: Map<string, obj>) =
+        for a in schema.Assocs do
+            row.[a.Index] <- values.[a.Index]
 
-            match children with
-            | Error e -> return Error e
-            | Ok written ->
-                // Keep relationship values supplied on the inserted record.
-                for a in schema.Assocs do
-                    row.[a.Index] <- values.[a.Index]
+        for KeyValue(name, value) in written do
+            row.[(schema.TryAssoc name).Value.Index] <- value
 
-                for KeyValue(name, value) in written do
-                    row.[(schema.TryAssoc name).Value.Index] <- value
+        schema.Shape.Construct row
 
-                return Ok(schema.Shape.Construct row)
-    }
+    if schema.KeyGenerated then
+        inserted
+        |> Round.bind (function
+            | Error p -> Done(Error p)
+            | Ok row -> writeChildren model sess schema s row.[schema.Key.Index] true |> Round.map (Result.map (complete row)))
+    else
+        Round.both inserted (writeChildren model sess schema s values.[schema.Key.Index] true)
+        |> Round.map (fun (row, written) -> pair row written |> Result.map (fun (row, written) -> complete row written))
 
-and private update model sess schema (scope: Sql.Expr list) s =
-    task {
-        let key = (keyValue schema s).Value
-        let version = versionValue schema s
+and private update model (sess: Session) (schema: SchemaInfo) (scope: Sql.Expr list) (s: CsState) : Round<Written<obj>> =
+    let key = (keyValue schema s).Value
+    let version = versionValue schema s
 
-        let sets =
-            s.Changes
-            |> Map.toList
-            |> List.collect (fun (name, v) -> Sql.fieldColumns (schema.Field name) v)
+    let sets =
+        s.Changes
+        |> Map.toList
+        |> List.collect (fun (name, v) -> Sql.fieldColumns (schema.Field name) v)
 
-        let versionSet, versionWhere =
-            match schema.Version, version with
-            | Some vf, Some v ->
-                [ vf.Column, Sql.Binary("+", Sql.Column(schema.Table, vf.Column), Sql.Literal "1") ],
-                [ Sql.Binary("=", Sql.Column(schema.Table, vf.Column), Sql.Param(box v)) ]
-            | _ -> [], []
+    let versionSet, versionWhere =
+        match schema.Version, version with
+        | Some vf, Some v ->
+            [ vf.Column, Sql.Binary("+", Sql.Column(schema.Table, vf.Column), Sql.Literal "1") ],
+            [ Sql.Binary("=", Sql.Column(schema.Table, vf.Column), Sql.Param(box v)) ]
+        | _ -> [], []
 
-        let where = keyFilter schema key :: scope @ versionWhere @ originalWhere schema s
+    let where = keyFilter schema key :: scope @ versionWhere @ originalWhere schema scope s
+    let read cmd = Round.fetch sess cmd (readEntity schema) |> Round.map (replied sess (failedWrite schema s) >> Result.map Seq.tryHead)
 
-        let! row =
-            // Nothing to write on the row itself (relationship-only changes without
-            // a version to bump). Re-read only when the full record is unknown.
-            if sets.IsEmpty && (versionSet.IsEmpty || (s.Children.IsEmpty && s.Links.IsEmpty)) then
-                match s.Data with
-                | Some d when scope.IsEmpty -> Task.FromResult(Ok(Some(schema.Shape.Deconstruct d)))
-                | _ ->
-                    guarded sess schema s (fun () ->
-                        task {
-                            let select =
-                                { Sql.select (Sql.Table(schema.Table, schema.Table)) with
-                                    Columns = Translate.entityColumns schema.Table schema
-                                    Where = where }
-
-                            let! rows = query sess (Sql.renderSelect sess.Provider.Dialect select) (readEntity schema)
-                            return Seq.tryHead rows
-                        })
-            else
-                // A changed parent bumps its version; child-only writes still take
-                // the parent's version so concurrent writers conflict.
-                let cmd =
-                    Sql.renderUpdate
+    let row: Round<Written<obj[] option>> =
+        // Nothing to write on the row itself (relationship-only changes without
+        // a version to bump). Re-read only when the full record is unknown.
+        if sets.IsEmpty && (versionSet.IsEmpty || (s.Children.IsEmpty && s.Links.IsEmpty)) then
+            match s.Data with
+            | Some d when scope.IsEmpty -> Done(Ok(Some(schema.Shape.Deconstruct d)))
+            | _ ->
+                read (
+                    Sql.renderSelect
                         sess.Provider.Dialect
-                        { Table = schema.Table
-                          Set =
-                            (if sets.IsEmpty && versionSet.IsEmpty then
-                                 [ schema.Key.Column, Sql.Column(schema.Table, schema.Key.Column) ]
-                             else
-                                 sets @ versionSet)
-                          Where = where
-                          Returning = returning schema }
+                        { Sql.select (Sql.Table(schema.Table, schema.Table)) with
+                            Columns = Translate.entityColumns schema.Table schema
+                            Where = where }
+                )
+        else
+            // A changed parent bumps its version; child-only writes still take
+            // the parent's version so concurrent writers conflict.
+            read (
+                Sql.renderUpdate
+                    sess.Provider.Dialect
+                    { Table = schema.Table
+                      Set =
+                        (if sets.IsEmpty && versionSet.IsEmpty then
+                             [ schema.Key.Column, Sql.Column(schema.Table, schema.Key.Column) ]
+                         else
+                             sets @ versionSet)
+                      Where = where
+                      Returning = returning schema }
+            )
 
-                guarded sess schema s (fun () ->
-                    task {
-                        let! rows = query sess cmd (readEntity schema)
-                        return Seq.tryHead rows
-                    })
-
+    // What it owns goes with it: its key is known.
+    Round.both row (writeChildren model sess schema s key false)
+    |> Round.map (fun (row, written) ->
         match row with
-        | Error e -> return Error e
-        | Ok None -> return Error(Stale s)
-        | Ok(Some row) ->
-            let! children = writeChildren model sess schema s key false
+        | Error p -> Error p
+        | Ok None -> Error(Fail(Stale s))
+        | Ok(Some row) -> written |> Result.map (finish schema s (Array.copy row)))
 
-            match children with
-            | Error e -> return Error e
-            | Ok written -> return Ok(finish schema s (Array.copy row) written)
-    }
+and private delete model (sess: Session) (schema: SchemaInfo) (scope: Sql.Expr list) (s: CsState) : Round<Written<obj>> =
+    let key = (keyValue schema s).Value
 
-and private delete model sess schema (scope: Sql.Expr list) s =
-    task {
-        let key = (keyValue schema s).Value
+    let versionWhere =
+        match schema.Version, versionValue schema s with
+        | Some vf, Some v -> [ Sql.Binary("=", Sql.Column(schema.Table, vf.Column), Sql.Param(box v)) ]
+        | _ -> []
 
-        // What the record owns goes first (owned-collections.feature).
-        let! children =
-            if s.Children.IsEmpty && s.Links.IsEmpty then Task.FromResult(Ok Map.empty) else writeChildren model sess schema s key false
+    let cmd =
+        Sql.renderDelete
+            sess.Provider.Dialect
+            { Table = schema.Table
+              Where = keyFilter schema key :: scope @ versionWhere @ originalWhere schema scope s
+              Returning = [] }
 
-        match children with
-        | Error e -> return Error e
-        | Ok _ ->
+    // What the record owns goes first (owned-collections.feature).
+    let owned =
+        if s.Children.IsEmpty && s.Links.IsEmpty then Done(Ok Map.empty) else writeChildren model sess schema s key false
 
-        let versionWhere =
-            match schema.Version, versionValue schema s with
-            | Some vf, Some v -> [ Sql.Binary("=", Sql.Column(schema.Table, vf.Column), Sql.Param(box v)) ]
-            | _ -> []
+    let own =
+        Round.exec sess cmd
+        |> Round.map (
+            replied sess (failedWrite schema s)
+            >> Result.bind (fun n -> if n = 0 then Error(Fail(Stale s)) else Ok(s.Data |> Option.toObj))
+        )
 
-        let cmd =
-            Sql.renderDelete
-                sess.Provider.Dialect
-                { Table = schema.Table
-                  Where = keyFilter schema key :: scope @ versionWhere @ originalWhere schema s
-                  Returning = [] }
-
-        let! n = guarded sess schema s (fun () -> execute sess cmd)
-
-        match n with
-        | Error e -> return Error e
-        | Ok 0 -> return Error(Stale s)
-        | Ok _ -> return Ok(s.Data |> Option.toObj)
-    }
+    Round.andThen owned own |> Round.map (fun (owned, own) -> pair owned own |> Result.map snd)
 
 /// Writes child changesets for each relationship write. Returns relationship
 /// values to place on the parent where the written set is complete.
 and private writeChildren model sess (schema: SchemaInfo) (s: CsState) (parentKey: obj) (parentInserted: bool) =
-    task {
-        let! children = writeChildList model sess schema s parentKey parentInserted
+    let children = writeChildList model sess schema s parentKey parentInserted
 
-        match children with
-        | Error e -> return Error e
-        | Ok written when s.Links.IsEmpty -> return Ok written
-        | Ok written ->
-            let! links = guarded sess schema s (fun () -> writeLinks model sess schema s parentKey)
-            return links |> Result.map (Map.fold (fun m k v -> Map.add k v m) written)
-    }
+    if s.Links.IsEmpty then
+        children
+    else
+        Round.both children (writeLinks model sess schema s parentKey)
+        |> Round.map (fun (children, links) -> pair children links |> Result.map (fun (c, l) -> Map.fold (fun m k v -> Map.add k v m) c l))
 
 /// Join-table writes for many-to-many link changes. Returns the relationship
 /// value for the parent: the new set of links.
-and private writeLinks model (sess: Session) (schema: SchemaInfo) (s: CsState) (parentKey: obj) : Task<Map<string, obj>> =
-    task {
-        let d = sess.Provider.Dialect
-        let q = d.QuoteIdentifier
-        let mutable written = Map.empty
+and private writeLinks model (sess: Session) (schema: SchemaInfo) (s: CsState) (parentKey: obj) : Round<Written<Map<string, obj>>> =
+    let d = sess.Provider.Dialect
+    let q = d.QuoteIdentifier
 
-        for l in s.Links do
-            let a = (schema.TryAssoc l.Field).Value
-            let j = a.Through.Value
-            let target = schemaOf model a.Target
-            let owner = schema.Key.ScalarToDb parentKey
+    s.Links
+    |> List.map (fun l ->
+        let a = (schema.TryAssoc l.Field).Value
+        let j = a.Through.Value
+        let target = schemaOf model a.Target
+        let owner = schema.Key.ScalarToDb parentKey
 
-            let keys =
-                l.Targets
-                |> List.map (fun t -> target.Shape.Deconstruct t |> fun vs -> vs.[target.Key.Index])
-                |> List.distinct
+        let keys =
+            l.Targets
+            |> List.map (fun t -> target.Shape.Deconstruct t |> fun vs -> vs.[target.Key.Index])
+            |> List.distinct
 
-            let arr = Array.CreateInstance(target.Key.ProviderType, keys.Length)
-            keys |> List.iteri (fun i k -> arr.SetValue(target.Key.ScalarToDb k, i))
-            let p i = d.ParameterName i
-            let jt, oc, tc = q j.Table, q j.OwnerColumn, q j.TargetColumn
+        let arr = keyArray target keys
+        let p i = d.ParameterName i
+        let jt, oc, tc = q j.Table, q j.OwnerColumn, q j.TargetColumn
+        let run (sql: string) (ps: obj list) = Round.exec sess { Sql = sql; Parameters = ps }
 
-            let run (sql: string) (ps: obj list) =
-                execute sess { Sql = sql; Parameters = ps }
+        // Written in the hand of the other statements: quoted names, the
+        // owner bound once (readable-sql.feature).
+        let u, k = q "u", q "k"
 
-            // Written in the hand of the other statements: quoted names, the
-            // owner bound once (readable-sql.feature).
-            let u, k = q "u", q "k"
-
-            let insertMissing () =
-                run
+        match l.Mode with
+        | PutLinks ->
+            Round.both
+                (run $"DELETE FROM {jt}\nWHERE {oc} = {p 0} AND {tc} <> ALL({p 1})" [ owner; box arr ])
+                (run
                     $"INSERT INTO {jt} ({oc}, {tc})\nSELECT {p 0}, {u}.{k}\nFROM unnest({p 1}) AS {u}({k})\nWHERE NOT EXISTS (SELECT 1 FROM {jt} WHERE {jt}.{oc} = {p 0} AND {jt}.{tc} = {u}.{k})"
-                    [ owner; box arr ]
+                    [ owner; box arr ])
+            |> Round.map (fun (removed, added) ->
+                pair (replied sess (failedWrite schema s) removed) (replied sess (failedWrite schema s) added)
+                |> Result.map (fun _ -> a.Name, a.Ctors.Loaded(a.MakeList l.Targets))))
+    |> Round.all
+    |> Round.map (together >> Result.map Map.ofList)
 
-            match l.Mode with
-            | PutLinks ->
-                let! _ = run $"DELETE FROM {jt}\nWHERE {oc} = {p 0} AND {tc} <> ALL({p 1})" [ owner; box arr ]
-                let! _ = insertMissing ()
-                written <- written.Add(a.Name, a.Ctors.Loaded(a.MakeList l.Targets))
+and private writeChildList model sess (schema: SchemaInfo) (s: CsState) (parentKey: obj) (parentInserted: bool) : Round<Written<Map<string, obj>>> =
+    s.Children
+    |> List.mapi (fun wi w -> writeChildWrite model sess schema s wi w parentKey parentInserted |> Round.map (Result.map (fun v -> w.Field, v)))
+    |> Round.all
+    |> Round.map (together >> Result.map Map.ofList)
 
-        return written
-    }
+/// One relationship's child writes, in order, each its own statement.
+and private writeChildWrite model sess (schema: SchemaInfo) (s: CsState) (wi: int) (w: ChildWrite) (parentKey: obj) (parentInserted: bool) =
+    let a = (schema.TryAssoc w.Field).Value
+    let target = schemaOf model a.Target
+    let fk = target.Field a.ForeignKey
+    let ownedBy = Sql.Binary("=", Sql.Column(target.Table, fk.Column), Sql.fieldScalar fk parentKey)
 
-and private writeChildList model sess (schema: SchemaInfo) (s: CsState) (parentKey: obj) (parentInserted: bool) =
-    task {
-        let mutable result: Result<Map<string, obj>, Failure> = Ok Map.empty
-        let mutable state = s
+    // The parent, with the i-th child's state replaced by what its write found.
+    let placed (i: int) (p: Problem) =
+        let replaceChild (child: CsState) =
+            let w' = { w with Children = w.Children |> List.mapi (fun j c -> if i = j then child else c) }
+            { s with Children = s.Children |> List.mapi (fun j x -> if j = wi then w' else x) }
 
-        for wi, w in List.indexed s.Children do
-            match result with
-            | Error _ -> ()
-            | Ok written ->
-                let a = (schema.TryAssoc w.Field).Value
-                let target = schemaOf model a.Target
-                let fk = target.Field a.ForeignKey
+        match p with
+        | Fail(Invalid c) -> Fail(Invalid(replaceChild c))
+        | Fail(Stale c) -> Fail(Stale(replaceChild c))
+        | other -> other
 
-                let ownedBy =
-                    Sql.Binary("=", Sql.Column(target.Table, fk.Column), Sql.fieldScalar fk parentKey)
+    // 1. Authoritative replacement: find existing children in scope that are omitted.
+    let removal: Round<Written<unit>> =
+        match w.Replace with
+        | None -> Done(Ok())
+        | Some _ when parentInserted -> Done(Ok())
+        | Some scope ->
+            let scopeWheres =
+                match scope with
+                | AllChildren -> []
 
-                let replaceChild (i: int) (child: CsState) =
-                    let w' =
-                        { w with Children = w.Children |> List.mapi (fun j c -> if i = j then child else c) }
+            let select =
+                { Sql.select (Sql.Table(target.Table, target.Table)) with
+                    Columns = [ Sql.Column(target.Table, target.Key.Column), target.Key.Column ]
+                    Where = ownedBy :: scopeWheres
+                    ForUpdate = true }
 
-                    { state with Children = state.Children |> List.mapi (fun j x -> if j = wi then w' else x) }
+            let reader = columnReader target.Key.ProviderType
 
-                // 1. Authoritative replacement: find existing children in scope that are omitted.
-                let! removal =
-                    task {
-                        match w.Replace with
-                        | None -> return Ok()
-                        | Some _ when parentInserted -> return Ok()
-                        | Some scope ->
-                            let ctx = Translate.newCtx model
+            Round.fetch sess (Sql.renderSelect sess.Provider.Dialect select) (fun r ->
+                match target.Key.FromDb(reader.Invoke(r, 0)) with
+                | Ok v -> v
+                | Error m -> failwith m)
+            |> Round.bind (fun reply ->
+                match replied sess asFailed reply with
+                | Error p -> Done(Error p)
+                | Ok existing ->
+                    let kept =
+                        w.Children
+                        |> List.filter (fun c -> c.Action = ChangeAction.Update)
+                        |> List.choose (keyValue target)
+                        |> HashSet
 
-                            let scopeWheres =
-                                match scope with
-                                | AllChildren -> []
+                    let omitted = existing |> Seq.filter (fun k -> not (kept.Contains k)) |> List.ofSeq
 
-                            let select =
-                                { Sql.select (Sql.Table(target.Table, target.Table)) with
-                                    Columns = [ Sql.Column(target.Table, target.Key.Column), target.Key.Column ]
-                                    Where = ownedBy :: scopeWheres
-                                    ForUpdate = true }
+                    if omitted.IsEmpty then
+                        Done(Ok())
+                    else
+                        let ids = Sql.AnyOf(Sql.Column(target.Table, target.Key.Column), keyArray target omitted, Sql.storeType target.Key)
 
-                            let reader = columnReader target.Key.ProviderType
+                        // What the owner owns and no longer holds is deleted.
+                        Round.exec
+                            sess
+                            (Sql.renderDelete
+                                sess.Provider.Dialect
+                                { Table = target.Table
+                                  Where = [ ownedBy; ids ]
+                                  Returning = [] })
+                        |> Round.map (replied sess asFailed >> Result.map ignore))
 
-                            let! existing =
-                                query sess (Sql.renderSelect sess.Provider.Dialect select) (fun r ->
-                                    match target.Key.FromDb(reader.Invoke(r, 0)) with
-                                    | Ok v -> v
-                                    | Error m -> failwith m)
+    // 2. Insert / update / delete listed children.
+    // The child must belong to this parent. Its own write says so (the owner
+    // in its WHERE); only when it writes nothing does a read tell another
+    // parent's child from a stale one. A child deleted with what it owns is
+    // checked first, so that nothing under it is kept if it is not.
+    let changed (i: int) (child: CsState) : Round<Written<obj>> =
+        let childKey = (keyValue target child).Value
 
-                            let kept =
-                                w.Children
-                                |> List.filter (fun c -> c.Action = ChangeAction.Update)
-                                |> List.choose (keyValue target)
-                                |> HashSet
+        let notOwned () =
+            Error(Fail(Invalid(Cs.addError child target.Key.Name FieldErrorKind.NotOwned $"{target.Name} {childKey} does not belong to this {schema.Name}")))
 
-                            let omitted = existing |> Seq.filter (fun k -> not (kept.Contains k)) |> List.ofSeq
+        let owned =
+            let ownerCheck =
+                { Sql.select (Sql.Table(target.Table, target.Table)) with
+                    Columns = [ Sql.Literal "1", "one" ]
+                    Where = [ keyFilter target childKey; ownedBy ] }
 
-                            if omitted.IsEmpty then
-                                return Ok()
-                            else
-                                let ids = Sql.AnyOf(Sql.Column(target.Table, target.Key.Column), keyArray target omitted, Sql.storeType target.Key)
+            Round.fetch sess (Sql.renderSelect sess.Provider.Dialect ownerCheck) ignore
+            |> Round.map (replied sess asFailed >> Result.map (fun rows -> rows.Count > 0))
 
-                                // What the owner owns and no longer holds is deleted.
-                                let cmd =
-                                    Sql.renderDelete
-                                        sess.Provider.Dialect
-                                        { Table = target.Table
-                                          Where = [ ownedBy; ids ]
-                                          Returning = [] }
+        if child.Action = ChangeAction.Delete && not (child.Children.IsEmpty && child.Links.IsEmpty) then
+            Round.andThen owned (write model sess child)
+            |> Round.map (fun (isOwned, written) ->
+                match isOwned with
+                | Ok false -> notOwned ()
+                | Ok true -> written
+                | Error p -> pair (Error p) written |> Result.map snd)
+            |> Round.map (Result.mapError (placed i))
+        else
+            writeWithin model sess [ ownedBy ] child
+            |> Round.followUp (function
+                | Error(Fail(Stale _)) as stale ->
+                    owned
+                    |> Round.map (function
+                        | Ok false -> notOwned ()
+                        // Not sent, because a statement after it failed: what
+                        // it is known to be is stale.
+                        | Ok true
+                        | Error NotSent -> stale
+                        | Error p -> Error p)
+                    |> Some
+                | _ -> None)
+            |> Round.map (Result.mapError (placed i))
 
-                                let! _ = execute sess cmd
-                                return Ok()
-                    }
+    let listed: Round<Written<obj> list> =
+        w.Children
+        |> List.mapi (fun i child ->
+            match child.Action with
+            | ChangeAction.Insert -> write model sess (setField target child a.ForeignKey parentKey) |> Round.map (Result.mapError (placed i))
+            | ChangeAction.Update
+            | ChangeAction.Delete -> changed i child)
+        |> Round.all
 
-                match removal with
-                | Error e -> result <- Error e
-                | Ok() ->
-                    // 2. Insert / update / delete listed children.
-                    let produced = ResizeArray<obj>()
-                    let mutable i = 0
-                    let mutable failed = None
+    Round.andThen removal listed
+    |> Round.map (fun (removed, results) ->
+        pair removed (together results)
+        |> Result.map (fun (_, values) ->
+            let produced =
+                List.zip w.Children values
+                |> List.filter (fun (c, _) -> c.Action <> ChangeAction.Delete)
+                |> List.map snd
 
-                    for child in w.Children do
-                        if failed.IsNone then
-                            let! r =
-                                task {
-                                    match child.Action with
-                                    | ChangeAction.Insert -> return! write model sess (setField target child a.ForeignKey parentKey)
-                                    | ChangeAction.Update
-                                    | ChangeAction.Delete ->
-                                        // The child must belong to this parent. Its own write
-                                        // says so (the owner in its WHERE); only when it writes
-                                        // nothing does a read tell another parent's child from
-                                        // a stale one. A child deleted with what it owns is
-                                        // checked first, so nothing under it is written.
-                                        let childKey = (keyValue target child).Value
+            // The written set is the complete relationship only when it is
+            // authoritative for all children (or the parent is new).
+            let complete =
+                parentInserted
+                || (match w.Replace with
+                    | Some AllChildren -> true
+                    | _ -> false)
 
-                                        let owned () =
-                                            task {
-                                                let ownerCheck =
-                                                    { Sql.select (Sql.Table(target.Table, target.Table)) with
-                                                        Columns = [ Sql.Literal "1", "one" ]
-                                                        Where = [ keyFilter target childKey; ownedBy ] }
-
-                                                let! rows = query sess (Sql.renderSelect sess.Provider.Dialect ownerCheck) ignore
-                                                return rows.Count > 0
-                                            }
-
-                                        let notOwned () =
-                                            Error(
-                                                Invalid(
-                                                    Cs.addError
-                                                        child
-                                                        target.Key.Name
-                                                        FieldErrorKind.NotOwned
-                                                        $"{target.Name} {childKey} does not belong to this {schema.Name}"
-                                                )
-                                            )
-
-                                        if child.Action = ChangeAction.Delete && not (child.Children.IsEmpty && child.Links.IsEmpty) then
-                                            let! isOwned = owned ()
-                                            if not isOwned then return notOwned () else return! write model sess child
-                                        else
-                                            match! writeWithin model sess [ ownedBy ] child with
-                                            | Error(Stale _) as stale ->
-                                                let! isOwned = owned ()
-                                                return if isOwned then stale else notOwned ()
-                                            | other -> return other
-                                }
-
-                            match r with
-                            | Ok v -> if child.Action <> ChangeAction.Delete then produced.Add v
-                            | Error(Invalid c) -> failed <- Some(Invalid(replaceChild i c))
-                            | Error(Stale c) -> failed <- Some(Stale(replaceChild i c))
-                            | Error(Failed f) -> failed <- Some(Failed f)
-                            | Error(Unsupported op) -> failed <- Some(Unsupported op)
-
-                        i <- i + 1
-
-                    match failed with
-                    | Some f -> result <- Error f
-                    | None ->
-                        // The written set is the complete relationship only when
-                        // it is authoritative for all children (or the parent is new).
-                        let complete =
-                            parentInserted
-                            || (match w.Replace with
-                                | Some AllChildren -> true
-                                | _ -> false)
-
-                        let value =
-                            match w.Final with
-                            // An owned list: the new list, with each written item as stored.
-                            | Some final ->
-                                let stored = Collections.Generic.Queue<obj>(produced)
-                                final |> List.map (fun (c, written) -> if written then stored.Dequeue() else c) |> Seq.ofList |> a.MakeList |> a.Ctors.Loaded
-                            | None when complete -> a.Ctors.Loaded(a.MakeList produced)
-                            | None -> a.Ctors.Empty
-
-                        result <- Ok(written.Add(w.Field, value))
-
-
-        return result
-    }
+            match w.Final with
+            // An owned list: the new list, with each written item as stored.
+            | Some final ->
+                let stored = Queue<obj>(produced)
+                final |> List.map (fun (c, written) -> if written then stored.Dequeue() else c) |> Seq.ofList |> a.MakeList |> a.Ctors.Loaded
+            | None when complete -> a.Ctors.Loaded(a.MakeList produced)
+            | None -> a.Ctors.Empty))
 
 and private keyArray (target: SchemaInfo) (keys: obj list) =
     let arr = Array.CreateInstance(target.Key.ProviderType, keys.Length)
     keys |> List.iteri (fun i k -> arr.SetValue(target.Key.ScalarToDb k, i))
     arr
 
-/// Validates then writes `s`, opening a transaction when children are involved.
+/// Validates then writes `s`: one round trip for it and what it owns, after
+/// any generated key that needs.
 let run (model: Model) (sess: Session) (s: CsState) : Task<Result<obj, Failure>> =
     task {
         let s = check model s
@@ -774,7 +773,13 @@ let run (model: Model) (sess: Session) (s: CsState) : Task<Result<obj, Failure>>
         if not (isValid s) then
             return Error(Invalid s)
         else
-            return! write model sess s
+            let! written = Round.run sess (write model sess s)
+
+            return
+                written
+                |> Result.mapError (function
+                    | Fail f -> f
+                    | NotSent -> invalidOp "a write's statements were not sent, and none failed")
     }
 
 let needsTransaction (s: CsState) = not s.Children.IsEmpty || not s.Links.IsEmpty

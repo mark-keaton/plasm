@@ -82,7 +82,8 @@ type internal PostgresDialect(options: PostgresOptions) =
               MaxKeysPerCommand = options.MaxKeysPerCommand
               Returning = true
               Upserts = true
-              RowLocking = true }
+              RowLocking = true
+              Batching = true }
 
         member _.NullSafeComparison negated =
             if negated then "IS DISTINCT FROM" else "IS NOT DISTINCT FROM"

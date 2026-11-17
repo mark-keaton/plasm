@@ -46,6 +46,7 @@
     <Compile Include="OwnedOneSteps.fs" />
     <Compile Include="DdlSteps.fs" />
     <Compile Include="StoredSteps.fs" />
+    <Compile Include="RoundTripSteps.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Plasm.TestDomain/Plasm.TestDomain.fsproj" />

@@ -749,7 +749,8 @@ type internal PGliteDialect(maxKeys: int) =
               MaxKeysPerCommand = maxKeys
               Returning = true
               Upserts = true
-              RowLocking = true }
+              RowLocking = true
+              Batching = false }
 
         member _.NullSafeComparison negated =
             if negated then "IS DISTINCT FROM" else "IS NOT DISTINCT FROM"

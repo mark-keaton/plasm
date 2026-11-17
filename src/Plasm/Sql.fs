@@ -17,7 +17,10 @@ type ProviderCapabilities =
       /// Inserts that resolve conflicts (ON CONFLICT ...): upserts.
       Upserts: bool
       /// SELECT ... FOR UPDATE (deleting an owner locks what it owns first).
-      RowLocking: bool }
+      RowLocking: bool
+      /// Several statements sent in one round trip (a DbBatch): a write's
+      /// statements, and one level of loads (round-trips.feature).
+      Batching: bool }
 
 /// How a provider stores and reads JSON documents (json-columns.feature).
 /// Each member writes SQL through `write`; `doc`, `value` and `condition`

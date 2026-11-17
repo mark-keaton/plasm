@@ -54,7 +54,7 @@ let private describe (v: obj) =
     if isNull v then "NULL" else $"{v} ({v.GetType().Name})"
 
 /// Resolves parameters bound from prepared-query arguments.
-let private bind (s: Session) (cmd: Sql.Command) : Sql.Command =
+let private bindArgs (s: Session) (cmd: Sql.Command) : Sql.Command =
     if cmd.Parameters |> List.exists (fun p -> p :? Sql.Bound) then
         { cmd with
             Parameters =
@@ -66,6 +66,14 @@ let private bind (s: Session) (cmd: Sql.Command) : Sql.Command =
     else
         cmd
 
+let private parameters (s: Session) (cmd: Sql.Command) (create: unit -> DbParameter) (add: DbParameter -> unit) =
+    cmd.Parameters
+    |> List.iteri (fun i v ->
+        let p = create ()
+        p.ParameterName <- s.Provider.Dialect.ParameterName i
+        p.Value <- v
+        add p)
+
 let private prepare (s: Session) (cmd: Sql.Command) =
     let c = s.Connection.CreateCommand()
     c.CommandText <- cmd.Sql
@@ -74,16 +82,14 @@ let private prepare (s: Session) (cmd: Sql.Command) =
     | Some t -> c.Transaction <- Sandboxes.unwrap t
     | None -> ()
 
-    cmd.Parameters
-    |> List.iteri (fun i v ->
-        let p = c.CreateParameter()
-        p.ParameterName <- s.Provider.Dialect.ParameterName i
-        p.Value <- v
-        c.Parameters.Add p |> ignore)
-
+    parameters s cmd c.CreateParameter (c.Parameters.Add >> ignore)
     c
 
-let private report (s: Session) (cmd: Sql.Command) (elapsed: TimeSpan) rows ok =
+let mutable private roundTrips = 0L
+
+let private nextRoundTrip () = Interlocked.Increment(&roundTrips)
+
+let private report (s: Session) (cmd: Sql.Command) (elapsed: TimeSpan) rows ok roundTrip =
     match s.Options.OnCommand with
     | None -> ()
     | Some f ->
@@ -108,49 +114,313 @@ let private report (s: Session) (cmd: Sql.Command) (elapsed: TimeSpan) rows ok =
               Parameters = ps
               Duration = elapsed
               Rows = rows
-              Succeeded = ok }
+              Succeeded = ok
+              RoundTrip = roundTrip }
+
+// ---------------------------------------------------------------------------
+// Round trips (round-trips.feature)
+// ---------------------------------------------------------------------------
+
+/// One statement of a round trip, and how its rows are read.
+type Statement =
+    { Command: Sql.Command
+      /// Reads one row; None for a statement that returns none, whose result
+      /// is the rows it affected.
+      Read: (DbDataReader -> unit) option }
+
+/// What became of one statement of a round trip.
+type Sent =
+    /// It ran: the rows it read, or else affected.
+    | Ran of rows: int
+    | Threw of exn
+    /// An earlier statement failed, so it was not run.
+    | Skipped
+
+/// Statements to send and what follows from their results: each Send is one
+/// round trip. `last` says that what follows sends nothing more, so a
+/// statement that must come after these can travel with them.
+type Round<'a> =
+    | Done of 'a
+    | Send of Statement list * last: bool * (Sent list -> Round<'a>)
+
+/// A statement's result: its value, or the exception it raised (None when it
+/// was not run because an earlier statement failed).
+type Reply<'a> = Result<'a, exn option>
+
+module Round =
+
+    let rec map (f: 'a -> 'b) (r: Round<'a>) : Round<'b> =
+        match r with
+        | Done v -> Done(f v)
+        | Send(stmts, last, k) -> Send(stmts, last, fun sent -> map f (k sent))
+
+    /// What `f` does with `r`'s value, after it: a round trip later.
+    let rec bind (f: 'a -> Round<'b>) (r: Round<'a>) : Round<'b> =
+        match r with
+        | Done v -> f v
+        | Send(stmts, _, k) -> Send(stmts, false, fun sent -> bind f (k sent))
+
+    /// Both, each round trip of one with the same of the other, `a`'s
+    /// statements first.
+    let rec both (a: Round<'a>) (b: Round<'b>) : Round<'a * 'b> =
+        match a, b with
+        | Done x, Done y -> Done(x, y)
+        | Done x, _ -> map (fun y -> x, y) b
+        | _, Done y -> map (fun x -> x, y) a
+        | Send(sa, la, ka), Send(sb, lb, kb) ->
+            let n = sa.Length
+            Send(sa @ sb, la && lb, fun sent -> both (ka (List.take n sent)) (kb (List.skip n sent)))
+
+    let all (rs: Round<'a> list) : Round<'a list> =
+        List.foldBack (fun r acc -> both r acc |> map (fun (x, xs) -> x :: xs)) rs (Done [])
+
+    /// `b` after `a` has sent everything: with `a`'s last round trip when `a`
+    /// says which that is, else after it.
+    let rec andThen (a: Round<'a>) (b: Round<'b>) : Round<'a * 'b> =
+        match a with
+        | Done x -> map (fun y -> x, y) b
+        | Send(_, true, _) -> both a b
+        | Send(stmts, false, k) -> Send(stmts, false, fun sent -> andThen (k sent) b)
+
+    /// `r`, then what `f` sends when `r`'s value calls for it: a read that
+    /// only a failure needs, which statements sent after `r` need not wait
+    /// for (so `last` stays as `r` says).
+    let rec followUp (f: 'a -> Round<'a> option) (r: Round<'a>) : Round<'a> =
+        match r with
+        | Done v ->
+            match f v with
+            | Some next -> next
+            | None -> Done v
+        | Send(stmts, last, k) -> Send(stmts, last, fun sent -> followUp f (k sent))
+
+    let private reply (sent: Sent) (value: 'a) : Reply<'a> =
+        match sent with
+        | Ran _ -> Ok value
+        | Threw ex -> Error(Some ex)
+        | Skipped -> Error None
+
+    /// The rows a query reads.
+    let fetch (s: Session) (cmd: Sql.Command) (read: DbDataReader -> 'a) : Round<Reply<ResizeArray<'a>>> =
+        let rows = ResizeArray<'a>()
+
+        Send(
+            [ { Command = bindArgs s cmd; Read = Some(fun r -> rows.Add(read r)) } ],
+            true,
+            fun sent -> Done(reply sent.Head rows)
+        )
+
+    /// The rows a statement affects.
+    let exec (s: Session) (cmd: Sql.Command) : Round<Reply<int>> =
+        Send(
+            [ { Command = bindArgs s cmd; Read = None } ],
+            true,
+            fun sent ->
+                Done(
+                    match sent.Head with
+                    | Ran n -> Ok n
+                    | other -> reply other 0
+                )
+        )
+
+    let private raised (r: Reply<'a>) : 'a =
+        match r with
+        | Ok v -> v
+        | Error(Some ex) -> Err.rethrow ex
+        | Error None -> invalidOp "a statement was not sent because an earlier one failed"
+
+    /// The rows a query reads, raising what it raises.
+    let rows (s: Session) (cmd: Sql.Command) (read: DbDataReader -> 'a) : Round<ResizeArray<'a>> =
+        fetch s cmd read |> map raised
+
+    let private one (s: Session) (st: Statement) : Task<Sent> =
+        task {
+            let trip = nextRoundTrip ()
+            use c = prepare s st.Command
+            let sw = Stopwatch.StartNew()
+            let mutable n = 0
+
+            try
+                match st.Read with
+                | Some read ->
+                    use! r = c.ExecuteReaderAsync(s.Ct)
+                    let mutable go = true
+
+                    while go do
+                        let! more = r.ReadAsync(s.Ct)
+
+                        if more then
+                            read r
+                            n <- n + 1
+                        else
+                            go <- false
+                | None ->
+                    let! affected = c.ExecuteNonQueryAsync(s.Ct)
+                    n <- affected
+
+                report s st.Command sw.Elapsed n true trip
+                return Ran n
+            with ex ->
+                report s st.Command sw.Elapsed n false trip
+                return Threw ex
+        }
+
+    let private oneAtATime (s: Session) (stmts: Statement list) : Task<Sent list> =
+        task {
+            let sent = ResizeArray<Sent>()
+            let mutable failed = false
+
+            for st in stmts do
+                if failed then
+                    sent.Add Skipped
+                else
+                    let! r = one s st
+                    sent.Add r
+
+                    match r with
+                    | Threw _ -> failed <- true
+                    | _ -> ()
+
+            return List.ofSeq sent
+        }
+
+    /// The statements as one DbBatch: each query's rows are its result set,
+    /// in order; a statement without rows has none, and its count is its
+    /// batch command's.
+    let private together (s: Session) (stmts: Statement list) : Task<Sent list> =
+        task {
+            let stmts = Array.ofList stmts
+            let trip = nextRoundTrip ()
+            use batch = s.Connection.CreateBatch()
+
+            match s.Transaction with
+            | Some t -> batch.Transaction <- Sandboxes.unwrap t
+            | None -> ()
+
+            for st in stmts do
+                let c = batch.CreateBatchCommand()
+                c.CommandText <- st.Command.Sql
+                parameters s st.Command c.CreateParameter (c.Parameters.Add >> ignore)
+                batch.BatchCommands.Add c
+
+            let rows = Array.zeroCreate<int> stmts.Length
+            let sw = Stopwatch.StartNew()
+            // The statement being read, and the last read whole.
+            let mutable reading = -1
+            let mutable read = -1
+            let mutable failure = None
+
+            try
+                use! r = batch.ExecuteReaderAsync(s.Ct)
+                let mutable first = true
+
+                for i in 0 .. stmts.Length - 1 do
+                    match stmts.[i].Read with
+                    | Some readRow ->
+                        reading <- i
+
+                        if not first then
+                            let! more = r.NextResultAsync(s.Ct)
+
+                            if not more then
+                                invalidOp $"statement {i + 1} of a batch returned no rows to read"
+
+                        first <- false
+                        let mutable go = true
+
+                        while go do
+                            let! more = r.ReadAsync(s.Ct)
+
+                            if more then
+                                readRow r
+                                rows.[i] <- rows.[i] + 1
+                            else
+                                go <- false
+
+                        read <- i
+                    | None -> ()
+
+                reading <- -1
+                let mutable more = true
+
+                while more do
+                    let! m = r.NextResultAsync(s.Ct)
+                    more <- m
+            with ex ->
+                failure <- Some ex
+
+            let elapsed = sw.Elapsed
+
+            let failedAt =
+                match failure with
+                | None -> stmts.Length
+                | Some(:? DbException as d) when not (isNull d.BatchCommand) -> batch.BatchCommands.IndexOf d.BatchCommand
+                | Some _ when reading >= 0 -> reading
+                | Some _ -> read + 1
+
+            return
+                [ for i in 0 .. stmts.Length - 1 do
+                      let st = stmts.[i]
+
+                      if i < failedAt then
+                          let n =
+                              match st.Read with
+                              | Some _ -> rows.[i]
+                              | None -> batch.BatchCommands.[i].RecordsAffected
+
+                          report s st.Command elapsed n true trip
+                          Ran n
+                      elif i = failedAt then
+                          report s st.Command elapsed rows.[i] false trip
+                          Threw failure.Value
+                      else
+                          Skipped ]
+        }
+
+    let private send (s: Session) (stmts: Statement list) : Task<Sent list> =
+        match stmts with
+        | [] -> Task.FromResult []
+        | [ _ ] -> oneAtATime s stmts
+        | _ when s.Provider.Dialect.Capabilities.Batching -> together s stmts
+        | _ -> oneAtATime s stmts
+
+    /// Runs `r`: each Send one round trip. Once a statement has failed, the
+    /// transaction can run nothing more, so what follows is told its
+    /// statements were not sent.
+    let run (s: Session) (r: Round<'a>) : Task<'a> =
+        task {
+            let mutable current = r
+            let mutable failed = false
+            let mutable result = None
+
+            while result.IsNone do
+                match current with
+                | Done v -> result <- Some v
+                | Send(stmts, _, k) ->
+                    let! sent =
+                        if failed then
+                            Task.FromResult(stmts |> List.map (fun _ -> Skipped))
+                        else
+                            send s stmts
+
+                    if sent |> List.exists (function | Threw _ -> true | _ -> false) then
+                        failed <- true
+
+                    current <- k sent
+
+            return result.Value
+        }
 
 /// Runs a query command, reading each row with `read`.
 let query (s: Session) (cmd: Sql.Command) (read: DbDataReader -> 'a) : Task<ResizeArray<'a>> =
-    let cmd = bind s cmd
-
-    task {
-        use c = prepare s cmd
-        let sw = Stopwatch.StartNew()
-        let results = ResizeArray<'a>()
-
-        try
-            use! r = c.ExecuteReaderAsync(s.Ct)
-
-            let mutable go = true
-
-            while go do
-                let! more = r.ReadAsync(s.Ct)
-
-                if more then results.Add(read r) else go <- false
-
-            report s cmd sw.Elapsed results.Count true
-            return results
-        with ex ->
-            report s cmd sw.Elapsed results.Count false
-            return Err.rethrow ex
-    }
+    Round.run s (Round.rows s cmd read)
 
 /// Runs a non-query command, returning affected rows.
 let execute (s: Session) (cmd: Sql.Command) : Task<int> =
-    let cmd = bind s cmd
-
     task {
-        use c = prepare s cmd
-        let sw = Stopwatch.StartNew()
-
-        try
-            let! n = c.ExecuteNonQueryAsync(s.Ct)
-            report s cmd sw.Elapsed n true
-            return n
-        with ex ->
-            report s cmd sw.Elapsed 0 false
-            return Err.rethrow ex
+        match! Round.run s (Round.exec s cmd) with
+        | Ok n -> return n
+        | Error(Some ex) -> return Err.rethrow ex
+        | Error None -> return invalidOp "the statement was not sent"
     }
 
 /// Reads an entity row (columns in schema field order) into a field array
