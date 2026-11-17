@@ -26,7 +26,7 @@ let ``countDistinct renders COUNT DISTINCT and sum is zero for no rows`` () =
             select (Agg.countDistinct o.CustomerId, Agg.sum o.Total)
     }
     |> projectionSql
-    |> contains "SELECT COUNT(DISTINCT \"t0\".\"customer_id\") AS \"c0\", COALESCE(SUM(\"t0\".\"total\"), 0) AS \"c1\""
+    |> contains "SELECT COUNT(DISTINCT \"o\".\"customer_id\") AS \"c0\", COALESCE(SUM(\"o\".\"total\"), 0) AS \"c1\""
 
 [<Fact>]
 let ``aggregates of domain types come back as the domain type`` () =
@@ -90,7 +90,7 @@ let ``paging groups appends the grouping keys as the tiebreaker`` () =
     }
     |> projectionSql
     |> contains
-        "GROUP BY \"t0\".\"customer_id\", \"t0\".\"status\" ORDER BY COUNT(*) DESC, \"t0\".\"customer_id\", \"t0\".\"status\" LIMIT @p0"
+        "GROUP BY \"o\".\"customer_id\", \"o\".\"status\"\nORDER BY COUNT(*) DESC, \"o\".\"customer_id\", \"o\".\"status\"\nLIMIT @p0"
 
 [<Fact>]
 let ``count and exists over joins, pages and groups`` () =
@@ -144,7 +144,7 @@ let ``a bulk update can clear an optional field and filter through a relationshi
         let bulk = Bulk.update (withPayments, fun o -> { o with CancellationReason = None })
         let sql = (ok (offlineRepo.Explain bulk)).Sql
         contains "\"cancellation_reason\" = NULL" sql
-        contains "WHERE EXISTS (SELECT 1 FROM \"payments\" AS \"t1\"" sql
+        contains "WHERE EXISTS (SELECT 1 FROM \"payments\" AS \"p\"" sql
         let! n = db.Repo.Transact(Tx.execute bulk: Tx<_, unit>)
         Assert.Equal(1, ok n)
         let (OrderId p), (OrderId u) = paid, unpaid
@@ -258,7 +258,7 @@ let ``fragments can be projected and escape percent signs`` () =
             select (o.Id, Raw.fragment<int> "{0} %% 7" o.Total)
     }
     |> projectionSql
-    |> contains "(\"t0\".\"total\" % 7) AS \"c1\""
+    |> contains "(\"o\".\"total\" % 7) AS \"c1\""
 
 // -- Prepared queries ----------------------------------------------------------
 
@@ -352,7 +352,7 @@ let ``expressions of arguments are compiled into bound parameters`` () =
                         where (o.Total > decimal (n.Value * 10))
                 })
 
-        contains "WHERE \"t0\".\"total\" > @p0" (sqlOf (over 1))
+        contains "WHERE \"o\".\"total\" > @p0" (sqlOf (over 1))
         let! r = db.Repo.All(over 1)
         Assert.Equal<OrderId list>([ big ], ok r |> List.map (fun o -> o.Id))
     }

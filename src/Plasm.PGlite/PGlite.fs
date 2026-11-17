@@ -700,11 +700,15 @@ type internal PGliteJson() =
         member _.AnyElement(w, doc, alias, condition) =
             w "EXISTS (SELECT 1 FROM jsonb_array_elements("
             doc ()
-            w $") AS {alias}(element) WHERE "
+            // Quoted like every name: the alias is the query's variable.
+            let q (n: string) = "\"" + n.Replace("\"", "\"\"") + "\""
+            w (") AS " + q alias + "(\"element\") WHERE ")
             condition ()
             w ")"
 
-        member _.Element(w, alias) = w $"{alias}.element"
+        member _.Element(w, alias) =
+            let q (n: string) = "\"" + n.Replace("\"", "\"\"") + "\""
+            w (q alias + ".\"element\"")
 
         member _.Contains(w, doc, value) =
             w "("

@@ -295,7 +295,7 @@ type EleganceSteps(w: World) =
             // Ordering by a non-unique column gets the primary key as a tiebreaker.
             let page n = plasm { for o in tableOf<Order> do orderBy o.Status; skip (n * 3); take 3 }
             let plan = w.Repo.Explain(page 0) |> ok
-            check (plan.Sql.Contains "ORDER BY (CASE \"t0\".\"status\" WHEN 'draft' THEN 0 WHEN 'published' THEN 1 WHEN 'cancelled' THEN 2 END), \"t0\".\"id\"") plan.Sql
+            check (plan.Sql.Contains "ORDER BY (CASE \"o\".\"status\" WHEN 'draft' THEN 0 WHEN 'published' THEN 1 WHEN 'cancelled' THEN 2 END), \"o\".\"id\"") plan.Sql
             let! p0 = all (page 0)
             let! p1 = all (page 1)
             let! p2 = all (page 2)
@@ -444,8 +444,8 @@ type EleganceSteps(w: World) =
     [<StepDefinition("only explicitly described fields are eligible for update")>]
     member _.OnlyExplicit() =
         let update = w.CommandsSinceMark |> List.find (fun c -> c.Sql.StartsWith "UPDATE")
-        let setClause = update.Sql.Substring(update.Sql.IndexOf " SET ", update.Sql.IndexOf " WHERE " - update.Sql.IndexOf " SET ")
-        equal " SET \"status\" = @p0, \"version\" = \"orders\".\"version\" + 1" setClause "SET clause"
+        let setClause = update.Sql.Substring(update.Sql.IndexOf "\nSET ", update.Sql.IndexOf "\nWHERE " - update.Sql.IndexOf "\nSET ")
+        equal "\nSET \"status\" = @p0, \"version\" = \"orders\".\"version\" + 1" setClause "SET clause"
 
     // Scenario: Duplicate child identities are rejected
 

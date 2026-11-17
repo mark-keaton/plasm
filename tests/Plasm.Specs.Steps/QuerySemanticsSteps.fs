@@ -189,7 +189,7 @@ type QuerySemanticsSteps(w: World) =
     [<StepDefinition("the SQL writes the opposite comparison, so an index on the field can still be used")>]
     member _.OppositeComparison() =
         let sql = w.Get<string> "sql"
-        check (sql.Contains "\"t0\".\"total\" <= @p0" && not (sql.Contains "NOT")) $"expected total <= 15: {sql}"
+        check (sql.Contains "\"o\".\"total\" <= @p0" && not (sql.Contains "NOT")) $"expected total <= 15: {sql}"
 
     [<StepDefinition("I run a query comparing with DateTime.UtcNow twice, a moment apart")>]
     member _.Clock() =
@@ -333,7 +333,7 @@ type QuerySemanticsSteps(w: World) =
     member _.OrdersByPosition() =
         let sql = w.Get<string> "sql"
         check
-            (sql.Contains "ORDER BY (CASE \"t0\".\"status\" WHEN 'draft' THEN 0 WHEN 'published' THEN 1 WHEN 'cancelled' THEN 2 END)")
+            (sql.Contains "ORDER BY (CASE \"o\".\"status\" WHEN 'draft' THEN 0 WHEN 'published' THEN 1 WHEN 'cancelled' THEN 2 END)")
             $"the ordering is not by declaration position: {sql}"
 
     // -- String functions ----------------------------------------------------

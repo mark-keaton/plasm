@@ -58,7 +58,7 @@ type ChangesetSteps(w: World) =
             ok r |> ignore
             // Only the changed column is set.
             let update = w.CommandsSinceMark |> List.find (fun c -> c.Sql.StartsWith "UPDATE")
-            let set = update.Sql.Substring(0, update.Sql.IndexOf " WHERE ")
+            let set = update.Sql.Substring(0, update.Sql.IndexOf "\nWHERE ")
             check (set.Contains "\"total\"" && not (set.Contains "cancellation_reason")) update.Sql
         }
         |> unit

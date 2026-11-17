@@ -300,7 +300,7 @@ type JsonSteps(w: World) =
     [<StepDefinition("the update sets the checklist column and no other")>]
     member _.UpdateColumns() =
         let update = w.CommandsSinceMark |> List.map (fun e -> e.Sql) |> List.find (fun s -> s.StartsWith "UPDATE")
-        let set = update.Substring(0, update.IndexOf " WHERE ")
+        let set = update.Substring(0, update.IndexOf "\nWHERE ")
         check (set.Contains "\"checklist\"") update
 
         for c in [ "\"title\""; "\"settings\""; "\"estimate\""; "\"tags\"" ] do

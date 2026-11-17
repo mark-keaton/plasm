@@ -260,11 +260,15 @@ Plasm sends the selected order keys as one array parameter, so each child
 query reads only those orders' rows and the page is not evaluated again:
 
 ```sql
-SELECT "t0"."id" AS "id", "t0"."order_id" AS "order_id", ... FROM "order_lines" AS "t0"
-WHERE ("t0"."order_id" = ANY(@p0)) ORDER BY "t0"."id" ASC
-SELECT ... FROM "payments" AS "t0"
-WHERE (("t0"."order_id" = ANY(@p0)) AND ("t0"."status" = @p1))
-ORDER BY "t0"."created_at" ASC
+SELECT "order_lines"."id", "order_lines"."order_id", ...
+FROM "order_lines"
+WHERE "order_lines"."order_id" = ANY(@p0)
+ORDER BY "order_lines"."id"
+
+SELECT "p"."id", "p"."order_id", ...
+FROM "payments" AS "p"
+WHERE "p"."order_id" = ANY(@p0) AND "p"."status" = @p1
+ORDER BY "p"."created_at", "p"."id"
 ```
 
 EF split query restricts each child query by running the parent query again

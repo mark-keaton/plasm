@@ -254,7 +254,7 @@ type UnionFieldSteps(w: World) =
     [<StepDefinition("the SQL orders by stage_since DESC, with no NULLS clause")>]
     member _.NoNulls() =
         let sql = w.Get<string> "cardSql"
-        check (sql.EndsWith "ORDER BY \"t0\".\"stage_since\" DESC") sql
+        check (sql.EndsWith "ORDER BY \"c\".\"stage_since\" DESC") sql
 
     [<StepDefinition("I read the Cards")>]
     member _.Read() =

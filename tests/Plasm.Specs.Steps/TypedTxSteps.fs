@@ -233,7 +233,7 @@ let readBack (name: string) : Tx<Customer option, string> =
     [<StepDefinition("the update sent sets only the name")>]
     member _.OnlyName() =
         let update = w.CommandsSinceMark |> List.find (fun e -> e.Sql.StartsWith "UPDATE")
-        let set = update.Sql.Substring(0, update.Sql.IndexOf " WHERE ")
+        let set = update.Sql.Substring(0, update.Sql.IndexOf "\nWHERE ")
         check (set.Contains "\"name\"" && not (set.Contains "\"email\"")) update.Sql
 
     [<StepDefinition("a draft Order whose version is 2")>]

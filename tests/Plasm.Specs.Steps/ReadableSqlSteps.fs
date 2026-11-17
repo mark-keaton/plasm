@@ -116,15 +116,28 @@ type ReadableSqlSteps(w: World) =
         }
         |> unit
 
-    [<StepDefinition("^the update begins \"(.*)\" and has no alias$")>]
-    member _.Update(start: string) =
+    [<StepDefinition("^the update's first line is \"(.*)\" and it has no alias$")>]
+    member _.Update(first: string) =
         let update = w.Get<string list> "readableWrites" |> List.find (fun q -> q.StartsWith "UPDATE")
-        check (update.StartsWith start && not (update.Contains " AS \"orders\"")) update
+        check (update.Split('\n').[0] = first && not (update.Contains " AS \"orders\"")) update
 
-    [<StepDefinition("^the delete is \"(.*)\"$")>]
+    [<StepDefinition("the delete is:")>]
     member _.Delete(expected: string) =
         let deletes = w.Get<string list> "readableWrites" |> List.filter (fun q -> q.StartsWith "DELETE" && q.Contains "\"orders\"")
-        equal [ expected ] deletes "the delete of the Order"
+        equal [ expected.Trim() ] deletes "the delete of the Order"
+
+    [<StepDefinition("^I insert a Customer \"(.*)\"$")>]
+    member _.Insert(name: string) =
+        task {
+            w.MarkCommands()
+            let! r = w.Repo.Transact(Tx.insert (New.customer name "ada@example.com"): Tx<Customer, unit>)
+            ok r |> ignore
+            w.Set("readableInserts", w.CommandsSinceMark |> List.map (fun e -> e.Sql) |> List.filter (fun q -> q.StartsWith "INSERT"))
+        }
+        |> unit
+
+    [<StepDefinition("the insert is:")>]
+    member _.InsertIs(expected: string) = equal [ expected.Trim() ] (w.Get<string list> "readableInserts") "the insert"
 
     // -- Nothing the result does not need ------------------------------------------
 
@@ -173,6 +186,49 @@ type ReadableSqlSteps(w: World) =
     member _.SqlEnds(tail: string) =
         let sql = (plan ()).Sql
         check (sql.EndsWith tail) sql
+
+    [<StepDefinition("the SQL ends:")>]
+    member _.SqlEndsLines(tail: string) =
+        let sql = (plan ()).Sql
+        check (sql.EndsWith(tail.Trim())) sql
+
+    [<StepDefinition("^the SQL has the line \"(.*)\"$")>]
+    member _.SqlLine(line: string) =
+        let sql = (plan ()).Sql
+        check (sql.Split('\n') |> Array.contains line) sql
+
+    [<StepDefinition("^the Payments load's SQL has the line \"(.*)\"$")>]
+    member _.LoadLine(line: string) =
+        let load = (plan ()).Loads |> List.find (fun l -> l.Target = "Payment")
+        check (load.Sql.Split('\n') |> Array.contains line) load.Sql
+
+    [<StepDefinition("I explain the Orders for which some Order is over 100, both read by o")>]
+    member _.Shadowing() =
+        explain (
+            w.Repo.Explain(
+                plasm {
+                    for o in tableOf<Order> do
+                    where (exists (plasm { for o in tableOf<Order> do where (o.Total > 100m) }))
+                }
+            )
+        )
+
+    [<StepDefinition("I explain the Orders over 10, read by ``an order``")>]
+    member _.Quoted() =
+        explain (w.Repo.Explain(plasm { for ``an order`` in tableOf<Order> do where (``an order``.Total > 10m) }))
+
+    [<StepDefinition("I explain the Orders by total, binding their two newest Payments read by ranked")>]
+    member _.Reserved() =
+        explain (
+            w.Repo.Explain(
+                plasm {
+                    for o in tableOf<Order> do
+                    orderBy o.Total
+                    let! payments = plasm { for ranked in referring<Payment> o do orderByDescending ranked.CreatedAt; take 2 }
+                    return {| Order = o; Payments = payments |}
+                }
+            )
+        )
 
     [<StepDefinition("I explain the Orders binding the Customer each refers to")>]
     member _.ByKey() =

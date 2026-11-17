@@ -120,7 +120,7 @@ type JoinSteps(w: World) =
         // own, from one more.
         let cmd = w.CommandsSinceMark |> List.filter (fun c -> c.Sql.Contains " JOIN ") |> List.exactlyOne
         check (w.CommandsSinceMark |> List.forall (fun c -> c = cmd || c.Sql.Contains "FROM \"order_lines\"")) "only the owned lines besides the join"
-        check (cmd.Sql.Contains "INNER JOIN \"customers\" AS \"j1\" ON \"t0\".\"customer_id\" = \"j1\".\"id\"") cmd.Sql
+        check (cmd.Sql.Contains "INNER JOIN \"customers\" AS \"c\" ON \"o\".\"customer_id\" = \"c\".\"id\"") cmd.Sql
 
     // Scenario: A left join represents a missing match as None
 
@@ -194,7 +194,7 @@ type JoinSteps(w: World) =
     [<StepDefinition("the filter is part of the executed SQL")>]
     member _.FilterInSql() =
         let cmd = w.QueryCommands |> List.exactlyOne
-        check (cmd.Sql.Contains "WHERE \"j1\".\"name\" = @p0") cmd.Sql
+        check (cmd.Sql.Contains "WHERE \"c\".\"name\" = @p0") cmd.Sql
 
     [<StepDefinition("only matching rows are transferred")>]
     member _.OnlyMatching() =
@@ -210,7 +210,7 @@ type JoinSteps(w: World) =
         task {
             let! rows = run (plasm { for (o, c) in Joins.withOptionalCustomers do where c.IsNone })
             w.Set("kept", rows |> List.map (fun (o: Order, _) -> o))
-            check ((w.QueryCommands |> List.exactlyOne).Sql.Contains "\"j1\".\"id\" IS NULL") "anti-join in SQL"
+            check ((w.QueryCommands |> List.exactlyOne).Sql.Contains "\"c\".\"id\" IS NULL") "anti-join in SQL"
         }
         |> unit
 
@@ -333,7 +333,7 @@ type JoinSteps(w: World) =
     [<StepDefinition("the ordering includes the key of every joined source")>]
     member _.OrderingHasKeys() =
         let sql: string = w.Get "pageSql"
-        check (sql.Contains "ORDER BY (CASE \"j1\".\"status\" WHEN 'pending' THEN 0 WHEN 'succeeded' THEN 1 WHEN 'failed' THEN 2 END), \"t0\".\"id\", \"j1\".\"id\"") sql
+        check (sql.Contains "ORDER BY (CASE \"p\".\"status\" WHEN 'pending' THEN 0 WHEN 'succeeded' THEN 1 WHEN 'failed' THEN 2 END), \"o\".\"id\", \"p\".\"id\"") sql
 
     [<StepDefinition("the pages are disjoint and together complete")>]
     member _.DisjointComplete() =
@@ -411,8 +411,8 @@ type JoinSteps(w: World) =
     [<StepDefinition("the joins run as a single database command")>]
     member _.JoinsSingleCommand() =
         let cmd = w.QueryCommands |> List.exactlyOne
-        check (cmd.Sql.Contains "INNER JOIN \"order_lines\" AS \"j1\"") cmd.Sql
-        check (cmd.Sql.Contains "INNER JOIN \"products\" AS \"j2\" ON \"j1\".\"product_id\" = \"j2\".\"id\"") cmd.Sql
+        check (cmd.Sql.Contains "INNER JOIN \"order_lines\" AS \"l\"") cmd.Sql
+        check (cmd.Sql.Contains "INNER JOIN \"products\" AS \"p\" ON \"l\".\"product_id\" = \"p\".\"id\"") cmd.Sql
 
     // Scenario: Projections over joins retrieve only the requested columns
 
@@ -438,8 +438,8 @@ type JoinSteps(w: World) =
     [<StepDefinition("only the projected columns are retrieved")>]
     member _.OnlyProjectedColumns() =
         let sql = (w.QueryCommands |> List.exactlyOne).Sql
-        let selectList = sql.Substring(0, sql.IndexOf " FROM ")
-        equal "SELECT \"t0\".\"id\" AS \"c0\", \"j1\".\"name\" AS \"c1\"" selectList "select list"
+        let selectList = sql.Substring(0, sql.IndexOf "\nFROM ")
+        equal "SELECT \"o\".\"id\" AS \"c0\", \"c\".\"name\" AS \"c1\"" selectList "select list"
 
     [<StepDefinition("a missing Customer name is represented as None")>]
     member _.MissingNameIsNone() =
@@ -468,7 +468,7 @@ type JoinSteps(w: World) =
         let rows: (Order * Customer) list = w.Get "pairs"
         equal [ (w.Get<OrderId list> "orders").[1] ] (rows |> List.map (fun (o, _) -> o.Id)) "orders"
         let cmd = w.QueryCommands |> List.exactlyOne
-        check (cmd.Sql.Contains "\"j1\".\"name\" = @p0" && cmd.Sql.Contains "\"t0\".\"total\" > @p1") cmd.Sql
+        check (cmd.Sql.Contains "\"c\".\"name\" = @p0" && cmd.Sql.Contains "\"o\".\"total\" > @p1") cmd.Sql
         equal 1 cmd.Rows "rows transferred"
 
     // Scenario: Joined queries can be inspected without database access
@@ -476,7 +476,7 @@ type JoinSteps(w: World) =
     [<StepDefinition("the plan shows the join and its condition")>]
     member _.PlanShowsJoin() =
         let plan: QueryPlan = w.Get "plan"
-        check (plan.Sql.Contains "INNER JOIN \"customers\" AS \"j1\" ON \"t0\".\"customer_id\" = \"j1\".\"id\"") plan.Sql
+        check (plan.Sql.Contains "INNER JOIN \"customers\" AS \"c\" ON \"o\".\"customer_id\" = \"c\".\"id\"") plan.Sql
 
     // Scenario: Unsupported join requests are explicit
 

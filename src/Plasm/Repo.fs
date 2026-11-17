@@ -6,45 +6,10 @@ open System.Runtime.CompilerServices
 open System.Threading
 open System.Threading.Tasks
 
-/// Text for query displays (F# Interactive): SQL broken before its top-level
-/// clauses, with parameter values.
+/// Text for query displays (F# Interactive): the SQL as it is sent, a clause
+/// a line, with parameter values.
 module internal QueryDisplay =
     open System.Text
-
-    let private clauses =
-        [ " FROM "; " INNER JOIN "; " LEFT JOIN "; " WHERE "; " GROUP BY "; " HAVING "; " ORDER BY "; " LIMIT "; " OFFSET " ]
-
-    /// Breaks the SQL before clauses that are outside parentheses and literals.
-    let pretty (sql: string) =
-        let sb = StringBuilder()
-        let mutable depth = 0
-        let mutable quoted = false
-        let mutable i = 0
-
-        while i < sql.Length do
-            let c = sql.[i]
-
-            if c = '\'' then quoted <- not quoted
-
-            if not quoted then
-                if c = '(' then depth <- depth + 1
-                elif c = ')' then depth <- depth - 1
-
-            let clause =
-                if depth = 0 && not quoted then
-                    clauses |> List.tryFind (fun k -> String.CompareOrdinal(sql, i, k, 0, k.Length) = 0)
-                else
-                    None
-
-            match clause with
-            | Some k ->
-                sb.Append('\n').Append(k.TrimStart()) |> ignore
-                i <- i + k.Length
-            | None ->
-                sb.Append c |> ignore
-                i <- i + 1
-
-        sb.ToString()
 
     let rec value (args: obj[]) (v: obj) =
         match v with
@@ -74,13 +39,13 @@ module internal QueryDisplay =
                 else
                     $"    {dialect.ParameterName i} = (value hidden; set IncludeParameterValues to show it)")
 
-        String.concat "\n" (indent "  " (pretty cmd.Sql) :: parameters)
+        String.concat "\n" (indent "  " cmd.Sql :: parameters)
 
     let rec loads (steps: LoadStep list) =
         steps
         |> List.collect (fun l ->
             let header = $"  then {l.Path} ({l.Relationship}, {l.Target}), one command per batch of keys:"
-            [ header; indent "  " (pretty l.Sql) ] @ loads l.Children)
+            [ header; indent "  " l.Sql ] @ loads l.Children)
 
 /// A repository: where Plasm meets the database. Made from a model (the
 /// record types it can store) and a provider (the database connection), and

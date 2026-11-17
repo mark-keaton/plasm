@@ -108,8 +108,8 @@ type BulkSteps(w: World) =
     [<StepDefinition("fields not mentioned in the update are not written")>]
     member _.OnlyMentioned() =
         let sql = (w.CommandsSinceMark |> List.exactlyOne).Sql
-        let set = sql.Substring(sql.IndexOf " SET ", sql.IndexOf " WHERE " - sql.IndexOf " SET ")
-        equal " SET \"total\" = \"orders\".\"total\" + @p0, \"version\" = \"orders\".\"version\" + 1" set "SET clause"
+        let set = sql.Substring(sql.IndexOf "\nSET ", sql.IndexOf "\nWHERE " - sql.IndexOf "\nSET ")
+        equal "\nSET \"total\" = \"orders\".\"total\" + @p0, \"version\" = \"orders\".\"version\" + 1" set "SET clause"
 
     // Scenario: Bulk updates respect optimistic concurrency
 
@@ -329,7 +329,7 @@ type BulkSteps(w: World) =
     [<StepDefinition("its SQL can be inspected")>]
     member _.Inspected() =
         let plan: QueryPlan = w.Get "bulkPlan"
-        check (plan.Sql.StartsWith "UPDATE \"orders\" SET \"status\" = @p0") plan.Sql
+        check (plan.Sql.StartsWith "UPDATE \"orders\"\nSET \"status\" = @p0") plan.Sql
 
     [<StepDefinition("a transaction bulk-cancels the drafts and then fails")>]
     member _.TxBulk() =

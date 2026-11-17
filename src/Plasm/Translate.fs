@@ -30,6 +30,38 @@ type Space =
     | Source of Binding
     | Sources of Space list
 
+/// The names of a statement's sources (readable-sql.feature).
+module Naming =
+    /// The names Plasm gives the tables it derives: a load's numbered rows,
+    /// a distinct selection, a counted page.
+    let derived = set [ "ranked"; "d"; "q" ]
+
+    /// A variable the query's author wrote: not one the F# compiler made for a
+    /// tuple or `_` pattern, nor one of Plasm's own (a tie's).
+    let written (v: Var) =
+        not (v.Name.StartsWith "_") && v.Name <> "tupledArg" && not (v.Name.Contains "@")
+
+    /// The variable of a lambda over one record of type `t`.
+    let over (t: Type) (lambda: Expr) =
+        match lambda with
+        | Lambda(v, _) when v.Type = t && written v -> Some v
+        | _ -> None
+
+    /// The variable that reads a query's record: `for c in ...`, as the first
+    /// lambda over it has it.
+    let root (def: QueryDef) (select: Expr option) =
+        match def.Return with
+        | Some r when written r.Root -> Some r.Root
+        | _ ->
+            [ yield! def.Wheres
+              yield! def.Orders |> List.map fst
+              match def.Joins with
+              | j :: _ -> yield j.OuterKey
+              | [] -> ()
+              yield! def.GroupBy
+              yield! Option.toList select ]
+            |> List.tryPick (over def.Root)
+
 type Ctx =
     { Model: Model
       Vars: Map<Var, Binding>
@@ -38,21 +70,37 @@ type Ctx =
       /// Variables standing for a document or one of its elements (a lambda
       /// over a [<Json>] list, json-columns.feature): its SQL and its shape.
       Docs: Map<Var, Sql.Expr * JsonShape>
-      Aliases: int ref
+      /// The names the statement's sources have taken (readable-sql.feature).
+      Taken: Collections.Generic.HashSet<string>
       /// Set when a closed subexpression may evaluate differently next time
       /// (e.g. DateTime.UtcNow), which makes the translated plan non-reusable.
       Volatile: bool ref }
 
-    member c.Fresh() =
-        c.Aliases.Value <- c.Aliases.Value + 1
-        $"t{c.Aliases.Value}"
+    /// A source's name: the variable that reads it, or `otherwise` (its
+    /// table) when it has none, numbered if a source of the statement or a
+    /// table Plasm derives already has it (o, o2).
+    member c.Name(v: Var option, otherwise: string) =
+        let wanted =
+            match v with
+            | Some v when Naming.written v -> v.Name
+            | _ -> otherwise
+
+        let mutable name = wanted
+        let mutable n = 1
+
+        while c.Taken.Contains name || Naming.derived.Contains name do
+            n <- n + 1
+            name <- $"{wanted}{n}"
+
+        c.Taken.Add name |> ignore
+        name
 
 let newCtxWith model (vol: bool ref) =
     { Model = model
       Vars = Map.empty
       Spaces = Map.empty
       Docs = Map.empty
-      Aliases = ref 0
+      Taken = Collections.Generic.HashSet<string>()
       Volatile = vol }
 
 let newCtx model = newCtxWith model (ref false)
@@ -991,7 +1039,7 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
         | Call(None, mi, [ Lambda(x, body); JsonPath ctx (doc, JList(element, _)) ]) when
             mi.DeclaringType.Name = "ListModule" && (mi.Name = "Exists" || mi.Name = "ForAll")
             ->
-            let alias = ctx.Fresh()
+            let alias = ctx.Name(Some x, "element")
             let inner = { ctx with Docs = ctx.Docs.Add(x, (Sql.JsonElement alias, element)) }
             let condition = predicate inner body
 
@@ -1295,7 +1343,10 @@ and relationship ctx (whole: Expr) (pv: Var) (body: Expr) (assoc: Expr) (all: bo
             | Ok s -> s
             | Error err -> raise (TranslationFailure err)
 
-        let alias = ctx.Fresh()
+        let alias = ctx.Name(Some pv, target.Table)
+
+        let through =
+            a.Through |> Option.map (fun j -> j, ctx.Name(None, j.Table))
 
         let correlation =
             match a.Kind with
@@ -1307,16 +1358,16 @@ and relationship ctx (whole: Expr) (pv: Var) (body: Expr) (assoc: Expr) (all: bo
                     Sql.Column(parent.Alias, parent.Schema.Key.Column)
                 )
             | AssocKind.ManyToMany ->
-                let j = a.Through.Value
-                Sql.Binary("=", Sql.Column(alias + "j", j.OwnerColumn), Sql.Column(parent.Alias, parent.Schema.Key.Column))
+                let j, link = through.Value
+                Sql.Binary("=", Sql.Column(link, j.OwnerColumn), Sql.Column(parent.Alias, parent.Schema.Key.Column))
 
         let throughJoin: Sql.Join list =
-            match a.Through with
-            | Some j ->
+            match through with
+            | Some(j, link) ->
                 [ { Left = false
                     Table = j.Table
-                    Alias = alias + "j"
-                    On = Sql.Binary("=", Sql.Column(alias + "j", j.TargetColumn), Sql.Column(alias, target.Key.Column)) } ]
+                    Alias = link
+                    On = Sql.Binary("=", Sql.Column(link, j.TargetColumn), Sql.Column(alias, target.Key.Column)) } ]
             | None -> []
 
         let inner =
@@ -1371,7 +1422,7 @@ and existsQuery ctx (whole: Expr) (q: Expr) : Sql.Expr =
         | Ok s -> s
         | Error err -> raise (TranslationFailure err)
 
-    let alias = ctx.Fresh()
+    let alias = ctx.Name(Naming.root inner None, target.Table)
 
     let binding =
         { Alias = alias
@@ -1629,20 +1680,19 @@ let private schemaOf (model: Model) (t: Type) =
 
 /// The variable space of a query: the root, then each joined source, with the
 /// SQL joins that bring them in.
-let private joinSpace (ctx: Ctx) (def: QueryDef) (root: SchemaInfo) : Binding list * Sql.Join list =
+let private joinSpace (ctx: Ctx) (def: QueryDef) (select: Expr option) (root: SchemaInfo) : Binding list * Sql.Join list =
     let rootBinding =
-        { Alias = "t0"
+        { Alias = ctx.Name(Naming.root def select, root.Table)
           Schema = root
           Optional = false }
 
     def.Joins
-    |> List.indexed
     |> List.fold
-        (fun (space: Binding list, joins: Sql.Join list) (i, j) ->
+        (fun (space: Binding list, joins: Sql.Join list) j ->
             let target = schemaOf ctx.Model j.Target
 
             let b =
-                { Alias = $"j{i + 1}"
+                { Alias = ctx.Name(Naming.over j.Target j.InnerKey, target.Table)
                   Schema = target
                   Optional = (j.Kind = LeftJoin) }
 
@@ -1700,21 +1750,22 @@ let rootSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Selec
             invalid "a grouped query returns summaries, not records; finish it with select (grouped keys and Agg functions)"
 
         let ctx = newCtxWith model vol
-        let wheres, orders = translateBody ctx def "t0" schema
+        let alias = ctx.Name(Naming.root def None, schema.Table)
+        let wheres, orders = translateBody ctx def alias schema
 
         if def.Paged && orders.IsEmpty && not def.ReadsTwo then
             invalid
                 $"take/skip on {schema.Name} requires an explicit ordering; pages are not stable without one (the primary key is appended as a tiebreaker to any ordering you give)"
 
-        let orders = if def.Paged && not def.ReadsTwo then stableOrder "t0" schema orders else orders
+        let orders = if def.Paged && not def.ReadsTwo then stableOrder alias schema orders else orders
 
         let orders =
-            withoutNeedlessNulls [ { Alias = "t0"; Schema = schema; Optional = false } ] wheres orders
+            withoutNeedlessNulls [ { Alias = alias; Schema = schema; Optional = false } ] wheres orders
 
         let limit, offset = limitExprs def
 
-        { Sql.select (Sql.Table(schema.Table, "t0")) with
-            Columns = entityColumns "t0" schema
+        { Sql.select (Sql.Table(schema.Table, alias)) with
+            Columns = entityColumns alias schema
             Where = wheres
             OrderBy = orders
             Limit = limit
@@ -1764,7 +1815,7 @@ type private Core =
       Offset: Sql.Expr option }
 
     member c.Select(columns) =
-        { Sql.select (Sql.Table(c.Schema.Table, "t0")) with
+        { Sql.select (Sql.Table(c.Schema.Table, c.Space.Head.Alias)) with
             Columns = columns
             Joins = c.Joins
             Where = c.Wheres
@@ -1774,12 +1825,12 @@ type private Core =
             Limit = c.Limit
             Offset = c.Offset }
 
-let private core (model: Model) (vol: bool ref) (def: QueryDef) : Core =
+let private core (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr option) : Core =
     checkProblems def
     let schema = schemaOf model def.Root
 
     let ctx = newCtxWith model vol
-    let space, joins = joinSpace ctx def schema
+    let space, joins = joinSpace ctx def select schema
     let wheres = def.Wheres |> List.map (translateWhereOver ctx space)
 
     let groups =
@@ -1832,7 +1883,7 @@ let private core (model: Model) (vol: bool ref) (def: QueryDef) : Core =
 /// (rows of the page, or groups).
 let countSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Select, TranslationError> =
     wrap (fun () ->
-        let c = core model vol def
+        let c = core model vol def None
         let count = [ Sql.Aggregate("COUNT", false, None), "n" ]
 
         if def.Paged || c.Grouped then
@@ -1844,7 +1895,7 @@ let countSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Sele
 /// Reads at most one row: the query matches something.
 let existsSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Select, TranslationError> =
     wrap (fun () ->
-        let c = core model vol def
+        let c = core model vol def None
         let one = [ Sql.Literal "1", "c0" ]
 
         if def.Paged || c.Grouped then
@@ -1974,7 +2025,7 @@ let private distinct (def: QueryDef) (sel: Sql.Select) (shape: Shape) : Sql.Sele
 
 let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr option) : Result<Sql.Select * Shape, TranslationError> =
     wrap (fun () ->
-        let c = core model vol def
+        let c = core model vol def select
         let ctx, space = c.Ctx, c.Space
 
         if c.Grouped && select.IsNone then
@@ -2389,16 +2440,23 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
         let outerField = outerSchema.Field outerName
         let innerDef = { inner with Wheres = wheres }
 
-        let iw, io = translateBody (newCtxWith model vol) innerDef "t0" target
+        // An inner query that binds loads reads whole records; its
+        // projection is the tuple the reader builds, not a select.
+        let selected = if inner.Includings.IsEmpty then checkable.Select else None
+
+        // Named as its projection names it, from the same query.
+        let innerCtx = newCtxWith model vol
+        let alias = innerCtx.Name(Naming.root innerDef selected, target.Table)
+        let iw, io = translateBody innerCtx innerDef alias target
 
         if innerDef.Paged && io.IsEmpty then
             invalid $"take/skip in the query of {op} needs an order: without one, which {target.Name} records come first for each {outerSchema.Name} is not defined"
 
         let ranked =
-            stableOrder "t0" target io
-            |> withoutNeedlessNulls [ { Alias = "t0"; Schema = target; Optional = false } ] iw
+            stableOrder alias target io
+            |> withoutNeedlessNulls [ { Alias = alias; Schema = target; Optional = false } ] iw
         let limit, offset = limitExprs innerDef
-        let matchColumn = Sql.Column("t0", matchField.Column)
+        let matchColumn = Sql.Column(alias, matchField.Column)
 
         // Keeps the rows whose number among their outer value's rows is within
         // the inner query's skip and take. The numbered rows are a derived
@@ -2421,10 +2479,6 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
                 Columns = columns
                 Where = first @ last
                 OrderBy = orderBy }
-
-        // An inner query that binds loads reads whole records; its
-        // projection is the tuple the reader builds, not a select.
-        let selected = if inner.Includings.IsEmpty then checkable.Select else None
 
         let nested =
             inner.Includings
@@ -2475,19 +2529,19 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
 
         let buildRecords (keys: Array) : Sql.Select =
             let filtered =
-                { Sql.select (Sql.Table(target.Table, "t0")) with
+                { Sql.select (Sql.Table(target.Table, alias)) with
                     Where = Sql.AnyOf(matchColumn, keys, Sql.storeType matchField) :: iw }
 
             if not innerDef.Paged then
                 { filtered with
-                    Columns = entityColumns "t0" target
+                    Columns = entityColumns alias target
                     // By the key, each record has at most one: nothing to order.
                     OrderBy = if matchField.Name = target.Key.Name then [] else ranked }
             else
                 // Per outer value: number each one's rows in the inner order.
                 let plain =
                     [ for f in target.Fields do
-                          for part in f.Parts -> Sql.Column("t0", part.Name), part.Name ]
+                          for part in f.Parts -> Sql.Column(alias, part.Name), part.Name ]
 
                 let numbered = { filtered with Columns = plain @ [ Sql.RowNumber(matchColumn, ranked), "__rn" ] }
 

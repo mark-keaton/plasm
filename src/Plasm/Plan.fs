@@ -96,28 +96,33 @@ module internal Planner =
                   | AssocKind.ManyToMany -> parent.Key, target.Key
 
               // Translate once; each batch only supplies its key array.
-              let wheres, orders = Translate.translateBody (Translate.newCtxWith model vol) def "t0" target
-              let ranked = Translate.stableOrder "t0" target orders
+              // Read by no variable: each table under its own name.
+              let ctx = Translate.newCtxWith model vol
+              let alias = ctx.Name(None, target.Table)
+              let wheres, orders = Translate.translateBody ctx def alias target
+              let ranked = Translate.stableOrder alias target orders
 
               // A linked list's rows come through the join table, which supplies
               // the owner key as a trailing column.
               let matchExpr, joins, ownerColumn =
                   match assoc.Through with
                   | Some j ->
-                      Sql.Column("j", j.OwnerColumn),
+                      let link = ctx.Name(None, j.Table)
+
+                      Sql.Column(link, j.OwnerColumn),
                       [ ({ Left = false
                            Table = j.Table
-                           Alias = "j"
-                           On = Sql.Binary("=", Sql.Column("j", j.TargetColumn), Sql.Column("t0", target.Key.Column)) }: Sql.Join) ],
-                      [ Sql.Column("j", j.OwnerColumn), "__owner" ]
-                  | None -> Sql.Column("t0", matchField.Column), [], []
+                           Alias = link
+                           On = Sql.Binary("=", Sql.Column(link, j.TargetColumn), Sql.Column(alias, target.Key.Column)) }: Sql.Join) ],
+                      [ Sql.Column(link, j.OwnerColumn), "__owner" ]
+                  | None -> Sql.Column(alias, matchField.Column), [], []
 
-              let columns = Translate.entityColumns "t0" target @ ownerColumn
+              let columns = Translate.entityColumns alias target @ ownerColumn
 
               let build (keys: Array) : Sql.Select =
                   let keyFilter = Sql.AnyOf(matchExpr, keys, Sql.storeType matchField)
 
-                  { Sql.select (Sql.Table(target.Table, "t0")) with
+                  { Sql.select (Sql.Table(target.Table, alias)) with
                       Columns = columns
                       Joins = joins
                       Where = keyFilter :: wheres

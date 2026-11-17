@@ -105,18 +105,12 @@ let run (repo: Repo) (commands: ResizeArray<CommandEvent>) (lesson: Lesson) (koa
 // Reporting
 // ---------------------------------------------------------------------------
 
-let private sqlKeywords =
-    [ " FROM "; " INNER JOIN "; " LEFT JOIN "; " WHERE "; " GROUP BY "; " HAVING "; " ORDER BY "; " LIMIT "; " OFFSET "; " RETURNING "; " SET "; " VALUES " ]
-
-/// SQL broken before its clauses; other text unchanged.
+/// SQL as it was sent, out of its quotes (Plasm starts each clause on a
+/// line); other text unchanged.
 let formatSql (text: string) =
     let unquoted = text.Trim('"')
 
-    if Regex.IsMatch(unquoted, @"^\s*(SELECT|INSERT|UPDATE|DELETE)\b") then
-        sqlKeywords
-        |> List.fold (fun (s: string) k -> s.Replace(k, "\n" + k.TrimStart())) unquoted
-    else
-        text
+    if Regex.IsMatch(unquoted, @"^\s*(SELECT|INSERT|UPDATE|DELETE)\b") then unquoted else text
 
 let private indent (prefix: string) (text: string) =
     text.Split('\n') |> Array.map (fun l -> prefix + l) |> String.concat "\n"

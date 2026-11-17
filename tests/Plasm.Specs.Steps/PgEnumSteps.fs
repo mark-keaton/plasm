@@ -339,9 +339,9 @@ type PgEnumSteps(w: World) =
     [<StepDefinition("the parameter is cast to the enum type and the column is not")>]
     member _.CastOnParameter() =
         let sql = w.Get<string> "sql"
-        let where = sql.Substring(sql.IndexOf " WHERE ")
-        check (where.Contains "\"t0\".\"status\" = CAST(@p0 AS \"shipment_status\")") $"the parameter is not cast: {sql}"
-        check (not (where.Contains "CAST(\"t0\"")) $"the column is cast: {sql}"
+        let where = sql.Substring(sql.IndexOf "\nWHERE ")
+        check (where.Contains "\"s\".\"status\" = CAST(@p0 AS \"shipment_status\")") $"the parameter is not cast: {sql}"
+        check (not (where.Contains "CAST(\"s\"")) $"the column is cast: {sql}"
 
     // Rule: The schema check finds mismatches before a request fails
 

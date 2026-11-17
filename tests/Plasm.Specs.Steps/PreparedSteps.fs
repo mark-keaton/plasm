@@ -237,7 +237,7 @@ type PreparedSteps(w: World) =
     [<StepDefinition("the optional argument is compared as a value or as absent, so an index on the column can serve it")>]
     member _.IndexableOptional() =
         let text = w.Get<string> "optionalText"
-        check (text.Contains "\"t0\".\"customer_id\" = @p0 OR (\"t0\".\"customer_id\" IS NULL AND @p0 IS NULL)") text
+        check (text.Contains "\"o\".\"customer_id\" = @p0 OR (\"o\".\"customer_id\" IS NULL AND @p0 IS NULL)") text
 
     // Scenario: Paging arguments
 
@@ -304,7 +304,7 @@ type PreparedSteps(w: World) =
     member _.InspectPrepared() =
         w.MarkCommands()
         let plan = w.Repo.Explain(ordersOf (w.Get "ada")) |> ok
-        check (plan.Sql.Contains "WHERE \"t0\".\"customer_id\" = @p0") plan.Sql
+        check (plan.Sql.Contains "WHERE \"o\".\"customer_id\" = @p0") plan.Sql
         equal 0 w.CommandsSinceMark.Length "commands"
 
     [<StepDefinition("it can be counted for an argument")>]

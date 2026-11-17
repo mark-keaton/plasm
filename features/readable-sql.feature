@@ -7,6 +7,13 @@ Feature: The SQL a query sends reads as a person would write it
   I want the SQL Plasm sends to say what it does and no more
   So that I can read a slow query's text and know which F# query it is
 
+  Each clause of a statement starts a line; a derived table is indented under
+  its parenthesis, which closes on a line of its own with the table's name; an
+  EXISTS stays on the line of the condition it is part of. A source is named
+  after the F# variable that reads it, quoted like every name; one with no
+  variable (a load by a tie, a tuple or `_` pattern) is its table under its
+  own name; a variable that a source of the same statement already names, or
+  that Plasm names a table it derives ("ranked", "d", "q"), is numbered (o, o2).
   A column is read under its own name, with no alias repeating it; a record
   selected names its columns after its fields. Conditions joined by AND or OR
   are written as one list, with parentheses only where precedence needs them
@@ -31,67 +38,118 @@ Feature: The SQL a query sends reads as a person would write it
 
   Rule: A read says what it reads and no more
 
-    Scenario: Columns under their own names, conditions in one list, ascending unmarked
+    Scenario: Each clause on a line, columns under their own names, conditions in one list, ascending unmarked
       When I explain the Customers named "Ada" whose email starts with "a", other than 3, by name and then email descending, taking 10
       Then the SQL is:
         """
-        SELECT "t0"."id", "t0"."name", "t0"."email" FROM "customers" AS "t0" WHERE "t0"."name" = @p0 AND "t0"."email" LIKE @p1 AND "t0"."id" <> @p2 ORDER BY "t0"."name", "t0"."email" DESC LIMIT @p3
+        SELECT "c"."id", "c"."name", "c"."email"
+        FROM "customers" AS "c"
+        WHERE "c"."name" = @p0 AND "c"."email" LIKE @p1 AND "c"."id" <> @p2
+        ORDER BY "c"."name", "c"."email" DESC
+        LIMIT @p3
         """
 
     Scenario: An OR inside an AND keeps its parentheses, and a negated equality is <>
       When I explain the ids and totals of the Orders over 10 or under 2 that are not drafts
       Then the SQL is:
         """
-        SELECT "t0"."id" AS "c0", "t0"."total" AS "c1" FROM "orders" AS "t0" WHERE ("t0"."total" > @p0 OR "t0"."total" < @p1) AND "t0"."status" <> @p2
+        SELECT "o"."id" AS "c0", "o"."total" AS "c1"
+        FROM "orders" AS "o"
+        WHERE ("o"."total" > @p0 OR "o"."total" < @p1) AND "o"."status" <> @p2
         """
 
     Scenario: A record selected names its columns after its fields
       When I explain the Orders joined with their Customers, selecting a record of the total and the name
       Then the SQL is:
         """
-        SELECT "j1"."name" AS "Name", "t0"."total" AS "Total" FROM "orders" AS "t0" INNER JOIN "customers" AS "j1" ON "t0"."customer_id" = "j1"."id"
+        SELECT "c"."name" AS "Name", "o"."total" AS "Total"
+        FROM "orders" AS "o"
+        INNER JOIN "customers" AS "c" ON "o"."customer_id" = "c"."id"
         """
 
     Scenario: An operation inside a comparison needs no parentheses
       When I explain the Orders without a cancellation reason whose doubled total is over 10
       Then the SQL is:
         """
-        SELECT "t0"."id", "t0"."customer_id", "t0"."status", "t0"."total", "t0"."cancellation_reason", "t0"."placed_at", "t0"."version" FROM "orders" AS "t0" WHERE "t0"."cancellation_reason" IS NULL AND "t0"."total" * @p0 > @p1
+        SELECT "o"."id", "o"."customer_id", "o"."status", "o"."total", "o"."cancellation_reason", "o"."placed_at", "o"."version"
+        FROM "orders" AS "o"
+        WHERE "o"."cancellation_reason" IS NULL AND "o"."total" * @p0 > @p1
         """
 
-    Scenario: A derived table has a name of its own
+    Scenario: A derived table has a name of its own, and is indented under its parenthesis
       When I explain the Orders by total, binding their two newest Payments
       Then the Payments load's SQL is:
         """
-        SELECT "ranked"."id", "ranked"."order_id", "ranked"."amount", "ranked"."status", "ranked"."created_at" FROM (SELECT "t0"."id", "t0"."order_id", "t0"."amount", "t0"."status", "t0"."created_at", ROW_NUMBER() OVER (PARTITION BY "t0"."order_id" ORDER BY "t0"."created_at" DESC, "t0"."id") AS "__rn" FROM "payments" AS "t0" WHERE "t0"."order_id" = ANY(@p0)) AS "ranked" WHERE "ranked"."__rn" <= @p1 ORDER BY "ranked"."__rn"
+        SELECT "ranked"."id", "ranked"."order_id", "ranked"."amount", "ranked"."status", "ranked"."created_at"
+        FROM (
+            SELECT "p"."id", "p"."order_id", "p"."amount", "p"."status", "p"."created_at", ROW_NUMBER() OVER (PARTITION BY "p"."order_id" ORDER BY "p"."created_at" DESC, "p"."id") AS "__rn"
+            FROM "payments" AS "p"
+            WHERE "p"."order_id" = ANY(@p0)
+        ) AS "ranked"
+        WHERE "ranked"."__rn" <= @p1
+        ORDER BY "ranked"."__rn"
         """
 
     Scenario: An if, elif and else is one CASE
       When I explain the Orders' sizes in words, through if, elif and else on the total
       Then the SQL is:
         """
-        SELECT CASE WHEN "t0"."total" > @p0 THEN 'big' WHEN "t0"."total" > @p1 THEN 'medium' ELSE 'small' END AS "c0" FROM "orders" AS "t0"
+        SELECT CASE WHEN "o"."total" > @p0 THEN 'big' WHEN "o"."total" > @p1 THEN 'medium' ELSE 'small' END AS "c0"
+        FROM "orders" AS "o"
         """
 
-    Scenario: Every line meeting a condition is no line failing it, written plainly
+    Scenario: Every line meeting a condition is no line failing it, written plainly on the condition's line
       When I explain the Orders all of whose lines cost more than 5
-      Then the SQL ends "WHERE NOT EXISTS (SELECT 1 FROM "order_lines" AS "t1" WHERE "t1"."order_id" = "t0"."id" AND "t1"."unit_price" <= @p0)"
+      Then the SQL ends "WHERE NOT EXISTS (SELECT 1 FROM "order_lines" AS "l" WHERE "l"."order_id" = "o"."id" AND "l"."unit_price" <= @p0)"
 
     Scenario: An option the query has proved present is ordered as a plain column
       When I explain the Orders with a cancellation reason, ordered by it
-      Then the SQL ends "WHERE "t0"."cancellation_reason" IS NOT NULL ORDER BY "t0"."cancellation_reason""
+      Then the SQL ends "ORDER BY "o"."cancellation_reason""
+      And the SQL has the line "WHERE "o"."cancellation_reason" IS NOT NULL"
 
     Scenario: An option the query has not proved present keeps None first
       When I explain the Orders ordered by their cancellation reason
-      Then the SQL ends "ORDER BY "t0"."cancellation_reason" NULLS FIRST"
+      Then the SQL ends "ORDER BY "o"."cancellation_reason" NULLS FIRST"
 
-  Rule: A write names its table once
+  Rule: A source is named after the variable that reads it
+
+    Scenario: A subquery's variable that shadows the query's is numbered
+      When I explain the Orders for which some Order is over 100, both read by o
+      Then the SQL ends "WHERE EXISTS (SELECT 1 FROM "orders" AS "o2" WHERE "o2"."total" > @p0)"
+
+    Scenario: A variable that is no identifier is quoted like any name
+      When I explain the Orders over 10, read by ``an order``
+      Then the SQL is:
+        """
+        SELECT "an order"."id", "an order"."customer_id", "an order"."status", "an order"."total", "an order"."cancellation_reason", "an order"."placed_at", "an order"."version"
+        FROM "orders" AS "an order"
+        WHERE "an order"."total" > @p0
+        """
+
+    Scenario: A load's variable never takes the name of the table Plasm derives
+      When I explain the Orders by total, binding their two newest Payments read by ranked
+      Then the Payments load's SQL has the line "    FROM "payments" AS "ranked2""
+
+  Rule: A write names its table once, and starts a line for each clause
+
+    Scenario: An insert's values and what it reads back each start a line
+      When I insert a Customer "Ada"
+      Then the insert is:
+        """
+        INSERT INTO "customers" ("name", "email")
+        VALUES (@p0, @p1)
+        RETURNING "id", "name", "email"
+        """
 
     Scenario: An update and a delete name their table once
       Given a Customer "Ada" with a published Order of 10
       When I change the Order to cancelled, then delete it
-      Then the update begins "UPDATE "orders" SET " and has no alias
-      And the delete is "DELETE FROM "orders" WHERE "orders"."id" = @p0 AND "orders"."version" = @p1"
+      Then the update's first line is "UPDATE "orders"" and it has no alias
+      And the delete is:
+        """
+        DELETE FROM "orders"
+        WHERE "orders"."id" = @p0 AND "orders"."version" = @p1
+        """
 
   Rule: Plasm adds nothing the result does not need
 
@@ -108,7 +166,10 @@ Feature: The SQL a query sends reads as a person would write it
       When I read the one Customer named "Ada"
       Then the command is:
         """
-        SELECT "t0"."id", "t0"."name", "t0"."email" FROM "customers" AS "t0" WHERE "t0"."name" = @p0 LIMIT 2
+        SELECT "c"."id", "c"."name", "c"."email"
+        FROM "customers" AS "c"
+        WHERE "c"."name" = @p0
+        LIMIT 2
         """
 
     Scenario: Asking whether any row exists reads one, written as 1
@@ -116,25 +177,37 @@ Feature: The SQL a query sends reads as a person would write it
       When I ask whether a Customer is named "Ada"
       Then the command is:
         """
-        SELECT 1 AS "c0" FROM "customers" AS "t0" WHERE "t0"."name" = @p0 LIMIT 1
+        SELECT 1 AS "c0"
+        FROM "customers" AS "c"
+        WHERE "c"."name" = @p0
+        LIMIT 1
         """
 
     Scenario: A unique column is a tie-break of its own
       When I explain a page of the Customers by email
       Then the SQL is:
         """
-        SELECT "t0"."id", "t0"."name", "t0"."email" FROM "customers" AS "t0" ORDER BY "t0"."email" LIMIT @p0
+        SELECT "c"."id", "c"."name", "c"."email"
+        FROM "customers" AS "c"
+        ORDER BY "c"."email"
+        LIMIT @p0
         """
 
     Scenario: A source joined on its own key needs no tie-break of its own
       When I explain a page of the Orders joined with their Customers, by Order id
-      Then the SQL ends "ORDER BY "t0"."id" LIMIT @p0"
+      Then the SQL ends:
+        """
+        ORDER BY "o"."id"
+        LIMIT @p0
+        """
 
-    Scenario: A load by the key of the record it reads is not sorted
+    Scenario: A load by the key of the record it reads is not sorted, and its table, read by no variable, is named once
       When I explain the Orders binding the Customer each refers to
       Then the Customers load's SQL is:
         """
-        SELECT "t0"."id", "t0"."name", "t0"."email" FROM "customers" AS "t0" WHERE "t0"."id" = ANY(@p0)
+        SELECT "customers"."id", "customers"."name", "customers"."email"
+        FROM "customers"
+        WHERE "customers"."id" = ANY(@p0)
         """
 
     Scenario: A version's increment is written, not sent

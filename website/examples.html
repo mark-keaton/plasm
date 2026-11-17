@@ -224,7 +224,7 @@ let! rows = repo.All totals
 match repo.Explain(Query.from (tableOf&lt;Order&gt;) |&gt; orderPage 0 20) with
 | Ok plan -&gt; plan.LoadPaths, plan.Sql
 | Error e -&gt; failwithf "%O" e
-// (["Lines"], "SELECT ... FROM "orders" AS "t0" ORDER BY "t0"."placed_at" DESC, "t0"."id" LIMIT @p0 OFFSET @p1")</pre>
+// (["Lines"], "SELECT ...\nFROM "orders" AS "o"\nORDER BY "o"."placed_at" DESC, "o"."id"\nLIMIT @p0 OFFSET @p1")</pre>
       </div>
     </section>
 
@@ -609,18 +609,18 @@ let recent =
             take 5
     };;</pre>
 <pre class="code output">val recent: Query&lt;Order&gt; =
-  SELECT &quot;t0&quot;.&quot;id&quot;, &quot;t0&quot;.&quot;customer_id&quot;, &quot;t0&quot;.&quot;status&quot;, &quot;t0&quot;.&quot;status_reason&quot;, &quot;t0&quot;.&quot;total&quot;, &quot;t0&quot;.&quot;placed_at&quot;, &quot;t0&quot;.&quot;version&quot;
-  FROM &quot;orders&quot; AS &quot;t0&quot;
-  WHERE &quot;t0&quot;.&quot;status&quot; = @p0
-  ORDER BY &quot;t0&quot;.&quot;placed_at&quot; DESC, &quot;t0&quot;.&quot;id&quot;
+  SELECT &quot;o&quot;.&quot;id&quot;, &quot;o&quot;.&quot;customer_id&quot;, &quot;o&quot;.&quot;status&quot;, &quot;o&quot;.&quot;status_reason&quot;, &quot;o&quot;.&quot;total&quot;, &quot;o&quot;.&quot;placed_at&quot;, &quot;o&quot;.&quot;version&quot;
+  FROM &quot;orders&quot; AS &quot;o&quot;
+  WHERE &quot;o&quot;.&quot;status&quot; = @p0
+  ORDER BY &quot;o&quot;.&quot;placed_at&quot; DESC, &quot;o&quot;.&quot;id&quot;
   LIMIT @p1
     @p0 = &quot;published&quot;
     @p1 = 5L
   then Lines (owns, OrderLine), one command per batch of keys:
-  SELECT &quot;t0&quot;.&quot;id&quot;, &quot;t0&quot;.&quot;order_id&quot;, &quot;t0&quot;.&quot;product_id&quot;, &quot;t0&quot;.&quot;quantity&quot;, &quot;t0&quot;.&quot;unit_price&quot;
-  FROM &quot;order_lines&quot; AS &quot;t0&quot;
-  WHERE &quot;t0&quot;.&quot;order_id&quot; = ANY(@p0)
-  ORDER BY &quot;t0&quot;.&quot;id&quot;</pre>
+  SELECT &quot;order_lines&quot;.&quot;id&quot;, &quot;order_lines&quot;.&quot;order_id&quot;, &quot;order_lines&quot;.&quot;product_id&quot;, &quot;order_lines&quot;.&quot;quantity&quot;, &quot;order_lines&quot;.&quot;unit_price&quot;
+  FROM &quot;order_lines&quot;
+  WHERE &quot;order_lines&quot;.&quot;order_id&quot; = ANY(@p0)
+  ORDER BY &quot;order_lines&quot;.&quot;id&quot;</pre>
       <p>A playground is a repository whose changes last across submissions but are never committed, so you can try transactions against real data. <code>Reset</code> rolls everything back and keeps it open; <code>Close</code> ends it.</p>
 <pre class="code fsharp">let pg = repo.Playground();;
 pg.Transact(Tx.insert { Id = CustomerId 0L; Name = &quot;Ada&quot;; Email = &quot;ada@example.com&quot; }: Tx&lt;Customer, unit&gt;) |&gt; wait;;

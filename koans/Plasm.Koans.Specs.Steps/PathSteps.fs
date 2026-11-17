@@ -121,7 +121,7 @@ type PathSteps(w: KoansWorld) =
     [<StepDefinition("the report shows the SQL Plasm generated, formatted by clause")>]
     member _.SqlShown() =
         contains "Plasm generated:" w.Last.Output
-        contains "\n    FROM \"orders\" AS \"t0\"\n    WHERE" w.Last.Output
+        contains "\n    FROM \"orders\" AS \"o\"\n    WHERE" w.Last.Output
 
     [<StepDefinition("the learner has filled in a koan with code that throws")>]
     member _.Throws() =

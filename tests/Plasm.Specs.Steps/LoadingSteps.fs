@@ -251,10 +251,10 @@ type LoadingSteps(w: World) =
 
     [<StepDefinition("their Payments are read only by a query of their own")>]
     member _.PaymentsSeparate() =
-        // The filter is a subquery of the Orders' command (payments as t1);
-        // no command reads payments as its own rows.
+        // The filter is a subquery of the Orders' command, on its condition's
+        // line; no command reads payments as its own rows (a FROM of its own line).
         equal 2 w.CommandsSinceMark.Length "commands: the Orders and their OrderLines"
-        check (w.CommandsSinceMark |> List.forall (fun c -> not (c.Sql.Contains "FROM \"payments\" AS \"t0\""))) "no command reads Payments"
+        check (w.CommandsSinceMark |> List.forall (fun c -> not (c.Sql.Contains "\nFROM \"payments\""))) "no command reads Payments"
 
     // Scenario: Filtered relationship queries are reusable
 
@@ -287,7 +287,7 @@ type LoadingSteps(w: World) =
     member _.AppliedInDatabase() =
         let cmd = commandsOn "payments" w.CommandsSinceMark |> List.exactlyOne
         check (cmd.Sql.Contains "\"status\" = ") "filter in SQL"
-        check (cmd.Sql.Contains "ORDER BY \"t0\".\"created_at\"") "ordering in SQL"
+        check (cmd.Sql.Contains "ORDER BY \"p\".\"created_at\"") "ordering in SQL"
         equal 3 cmd.Rows "only successful payments transferred"
 
     [<StepDefinition("the application groups the Payments by their Order")>]

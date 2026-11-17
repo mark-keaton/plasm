@@ -192,7 +192,7 @@ type CompositionSteps(w: World) =
     [<StepDefinition("unrelated mapped scalar columns are not retrieved")>]
     member _.OnlyProjected() =
         let cmd = w.CommandsSinceMark |> List.exactlyOne
-        let selectList = cmd.Sql.Substring(0, cmd.Sql.IndexOf " FROM ")
+        let selectList = cmd.Sql.Substring(0, cmd.Sql.IndexOf "\nFROM ")
         check (selectList.Contains "\"id\"" && selectList.Contains "\"total\"") selectList
 
         for unrelated in [ "status"; "customer_id"; "cancellation_reason"; "placed_at"; "version" ] do

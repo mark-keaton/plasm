@@ -296,6 +296,16 @@ module internal Sql =
         let sb = StringBuilder()
         let ps = ResizeArray<obj>()
         let q (s: string) = d.QuoteIdentifier s
+        // Each clause starts a line, a derived table indented under its
+        // parenthesis; a subquery inside a condition stays on its line
+        // (readable-sql.feature).
+        let mutable indent = ""
+        let mutable inline' = 0
+
+        /// Starts a clause: on a line of its own, or after a space inside a condition.
+        let clause (keyword: string) =
+            if inline' > 0 then sb.Append(' ') |> ignore else sb.Append('\n').Append(indent) |> ignore
+            sb.Append(keyword) |> ignore
 
         let json () =
             match d.Json with
@@ -428,7 +438,9 @@ module internal Sql =
                 w ")"
             | Exists s ->
                 w "EXISTS ("
+                inline' <- inline' + 1
                 r.Select s
+                inline' <- inline' - 1
                 w ")"
             | JsonMember(doc, key) -> json().Member(w, (fun () -> r.Expr doc), key)
             | JsonText(doc, castTo) ->
@@ -547,7 +559,7 @@ module internal Sql =
                     w (q alias))
 
             if s.Columns.IsEmpty then w "1"
-            w " FROM "
+            clause "FROM "
 
             match s.From with
             | Table(n, a) ->
@@ -556,26 +568,41 @@ module internal Sql =
                 if a <> n then
                     w " AS "
                     w (q a)
-            | Subquery(inner, a) ->
+            | Subquery(inner, a) when inline' > 0 ->
                 w "("
                 r.Select inner
                 w ") AS "
                 w (q a)
+            | Subquery(inner, a) ->
+                let outer = indent
+                indent <- outer + "    "
+                w "("
+                w "\n"
+                w indent
+                r.Select inner
+                indent <- outer
+                w "\n"
+                w indent
+                w ") AS "
+                w (q a)
 
             for j in s.Joins do
-                w (if j.Left then " LEFT JOIN " else " INNER JOIN ")
+                clause (if j.Left then "LEFT JOIN " else "INNER JOIN ")
                 w (q j.Table)
-                w " AS "
-                w (q j.Alias)
+
+                if j.Alias <> j.Table then
+                    w " AS "
+                    w (q j.Alias)
+
                 w " ON "
                 r.Expr j.On
 
             if not s.Where.IsEmpty then
-                w " WHERE "
+                clause "WHERE "
                 r.Expr(conj s.Where)
 
             if not s.GroupBy.IsEmpty then
-                w " GROUP BY "
+                clause "GROUP BY "
 
                 s.GroupBy
                 |> List.iteri (fun i g ->
@@ -583,37 +610,39 @@ module internal Sql =
                     r.Expr g)
 
             if not s.Having.IsEmpty then
-                w " HAVING "
+                clause "HAVING "
                 r.Expr(conj s.Having)
 
             if not s.OrderBy.IsEmpty then
-                w " ORDER BY "
+                clause "ORDER BY "
                 r.Order s.OrderBy
 
+            // A page is one line: LIMIT and OFFSET together.
             match s.Limit with
             | Some l ->
-                w " LIMIT "
+                clause "LIMIT "
                 r.Expr l
             | None -> ()
 
             match s.Offset with
             | Some o ->
-                w " OFFSET "
+                if s.Limit.IsSome then w " OFFSET " else clause "OFFSET "
                 r.Expr o
             | None -> ()
 
-            if s.ForUpdate then w " FOR UPDATE"
+            if s.ForUpdate then clause "FOR UPDATE"
 
         member r.Insert(i: Insert) =
             let w (x: string) = sb.Append(x) |> ignore
-            w $"INSERT INTO {q i.Table} "
+            w $"INSERT INTO {q i.Table}"
 
             if i.Columns.IsEmpty then
-                w "DEFAULT VALUES"
+                clause "DEFAULT VALUES"
             else
-                w "("
+                w " ("
                 w (i.Columns |> List.map q |> String.concat ", ")
-                w ") VALUES ("
+                w ")"
+                clause "VALUES ("
 
                 i.Values
                 |> List.iteri (fun n e ->
@@ -628,7 +657,8 @@ module internal Sql =
             let w (x: string) = sb.Append(x) |> ignore
             w $"INSERT INTO {q i.Table} ("
             w (i.Columns |> List.map q |> String.concat ", ")
-            w ") VALUES "
+            w ")"
+            clause "VALUES "
 
             i.Rows
             |> List.iteri (fun n row ->
@@ -645,11 +675,11 @@ module internal Sql =
             match i.OnConflict with
             | None -> ()
             | Some(DoNothing target) ->
-                w " ON CONFLICT ("
+                clause "ON CONFLICT ("
                 w (target |> List.map q |> String.concat ", ")
                 w ") DO NOTHING"
             | Some(DoUpdate(target, set)) ->
-                w " ON CONFLICT ("
+                clause "ON CONFLICT ("
                 w (target |> List.map q |> String.concat ", ")
                 w ") DO UPDATE SET "
 
@@ -664,7 +694,8 @@ module internal Sql =
 
         member r.Update(u: Update) =
             let w (x: string) = sb.Append(x) |> ignore
-            w $"UPDATE {q u.Table} SET "
+            w $"UPDATE {q u.Table}"
+            clause "SET "
 
             u.Set
             |> List.iteri (fun n (c, e) ->
@@ -674,7 +705,7 @@ module internal Sql =
                 if isNullValue e then w "NULL" else r.Expr e)
 
             if not u.Where.IsEmpty then
-                w " WHERE "
+                clause "WHERE "
                 r.Expr(conj u.Where)
 
             r.Returning u.Returning
@@ -684,14 +715,14 @@ module internal Sql =
             w $"DELETE FROM {q x.Table}"
 
             if not x.Where.IsEmpty then
-                w " WHERE "
+                clause "WHERE "
                 r.Expr(conj x.Where)
 
             r.Returning x.Returning
 
         member r.Returning(cols: (Expr * string) list) =
             if not cols.IsEmpty then
-                sb.Append(" RETURNING ") |> ignore
+                clause "RETURNING "
 
                 cols
                 |> List.iteri (fun i (e, name) ->

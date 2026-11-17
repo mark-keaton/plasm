@@ -208,7 +208,7 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "model"
                 "Field names become snake_case columns, and every field is read. The lines are not a column: they are the order's own rows, read in one more command for every order the first one found, in the order of their key."
-                [ "\"customer_id\""; "\"placed_at\""; "FROM \"order_lines\""; "\"t0\".\"order_id\" = ANY(@p0)" ]
+                [ "\"customer_id\""; "\"placed_at\""; "FROM \"order_lines\""; "\"order_lines\".\"order_id\" = ANY(@p0)" ]
                 None
                 (fun () -> task { let! _ = repo.All(Query.from (tableOf<Order>)) in () })
 
@@ -217,7 +217,7 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "scalars"
                 "OrderId 1L is sent as the int64 1, and Draft as the text 'draft': conventions, with nothing registered. OrderStatus has a case with a field, so it is read from two columns, status and status_reason. The parameter values are listed below each statement."
-                [ "\"t0\".\"id\" = @p0"; "\"t0\".\"status\" = @p1"; "\"t0\".\"status_reason\"" ]
+                [ "\"o\".\"id\" = @p0"; "\"o\".\"status\" = @p1"; "\"o\".\"status_reason\"" ]
                 None
                 (fun () -> task { let! _ = repo.All(lookup second.Id) in () })
 
@@ -226,7 +226,7 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "queries"
                 "Both functions' filters reach the database. The payments query becomes a correlated NOT EXISTS, so each order appears at most once. List.exists over the order's own lines is an EXISTS over order_lines, and the domain's IsOpen member is written out from its definition. Each query's orders bring their lines in one more command."
-                [ "\"t0\".\"customer_id\" = @p0"; "NOT EXISTS"; "FROM \"payments\""; "FROM \"order_lines\"" ]
+                [ "\"o\".\"customer_id\" = @p0"; "NOT EXISTS"; "FROM \"payments\""; "FROM \"order_lines\"" ]
                 None
                 (fun () ->
                     task {
@@ -240,7 +240,7 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "owned"
                 "The page is chosen first (ORDER BY with the key as tiebreaker, LIMIT, OFFSET). The lines of exactly those orders follow in one command, their keys as one array parameter: two commands for a page of 20 or of 1,000."
-                [ "LIMIT @p1"; "OFFSET @p2"; "\"t0\".\"placed_at\" DESC, \"t0\".\"id\""; "\"t0\".\"order_id\" = ANY(@p0)" ]
+                [ "LIMIT @p1"; "OFFSET @p2"; "\"o\".\"placed_at\" DESC, \"o\".\"id\""; "\"order_lines\".\"order_id\" = ANY(@p0)" ]
                 None
                 (fun () -> task { let! _ = repo.All(Query.from (tableOf<Order>) |> forCustomer ada.Id |> orderPage 0 20) in () })
 
@@ -249,7 +249,7 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "references"
                 "The orders, their lines, then one command for the payments of every order on the page: the ids are one array parameter, and the status filter and the ordering run in SQL. No orders query is sent again."
-                [ "\"t0\".\"order_id\" = ANY(@p0)"; "\"t0\".\"status\" = @p1"; "ORDER BY \"t0\".\"created_at\"" ]
+                [ "\"p\".\"order_id\" = ANY(@p0)"; "\"p\".\"status\" = @p1"; "ORDER BY \"p\".\"created_at\"" ]
                 None
                 (fun () -> task { let! _ = repo.All(withSucceededPayments (Query.from (tableOf<Order>) |> orderPage 0 20)) in () })
 
@@ -258,7 +258,7 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "projections"
                 "Only the three projected columns are selected, and no Order is built, so no lines are read. Explain itself sends nothing."
-                [ "\"t0\".\"id\" AS \"Id\""; "\"t0\".\"total\" AS \"Total\""; "\"t0\".\"version\" AS \"Version\"" ]
+                [ "\"o\".\"id\" AS \"Id\""; "\"o\".\"total\" AS \"Total\""; "\"o\".\"version\" AS \"Version\"" ]
                 None
                 (fun () -> task { let! _ = repo.All totals in () })
 
@@ -312,10 +312,10 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "joins"
                 "Each join is part of one command. The inner join drops the order without a customer, and its whole Orders come with their lines, in one more command; the left join keeps it, and its customer columns read as NULL, which becomes None. Chained joins add one JOIN each, and the projection reads only the three columns it names."
-                [ "INNER JOIN \"customers\" AS \"j1\" ON \"t0\".\"customer_id\" = \"j1\".\"id\""
-                  "LEFT JOIN \"customers\" AS \"j1\""
-                  "\"j1\".\"email\" AS \"c1\""
-                  "INNER JOIN \"products\" AS \"j2\" ON \"j1\".\"product_id\" = \"j2\".\"id\"" ]
+                [ "INNER JOIN \"customers\" AS \"c\" ON \"o\".\"customer_id\" = \"c\".\"id\""
+                  "LEFT JOIN \"customers\" AS \"c\""
+                  "\"c\".\"email\" AS \"c1\""
+                  "INNER JOIN \"products\" AS \"p\" ON \"l\".\"product_id\" = \"p\".\"id\"" ]
                 None
                 (fun () ->
                     task {
@@ -341,7 +341,7 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "split"
                 "The page's filter, ordering and LIMIT run once, in the first command. The lines and then the payments receive the selected order ids as one array parameter; the parent query is never repeated."
-                [ "LIMIT @p1"; "\"t0\".\"order_id\" = ANY(@p0)" ]
+                [ "LIMIT @p1"; "\"order_lines\".\"order_id\" = ANY(@p0)" ]
                 None
                 (fun () ->
                     task {
@@ -355,11 +355,11 @@ let run (connectionString: string) (outputPath: string) =
                 "aggregates"
                 "Each call is one command that returns one row per result: the count, one row of statistics, and one row per group. The sum of no rows is COALESCE'd to 0; HAVING filters groups after GROUP BY, and the groups are ordered by their aggregate."
                 [ "SELECT COUNT(*) AS \"n\""
-                  "COALESCE(SUM(\"t0\".\"total\"), 0)"
-                  "AVG(\"t0\".\"total\")"
-                  "GROUP BY \"j1\".\"name\""
+                  "COALESCE(SUM(\"o\".\"total\"), 0)"
+                  "AVG(\"o\".\"total\")"
+                  "GROUP BY \"c\".\"name\""
                   "HAVING COUNT(*) > @p0"
-                  "ORDER BY COALESCE(SUM(\"t0\".\"total\"), 0) DESC" ]
+                  "ORDER BY COALESCE(SUM(\"o\".\"total\"), 0) DESC" ]
                 None
                 (fun () ->
                     task {
@@ -400,7 +400,7 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "raw"
                 "The interpolated minimum became @p0: hand-written SQL never has values spliced into its text. The fragment's SQL is inserted as written, with its arguments translated (a column) or sent as parameters (the pattern)."
-                [ "o.total >= @p0"; "(\"t0\".\"name\" ILIKE @p0)" ]
+                [ "o.total >= @p0"; "(\"c\".\"name\" ILIKE @p0)" ]
                 None
                 (fun () ->
                     task {
@@ -422,7 +422,7 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "prepared"
                 "Two calls with different arguments send the same SQL text: the customer and the page size are parameters bound per call, and the query was built and planned once."
-                [ "\"t0\".\"customer_id\" = @p0"; "LIMIT @p1" ]
+                [ "\"o\".\"customer_id\" = @p0"; "LIMIT @p1" ]
                 None
                 (fun () ->
                     task {
@@ -441,8 +441,8 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "linked"
                 "Tags are read with their articles in one more command, joined through article_tags, which also supplies each row's article. Retagging inserts only the tags not yet stored, then writes only join-table rows: links outside the new set are deleted, missing ones inserted. The filter is an EXISTS through the join table."
-                [ "INNER JOIN \"article_tags\" AS \"j\" ON \"j\".\"tag_id\" = \"t0\".\"id\""
-                  "\"j\".\"article_id\" = ANY(@p0)"
+                [ "INNER JOIN \"article_tags\" ON \"article_tags\".\"tag_id\" = \"tags\".\"id\""
+                  "\"article_tags\".\"article_id\" = ANY(@p0)"
                   "ON CONFLICT (\"name\") DO NOTHING"
                   "DELETE FROM \"article_tags\""
                   "unnest(@p1)" ]

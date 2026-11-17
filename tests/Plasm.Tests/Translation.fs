@@ -26,13 +26,13 @@ let invalidQuery (q: Query<'T>) =
 let ``= None translates to IS NULL`` () =
     plasm { for o in tableOf<Order> do where (o.CancellationReason = None) }
     |> sqlOf
-    |> contains "\"t0\".\"cancellation_reason\" IS NULL"
+    |> contains "\"o\".\"cancellation_reason\" IS NULL"
 
 [<Fact>]
 let ``<> None translates to IS NOT NULL`` () =
     plasm { for o in tableOf<Order> do where (o.CancellationReason <> None) }
     |> sqlOf
-    |> contains "\"t0\".\"cancellation_reason\" IS NOT NULL"
+    |> contains "\"o\".\"cancellation_reason\" IS NOT NULL"
 
 [<Fact>]
 let ``captured None value translates to IS NULL, not = NULL`` () =
@@ -45,13 +45,13 @@ let ``captured None value translates to IS NULL, not = NULL`` () =
 let ``= Some x is plain equality`` () =
     plasm { for o in tableOf<Order> do where (o.CancellationReason = Some "late") }
     |> sqlOf
-    |> contains "\"t0\".\"cancellation_reason\" = @p0"
+    |> contains "\"o\".\"cancellation_reason\" = @p0"
 
 [<Fact>]
 let ``<> Some x on an option includes NULL rows via IS DISTINCT FROM`` () =
     plasm { for o in tableOf<Order> do where (o.CancellationReason <> Some "late") }
     |> sqlOf
-    |> contains "\"t0\".\"cancellation_reason\" IS DISTINCT FROM @p0"
+    |> contains "\"o\".\"cancellation_reason\" IS DISTINCT FROM @p0"
 
 [<Fact>]
 let ``option to option column comparison uses IS NOT DISTINCT FROM`` () =
@@ -69,11 +69,11 @@ let ``x.IsSome translates to IS NOT NULL`` () =
 let ``Option.isNone and Option.isSome translate to null tests`` () =
     plasm { for o in tableOf<Order> do where (Option.isNone o.CustomerId) }
     |> sqlOf
-    |> contains "\"t0\".\"customer_id\" IS NULL"
+    |> contains "\"o\".\"customer_id\" IS NULL"
 
     plasm { for o in tableOf<Order> do where (Option.isSome o.CustomerId) }
     |> sqlOf
-    |> contains "\"t0\".\"customer_id\" IS NOT NULL"
+    |> contains "\"o\".\"customer_id\" IS NOT NULL"
 
 // -- Membership --------------------------------------------------------------
 
@@ -81,7 +81,7 @@ let ``Option.isNone and Option.isSome translate to null tests`` () =
 let ``List.contains translates to = ANY with one array parameter`` () =
     let ids = [ OrderId 1L; OrderId 2L; OrderId 3L ]
     let sql = plasm { for o in tableOf<Order> do where (List.contains o.Id ids) } |> sqlOf
-    contains "\"t0\".\"id\" = ANY(@p0)" sql
+    contains "\"o\".\"id\" = ANY(@p0)" sql
     notContains "@p1" sql
 
 [<Fact>]
@@ -97,8 +97,8 @@ let ``exists translates to a correlated EXISTS`` () =
         plasm { for o in tableOf<Order> do where (exists (plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id && p.Status = Succeeded) })) }
         |> sqlOf
 
-    contains "EXISTS (SELECT 1 FROM \"payments\" AS \"t1\" WHERE" sql
-    contains "\"t1\".\"order_id\" = \"t0\".\"id\"" sql
+    contains "EXISTS (SELECT 1 FROM \"payments\" AS \"p\" WHERE" sql
+    contains "\"p\".\"order_id\" = \"o\".\"id\"" sql
 
 [<Fact>]
 let ``List.exists over an owned list translates to EXISTS`` () =
@@ -128,13 +128,13 @@ let ``Contains and EndsWith translate to LIKE`` () =
 
 [<Fact>]
 let ``ToLower translates to lower()`` () =
-    plasm { for c in tableOf<Customer> do where (c.Name.ToLower() = "ada") } |> sqlOf |> contains "lower(\"t0\".\"name\")"
+    plasm { for c in tableOf<Customer> do where (c.Name.ToLower() = "ada") } |> sqlOf |> contains "lower(\"c\".\"name\")"
 
 // -- Ordering and paging -----------------------------------------------------
 
 [<Fact>]
 let ``option ordering matches F# (None first ascending, last descending)`` () =
-    plasm { for o in tableOf<Order> do orderBy o.CancellationReason } |> sqlOf |> contains "\"t0\".\"cancellation_reason\" NULLS FIRST"
+    plasm { for o in tableOf<Order> do orderBy o.CancellationReason } |> sqlOf |> contains "\"o\".\"cancellation_reason\" NULLS FIRST"
     plasm { for o in tableOf<Order> do orderByDescending o.CancellationReason } |> sqlOf |> contains "DESC NULLS LAST"
 
 [<Fact>]
@@ -145,7 +145,7 @@ let ``pagination appends the primary key as tiebreaker`` () =
             take 10
     }
     |> sqlOf
-    |> contains "ORDER BY \"t0\".\"placed_at\", \"t0\".\"id\" LIMIT @p0"
+    |> contains "ORDER BY \"o\".\"placed_at\", \"o\".\"id\"\nLIMIT @p0"
 
 [<Fact>]
 let ``pagination already ordered by key adds no tiebreaker`` () =
@@ -157,7 +157,7 @@ let ``pagination already ordered by key adds no tiebreaker`` () =
         }
         |> sqlOf
 
-    contains "ORDER BY \"t0\".\"id\" DESC OFFSET" sql
+    contains "ORDER BY \"o\".\"id\" DESC\nOFFSET" sql
 
 [<Fact>]
 let ``take without ordering is rejected`` () =
@@ -175,7 +175,7 @@ let ``load steps report key batching`` () =
     let plan = Query.from (tableOf<Order>) |> explain |> ok
     let step = plan.Loads.Head
     Assert.Equal(LoadStrategy.BatchedByKeys 5000, step.Strategy)
-    contains "\"t0\".\"order_id\" = ANY(@p0)" step.Sql
+    contains "\"order_lines\".\"order_id\" = ANY(@p0)" step.Sql
 
 // -- Unsupported expressions -------------------------------------------------
 
@@ -211,13 +211,13 @@ let ``captured strings never appear in the SQL text`` () =
     let name = "x'); DROP TABLE customers; --"
     let sql = plasm { for c in tableOf<Customer> do where (c.Name = name) } |> sqlOf
     notContains "DROP" sql
-    contains "\"t0\".\"name\" = @p0" sql
+    contains "\"c\".\"name\" = @p0" sql
 
 [<Fact>]
 let ``captured expressions are evaluated once as parameters`` () =
     let threshold = 40m
     let sql = plasm { for o in tableOf<Order> do where (o.Total > threshold * 2m + 1m) } |> sqlOf
-    contains "\"t0\".\"total\" > @p0" sql
+    contains "\"o\".\"total\" > @p0" sql
 
 [<Fact>]
 let ``SQL injection attempt is inert against a real database`` () =
@@ -311,25 +311,25 @@ let ``the test domain model is valid`` () =
 let ``x.Value on an option column compares the present value`` () =
     plasm { for o in tableOf<Order> do where (o.CancellationReason.Value = "late") }
     |> sqlOf
-    |> contains "\"t0\".\"cancellation_reason\" = @p0"
+    |> contains "\"o\".\"cancellation_reason\" = @p0"
 
 [<Fact>]
 let ``Option.get on an option column compares the present value`` () =
     plasm { for o in tableOf<Order> do where (Option.get o.CancellationReason = "late") }
     |> sqlOf
-    |> contains "\"t0\".\"cancellation_reason\" = @p0"
+    |> contains "\"o\".\"cancellation_reason\" = @p0"
 
 [<Fact>]
 let ``not, || and && translate`` () =
     let sql = plasm { for o in tableOf<Order> do where (not (o.Total > 1m) || (o.Status = Draft && o.Total < 5m)) } |> sqlOf
     // total cannot be NULL, so plain NOT (index-friendly) is exact.
-    contains "\"t0\".\"total\" <= @p0" sql
+    contains "\"o\".\"total\" <= @p0" sql
     contains " OR " sql
     contains " AND " sql
 
 [<Fact>]
 let ``string concatenation translates to ||`` () =
-    plasm { for c in tableOf<Customer> do where (c.Name + "!" = "Ada!") } |> sqlOf |> contains "\"t0\".\"name\" || @p0 = @p1"
+    plasm { for c in tableOf<Customer> do where (c.Name + "!" = "Ada!") } |> sqlOf |> contains "\"c\".\"name\" || @p0 = @p1"
 
 [<Fact>]
 let ``nested relationship predicates get distinct aliases`` () =
@@ -347,5 +347,5 @@ let ``nested relationship predicates get distinct aliases`` () =
         }
         |> sqlOf
 
-    contains "\"t2\".\"order_id\" = \"t1\".\"id\"" sql
-    contains "\"t1\".\"customer_id\" IS NOT DISTINCT FROM \"t0\".\"id\"" sql
+    contains "\"p\".\"order_id\" = \"o\".\"id\"" sql
+    contains "\"o\".\"customer_id\" IS NOT DISTINCT FROM \"c\".\"id\"" sql

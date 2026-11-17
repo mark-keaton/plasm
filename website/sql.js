@@ -48,14 +48,14 @@ window.PLASM_SQL = {
       {
         "parameters": [],
         "rows": 3,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022"
+        "sql": "SELECT \u0022orders\u0022.\u0022id\u0022, \u0022orders\u0022.\u0022customer_id\u0022, \u0022orders\u0022.\u0022status\u0022, \u0022orders\u0022.\u0022status_reason\u0022, \u0022orders\u0022.\u0022total\u0022, \u0022orders\u0022.\u0022placed_at\u0022, \u0022orders\u0022.\u0022version\u0022\nFROM \u0022orders\u0022"
       },
       {
         "parameters": [
           "@p0 = [1, 2, 3]"
         ],
         "rows": 4,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022order_lines\u0022.\u0022id\u0022, \u0022order_lines\u0022.\u0022order_id\u0022, \u0022order_lines\u0022.\u0022product_id\u0022, \u0022order_lines\u0022.\u0022quantity\u0022, \u0022order_lines\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022\nWHERE \u0022order_lines\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022order_lines\u0022.\u0022id\u0022"
       }
     ],
     "empty": null,
@@ -63,7 +63,7 @@ window.PLASM_SQL = {
       "\u0022customer_id\u0022",
       "\u0022placed_at\u0022",
       "FROM \u0022order_lines\u0022",
-      "\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)"
+      "\u0022order_lines\u0022.\u0022order_id\u0022 = ANY(@p0)"
     ]
   },
   "scalars": {
@@ -75,21 +75,21 @@ window.PLASM_SQL = {
           "@p1 = draft"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022id\u0022 = @p0 AND \u0022t0\u0022.\u0022status\u0022 = @p1"
+        "sql": "SELECT \u0022o\u0022.\u0022id\u0022, \u0022o\u0022.\u0022customer_id\u0022, \u0022o\u0022.\u0022status\u0022, \u0022o\u0022.\u0022status_reason\u0022, \u0022o\u0022.\u0022total\u0022, \u0022o\u0022.\u0022placed_at\u0022, \u0022o\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nWHERE \u0022o\u0022.\u0022id\u0022 = @p0 AND \u0022o\u0022.\u0022status\u0022 = @p1"
       },
       {
         "parameters": [
           "@p0 = [2]"
         ],
         "rows": 2,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022order_lines\u0022.\u0022id\u0022, \u0022order_lines\u0022.\u0022order_id\u0022, \u0022order_lines\u0022.\u0022product_id\u0022, \u0022order_lines\u0022.\u0022quantity\u0022, \u0022order_lines\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022\nWHERE \u0022order_lines\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022order_lines\u0022.\u0022id\u0022"
       }
     ],
     "empty": null,
     "marks": [
-      "\u0022t0\u0022.\u0022id\u0022 = @p0",
-      "\u0022t0\u0022.\u0022status\u0022 = @p1",
-      "\u0022t0\u0022.\u0022status_reason\u0022"
+      "\u0022o\u0022.\u0022id\u0022 = @p0",
+      "\u0022o\u0022.\u0022status\u0022 = @p1",
+      "\u0022o\u0022.\u0022status_reason\u0022"
     ]
   },
   "queries": {
@@ -101,33 +101,33 @@ window.PLASM_SQL = {
           "@p1 = succeeded"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022customer_id\u0022 = @p0 AND NOT EXISTS (SELECT 1 FROM \u0022payments\u0022 AS \u0022t1\u0022 WHERE \u0022t1\u0022.\u0022order_id\u0022 = \u0022t0\u0022.\u0022id\u0022 AND \u0022t1\u0022.\u0022status\u0022 = @p1)"
+        "sql": "SELECT\n    \u0022o\u0022.\u0022id\u0022,\n    \u0022o\u0022.\u0022customer_id\u0022,\n    \u0022o\u0022.\u0022status\u0022,\n    \u0022o\u0022.\u0022status_reason\u0022,\n    \u0022o\u0022.\u0022total\u0022,\n    \u0022o\u0022.\u0022placed_at\u0022,\n    \u0022o\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nWHERE \u0022o\u0022.\u0022customer_id\u0022 = @p0 AND NOT EXISTS (SELECT 1 FROM \u0022payments\u0022 AS \u0022p\u0022 WHERE \u0022p\u0022.\u0022order_id\u0022 = \u0022o\u0022.\u0022id\u0022 AND \u0022p\u0022.\u0022status\u0022 = @p1)"
       },
       {
         "parameters": [
           "@p0 = [2]"
         ],
         "rows": 2,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022order_lines\u0022.\u0022id\u0022, \u0022order_lines\u0022.\u0022order_id\u0022, \u0022order_lines\u0022.\u0022product_id\u0022, \u0022order_lines\u0022.\u0022quantity\u0022, \u0022order_lines\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022\nWHERE \u0022order_lines\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022order_lines\u0022.\u0022id\u0022"
       },
       {
         "parameters": [
           "@p0 = 2"
         ],
         "rows": 2,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022status\u0022 = \u0027draft\u0027 OR (\u0022t0\u0022.\u0022status\u0022 = \u0027published\u0027)) AND EXISTS (SELECT 1 FROM \u0022order_lines\u0022 AS \u0022t1\u0022 WHERE \u0022t1\u0022.\u0022order_id\u0022 = \u0022t0\u0022.\u0022id\u0022 AND \u0022t1\u0022.\u0022product_id\u0022 = @p0)"
+        "sql": "SELECT\n    \u0022o\u0022.\u0022id\u0022,\n    \u0022o\u0022.\u0022customer_id\u0022,\n    \u0022o\u0022.\u0022status\u0022,\n    \u0022o\u0022.\u0022status_reason\u0022,\n    \u0022o\u0022.\u0022total\u0022,\n    \u0022o\u0022.\u0022placed_at\u0022,\n    \u0022o\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nWHERE (\u0022o\u0022.\u0022status\u0022 = \u0027draft\u0027 OR (\u0022o\u0022.\u0022status\u0022 = \u0027published\u0027)) AND EXISTS (SELECT 1 FROM \u0022order_lines\u0022 AS \u0022l\u0022 WHERE \u0022l\u0022.\u0022order_id\u0022 = \u0022o\u0022.\u0022id\u0022 AND \u0022l\u0022.\u0022product_id\u0022 = @p0)"
       },
       {
         "parameters": [
           "@p0 = [2, 3]"
         ],
         "rows": 3,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022order_lines\u0022.\u0022id\u0022, \u0022order_lines\u0022.\u0022order_id\u0022, \u0022order_lines\u0022.\u0022product_id\u0022, \u0022order_lines\u0022.\u0022quantity\u0022, \u0022order_lines\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022\nWHERE \u0022order_lines\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022order_lines\u0022.\u0022id\u0022"
       }
     ],
     "empty": null,
     "marks": [
-      "\u0022t0\u0022.\u0022customer_id\u0022 = @p0",
+      "\u0022o\u0022.\u0022customer_id\u0022 = @p0",
       "NOT EXISTS",
       "FROM \u0022payments\u0022",
       "FROM \u0022order_lines\u0022"
@@ -143,22 +143,22 @@ window.PLASM_SQL = {
           "@p2 = 0"
         ],
         "rows": 2,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022customer_id\u0022 = @p0\nORDER BY \u0022t0\u0022.\u0022placed_at\u0022 DESC, \u0022t0\u0022.\u0022id\u0022\nLIMIT @p1\nOFFSET @p2"
+        "sql": "SELECT \u0022o\u0022.\u0022id\u0022, \u0022o\u0022.\u0022customer_id\u0022, \u0022o\u0022.\u0022status\u0022, \u0022o\u0022.\u0022status_reason\u0022, \u0022o\u0022.\u0022total\u0022, \u0022o\u0022.\u0022placed_at\u0022, \u0022o\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nWHERE \u0022o\u0022.\u0022customer_id\u0022 = @p0\nORDER BY \u0022o\u0022.\u0022placed_at\u0022 DESC, \u0022o\u0022.\u0022id\u0022\nLIMIT @p1\nOFFSET @p2"
       },
       {
         "parameters": [
           "@p0 = [2, 1]"
         ],
         "rows": 3,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022order_lines\u0022.\u0022id\u0022, \u0022order_lines\u0022.\u0022order_id\u0022, \u0022order_lines\u0022.\u0022product_id\u0022, \u0022order_lines\u0022.\u0022quantity\u0022, \u0022order_lines\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022\nWHERE \u0022order_lines\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022order_lines\u0022.\u0022id\u0022"
       }
     ],
     "empty": null,
     "marks": [
       "LIMIT @p1",
       "OFFSET @p2",
-      "\u0022t0\u0022.\u0022placed_at\u0022 DESC, \u0022t0\u0022.\u0022id\u0022",
-      "\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)"
+      "\u0022o\u0022.\u0022placed_at\u0022 DESC, \u0022o\u0022.\u0022id\u0022",
+      "\u0022order_lines\u0022.\u0022order_id\u0022 = ANY(@p0)"
     ]
   },
   "references": {
@@ -170,14 +170,14 @@ window.PLASM_SQL = {
           "@p1 = 0"
         ],
         "rows": 3,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nORDER BY \u0022t0\u0022.\u0022placed_at\u0022 DESC, \u0022t0\u0022.\u0022id\u0022\nLIMIT @p0\nOFFSET @p1"
+        "sql": "SELECT \u0022o\u0022.\u0022id\u0022, \u0022o\u0022.\u0022customer_id\u0022, \u0022o\u0022.\u0022status\u0022, \u0022o\u0022.\u0022status_reason\u0022, \u0022o\u0022.\u0022total\u0022, \u0022o\u0022.\u0022placed_at\u0022, \u0022o\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nORDER BY \u0022o\u0022.\u0022placed_at\u0022 DESC, \u0022o\u0022.\u0022id\u0022\nLIMIT @p0\nOFFSET @p1"
       },
       {
         "parameters": [
           "@p0 = [3, 2, 1]"
         ],
         "rows": 4,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022order_lines\u0022.\u0022id\u0022, \u0022order_lines\u0022.\u0022order_id\u0022, \u0022order_lines\u0022.\u0022product_id\u0022, \u0022order_lines\u0022.\u0022quantity\u0022, \u0022order_lines\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022\nWHERE \u0022order_lines\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022order_lines\u0022.\u0022id\u0022"
       },
       {
         "parameters": [
@@ -185,14 +185,14 @@ window.PLASM_SQL = {
           "@p1 = succeeded"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022,\n    \u0022t0\u0022.\u0022amount\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022created_at\u0022\nFROM \u0022payments\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0) AND \u0022t0\u0022.\u0022status\u0022 = @p1\nORDER BY \u0022t0\u0022.\u0022created_at\u0022, \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022p\u0022.\u0022id\u0022, \u0022p\u0022.\u0022order_id\u0022, \u0022p\u0022.\u0022amount\u0022, \u0022p\u0022.\u0022status\u0022, \u0022p\u0022.\u0022created_at\u0022\nFROM \u0022payments\u0022 AS \u0022p\u0022\nWHERE \u0022p\u0022.\u0022order_id\u0022 = ANY(@p0) AND \u0022p\u0022.\u0022status\u0022 = @p1\nORDER BY \u0022p\u0022.\u0022created_at\u0022, \u0022p\u0022.\u0022id\u0022"
       }
     ],
     "empty": null,
     "marks": [
-      "\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)",
-      "\u0022t0\u0022.\u0022status\u0022 = @p1",
-      "ORDER BY \u0022t0\u0022.\u0022created_at\u0022"
+      "\u0022p\u0022.\u0022order_id\u0022 = ANY(@p0)",
+      "\u0022p\u0022.\u0022status\u0022 = @p1",
+      "ORDER BY \u0022p\u0022.\u0022created_at\u0022"
     ]
   },
   "projections": {
@@ -201,14 +201,14 @@ window.PLASM_SQL = {
       {
         "parameters": [],
         "rows": 3,
-        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022 AS \u0022Id\u0022, \u0022t0\u0022.\u0022total\u0022 AS \u0022Total\u0022, \u0022t0\u0022.\u0022version\u0022 AS \u0022Version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nORDER BY \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022o\u0022.\u0022id\u0022 AS \u0022Id\u0022, \u0022o\u0022.\u0022total\u0022 AS \u0022Total\u0022, \u0022o\u0022.\u0022version\u0022 AS \u0022Version\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nORDER BY \u0022o\u0022.\u0022id\u0022"
       }
     ],
     "empty": null,
     "marks": [
-      "\u0022t0\u0022.\u0022id\u0022 AS \u0022Id\u0022",
-      "\u0022t0\u0022.\u0022total\u0022 AS \u0022Total\u0022",
-      "\u0022t0\u0022.\u0022version\u0022 AS \u0022Version\u0022"
+      "\u0022o\u0022.\u0022id\u0022 AS \u0022Id\u0022",
+      "\u0022o\u0022.\u0022total\u0022 AS \u0022Total\u0022",
+      "\u0022o\u0022.\u0022version\u0022 AS \u0022Version\u0022"
     ]
   },
   "changes": {
@@ -219,14 +219,14 @@ window.PLASM_SQL = {
           "@p0 = 2"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022id\u0022 = @p0\nLIMIT 2"
+        "sql": "SELECT \u0022o\u0022.\u0022id\u0022, \u0022o\u0022.\u0022customer_id\u0022, \u0022o\u0022.\u0022status\u0022, \u0022o\u0022.\u0022status_reason\u0022, \u0022o\u0022.\u0022total\u0022, \u0022o\u0022.\u0022placed_at\u0022, \u0022o\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nWHERE \u0022o\u0022.\u0022id\u0022 = @p0\nLIMIT 2"
       },
       {
         "parameters": [
           "@p0 = [2]"
         ],
         "rows": 2,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022order_lines\u0022.\u0022id\u0022, \u0022order_lines\u0022.\u0022order_id\u0022, \u0022order_lines\u0022.\u0022product_id\u0022, \u0022order_lines\u0022.\u0022quantity\u0022, \u0022order_lines\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022\nWHERE \u0022order_lines\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022order_lines\u0022.\u0022id\u0022"
       },
       {
         "parameters": [
@@ -254,14 +254,14 @@ window.PLASM_SQL = {
           "@p0 = 2"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022id\u0022 = @p0\nLIMIT 2"
+        "sql": "SELECT \u0022o\u0022.\u0022id\u0022, \u0022o\u0022.\u0022customer_id\u0022, \u0022o\u0022.\u0022status\u0022, \u0022o\u0022.\u0022status_reason\u0022, \u0022o\u0022.\u0022total\u0022, \u0022o\u0022.\u0022placed_at\u0022, \u0022o\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nWHERE \u0022o\u0022.\u0022id\u0022 = @p0\nLIMIT 2"
       },
       {
         "parameters": [
           "@p0 = [2]"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022order_lines\u0022.\u0022id\u0022, \u0022order_lines\u0022.\u0022order_id\u0022, \u0022order_lines\u0022.\u0022product_id\u0022, \u0022order_lines\u0022.\u0022quantity\u0022, \u0022order_lines\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022\nWHERE \u0022order_lines\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022order_lines\u0022.\u0022id\u0022"
       },
       {
         "parameters": [
@@ -298,14 +298,14 @@ window.PLASM_SQL = {
           "@p0 = 1"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022id\u0022 = @p0\nLIMIT 2"
+        "sql": "SELECT \u0022o\u0022.\u0022id\u0022, \u0022o\u0022.\u0022customer_id\u0022, \u0022o\u0022.\u0022status\u0022, \u0022o\u0022.\u0022status_reason\u0022, \u0022o\u0022.\u0022total\u0022, \u0022o\u0022.\u0022placed_at\u0022, \u0022o\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nWHERE \u0022o\u0022.\u0022id\u0022 = @p0\nLIMIT 2"
       },
       {
         "parameters": [
           "@p0 = [1]"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022order_lines\u0022.\u0022id\u0022, \u0022order_lines\u0022.\u0022order_id\u0022, \u0022order_lines\u0022.\u0022product_id\u0022, \u0022order_lines\u0022.\u0022quantity\u0022, \u0022order_lines\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022\nWHERE \u0022order_lines\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022order_lines\u0022.\u0022id\u0022"
       },
       {
         "parameters": [
@@ -330,32 +330,32 @@ window.PLASM_SQL = {
       {
         "parameters": [],
         "rows": 2,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022 AS \u0022c0\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022 AS \u0022c1\u0022,\n    \u0022t0\u0022.\u0022status\u0022 AS \u0022c2\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022 AS \u0022c3\u0022,\n    \u0022t0\u0022.\u0022total\u0022 AS \u0022c4\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022 AS \u0022c5\u0022,\n    \u0022t0\u0022.\u0022version\u0022 AS \u0022c6\u0022,\n    \u0022j1\u0022.\u0022id\u0022 AS \u0022c7\u0022,\n    \u0022j1\u0022.\u0022name\u0022 AS \u0022c8\u0022,\n    \u0022j1\u0022.\u0022email\u0022 AS \u0022c9\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nINNER JOIN \u0022customers\u0022 AS \u0022j1\u0022 ON \u0022t0\u0022.\u0022customer_id\u0022 = \u0022j1\u0022.\u0022id\u0022\nORDER BY \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022o\u0022.\u0022id\u0022 AS \u0022c0\u0022, \u0022o\u0022.\u0022customer_id\u0022 AS \u0022c1\u0022, \u0022o\u0022.\u0022status\u0022 AS \u0022c2\u0022, \u0022o\u0022.\u0022status_reason\u0022 AS \u0022c3\u0022, \u0022o\u0022.\u0022total\u0022 AS \u0022c4\u0022, \u0022o\u0022.\u0022placed_at\u0022 AS \u0022c5\u0022, \u0022o\u0022.\u0022version\u0022 AS \u0022c6\u0022, \u0022c\u0022.\u0022id\u0022 AS \u0022c7\u0022, \u0022c\u0022.\u0022name\u0022 AS \u0022c8\u0022, \u0022c\u0022.\u0022email\u0022 AS \u0022c9\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nINNER JOIN \u0022customers\u0022 AS \u0022c\u0022 ON \u0022o\u0022.\u0022customer_id\u0022 = \u0022c\u0022.\u0022id\u0022\nORDER BY \u0022o\u0022.\u0022id\u0022"
       },
       {
         "parameters": [
           "@p0 = [1, 2]"
         ],
         "rows": 2,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022order_lines\u0022.\u0022id\u0022, \u0022order_lines\u0022.\u0022order_id\u0022, \u0022order_lines\u0022.\u0022product_id\u0022, \u0022order_lines\u0022.\u0022quantity\u0022, \u0022order_lines\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022\nWHERE \u0022order_lines\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022order_lines\u0022.\u0022id\u0022"
       },
       {
         "parameters": [],
         "rows": 3,
-        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022 AS \u0022c0\u0022, \u0022j1\u0022.\u0022email\u0022 AS \u0022c1\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nLEFT JOIN \u0022customers\u0022 AS \u0022j1\u0022 ON \u0022t0\u0022.\u0022customer_id\u0022 = \u0022j1\u0022.\u0022id\u0022\nORDER BY \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022o\u0022.\u0022id\u0022 AS \u0022c0\u0022, \u0022c\u0022.\u0022email\u0022 AS \u0022c1\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nLEFT JOIN \u0022customers\u0022 AS \u0022c\u0022 ON \u0022o\u0022.\u0022customer_id\u0022 = \u0022c\u0022.\u0022id\u0022\nORDER BY \u0022o\u0022.\u0022id\u0022"
       },
       {
         "parameters": [],
         "rows": 2,
-        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022 AS \u0022c0\u0022, \u0022j2\u0022.\u0022sku\u0022 AS \u0022c1\u0022, \u0022j1\u0022.\u0022quantity\u0022 AS \u0022c2\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nINNER JOIN \u0022order_lines\u0022 AS \u0022j1\u0022 ON \u0022t0\u0022.\u0022id\u0022 = \u0022j1\u0022.\u0022order_id\u0022\nINNER JOIN \u0022products\u0022 AS \u0022j2\u0022 ON \u0022j1\u0022.\u0022product_id\u0022 = \u0022j2\u0022.\u0022id\u0022\nWHERE \u0022t0\u0022.\u0022status\u0022 = \u0027draft\u0027 OR (\u0022t0\u0022.\u0022status\u0022 = \u0027published\u0027)\nORDER BY \u0022j2\u0022.\u0022sku\u0022"
+        "sql": "SELECT \u0022o\u0022.\u0022id\u0022 AS \u0022c0\u0022, \u0022p\u0022.\u0022sku\u0022 AS \u0022c1\u0022, \u0022l\u0022.\u0022quantity\u0022 AS \u0022c2\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nINNER JOIN \u0022order_lines\u0022 AS \u0022l\u0022 ON \u0022o\u0022.\u0022id\u0022 = \u0022l\u0022.\u0022order_id\u0022\nINNER JOIN \u0022products\u0022 AS \u0022p\u0022 ON \u0022l\u0022.\u0022product_id\u0022 = \u0022p\u0022.\u0022id\u0022\nWHERE \u0022o\u0022.\u0022status\u0022 = \u0027draft\u0027 OR (\u0022o\u0022.\u0022status\u0022 = \u0027published\u0027)\nORDER BY \u0022p\u0022.\u0022sku\u0022"
       }
     ],
     "empty": null,
     "marks": [
-      "INNER JOIN \u0022customers\u0022 AS \u0022j1\u0022 ON \u0022t0\u0022.\u0022customer_id\u0022 = \u0022j1\u0022.\u0022id\u0022",
-      "LEFT JOIN \u0022customers\u0022 AS \u0022j1\u0022",
-      "\u0022j1\u0022.\u0022email\u0022 AS \u0022c1\u0022",
-      "INNER JOIN \u0022products\u0022 AS \u0022j2\u0022 ON \u0022j1\u0022.\u0022product_id\u0022 = \u0022j2\u0022.\u0022id\u0022"
+      "INNER JOIN \u0022customers\u0022 AS \u0022c\u0022 ON \u0022o\u0022.\u0022customer_id\u0022 = \u0022c\u0022.\u0022id\u0022",
+      "LEFT JOIN \u0022customers\u0022 AS \u0022c\u0022",
+      "\u0022c\u0022.\u0022email\u0022 AS \u0022c1\u0022",
+      "INNER JOIN \u0022products\u0022 AS \u0022p\u0022 ON \u0022l\u0022.\u0022product_id\u0022 = \u0022p\u0022.\u0022id\u0022"
     ]
   },
   "split": {
@@ -367,14 +367,14 @@ window.PLASM_SQL = {
           "@p1 = 20"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022status\u0022 = @p0\nORDER BY \u0022t0\u0022.\u0022placed_at\u0022 DESC, \u0022t0\u0022.\u0022id\u0022\nLIMIT @p1"
+        "sql": "SELECT \u0022o\u0022.\u0022id\u0022, \u0022o\u0022.\u0022customer_id\u0022, \u0022o\u0022.\u0022status\u0022, \u0022o\u0022.\u0022status_reason\u0022, \u0022o\u0022.\u0022total\u0022, \u0022o\u0022.\u0022placed_at\u0022, \u0022o\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nWHERE \u0022o\u0022.\u0022status\u0022 = @p0\nORDER BY \u0022o\u0022.\u0022placed_at\u0022 DESC, \u0022o\u0022.\u0022id\u0022\nLIMIT @p1"
       },
       {
         "parameters": [
           "@p0 = [1]"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022order_lines\u0022.\u0022id\u0022, \u0022order_lines\u0022.\u0022order_id\u0022, \u0022order_lines\u0022.\u0022product_id\u0022, \u0022order_lines\u0022.\u0022quantity\u0022, \u0022order_lines\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022\nWHERE \u0022order_lines\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022order_lines\u0022.\u0022id\u0022"
       },
       {
         "parameters": [
@@ -382,13 +382,13 @@ window.PLASM_SQL = {
           "@p1 = succeeded"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022,\n    \u0022t0\u0022.\u0022amount\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022created_at\u0022\nFROM \u0022payments\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0) AND \u0022t0\u0022.\u0022status\u0022 = @p1\nORDER BY \u0022t0\u0022.\u0022created_at\u0022, \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022p\u0022.\u0022id\u0022, \u0022p\u0022.\u0022order_id\u0022, \u0022p\u0022.\u0022amount\u0022, \u0022p\u0022.\u0022status\u0022, \u0022p\u0022.\u0022created_at\u0022\nFROM \u0022payments\u0022 AS \u0022p\u0022\nWHERE \u0022p\u0022.\u0022order_id\u0022 = ANY(@p0) AND \u0022p\u0022.\u0022status\u0022 = @p1\nORDER BY \u0022p\u0022.\u0022created_at\u0022, \u0022p\u0022.\u0022id\u0022"
       }
     ],
     "empty": null,
     "marks": [
       "LIMIT @p1",
-      "\u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)"
+      "\u0022order_lines\u0022.\u0022order_id\u0022 = ANY(@p0)"
     ]
   },
   "aggregates": {
@@ -399,29 +399,29 @@ window.PLASM_SQL = {
           "@p0 = published"
         ],
         "rows": 1,
-        "sql": "SELECT COUNT(*) AS \u0022n\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022status\u0022 = @p0"
+        "sql": "SELECT COUNT(*) AS \u0022n\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nWHERE \u0022o\u0022.\u0022status\u0022 = @p0"
       },
       {
         "parameters": [],
         "rows": 1,
-        "sql": "SELECT COUNT(*) AS \u0022c0\u0022, COALESCE(SUM(\u0022t0\u0022.\u0022total\u0022), 0) AS \u0022c1\u0022, AVG(\u0022t0\u0022.\u0022total\u0022) AS \u0022c2\u0022, MAX(\u0022t0\u0022.\u0022placed_at\u0022) AS \u0022c3\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022status\u0022 = \u0027draft\u0027 OR (\u0022t0\u0022.\u0022status\u0022 = \u0027published\u0027)"
+        "sql": "SELECT COUNT(*) AS \u0022c0\u0022, COALESCE(SUM(\u0022o\u0022.\u0022total\u0022), 0) AS \u0022c1\u0022, AVG(\u0022o\u0022.\u0022total\u0022) AS \u0022c2\u0022, MAX(\u0022o\u0022.\u0022placed_at\u0022) AS \u0022c3\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nWHERE \u0022o\u0022.\u0022status\u0022 = \u0027draft\u0027 OR (\u0022o\u0022.\u0022status\u0022 = \u0027published\u0027)"
       },
       {
         "parameters": [
           "@p0 = 1"
         ],
         "rows": 1,
-        "sql": "SELECT \u0022j1\u0022.\u0022name\u0022 AS \u0022c0\u0022, COUNT(*) AS \u0022c1\u0022, COALESCE(SUM(\u0022t0\u0022.\u0022total\u0022), 0) AS \u0022c2\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nINNER JOIN \u0022customers\u0022 AS \u0022j1\u0022 ON \u0022t0\u0022.\u0022customer_id\u0022 = \u0022j1\u0022.\u0022id\u0022\nGROUP BY \u0022j1\u0022.\u0022name\u0022\nHAVING COUNT(*) \u003E @p0\nORDER BY COALESCE(SUM(\u0022t0\u0022.\u0022total\u0022), 0) DESC"
+        "sql": "SELECT \u0022c\u0022.\u0022name\u0022 AS \u0022c0\u0022, COUNT(*) AS \u0022c1\u0022, COALESCE(SUM(\u0022o\u0022.\u0022total\u0022), 0) AS \u0022c2\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nINNER JOIN \u0022customers\u0022 AS \u0022c\u0022 ON \u0022o\u0022.\u0022customer_id\u0022 = \u0022c\u0022.\u0022id\u0022\nGROUP BY \u0022c\u0022.\u0022name\u0022\nHAVING COUNT(*) \u003E @p0\nORDER BY COALESCE(SUM(\u0022o\u0022.\u0022total\u0022), 0) DESC"
       }
     ],
     "empty": null,
     "marks": [
       "SELECT COUNT(*) AS \u0022n\u0022",
-      "COALESCE(SUM(\u0022t0\u0022.\u0022total\u0022), 0)",
-      "AVG(\u0022t0\u0022.\u0022total\u0022)",
-      "GROUP BY \u0022j1\u0022.\u0022name\u0022",
+      "COALESCE(SUM(\u0022o\u0022.\u0022total\u0022), 0)",
+      "AVG(\u0022o\u0022.\u0022total\u0022)",
+      "GROUP BY \u0022c\u0022.\u0022name\u0022",
       "HAVING COUNT(*) \u003E @p0",
-      "ORDER BY COALESCE(SUM(\u0022t0\u0022.\u0022total\u0022), 0) DESC"
+      "ORDER BY COALESCE(SUM(\u0022o\u0022.\u0022total\u0022), 0) DESC"
     ]
   },
   "bulk": {
@@ -471,13 +471,13 @@ window.PLASM_SQL = {
           "@p0 = a%"
         ],
         "rows": 1,
-        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022, \u0022t0\u0022.\u0022name\u0022, \u0022t0\u0022.\u0022email\u0022\nFROM \u0022customers\u0022 AS \u0022t0\u0022\nWHERE (\u0022t0\u0022.\u0022name\u0022 ILIKE @p0)\nORDER BY \u0022t0\u0022.\u0022name\u0022"
+        "sql": "SELECT \u0022c\u0022.\u0022id\u0022, \u0022c\u0022.\u0022name\u0022, \u0022c\u0022.\u0022email\u0022\nFROM \u0022customers\u0022 AS \u0022c\u0022\nWHERE (\u0022c\u0022.\u0022name\u0022 ILIKE @p0)\nORDER BY \u0022c\u0022.\u0022name\u0022"
       }
     ],
     "empty": null,
     "marks": [
       "o.total \u003E= @p0",
-      "(\u0022t0\u0022.\u0022name\u0022 ILIKE @p0)"
+      "(\u0022c\u0022.\u0022name\u0022 ILIKE @p0)"
     ]
   },
   "prepared": {
@@ -489,14 +489,14 @@ window.PLASM_SQL = {
           "@p1 = 5"
         ],
         "rows": 2,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022customer_id\u0022 = @p0\nORDER BY \u0022t0\u0022.\u0022placed_at\u0022 DESC, \u0022t0\u0022.\u0022id\u0022\nLIMIT @p1"
+        "sql": "SELECT \u0022o\u0022.\u0022id\u0022, \u0022o\u0022.\u0022customer_id\u0022, \u0022o\u0022.\u0022status\u0022, \u0022o\u0022.\u0022status_reason\u0022, \u0022o\u0022.\u0022total\u0022, \u0022o\u0022.\u0022placed_at\u0022, \u0022o\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nWHERE \u0022o\u0022.\u0022customer_id\u0022 = @p0\nORDER BY \u0022o\u0022.\u0022placed_at\u0022 DESC, \u0022o\u0022.\u0022id\u0022\nLIMIT @p1"
       },
       {
         "parameters": [
           "@p0 = [2, 1]"
         ],
         "rows": 2,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022order_id\u0022,\n    \u0022t0\u0022.\u0022product_id\u0022,\n    \u0022t0\u0022.\u0022quantity\u0022,\n    \u0022t0\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022order_lines\u0022.\u0022id\u0022, \u0022order_lines\u0022.\u0022order_id\u0022, \u0022order_lines\u0022.\u0022product_id\u0022, \u0022order_lines\u0022.\u0022quantity\u0022, \u0022order_lines\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022\nWHERE \u0022order_lines\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022order_lines\u0022.\u0022id\u0022"
       },
       {
         "parameters": [
@@ -504,12 +504,12 @@ window.PLASM_SQL = {
           "@p1 = 20"
         ],
         "rows": 0,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022customer_id\u0022 = @p0\nORDER BY \u0022t0\u0022.\u0022placed_at\u0022 DESC, \u0022t0\u0022.\u0022id\u0022\nLIMIT @p1"
+        "sql": "SELECT \u0022o\u0022.\u0022id\u0022, \u0022o\u0022.\u0022customer_id\u0022, \u0022o\u0022.\u0022status\u0022, \u0022o\u0022.\u0022status_reason\u0022, \u0022o\u0022.\u0022total\u0022, \u0022o\u0022.\u0022placed_at\u0022, \u0022o\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nWHERE \u0022o\u0022.\u0022customer_id\u0022 = @p0\nORDER BY \u0022o\u0022.\u0022placed_at\u0022 DESC, \u0022o\u0022.\u0022id\u0022\nLIMIT @p1"
       }
     ],
     "empty": null,
     "marks": [
-      "\u0022t0\u0022.\u0022customer_id\u0022 = @p0",
+      "\u0022o\u0022.\u0022customer_id\u0022 = @p0",
       "LIMIT @p1"
     ]
   },
@@ -519,14 +519,14 @@ window.PLASM_SQL = {
       {
         "parameters": [],
         "rows": 2,
-        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022, \u0022t0\u0022.\u0022title\u0022\nFROM \u0022articles\u0022 AS \u0022t0\u0022\nORDER BY \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022a\u0022.\u0022id\u0022, \u0022a\u0022.\u0022title\u0022\nFROM \u0022articles\u0022 AS \u0022a\u0022\nORDER BY \u0022a\u0022.\u0022id\u0022"
       },
       {
         "parameters": [
           "@p0 = [1, 2]"
         ],
         "rows": 3,
-        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022, \u0022t0\u0022.\u0022name\u0022, \u0022j\u0022.\u0022article_id\u0022 AS \u0022__owner\u0022\nFROM \u0022tags\u0022 AS \u0022t0\u0022\nINNER JOIN \u0022article_tags\u0022 AS \u0022j\u0022 ON \u0022j\u0022.\u0022tag_id\u0022 = \u0022t0\u0022.\u0022id\u0022\nWHERE \u0022j\u0022.\u0022article_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022name\u0022"
+        "sql": "SELECT \u0022tags\u0022.\u0022id\u0022, \u0022tags\u0022.\u0022name\u0022, \u0022article_tags\u0022.\u0022article_id\u0022 AS \u0022__owner\u0022\nFROM \u0022tags\u0022\nINNER JOIN \u0022article_tags\u0022 ON \u0022article_tags\u0022.\u0022tag_id\u0022 = \u0022tags\u0022.\u0022id\u0022\nWHERE \u0022article_tags\u0022.\u0022article_id\u0022 = ANY(@p0)\nORDER BY \u0022tags\u0022.\u0022name\u0022"
       },
       {
         "parameters": [
@@ -541,7 +541,7 @@ window.PLASM_SQL = {
           "@p0 = [fsharp, sql]"
         ],
         "rows": 2,
-        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022, \u0022t0\u0022.\u0022name\u0022\nFROM \u0022tags\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022name\u0022 = ANY(@p0)"
+        "sql": "SELECT \u0022t\u0022.\u0022id\u0022, \u0022t\u0022.\u0022name\u0022\nFROM \u0022tags\u0022 AS \u0022t\u0022\nWHERE \u0022t\u0022.\u0022name\u0022 = ANY(@p0)"
       },
       {
         "parameters": [
@@ -557,27 +557,27 @@ window.PLASM_SQL = {
           "@p1 = [1, 3]"
         ],
         "rows": 1,
-        "sql": "INSERT INTO \u0022article_tags\u0022 (\u0022article_id\u0022, \u0022tag_id\u0022) SELECT @p0, \u0022u\u0022.\u0022k\u0022\nFROM unnest(@p1) AS \u0022u\u0022(\u0022k\u0022)\nWHERE NOT EXISTS (SELECT 1 FROM \u0022article_tags\u0022 WHERE \u0022article_tags\u0022.\u0022article_id\u0022 = @p0 AND \u0022article_tags\u0022.\u0022tag_id\u0022 = \u0022u\u0022.\u0022k\u0022)"
+        "sql": "INSERT INTO \u0022article_tags\u0022 (\u0022article_id\u0022, \u0022tag_id\u0022)\nSELECT @p0, \u0022u\u0022.\u0022k\u0022\nFROM unnest(@p1) AS \u0022u\u0022(\u0022k\u0022)\nWHERE NOT EXISTS (SELECT 1 FROM \u0022article_tags\u0022 WHERE \u0022article_tags\u0022.\u0022article_id\u0022 = @p0 AND \u0022article_tags\u0022.\u0022tag_id\u0022 = \u0022u\u0022.\u0022k\u0022)"
       },
       {
         "parameters": [
           "@p0 = fsharp"
         ],
         "rows": 1,
-        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022, \u0022t0\u0022.\u0022title\u0022\nFROM \u0022articles\u0022 AS \u0022t0\u0022\nWHERE EXISTS (SELECT 1 FROM \u0022tags\u0022 AS \u0022t1\u0022 INNER JOIN \u0022article_tags\u0022 AS \u0022t1j\u0022 ON \u0022t1j\u0022.\u0022tag_id\u0022 = \u0022t1\u0022.\u0022id\u0022 WHERE \u0022t1j\u0022.\u0022article_id\u0022 = \u0022t0\u0022.\u0022id\u0022 AND \u0022t1\u0022.\u0022name\u0022 = @p0)"
+        "sql": "SELECT \u0022a\u0022.\u0022id\u0022, \u0022a\u0022.\u0022title\u0022\nFROM \u0022articles\u0022 AS \u0022a\u0022\nWHERE EXISTS (SELECT 1 FROM \u0022tags\u0022 AS \u0022t\u0022 INNER JOIN \u0022article_tags\u0022 ON \u0022article_tags\u0022.\u0022tag_id\u0022 = \u0022t\u0022.\u0022id\u0022 WHERE \u0022article_tags\u0022.\u0022article_id\u0022 = \u0022a\u0022.\u0022id\u0022 AND \u0022t\u0022.\u0022name\u0022 = @p0)"
       },
       {
         "parameters": [
           "@p0 = [1]"
         ],
         "rows": 2,
-        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022, \u0022t0\u0022.\u0022name\u0022, \u0022j\u0022.\u0022article_id\u0022 AS \u0022__owner\u0022\nFROM \u0022tags\u0022 AS \u0022t0\u0022\nINNER JOIN \u0022article_tags\u0022 AS \u0022j\u0022 ON \u0022j\u0022.\u0022tag_id\u0022 = \u0022t0\u0022.\u0022id\u0022\nWHERE \u0022j\u0022.\u0022article_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022name\u0022"
+        "sql": "SELECT \u0022tags\u0022.\u0022id\u0022, \u0022tags\u0022.\u0022name\u0022, \u0022article_tags\u0022.\u0022article_id\u0022 AS \u0022__owner\u0022\nFROM \u0022tags\u0022\nINNER JOIN \u0022article_tags\u0022 ON \u0022article_tags\u0022.\u0022tag_id\u0022 = \u0022tags\u0022.\u0022id\u0022\nWHERE \u0022article_tags\u0022.\u0022article_id\u0022 = ANY(@p0)\nORDER BY \u0022tags\u0022.\u0022name\u0022"
       }
     ],
     "empty": null,
     "marks": [
-      "INNER JOIN \u0022article_tags\u0022 AS \u0022j\u0022 ON \u0022j\u0022.\u0022tag_id\u0022 = \u0022t0\u0022.\u0022id\u0022",
-      "\u0022j\u0022.\u0022article_id\u0022 = ANY(@p0)",
+      "INNER JOIN \u0022article_tags\u0022 ON \u0022article_tags\u0022.\u0022tag_id\u0022 = \u0022tags\u0022.\u0022id\u0022",
+      "\u0022article_tags\u0022.\u0022article_id\u0022 = ANY(@p0)",
       "ON CONFLICT (\u0022name\u0022) DO NOTHING",
       "DELETE FROM \u0022article_tags\u0022",
       "unnest(@p1)"
@@ -639,12 +639,12 @@ window.PLASM_SQL = {
       {
         "parameters": [],
         "rows": 1,
-        "sql": "SELECT COUNT(*) AS \u0022n\u0022\nFROM \u0022customers\u0022 AS \u0022t0\u0022"
+        "sql": "SELECT COUNT(*) AS \u0022n\u0022\nFROM \u0022customers\u0022"
       },
       {
         "parameters": [],
         "rows": 1,
-        "sql": "SELECT COUNT(*) AS \u0022n\u0022\nFROM \u0022customers\u0022 AS \u0022t0\u0022"
+        "sql": "SELECT COUNT(*) AS \u0022n\u0022\nFROM \u0022customers\u0022"
       }
     ],
     "empty": null,

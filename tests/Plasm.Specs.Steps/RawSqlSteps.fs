@@ -190,7 +190,7 @@ type RawSqlSteps(w: World) =
     [<StepDefinition("the fragment is part of the executed SQL with its arguments as columns and parameters")>]
     member _.FragmentSql() =
         let cmd = w.CommandsSinceMark |> List.exactlyOne
-        check (cmd.Sql.Contains "WHERE (\"t0\".\"name\" ILIKE @p0)") cmd.Sql
+        check (cmd.Sql.Contains "WHERE (\"c\".\"name\" ILIKE @p0)") cmd.Sql
 
     [<StepDefinition("the results are typed records")>]
     member _.FragmentResults() =

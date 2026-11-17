@@ -57,7 +57,7 @@ type AggregateSteps(w: World) =
 
     [<StepDefinition("the filter is part of the counting SQL")>]
     member _.CountFilter() =
-        check ((one w.CommandsSinceMark).Sql.Contains "WHERE \"t0\".\"status\" = @p0") "filter in SQL"
+        check ((one w.CommandsSinceMark).Sql.Contains "WHERE \"o\".\"status\" = @p0") "filter in SQL"
 
     // Scenario: Counting a page counts the page
 
@@ -136,7 +136,7 @@ type AggregateSteps(w: World) =
         let cmd = one w.CommandsSinceMark
         equal 1 cmd.Rows "rows transferred"
 
-        for f in [ "COUNT(*)"; "SUM(\"t0\".\"total\")"; "MIN("; "MAX("; "AVG(" ] do
+        for f in [ "COUNT(*)"; "SUM(\"o\".\"total\")"; "MIN("; "MAX("; "AVG(" ] do
             check (cmd.Sql.Contains f) $"{f} in {cmd.Sql}"
 
     [<StepDefinition("the results are typed values that match the stored totals")>]
@@ -260,7 +260,7 @@ type AggregateSteps(w: World) =
     [<StepDefinition("the grouping runs as a single database command")>]
     member _.GroupingOneCommand() =
         let cmd = one w.CommandsSinceMark
-        check (cmd.Sql.Contains "GROUP BY \"t0\".\"customer_id\"") cmd.Sql
+        check (cmd.Sql.Contains "GROUP BY \"o\".\"customer_id\"") cmd.Sql
         equal 2 cmd.Rows "rows transferred"
 
     // Scenario: Filtering groups
@@ -292,7 +292,7 @@ type AggregateSteps(w: World) =
     [<StepDefinition("the condition is applied by the database after grouping")>]
     member _.HavingInSql() =
         let cmd = one w.CommandsSinceMark
-        check (cmd.Sql.Contains "GROUP BY \"t0\".\"customer_id\" HAVING COUNT(*) > @p0") cmd.Sql
+        check (cmd.Sql.Contains "GROUP BY \"o\".\"customer_id\"\nHAVING COUNT(*) > @p0") cmd.Sql
         equal 1 cmd.Rows "rows transferred"
 
     // Scenario: Grouping across a join
@@ -324,7 +324,7 @@ type AggregateSteps(w: World) =
     [<StepDefinition("the results can be ordered by the aggregate")>]
     member _.OrderedByAggregate() =
         let cmd = one w.CommandsSinceMark
-        check (cmd.Sql.Contains "GROUP BY \"j1\".\"name\" ORDER BY COUNT(*) DESC") cmd.Sql
+        check (cmd.Sql.Contains "GROUP BY \"c\".\"name\"\nORDER BY COUNT(*) DESC") cmd.Sql
 
     // Scenario: Grouping mistakes are explicit
 

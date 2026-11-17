@@ -203,7 +203,7 @@ type RunningSteps(w: BrowserWorld) =
         task {
             let! _, text = result w.Page
             let! sql = w.Page.TextContentAsync "#result .sql pre"
-            contains "\n    FROM \"orders\" AS \"t0\"" sql
+            contains "\n    FROM \"orders\" AS \"o\"" sql
         }
         |> unit
 

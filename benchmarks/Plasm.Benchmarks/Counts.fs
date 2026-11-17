@@ -216,7 +216,7 @@ let floor () =
             [| while r.Read() do yield r.GetInt64 0 |]
 
         let sql =
-            "SELECT \"t0\".\"id\", \"t0\".\"order_id\", \"t0\".\"product_id\", \"t0\".\"quantity\", \"t0\".\"unit_price\" FROM \"order_lines\" AS \"t0\" WHERE (\"t0\".\"order_id\" = ANY(@p0)) ORDER BY \"t0\".\"id\" ASC"
+            "SELECT \"order_lines\".\"id\", \"order_lines\".\"order_id\", \"order_lines\".\"product_id\", \"order_lines\".\"quantity\", \"order_lines\".\"unit_price\"\nFROM \"order_lines\"\nWHERE \"order_lines\".\"order_id\" = ANY(@p0)\nORDER BY \"order_lines\".\"id\""
 
         for i in 1..8 do
             use c = conn.CreateCommand()

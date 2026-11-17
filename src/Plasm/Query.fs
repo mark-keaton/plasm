@@ -813,7 +813,7 @@ module internal Ties =
             | Patterns.Coerce(x, _) -> x
             | x -> x
 
-        let x = Var("x", t)
+        let x = Var("_tie", t)
         let marker =
             match (if referring then <@@ TieMarkers.Refers(0, 0) @@> else <@@ TieMarkers.ReferredBy(0, 0) @@>) with
             | Patterns.Call(None, m, _) -> m.GetGenericMethodDefinition()
