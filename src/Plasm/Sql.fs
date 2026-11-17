@@ -303,8 +303,18 @@ module internal Sql =
             | None -> failwith $"{d.Name} has no JSON documents"
 
         member _.Param(v: obj) =
-            ps.Add v
-            d.ParameterName(ps.Count - 1)
+            // One prepared argument written twice is one parameter, so its
+            // type is the column's wherever it is read.
+            match v with
+            | :? Bound -> 
+                match Seq.tryFindIndex (fun (x: obj) -> obj.ReferenceEquals(x, v)) ps with
+                | Some i -> d.ParameterName i
+                | None ->
+                    ps.Add v
+                    d.ParameterName(ps.Count - 1)
+            | _ ->
+                ps.Add v
+                d.ParameterName(ps.Count - 1)
 
         /// An expression where nothing around it binds tighter: a select
         /// column, a condition, an argument. Parentheses are written only where

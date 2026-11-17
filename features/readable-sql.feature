@@ -15,7 +15,13 @@ Feature: The SQL a query sends reads as a person would write it
   CASE;
   a derived table has its own name, never the name of the table inside it. A
   statement names its table once, and a NULL written is written, not sent.
-  None of this changes what a query reads or writes.
+  An ordering by an option keeps F#'s None first only where a row may hold
+  None: not where the query's conditions prove the column present (testing it,
+  comparing it, or testing the union case whose required field it holds), so an
+  ordinary index can serve the order. A row whose union case and its columns
+  disagree, which Plasm never writes and refuses to read, then sorts where the
+  database puts NULLs: first in a descending order, so it is refused on the
+  first page. None of this changes what a query reads or writes.
 
   # Customer = { Id: CustomerId; Name: string; [<Unique>] Email: string }
   # Order = { Id: OrderId; CustomerId: CustomerId option; Status: OrderStatus; Total: decimal; CancellationReason: string option; ... }
@@ -70,6 +76,14 @@ Feature: The SQL a query sends reads as a person would write it
     Scenario: Every line meeting a condition is no line failing it, written plainly
       When I explain the Orders all of whose lines cost more than 5
       Then the SQL ends "WHERE NOT EXISTS (SELECT 1 FROM "order_lines" AS "t1" WHERE "t1"."order_id" = "t0"."id" AND "t1"."unit_price" <= @p0)"
+
+    Scenario: An option the query has proved present is ordered as a plain column
+      When I explain the Orders with a cancellation reason, ordered by it
+      Then the SQL ends "WHERE "t0"."cancellation_reason" IS NOT NULL ORDER BY "t0"."cancellation_reason""
+
+    Scenario: An option the query has not proved present keeps None first
+      When I explain the Orders ordered by their cancellation reason
+      Then the SQL ends "ORDER BY "t0"."cancellation_reason" NULLS FIRST"
 
   Rule: A write names its table once
 

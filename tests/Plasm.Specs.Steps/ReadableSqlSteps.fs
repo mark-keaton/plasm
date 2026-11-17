@@ -200,3 +200,11 @@ type ReadableSqlSteps(w: World) =
     member _.ForAll() =
         explain (w.Repo.Explain(plasm { for o in tableOf<Order> do where (o.Lines |> List.forall (fun l -> l.UnitPrice > 5m)) }))
 
+    [<StepDefinition("I explain the Orders with a cancellation reason, ordered by it")>]
+    member _.Present() =
+        explain (w.Repo.Explain(plasm { for o in tableOf<Order> do where o.CancellationReason.IsSome; orderBy o.CancellationReason }))
+
+    [<StepDefinition("I explain the Orders ordered by their cancellation reason")>]
+    member _.NotProven() =
+        explain (w.Repo.Explain(plasm { for o in tableOf<Order> do orderBy o.CancellationReason }))
+

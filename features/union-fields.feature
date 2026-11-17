@@ -108,6 +108,10 @@ Feature: A union with fields is stored across columns
       When I read the Cards' phase names through the member Card.PhaseName
       Then the read fails, naming the match on the Card's Stage, rather than giving a phase
 
+    Scenario: Ordering the cards of one case by that case's field needs no NULLS clause
+      When I explain the Cards in progress, the latest started first
+      Then the SQL orders by stage_since DESC, with no NULLS clause
+
   Rule: Bulk writes and the schema check know the columns
 
     Scenario: A bulk update sets every column of the union

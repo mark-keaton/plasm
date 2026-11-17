@@ -29,6 +29,7 @@ Feature: Prepared queries
       Then running it with Some Customer returns that Customer's matching Orders
       And running it with None returns the matching Orders without a Customer
       And both runs send the same SQL text
+      And the optional argument is compared as a value or as absent, so an index on the column can serve it
 
     Scenario: Paging arguments
       Given Orders for several Customers

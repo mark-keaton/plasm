@@ -245,6 +245,17 @@ type UnionFieldSteps(w: World) =
         | Error(DbError.Materialization m) -> check (m.Property = "a match on c.Stage") $"the failure says %A{m}"
         | other -> failwithf "expected a materialization error, got %A" other
 
+    [<StepDefinition("I explain the Cards in progress, the latest started first")>]
+    member _.ExplainSince() =
+        match repo().Explain(plasm { for c in tableOf<Card> do where c.Stage.IsDoing; orderByDescending c.Since }) with
+        | Ok plan -> w.Set("cardSql", plan.Sql)
+        | Error e -> failwithf "%A" e
+
+    [<StepDefinition("the SQL orders by stage_since DESC, with no NULLS clause")>]
+    member _.NoNulls() =
+        let sql = w.Get<string> "cardSql"
+        check (sql.EndsWith "ORDER BY \"t0\".\"stage_since\" DESC") sql
+
     [<StepDefinition("I read the Cards")>]
     member _.Read() =
         task {

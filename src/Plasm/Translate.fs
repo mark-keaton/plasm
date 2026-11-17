@@ -1182,7 +1182,14 @@ and equality ctx (whole: Expr) (a: Expr) (b: Expr) (negate: bool) : Sql.Expr =
                 else Sql.Binary((if negate then "<>" else "="), lhs, rhs)
             | _ when Reflection.isOption b.Type ->
                 let rhs = argParam ctx b
-                if negate then Sql.DistinctFrom(lhs, rhs) else Sql.NotDistinctFrom(lhs, rhs)
+
+                if negate then
+                    Sql.DistinctFrom(lhs, rhs)
+                else
+                    // A value or absent, written so an index on the column can
+                    // serve a value (readable-sql.feature); IS NOT DISTINCT
+                    // FROM, which says the same, cannot use one.
+                    Sql.Binary("OR", Sql.Binary("=", lhs, rhs), Sql.Binary("AND", Sql.IsNull lhs, Sql.IsNull rhs))
             | _ ->
                 let rhs = argParam ctx b
                 if negate && Reflection.isOption a.Type then Sql.DistinctFrom(lhs, rhs)
@@ -1501,6 +1508,66 @@ let private appendKey (orders: Sql.OrderItem list) (key: Sql.Expr) =
               Desc = false
               NullsFirst = None } ]
 
+/// An ordering by an option needs its NULLS clause only where a row may hold
+/// None (readable-sql.feature): not where the query's own conditions prove the
+/// column present, by testing it, comparing it, or testing the union case whose
+/// required field it holds. A clause the planner need not honour lets an
+/// ordinary index serve the order.
+let private withoutNeedlessNulls (space: Binding list) (wheres: Sql.Expr list) (orders: Sql.OrderItem list) =
+    let rec conjuncts (e: Sql.Expr) =
+        match e with
+        | Sql.Binary("AND", a, b) -> conjuncts a @ conjuncts b
+        | e -> [ e ]
+
+    let all = wheres |> List.collect conjuncts
+
+    let comparison (op: string) =
+        match op with
+        | "="
+        | "<>"
+        | "<"
+        | "<="
+        | ">"
+        | ">=" -> true
+        | _ -> false
+
+    // The case `stored` of a union in `alias`'s row holds `column` in a required field.
+    let caseHolds (alias: string) (tag: string) (stored: string) (column: string) =
+        space
+        |> List.exists (fun b ->
+            b.Alias = alias
+            && b.Schema.Fields
+               |> Array.exists (fun f ->
+                   match f.Union with
+                   | Some u when u.TagColumn = tag ->
+                       u.Cases
+                       |> Array.exists (fun c ->
+                           $"'{c.Stored}'" = stored
+                           && c.Parts
+                              |> List.exists (fun p ->
+                                  match p with
+                                  | Leaf leaf -> not leaf.IsOption && leaf.Column = column
+                                  | Nested _ -> false))
+                   | _ -> false))
+
+    let present (col: Sql.Expr) =
+        all
+        |> List.exists (fun c ->
+            match c, col with
+            | Sql.IsNotNull x, _ -> x = col
+            | Sql.Binary(op, a, b), _ when comparison op && (a = col || b = col) -> true
+            | Sql.AnyOf(a, _, _), _
+            | Sql.Like(a, _), _ -> a = col
+            | Sql.Binary("=", Sql.Column(alias, tag), Sql.Literal stored), Sql.Column(alias2, column) when alias = alias2 ->
+                caseHolds alias tag stored column
+            | _ -> false)
+
+    orders
+    |> List.map (fun o ->
+        match o.NullsFirst, o.Expr with
+        | Some _, (Sql.Column _ as col) when present col -> { o with NullsFirst = None }
+        | _ -> o)
+
 /// Whether an ordering already tells a source's rows apart: it orders by the
 /// key, or by a column that is unique and never NULL (readable-sql.feature).
 let private tellsApart (alias: string) (s: SchemaInfo) (orders: Sql.OrderItem list) =
@@ -1640,6 +1707,10 @@ let rootSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Selec
                 $"take/skip on {schema.Name} requires an explicit ordering; pages are not stable without one (the primary key is appended as a tiebreaker to any ordering you give)"
 
         let orders = if def.Paged && not def.ReadsTwo then stableOrder "t0" schema orders else orders
+
+        let orders =
+            withoutNeedlessNulls [ { Alias = "t0"; Schema = schema; Optional = false } ] wheres orders
+
         let limit, offset = limitExprs def
 
         { Sql.select (Sql.Table(schema.Table, "t0")) with
@@ -1753,7 +1824,7 @@ let private core (model: Model) (vol: bool ref) (def: QueryDef) : Core =
       Groups = groups
       Grouped = grouped
       Havings = havings
-      Orders = orders
+      Orders = withoutNeedlessNulls space wheres orders
       Limit = limit
       Offset = offset }
 
@@ -2323,7 +2394,9 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
         if innerDef.Paged && io.IsEmpty then
             invalid $"take/skip in the query of {op} needs an order: without one, which {target.Name} records come first for each {outerSchema.Name} is not defined"
 
-        let ranked = stableOrder "t0" target io
+        let ranked =
+            stableOrder "t0" target io
+            |> withoutNeedlessNulls [ { Alias = "t0"; Schema = target; Optional = false } ] iw
         let limit, offset = limitExprs innerDef
         let matchColumn = Sql.Column("t0", matchField.Column)
 

@@ -231,7 +231,13 @@ type PreparedSteps(w: World) =
     member _.SameText() =
         let texts = w.QueryCommands |> List.map (fun c -> c.Sql) |> List.distinct
         equal 1 texts.Length $"distinct SQL texts: %A{texts}"
-        check (texts.Head.Contains "IS NOT DISTINCT FROM" && texts.Head.Contains "= ANY(") texts.Head
+        check (texts.Head.Contains "= ANY(") texts.Head
+        w.Set("optionalText", texts.Head)
+
+    [<StepDefinition("the optional argument is compared as a value or as absent, so an index on the column can serve it")>]
+    member _.IndexableOptional() =
+        let text = w.Get<string> "optionalText"
+        check (text.Contains "\"t0\".\"customer_id\" = @p0 OR (\"t0\".\"customer_id\" IS NULL AND @p0 IS NULL)") text
 
     // Scenario: Paging arguments
 
