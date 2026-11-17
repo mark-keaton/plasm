@@ -1,0 +1,26 @@
+<!-- What a native binary keeps for the queries Plasm translates (docs/aot.md):
+     a query is a quotation, read back at run time, and every method it names
+     must survive trimming. These are the members the translator recognises
+     (src/Plasm/Translate.fs); a unit test fails when it recognises one that
+     is not kept here. -->
+<linker>
+  <assembly fullname="FSharp.Core">
+    <type fullname="Microsoft.FSharp.Core.Operators" preserve="methods" />
+    <type fullname="Microsoft.FSharp.Core.LanguagePrimitives/IntrinsicFunctions" preserve="methods" />
+    <type fullname="Microsoft.FSharp.Core.OptionModule" preserve="methods" />
+    <type fullname="Microsoft.FSharp.Collections.ListModule" preserve="methods" />
+    <type fullname="Microsoft.FSharp.Collections.SeqModule" preserve="methods" />
+    <type fullname="Microsoft.FSharp.Collections.ArrayModule" preserve="methods" />
+    <type fullname="Microsoft.FSharp.Core.FSharpOption`1" preserve="all" />
+    <type fullname="Microsoft.FSharp.Collections.FSharpList`1" preserve="all" />
+  </assembly>
+  <assembly fullname="System.Private.CoreLib">
+    <type fullname="System.String" preserve="methods" />
+  </assembly>
+  <assembly fullname="Plasm">
+    <type fullname="Plasm.Agg" preserve="methods" />
+    <type fullname="Plasm.Raw" preserve="methods" />
+    <type fullname="Plasm.TieQueries" preserve="methods" />
+    <type fullname="Plasm.QueryBuilderInstance" preserve="methods" />
+  </assembly>
+</linker>

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The native-AOT check (docs/aot.md): run.sh runs this program under the
+       runtime and as a native binary, and compares what the two print. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- IL warnings are made errors last, once the binary works (docs/aot.md). -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- The build step is a plain program run during the build, not part of the binary. -->
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Plasm.Aot.Domain/Plasm.Aot.Domain.fsproj" />
+    <ProjectReference Include="../../src/Plasm/Plasm.fsproj" />
+    <ProjectReference Include="../../src/Plasm.Postgres/Plasm.Postgres.fsproj" />
+    <!-- Plasm's build step, from this repository rather than the package. -->
+    <ProjectReference Include="../../src/Plasm.Build/Plasm.Build.fsproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;PublishAot" />
+  </ItemGroup>
+  <PropertyGroup>
+    <PlasmBuildTool>$(PlasmRoot)src/Plasm.Build/bin/$(Configuration)/$(TargetFramework)/Plasm.Build.dll</PlasmBuildTool>
+  </PropertyGroup>
+  <Import Project="../../src/Plasm/build/Plasm.targets" />
+</Project>

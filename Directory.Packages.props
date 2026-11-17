@@ -2,6 +2,7 @@
   <ItemGroup>
     <PackageVersion Include="FSharp.Core" Version="8.0.403" />
     <PackageVersion Include="Npgsql" Version="10.0.3" />
+    <PackageVersion Include="System.Reflection.MetadataLoadContext" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
     <PackageVersion Include="Reqnroll" Version="3.3.4" />
     <PackageVersion Include="Reqnroll.xunit.v3" Version="3.3.4" />

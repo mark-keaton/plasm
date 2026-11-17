@@ -1,0 +1,70 @@
+# Native AOT
+
+Plasm is being made to run in a native binary (`PublishAot`). This page says
+what works, how it works, and how it is checked. It is work in progress: the
+check below covers a small program, and grows a step at a time.
+
+## How a native binary reads F# types
+
+A native binary has no reflection over F# unions: the attributes FSharp.Core
+reads to find a union's cases and fields are not in it, and it cannot build a
+generic type over a value type (`'T option` of a `DateOnly`, `'T list`) that
+it did not compile. So the shapes of the application's F# types reach Plasm as
+code:
+
+- **Plasm's build step** (`src/Plasm/build/Plasm.targets`, running
+  `src/Plasm.Build`) runs before an application compiles. It reads, from their
+  metadata, the assemblies the application references that use
+  Plasm.Annotations (its domain), and writes `Plasm.Shapes.g.fs` into the
+  application's `obj` folder, compiled first: for each public record its
+  fields, a constructor and a reader; for each public union its cases, a tag
+  reader, and each case's constructor and reader; `'T option` and `'T list` for
+  each record and each element type a field holds. Nothing is written per
+  record by hand: the record is the only place its shape is stated.
+- **Where there is no build step** (F# Interactive, the koans, the browser
+  course), shapes are read by reflection, as before. Both supply one interface
+  (`src/Plasm/Shapes.fs`). Under the runtime a generated shape is used when
+  there is one.
+- **A native binary without generated shapes** fails when the model is built,
+  naming the record or union and this page.
+
+## How a native binary keeps what queries name
+
+A query is a quotation, read back at run time, and every type and method it
+names must survive trimming. The domain's records come with their shapes.
+FSharp.Core's operators and modules, `String`'s methods and Plasm's own query
+functions are kept by a trimming descriptor embedded in Plasm.dll
+(`src/Plasm/ILLink.Descriptors.xml`): the members the translator recognises.
+
+FSharp.Core's `SpecificCall` and its lookup of a `[<ReflectedDefinition>]`
+member compare metadata tokens, which a native binary does not have. Plasm
+matches FSharp.Core's operators by name instead. A `[<ReflectedDefinition>]`
+member or function in a query (`o.Large`) is refused in a native binary, with
+that reason, until its body can be read there.
+
+## The check
+
+`tests/Plasm.Aot` is a program over a small domain (`tests/Plasm.Aot.Domain`,
+which references only Plasm.Annotations). `run.sh` runs it under the runtime
+and as a native binary against one PostgreSQL, and compares what they print:
+
+```sh
+tests/Plasm.Aot/run.sh
+```
+
+It uses `PLASM_TEST_PG` (an admin connection string) when it is set, and
+otherwise starts `postgres:18.4` in Docker for the run. It takes about 40
+seconds on an Apple M4 Max, most of it the native publish. It is not part of
+the acceptance suite or the solution build. `PLASM_AOT_TRACE=1` adds the stack
+trace of a step that throws (to standard error, not compared).
+
+What it does today:
+
+| Step | Runtime | Native |
+|---|---|---|
+| Build the model of a record with a typed id and a unique field | ✓ | ✓ |
+| Insert one | ✓ | ✓ |
+| Read it by its typed id | ✓ | ✓ |
+
+The publish still reports IL trimming and AOT warnings; they become errors
+once the program covers the shop domain.

@@ -1,7 +1,6 @@
 namespace Plasm
 
 open System
-open Microsoft.FSharp.Reflection
 
 /// How a domain scalar type is stored as a provider-native value.
 ///
@@ -101,10 +100,10 @@ module Scalar =
     let enum<'Domain when 'Domain: equality> (cases: ('Domain * string) list) : ScalarMapping =
         let t = typeof<'Domain>
 
-        if FSharpType.IsUnion(t, true) then
-            let declared = FSharpType.GetUnionCases(t, true)
+        if Shape.isUnion t then
+            let declared = (Shape.union t).Cases
 
-            if declared |> Array.exists (fun c -> c.GetFields().Length > 0) then
+            if declared |> Array.exists (fun c -> c.Fields.Length > 0) then
                 raise (PlasmConfigurationException $"Scalar.enum requires a fieldless union; {t.Name} has cases with fields.")
 
             if declared.Length <> (cases |> List.map fst |> List.distinct |> List.length) then
@@ -129,8 +128,10 @@ module Scalar =
                 None
 
         let caseName (c: 'Domain) =
-            if FSharpType.IsUnion(t, true) then
-                (fst (FSharpValue.GetUnionFields(box c, t, true))).Name
+            if Shape.isUnion t then
+                let u = Shape.union t
+                let tag = u.Tag(box c)
+                (u.Cases |> Array.find (fun k -> k.Tag = tag)).Name
             else
                 string c
 

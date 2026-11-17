@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Errors.fs" />
+    <Compile Include="Shapes.fs" />
     <Compile Include="Reflection.fs" />
     <Compile Include="Scalar.fs" />
     <Compile Include="Schema.fs" />
@@ -27,6 +28,10 @@
     <Compile Include="Tx.fs" />
     <Compile Include="Repo.fs" />
     <Compile Include="Interactive.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Read by the trimmer of a native binary (docs/aot.md). -->
+    <EmbeddedResource Include="ILLink.Descriptors.xml" LogicalName="ILLink.Descriptors.xml" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Plasm.Annotations/Plasm.Annotations.fsproj" />

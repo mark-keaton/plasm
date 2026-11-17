@@ -5,7 +5,6 @@ open System
 open System.Collections.Concurrent
 open System.Collections.Generic
 open System.Reflection
-open System.Linq.Expressions
 open Microsoft.FSharp.Reflection
 
 let private cache (f: Type -> 'V) =
@@ -22,40 +21,15 @@ let isList (t: Type) =
 let elementType (t: Type) = t.GetGenericArguments().[0]
 
 /// Some(value) for a given option type.
-let makeSome: Type -> (obj -> obj) =
-    cache (fun optType ->
-        let case = FSharpType.GetUnionCases(optType) |> Array.find (fun c -> c.Name = "Some")
-        let ctor = FSharpValue.PreComputeUnionConstructor(case)
-        fun v -> ctor [| v |])
+let makeSome (optType: Type) : obj -> obj = (Shape.option (elementType optType)).Some
 
 /// Reads the payload of an option value: None (null) -> None.
-let getOptionValue: Type -> (obj -> obj option) =
-    cache (fun optType ->
-        let prop = optType.GetProperty("Value")
-        fun v -> if isNull v then None else Some(prop.GetValue v))
-
-type private ListMaker<'T>() =
-    static member Make(items: obj seq) : obj =
-        let mutable acc = []
-        let arr = Seq.toArray items
-        for i in arr.Length - 1 .. -1 .. 0 do
-            acc <- (unbox<'T> arr.[i]) :: acc
-        box acc
-
-    static member Items(list: obj) : obj seq = (unbox<'T list> list) |> Seq.map box
+let getOptionValue (optType: Type) : obj -> obj option = (Shape.option (elementType optType)).Value
 
 /// Builds an F# list of the given element type from boxed items.
-let makeList: Type -> (obj seq -> obj) =
-    cache (fun elemType ->
-        let m = typedefof<ListMaker<_>>.MakeGenericType(elemType).GetMethod("Make", BindingFlags.Static ||| BindingFlags.Public ||| BindingFlags.NonPublic)
-        let f = m.CreateDelegate<Func<obj seq, obj>>()
-        fun items -> f.Invoke items)
+let makeList (elemType: Type) : obj seq -> obj = (Shape.list elemType).Make
 
-let listItems: Type -> (obj -> obj seq) =
-    cache (fun elemType ->
-        let m = typedefof<ListMaker<_>>.MakeGenericType(elemType).GetMethod("Items", BindingFlags.Static ||| BindingFlags.Public ||| BindingFlags.NonPublic)
-        let f = m.CreateDelegate<Func<obj, obj seq>>()
-        fun l -> f.Invoke l)
+let listItems (elemType: Type) : obj -> obj seq = (Shape.list elemType).Items
 
 /// How an owned or linked field holds what is read: `Empty` before its load
 /// fills it.
@@ -80,44 +54,7 @@ let ownedOneCtors: AssocCtors =
       Loaded = id
       Read = Some }
 
-type RecordShape =
-    { Fields: PropertyInfo[]
-      Construct: obj[] -> obj
-      Deconstruct: obj -> obj[] }
-
-/// Compiles `values -> new T(values[0], ...)` (avoids reflection invoke per record).
-let private compileConstructor (t: Type) : obj[] -> obj =
-    let ctor = FSharpValue.PreComputeRecordConstructorInfo(t, true)
-    let values = Expression.Parameter(typeof<obj[]>, "values")
-
-    let args =
-        ctor.GetParameters()
-        |> Array.mapi (fun i p ->
-            Expression.Convert(Expression.ArrayIndex(values, Expression.Constant i), p.ParameterType) :> Expression)
-
-    let body = Expression.Convert(Expression.New(ctor, args), typeof<obj>)
-    let f = Expression.Lambda<Func<obj[], obj>>(body, values).Compile()
-    fun vs -> f.Invoke vs
-
-/// Compiles `record -> [| box record.F1; ... |]`.
-let private compileReader (t: Type) (fields: PropertyInfo[]) : obj -> obj[] =
-    let o = Expression.Parameter(typeof<obj>, "o")
-    let typed = Expression.Convert(o, t)
-
-    let items =
-        fields
-        |> Array.map (fun p -> Expression.Convert(Expression.Property(typed, p), typeof<obj>) :> Expression)
-
-    let f = Expression.Lambda<Func<obj, obj[]>>(Expression.NewArrayInit(typeof<obj>, items), o).Compile()
-    fun v -> f.Invoke v
-
-let recordShape: Type -> RecordShape =
-    cache (fun t ->
-        let fields = FSharpType.GetRecordFields(t, true)
-
-        { Fields = fields
-          Construct = compileConstructor t
-          Deconstruct = compileReader t fields })
+let recordShape (t: Type) : RecordShape = Shape.record t
 
 let typeName (t: Type) =
     if t.IsGenericType then

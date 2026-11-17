@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The domain of the native-AOT check (docs/aot.md): it references only
+       Plasm.Annotations, as an application's domain does. -->
+  <PropertyGroup>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Shop.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Plasm.Annotations/Plasm.Annotations.fsproj" />
+  </ItemGroup>
+</Project>

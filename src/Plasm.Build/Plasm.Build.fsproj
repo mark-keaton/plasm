@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Plasm's build step (docs/aot.md): writes the shapes of the F# types an
+       application's domain assemblies define, for a native binary. Run by
+       src/Plasm/build/Plasm.targets; it reads the assemblies' metadata and
+       loads none of them. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <!-- Run by the build of a native application, as a plain program. -->
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Reflection.MetadataLoadContext" />
+  </ItemGroup>
+</Project>

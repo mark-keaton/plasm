@@ -504,7 +504,7 @@ and internal UnionLayout =
         u.Read(dict (List.zip (u.Columns |> List.map (fun p -> p.Name)) values))
 
 and internal UnionCaseLayout =
-    { Case: Microsoft.FSharp.Reflection.UnionCaseInfo
+    { Case: UnionCaseShape
       /// The case's name as stored: snake case.
       Stored: string
       Parts: UnionPart list
@@ -515,7 +515,8 @@ and internal UnionCaseLayout =
 /// nested union with fields.
 and internal UnionPart =
     | Leaf of FieldMap
-    | Nested of PropertyInfo * UnionLayout
+    /// The case field's name, and its union.
+    | Nested of string * UnionLayout
 
 type internal Cardinality =
     | Many
@@ -556,7 +557,7 @@ type internal SchemaInfo =
       KeyGenerated: bool
       Version: FieldMap option
       Assocs: AssocMap[]
-      Shape: Reflection.RecordShape
+      Shape: RecordShape
       FieldCount: int }
 
     member s.Field(name: string) = s.Fields |> Array.find (fun f -> f.Name = name)

@@ -22,26 +22,50 @@ type Session =
       /// Arguments of a prepared query, bound into its parameters.
       Args: obj[] }
 
+let private typed<'T> = Func<DbDataReader, int, obj>(fun r i -> if r.IsDBNull i then null else box (r.GetFieldValue<'T> i))
+
+/// The provider types' readers, written out: a native binary has no code for
+/// a reader made for a type at run time (docs/aot.md).
+let private known: (Type * Func<DbDataReader, int, obj>) list =
+    [ typeof<int16>, typed<int16>
+      typeof<int>, typed<int>
+      typeof<int64>, typed<int64>
+      typeof<string>, typed<string>
+      typeof<bool>, typed<bool>
+      typeof<decimal>, typed<decimal>
+      typeof<float>, typed<float>
+      typeof<float32>, typed<float32>
+      typeof<Guid>, typed<Guid>
+      typeof<DateTime>, typed<DateTime>
+      typeof<DateTimeOffset>, typed<DateTimeOffset>
+      typeof<DateOnly>, typed<DateOnly>
+      typeof<TimeOnly>, typed<TimeOnly>
+      typeof<TimeSpan>, typed<TimeSpan>
+      typeof<byte[]>, typed<byte[]>
+      typeof<byte>, typed<byte>
+      typeof<char>, typed<char> ]
+
+let private readers = ConcurrentDictionary<Type, Func<DbDataReader, int, obj>>(dict known)
+
 type private ColumnReader<'T>() =
     static member Read(r: DbDataReader, i: int) : obj =
         if r.IsDBNull i then null else box (r.GetFieldValue<'T> i)
 
-let private readers = ConcurrentDictionary<Type, Func<DbDataReader, int, obj>>()
-
 /// Typed column reader for a provider type (avoids boxing surprises such as
-/// int32 vs int64).
+/// int32 vs int64). Another type is read as itself where code can be made at
+/// run time, else as what the database returns; `obj` (a computed column)
+/// always as what the database returns.
 let columnReader (t: Type) =
     readers.GetOrAdd(
         t,
         fun t ->
-          if t = typeof<obj> then
-            // Computed columns: whatever the database returns.
-            Func<DbDataReader, int, obj>(fun r i -> if r.IsDBNull i then null else r.GetValue i)
-          else
-            typedefof<ColumnReader<_>>
-                .MakeGenericType(t)
-                .GetMethod("Read", BindingFlags.Static ||| BindingFlags.Public ||| BindingFlags.NonPublic)
-                .CreateDelegate<Func<DbDataReader, int, obj>>()
+            if t = typeof<obj> || not Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported then
+                Func<DbDataReader, int, obj>(fun r i -> if r.IsDBNull i then null else r.GetValue i)
+            else
+                typedefof<ColumnReader<_>>
+                    .MakeGenericType(t)
+                    .GetMethod("Read", BindingFlags.Static ||| BindingFlags.Public ||| BindingFlags.NonPublic)
+                    .CreateDelegate<Func<DbDataReader, int, obj>>()
     )
 
 let private schemaReaders = ConditionalWeakTable<SchemaInfo, Func<DbDataReader, int, obj>[]>()

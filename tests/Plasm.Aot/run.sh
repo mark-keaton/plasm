@@ -1,0 +1,46 @@
+#!/bin/bash
+# The native-AOT check (docs/aot.md): runs tests/Plasm.Aot under the runtime
+# and as a native binary against one PostgreSQL, and compares what they print.
+# Uses PLASM_TEST_PG (an admin connection string) if set, else starts
+# postgres:18.4 in Docker for the run. Exits non-zero when the outputs differ.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+work=$(mktemp -d)
+container=""
+cleanup() {
+  rm -rf "$work"
+  if [ -n "$container" ]; then docker rm -f "$container" > /dev/null; fi
+}
+trap cleanup EXIT
+
+if [ -n "${PLASM_TEST_PG:-}" ]; then
+  cs="$PLASM_TEST_PG"
+else
+  container=$(docker run -d -e POSTGRES_PASSWORD=postgres -p 127.0.0.1::5432 postgres:18.4)
+  port=$(docker port "$container" 5432/tcp | head -1 | sed 's/.*://')
+  for _ in $(seq 1 60); do
+    docker exec "$container" pg_isready -U postgres > /dev/null 2>&1 && break
+    sleep 1
+  done
+  sleep 1
+  cs="Host=127.0.0.1;Port=$port;Username=postgres;Password=postgres;Database=postgres"
+fi
+
+rid=$(dotnet --info | sed -n 's/^ *RID: *//p' | head -1)
+echo "runtime: building"
+dotnet build "$here" -c Release -v q -o "$work/jit" > "$work/build.log" 2>&1 || { cat "$work/build.log"; exit 1; }
+echo "native: publishing for $rid (about a minute)"
+dotnet publish "$here" -c Release -r "$rid" -v q -o "$work/native" > "$work/publish.log" 2>&1 || { cat "$work/publish.log"; exit 1; }
+echo "native: $(grep -c 'warning IL' "$work/publish.log" || true) IL warnings"
+
+dotnet "$work/jit/Plasm.Aot.dll" "$cs" > "$work/jit.txt" 2>&1 || true
+"$work/native/Plasm.Aot" "$cs" > "$work/native.txt" 2>&1 || true
+
+echo "--- runtime"; cat "$work/jit.txt"
+echo "--- native"; cat "$work/native.txt"
+if diff -u "$work/jit.txt" "$work/native.txt"; then
+  echo "native binary prints what the runtime prints"
+else
+  echo "native binary differs from the runtime"
+  exit 1
+fi

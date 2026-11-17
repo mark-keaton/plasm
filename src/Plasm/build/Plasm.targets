@@ -1,0 +1,26 @@
+<Project>
+  <!-- Plasm's build step (docs/aot.md): before an application compiles, writes
+       the shapes of its domain's F# records and unions as F# and compiles them
+       first, so that a native binary needs no reflection over them. -->
+  <PropertyGroup>
+    <PlasmShapes Condition="'$(PlasmShapes)' == '' and '$(OutputType)' == 'Exe'">true</PlasmShapes>
+    <PlasmBuildTool Condition="'$(PlasmBuildTool)' == ''">$(MSBuildThisFileDirectory)../tools/Plasm.Build.dll</PlasmBuildTool>
+  </PropertyGroup>
+
+  <Target Name="PlasmShapes" AfterTargets="ResolveAssemblyReferences" BeforeTargets="BeforeCompile" Condition="'$(PlasmShapes)' == 'true'">
+    <PropertyGroup>
+      <_PlasmShapesFile>$(IntermediateOutputPath)Plasm.Shapes.g.fs</_PlasmShapesFile>
+      <_PlasmReferences>$(IntermediateOutputPath)Plasm.Shapes.references</_PlasmReferences>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_PlasmReferences)" Lines="@(ReferencePath)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <Exec Command="dotnet &quot;$(PlasmBuildTool)&quot; &quot;$(_PlasmShapesFile)&quot; &quot;$(_PlasmReferences)&quot;" />
+    <!-- First, so that its registrations run before the application's code. -->
+    <ItemGroup>
+      <_PlasmCompile Include="@(Compile)" />
+      <Compile Remove="@(Compile)" />
+      <Compile Include="$(_PlasmShapesFile)" />
+      <Compile Include="@(_PlasmCompile)" />
+      <FileWrites Include="$(_PlasmShapesFile);$(_PlasmReferences)" />
+    </ItemGroup>
+  </Target>
+</Project>

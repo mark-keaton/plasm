@@ -4,7 +4,6 @@ open System
 open System.Reflection
 open System.Collections.Concurrent
 open Microsoft.FSharp.Quotations
-open Microsoft.FSharp.Reflection
 
 /// How a record is stored, read from the record itself (stored-records.feature):
 /// its [<Table>], its field named Id, the attributes on its fields, and the
@@ -22,9 +21,9 @@ module internal Derive =
     let tableName (t: Type) = attr<TableAttribute> t |> Option.map (fun a -> a.Name)
 
     /// A record that names its table.
-    let isStored (t: Type) = FSharpType.IsRecord(t, true) && (tableName t).IsSome
+    let isStored (t: Type) = Shape.isRecord t && (tableName t).IsSome
 
-    let fields (t: Type) = FSharpType.GetRecordFields(t, true)
+    let fields (t: Type) = (Shape.record t).Fields
 
     let keyField (t: Type) = fields t |> Array.tryFind (fun p -> p.Name = "Id")
 
@@ -33,11 +32,12 @@ module internal Derive =
     /// An integer, or a single-case union whose one field is an integer.
     let private isIntegerKey (t: Type) =
         integers.Contains t
-        || (FSharpType.IsUnion(t, true)
-            && (let cases = FSharpType.GetUnionCases(t, true)
+        || (Shape.isUnion t
+            && not (Reflection.isOption t || Reflection.isList t)
+            && (let cases = (Shape.union t).Cases
                 cases.Length = 1
-                && (let fs = cases.[0].GetFields()
-                    fs.Length = 1 && integers.Contains fs.[0].PropertyType)))
+                && (let fs = cases.[0].Fields
+                    fs.Length = 1 && integers.Contains(snd fs.[0]))))
 
     /// The database generates an integer key unless the field says [<Assigned>].
     let keyGenerated (key: PropertyInfo) = isIntegerKey key.PropertyType && not (has<AssignedAttribute> key)
@@ -71,7 +71,7 @@ module internal Derive =
             let e = Reflection.elementType t
 
             if isStored e then OfStored(e, true)
-            elif FSharpType.IsRecord(e, true) then ListOfUnstored e
+            elif Shape.isRecord e then ListOfUnstored e
             else Other
         else
             let e = unwrapOption t
@@ -97,7 +97,7 @@ module internal Derive =
         let errors = ResizeArray<ConfigError>()
         let err (prop: string option) msg = errors.Add { Model = t.Name; Property = prop; Message = msg }
 
-        if not (FSharpType.IsRecord(t, true)) then
+        if not (Shape.isRecord t) then
             err None "is not a record, and only records are stored"
             Error(List.ofSeq errors)
         else

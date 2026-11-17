@@ -3,6 +3,7 @@
     <Project Path="src/Plasm/Plasm.fsproj" />
     <Project Path="src/Plasm.Annotations/Plasm.Annotations.fsproj" />
     <Project Path="src/Plasm.Postgres/Plasm.Postgres.fsproj" />
+    <Project Path="src/Plasm.Build/Plasm.Build.fsproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Plasm.TestDomain/Plasm.TestDomain.fsproj" />
@@ -11,6 +12,8 @@
     <Project Path="tests/Plasm.Tests/Plasm.Tests.fsproj" />
     <Project Path="tests/Plasm.Specs.Steps/Plasm.Specs.Steps.fsproj" />
     <Project Path="tests/Plasm.Specs/Plasm.Specs.csproj" />
+    <Project Path="tests/Plasm.Aot.Domain/Plasm.Aot.Domain.fsproj" />
+    <Project Path="tests/Plasm.Aot/Plasm.Aot.fsproj" />
   </Folder>
   <Folder Name="/examples/">
     <Project Path="examples/Plasm.Examples/Plasm.Examples.fsproj" />
@@ -27,6 +30,7 @@
   </Folder>
   <Folder Name="/docs/">
     <File Path="README.md" />
+    <File Path="docs/aot.md" />
     <File Path="docs/adr/0001-architecture.md" />
     <File Path="docs/acceptance.md" />
     <File Path="docs/status.md" />

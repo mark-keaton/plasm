@@ -161,6 +161,14 @@ let private fail (e: Expr) reason =
 
 let private invalid msg = raise (TranslationFailure(TranslationError.InvalidQuery msg))
 
+/// A call of an FSharp.Core operator (`=`, `<>`, `not`), by its compiled name.
+/// FSharp.Core's SpecificCall compares metadata tokens, and a native binary
+/// has none (docs/aot.md).
+let private (|OperatorCall|_|) (name: string) (e: Expr) =
+    match e with
+    | Call(None, mi, args) when mi.Name = name && mi.DeclaringType.FullName = "Microsoft.FSharp.Core.Operators" -> Some args
+    | _ -> None
+
 // ---------------------------------------------------------------------------
 // Normalisation: inline pipes, applications and let-bindings.
 // ---------------------------------------------------------------------------
@@ -171,7 +179,29 @@ let private invalid msg = raise (TranslationFailure(TranslationError.InvalidQuer
 let private reflectedBodies = Collections.Concurrent.ConcurrentDictionary<Reflection.MethodBase, Expr option>()
 
 let private reflectedBody (m: Reflection.MethodBase) =
-    if isNull m then None else reflectedBodies.GetOrAdd(m, fun m -> Expr.TryGetReflectedDefinition m)
+    if isNull m then
+        None
+    else
+        reflectedBodies.GetOrAdd(
+            m,
+            fun m ->
+                try
+                    Expr.TryGetReflectedDefinition m
+                // A native binary has no metadata tokens, by which FSharp.Core
+                // finds a definition (docs/aot.md).
+                with :? InvalidOperationException when Shape.generatedOnly ->
+                    if m.IsDefined(typeof<ReflectedDefinitionAttribute>, false) then
+                        raise (
+                            TranslationFailure(
+                                TranslationError.UnsupportedExpression(
+                                    m.DeclaringType.Name + "." + m.Name,
+                                    "a [<ReflectedDefinition>] member or function cannot be read in a native binary yet (docs/aot.md)"
+                                )
+                            )
+                        )
+
+                    None
+        )
 
 /// The quoted body of a query that binds loads (loads.feature): read by its
 /// own builder, names and all, so normalising leaves it as written.
@@ -344,15 +374,21 @@ let rec immutable (v: obj) =
             true
         elif t.IsArray then
             false
-        elif FSharpType.IsTuple t then
-            FSharpValue.GetTupleFields v |> Array.forall immutable
-        elif FSharpType.IsRecord(t, System.Reflection.BindingFlags.Public ||| System.Reflection.BindingFlags.NonPublic) then
-            FSharpType.GetRecordFields(t, System.Reflection.BindingFlags.Public ||| System.Reflection.BindingFlags.NonPublic)
-            |> Array.forall (fun p -> not p.CanWrite && immutable (p.GetValue v))
-        elif FSharpType.IsUnion(t, System.Reflection.BindingFlags.Public ||| System.Reflection.BindingFlags.NonPublic) then
-            // Lists and options included.
-            let _, fields = FSharpValue.GetUnionFields(v, t, true)
-            fields |> Array.forall immutable
+        elif t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<list<int>> then
+            v :?> System.Collections.IEnumerable |> Seq.cast<obj> |> Seq.forall immutable
+        elif Reflection.isOption t then
+            immutable ((Shape.option (Reflection.elementType t)).Value v |> Option.toObj)
+        elif (v :? System.Runtime.CompilerServices.ITuple) && FSharpType.IsTuple t then
+            let tuple = v :?> System.Runtime.CompilerServices.ITuple
+            Seq.init tuple.Length (fun i -> tuple.[i]) |> Seq.forall immutable
+        elif Shape.isRecord t then
+            let shape = Shape.record t
+            (shape.Fields |> Array.forall (fun p -> not p.CanWrite)) && (shape.Deconstruct v |> Array.forall immutable)
+        elif (not (isNull t.BaseType) && Shape.isUnion t.BaseType) || Shape.isUnion t then
+            // A case with fields may be a class of its own, under the union's type.
+            let u = Shape.union (if not (isNull t.BaseType) && Shape.isUnion t.BaseType then t.BaseType else t)
+            let tag = u.Tag v
+            (u.Cases |> Array.find (fun c -> c.Tag = tag)).Read v |> Array.forall immutable
         elif t.IsGenericType && (t.GetGenericTypeDefinition() = typedefof<Set<int>> || t.GetGenericTypeDefinition() = typedefof<Map<int, int>>) then
             v :?> System.Collections.IEnumerable |> Seq.cast<obj> |> Seq.forall immutable
         else
@@ -650,7 +686,7 @@ let private casePart (u: UnionLayout) (p: Reflection.PropertyInfo) =
             c.Parts
             |> List.tryFind (function
                 | Leaf f -> f.Name = p.Name
-                | Nested(q, _) -> q.Name = p.Name))
+                | Nested(name, _) -> name = p.Name))
 
 /// A union with fields in the row: a field's own, or a nested case field of one.
 let rec (|UnionPath|_|) (ctx: Ctx) (e: Expr) : (string * UnionLayout) option =
@@ -688,8 +724,9 @@ let (|UnionOptionalLeaf|_|) (ctx: Ctx) (e: Expr) : (string * FieldMap) option =
 /// appears (GROUP BY and SELECT must match).
 let private storedLiteral (stored: string) = Sql.Literal("'" + stored + "'")
 
-let private caseIs (alias: string) (u: UnionLayout) (case: Microsoft.FSharp.Reflection.UnionCaseInfo) =
-    let c = u.Cases |> Array.find (fun c -> c.Case.Tag = case.Tag)
+/// The union in the row is in the case of this tag.
+let private caseIs (alias: string) (u: UnionLayout) (tag: int) =
+    let c = u.Cases |> Array.find (fun c -> c.Case.Tag = tag)
     Sql.Binary("=", Sql.Column(alias, u.TagColumn), storedLiteral c.Stored)
 
 /// A union in the row equals a value: its case, and each of that case's fields.
@@ -816,9 +853,9 @@ let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
             let left = u.Cases |> Array.filter (fun c -> tested |> List.forall (fun (t, _) -> t.Tag <> c.Case.Tag))
 
             let branches =
-                [ for case, v in tested -> caseIs alias u case, branch ctx v
+                [ for case, v in tested -> caseIs alias u case.Tag, branch ctx v
                   if left.Length > 0 then
-                      yield Sql.disj [ for c in left -> caseIs alias u c.Case ], branch ctx otherwise ]
+                      yield Sql.disj [ for c in left -> caseIs alias u c.Case.Tag ], branch ctx otherwise ]
 
             Sql.Case(branches, Sql.Literal "NULL")
         | IfThenElse(cond, a, b) when e.Type <> typeof<bool> -> Sql.Case([ predicate ctx cond, branch ctx a ], branch ctx b)
@@ -910,7 +947,7 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
         | Call(None, mi, [ q ]) when isExistsCall mi -> existsQuery ctx e q
         | IfThenElse(a, b, Bool false) -> Sql.Binary("AND", predicate ctx a, predicate ctx b)
         | IfThenElse(a, Bool true, b) -> Sql.Binary("OR", predicate ctx a, predicate ctx b)
-        | SpecificCall <@ not @> (_, _, [ a ]) ->
+        | OperatorCall "Not" [ a ] ->
             // SQL's NOT leaves NULL unknown, so the row would be dropped; in F#
             // the comparison is false and its negation true. Only operands that
             // can be NULL need IS NOT TRUE; plain NOT keeps indexes usable.
@@ -950,31 +987,31 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
                 Sql.Binary("AND", fieldIsNotNull b.Alias f, inner)
             else
                 Sql.Binary("OR", fieldIsNull b.Alias f, inner)
-        | UnionCaseTest(UnionPath ctx (alias, u), case) -> caseIs alias u case
+        | UnionCaseTest(UnionPath ctx (alias, u), case) -> caseIs alias u case.Tag
         | PropertyGet(Some(UnionPath ctx (alias, u)), p, []) when
             p.Name.StartsWith "Is" && u.Cases |> Array.exists (fun c -> "Is" + c.Case.Name = p.Name)
             ->
-            caseIs alias u (u.Cases |> Array.find (fun c -> "Is" + c.Case.Name = p.Name)).Case
-        | SpecificCall <@ (=) @> (_, _, [ UnionPath ctx (alias, u); v ])
-        | SpecificCall <@ (=) @> (_, _, [ v; UnionPath ctx (alias, u) ]) when not (isRowDependent ctx v) ->
+            caseIs alias u (u.Cases |> Array.find (fun c -> "Is" + c.Case.Name = p.Name)).Case.Tag
+        | OperatorCall "op_Equality" [ UnionPath ctx (alias, u); v ]
+        | OperatorCall "op_Equality" [ v; UnionPath ctx (alias, u) ] when not (isRowDependent ctx v) ->
             Sql.conj (unionEquals alias u (evaluate ctx v))
-        | SpecificCall <@ (<>) @> (_, _, [ UnionPath ctx (alias, u); v ])
-        | SpecificCall <@ (<>) @> (_, _, [ v; UnionPath ctx (alias, u) ]) when not (isRowDependent ctx v) ->
+        | OperatorCall "op_Inequality" [ UnionPath ctx (alias, u); v ]
+        | OperatorCall "op_Inequality" [ v; UnionPath ctx (alias, u) ] when not (isRowDependent ctx v) ->
             Sql.Not(Sql.conj (unionEquals alias u (evaluate ctx v)))
         // A whole document equals a value: jsonb compares documents by content.
-        | SpecificCall <@ (=) @> (_, _, [ RowField ctx (b, f); v ])
-        | SpecificCall <@ (=) @> (_, _, [ v; RowField ctx (b, f) ]) when f.Json.IsSome && not (isRowDependent ctx v) && not (mentionsArg v) ->
+        | OperatorCall "op_Equality" [ RowField ctx (b, f); v ]
+        | OperatorCall "op_Equality" [ v; RowField ctx (b, f) ] when f.Json.IsSome && not (isRowDependent ctx v) && not (mentionsArg v) ->
             match f.ToDb(evaluate ctx v) with
             | x when x = box DBNull.Value -> Sql.IsNull(Sql.Column(b.Alias, f.Column))
             | x -> Sql.Binary("=", Sql.Column(b.Alias, f.Column), Sql.partValue f.Parts.Head x)
-        | SpecificCall <@ (=) @> (_, _, [ RowField ctx (b, f); v ])
-        | SpecificCall <@ (=) @> (_, _, [ v; RowField ctx (b, f) ]) when f.Value.IsSome && not (isRowDependent ctx v) ->
+        | OperatorCall "op_Equality" [ RowField ctx (b, f); v ]
+        | OperatorCall "op_Equality" [ v; RowField ctx (b, f) ] when f.Value.IsSome && not (isRowDependent ctx v) ->
             valueEquals b.Alias f (evaluate ctx v)
-        | SpecificCall <@ (<>) @> (_, _, [ RowField ctx (b, f); v ])
-        | SpecificCall <@ (<>) @> (_, _, [ v; RowField ctx (b, f) ]) when f.Value.IsSome && not (isRowDependent ctx v) ->
+        | OperatorCall "op_Inequality" [ RowField ctx (b, f); v ]
+        | OperatorCall "op_Inequality" [ v; RowField ctx (b, f) ] when f.Value.IsSome && not (isRowDependent ctx v) ->
             Sql.IsNotTrue(valueEquals b.Alias f (evaluate ctx v))
-        | SpecificCall <@ (=) @> (_, _, [ a; b ]) -> equality ctx e a b false
-        | SpecificCall <@ (<>) @> (_, _, [ a; b ]) -> equality ctx e a b true
+        | OperatorCall "op_Equality" [ a; b ] -> equality ctx e a b false
+        | OperatorCall "op_Inequality" [ a; b ] -> equality ctx e a b true
         | Call(None, mi, [ a; b ]) when comparisonOps.ContainsKey mi.Name ->
             if Reflection.isOption a.Type || Reflection.isOption b.Type then
                 fail
@@ -2413,7 +2450,7 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
                             else
                                 let pair =
                                     match c with
-                                    | SpecificCall <@ (=) @> (_, _, [ a; b ]) ->
+                                    | OperatorCall "op_Equality" [ a; b ] ->
                                         match fieldOf p a, fieldOf o b, fieldOf o a, fieldOf p b with
                                         | Some i, Some u, _, _ -> Some(i, u)
                                         | _, _, Some u, Some i -> Some(i, u)
