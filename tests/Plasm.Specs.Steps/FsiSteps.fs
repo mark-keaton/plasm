@@ -121,7 +121,7 @@ type FsiSteps(w: World) =
                   "open Plasm.Interactive"
                   "open Plasm.TestDomain.Domain"
                   "let commands = ResizeArray<string>()"
-                  $"let repo = Repo(Schemas.model, Plasm.Postgres.Postgres.connect @\"{w.Db.ConnectionString};Pooling=false\", {{ RepoOptions.Default with OnCommand = Some(fun e -> commands.Add e.Sql) }})" ]
+                  $"let repo = Repo.Start(Schemas.model, Plasm.Postgres.Postgres.connect @\"{w.Db.ConnectionString};Pooling=false\", queriesIn = typeof<Customer>.Assembly, options = {{ RepoOptions.Unchecked with OnCommand = Some(fun e -> commands.Add e.Sql) }}) |> wait" ]
         )
         |> ignore
 
@@ -422,7 +422,7 @@ type FsiSteps(w: World) =
 
         let issues =
             fsi().Value<string>(
-                $"match Repo(Model.buildOrFail [] [ typeof<``{name}``> ], Plasm.Postgres.Postgres.connect @\"{w.Db.ConnectionString};Pooling=false\").CheckSchema() |> wait with Ok [] -> \"none\" | other -> sprintf \"%%A\" other"
+                $"match (Repo.Start(Model.buildOrFail [] [ typeof<``{name}``> ], Plasm.Postgres.Postgres.connect @\"{w.Db.ConnectionString};Pooling=false\", queriesIn = typeof<``{name}``>.Assembly, options = RepoOptions.Unchecked) |> wait).CheckSchema() |> wait with Ok [] -> \"none\" | other -> sprintf \"%%A\" other"
             )
 
         equal "none" issues "schema check of the scaffolded mapping"

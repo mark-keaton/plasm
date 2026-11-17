@@ -38,7 +38,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 
 | Suite | What it proves | Result |
 |---|---|---|
-| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 502 / 502 pass (outline examples counted separately) |
+| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 508 / 508 pass (outline examples counted separately) |
 | `tests/Plasm.Tests`: `Translation.fs` | SQL-shape contracts (options, membership, `exists`, `List.exists`/`forall` over owned lists, pagination), unsupported-expression errors, model-configuration errors | 42 pass |
 | `tests/Plasm.Tests`: `CompileTime.fs` | Typed API acceptance and rejection, checked with FSharp.Compiler.Service against the real assemblies; each rejection pins its error code and has a passing control snippet | 15 pass |
 | `tests/Plasm.Tests`: `Properties.fs` (FsCheck, real database) | Predicate-order equivalence matching F# semantics; extending a query never alters it; an update records exactly the differing fields; the same aggregates for every batch size, with key-proportional command counts; owned lines keep their declared order per owner | 5 properties pass |
@@ -51,7 +51,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 | `koans/browser` | The browser koans (PGlite) | 120 scenarios pass |
 
 Run the library's tests with `dotnet test` from the repository root (Docker is
-required, or set `PLASM_TEST_PG`): 502 scenarios and 128 unit tests.
+required, or set `PLASM_TEST_PG`): 508 scenarios and 128 unit tests.
 
 ## Supported behaviour
 
@@ -312,10 +312,21 @@ with `repo.Explain`):
 
 **Start-up checks and DDL:**
 
-- `repo.CheckQueries(assembly, ?inNamespace)` translates every module value of
-  type `Query<_>` or `Projection<_>` and every prepared query an assembly
-  defines, without running them, and reports each failure by its name.
-- `repo.CheckSchema()` reports every `SchemaIssue`: missing tables and columns
+- `Repo.Start(model, provider, queriesIn = assembly, ?options)` is the one
+  way to get a repository. It translates every module value of type
+  `Query<_>` or `Projection<_>` and every prepared query the assembly defines,
+  without running them, and runs the schema check below; `RepoOptions.Queries`
+  and `RepoOptions.Schema` say what to do with what is found: `Crash` (the
+  default) raises one `PlasmStartupException` listing every problem, queries
+  by name then schema differences, with the counts first; `Warn` reports each
+  through `RepoOptions.OnProblem` (standard error when None) and starts;
+  `Ignore` does not check. An assembly with no query values is a problem: a
+  check that checked nothing does not pass. Functions returning a query are
+  counted and named in a note, never a problem. `RepoOptions.Unchecked` is
+  Default with both written as Ignore (scripts, benchmarks). The constructor is
+  internal (`query-check.feature`).
+- `repo.CheckSchema()`, at start-up through `Repo.Start` and again whenever
+  asked (after a migration, say), reports every `SchemaIssue`: missing tables and columns
   (join tables included), incompatible column types, non-optional fields over
   nullable columns, NOT NULL columns the model never writes, enum label
   mismatches, a `unique` field without a unique constraint, a reference without
@@ -490,13 +501,15 @@ documents), each refused by name rather than guessed:
   `DbFailureKind.UniqueViolation` / `ForeignKeyViolation` / `CheckViolation`);
   `CheckSchema` reports a misnamed unique constraint or foreign key, but check
   constraints are not stated in the model and are not checked.
-- Only queries defined as module values are found by `repo.CheckQueries`; a
-  query built inside a function is checked when it is first used.
+- Only queries defined as module values are checked by `Repo.Start`; a query
+  built inside a function is checked when it is first used (`Repo.Start` says
+  how many such functions there are). Bulk writes and transaction steps are
+  not checked at start-up.
 - `referring` and `referredBy` take the other record as `obj`, so the call
   needs one type argument and no `box`; F# cannot infer a second type argument
   when the first is written. A value that is not a stored record (an
   `Order option`, a number) compiles, and is refused when the query is
-  translated, naming its type: at start-up by `repo.CheckQueries` for a module
+  translated, naming its type: at start-up by `Repo.Start` for a module
   value, otherwise at first use. Not at compile time.
 - Plasm depends on FSharp.Core 8.0 or later (`FSharp.Core >= 8.0.403`), so it
   loads into hosts with an older FSharp.Core than the SDK's, such as .NET
@@ -676,6 +689,7 @@ loaded records are in the result's type, not in a field that may be unloaded.
 | 2026-11-16 | Strictness review: an attribute where Plasm does not read it was dropped silently; the model is now refused, naming it: `[<Table "">]`; `[<Assigned>]` off the key or on a key that is not an integer; `[<OrderedBy>]` off a list; `[<JoinTable>]` off a list of stored records or on an owned list; `[<NotReference>]` on a field of no record's key type; `[<Unique>]` or `[<Generated>]` on a union with fields, a value, a `[<Json>]` field or a list of stored records; and every attribute inside a value, as `[<Column>]` already was | `features/stored-records.feature` |
 | 2026-11-16 | Strictness and elegance reviews: refusal messages and doc comments that named removed API now name what exists: a plain list says to mark it `[<Json>]`, two fields of one column are named, an owned record found twice says so, a key-only versioned change points to `Tx.update`'s `expectVersion`; the doc comments of `Tx`, `transaction`, `BulkWrite`, `repo.All`, `repo.Scaffold`, `referring`/`referredBy` and the misplaced `CheckSchema` summary; README's scenario count | `features/stored-records.feature` |
 | 2026-11-16 | Two loads of one type side by side are refused at translation, so at start-up once queries are checked there, at the user's question ("Is there *any* way we could flag that in the compiler if a user doesn't notice? Or it just a timebomb?"): `Board * Title list * Title list` compiled with its includings in either order. The remedy is the newtype Kanban shows (6f3cfe0, `NewestTitle`, `BlockedTitle`); compared per level, never with the root. The sixteen-list scenario now gives each list a type of its own | `features/including.feature` |
+| 2026-11-16 | **Start-up checking by default**, at the user's request ("Can we have a startup check available as a default in the library? And the default is \"crash\", but we can add a setting to turn it down to Warning or Ignore?"): `Repo.Start` is the one way to get a repository; the constructor and `repo.CheckQueries` are internal (Plasm's own tests reach them through InternalsVisibleTo), so the namespace argument that read a typo as success is gone; `RepoOptions.Queries` and `RepoOptions.Schema`, each `Crash`, `Warn` or `Ignore`, since a database migrated after start-up is a reason to relax the schema alone; `OnProblem` beside `OnCommand`; no queries found is a problem; functions returning a query are counted in a note. Koans, the browser course, benchmarks, examples, the F# Interactive tour, README and website start their repositories; a repository that is not checked writes Ignore (`RepoOptions.Unchecked`) | `features/query-check.feature` |
 | 2026-11-16 | `referring<T> o` and `referredBy<T> o`: the tie derived from the typed ids, at the user's request (asked whether F# could generate nine hand-written relationship functions). Reverses "no inferred tie" from the `including` design: with typed ids it is a proof, not a guess; not exactly one candidate field is refused, never picked. Plain ties in koans, README, website, examples and Kanban moved to it | `features/referring.feature` |
 | 2026-11-15 | `[<Json>]`: one jsonb document per field in Plasm's own strict mapping (unknown keys refused, since writes replace the whole document); JSON rendered through `ISqlDialect.Json`, refused at repository creation when absent | `features/json-columns.feature` |
 
@@ -689,6 +703,12 @@ loaded records are in the result's type, not in a field that may be unloaded.
    (SQLite or SQL Server); move the catalogue queries and the link SQL behind
    it.
 5. Diagnostics as OpenTelemetry activities.
+5a. Open question: hosting. `Repo.Start` is asynchronous, and ASP.NET Core's
+   service registration is synchronous, so Kanban's Host.fs starts the
+   repository after the migrations and hands it to the services through a
+   `TaskCompletionSource`. Whether Plasm should offer something for that (a
+   hosted service, or a registration helper in a `Plasm.AspNetCore` package)
+   is undecided; nothing is built.
 5b. Bring the browser koans' first runnable koan back under 20 s on a 25 Mbit/s
    connection. Measured 2026-11-15 at 19.2 to 20.1 s with 24.1 MB transferred
    (about 7.7 s of transfer); the budget in `course-in-the-browser.feature` is

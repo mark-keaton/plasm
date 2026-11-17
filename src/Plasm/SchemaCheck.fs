@@ -3,51 +3,6 @@ namespace Plasm
 open System
 open System.Threading.Tasks
 
-/// What a schema check found.
-[<RequireQualifiedAccess>]
-type SchemaIssueKind =
-    /// A mapped table (or join table) does not exist.
-    | MissingTable
-    /// A mapped column does not exist.
-    | MissingColumn
-    /// The column's type cannot hold the field's values.
-    | IncompatibleType
-    /// A non-optional field reads a nullable column: a NULL would fail to load.
-    | NullableColumn
-    /// A NOT NULL column without a default that the model never writes:
-    /// inserts would fail.
-    | UnwritableColumn
-    /// An enum type's labels differ from the union's cases (missing, extra or
-    /// in a different order).
-    | EnumLabels
-    /// A field the schema states is unique has no unique constraint or index
-    /// on its column alone.
-    | MissingUnique
-    /// A field that references another record (a typed id) has no foreign key
-    /// to that record's table.
-    | MissingReference
-    /// A unique field or a reference is held by a constraint (or unique index)
-    /// whose name is not the one a violation is mapped to the field by
-    /// (<table>_<column>_key, <table>_<column>_fkey): a violation would be a
-    /// database failure instead of the field's error.
-    | MisnamedConstraint
-
-/// A difference between the model and the database that would make a mapped
-/// read or write fail.
-type SchemaIssue =
-    { Kind: SchemaIssueKind
-      Model: string
-      /// The field or relationship, when the issue concerns one.
-      Field: string option
-      Table: string
-      Column: string option
-      Message: string }
-
-    override i.ToString() =
-        let field = i.Field |> Option.map (fun f -> "." + f) |> Option.defaultValue ""
-        let column = i.Column |> Option.map (fun c -> "." + c) |> Option.defaultValue ""
-        $"{i.Kind} {i.Model}{field} ({i.Table}{column}): {i.Message}"
-
 module internal SchemaCheck =
 
     type private Column =

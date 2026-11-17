@@ -55,17 +55,38 @@ let lesson =
                   }
           )
 
-          Koan.Sync(
+          Koan.Task(
               "Every query is checked before it runs",
               fun repo ->
-                  // repo.CheckQueries translates every query an assembly defines as a
-                  // value in its modules, runs none of them, and lists those Plasm cannot
-                  // translate. Call it in a test, or at start-up. Here it checks the
-                  // shop's modules (Shop.fs): Queries, whose queries translate, and
-                  // Mistakes, whose one query, Mistakes.shouting, does not.
-                  let problems = repo.CheckQueries(typeof<Customer>.Assembly, "Plasm.Koans.Shop")
-                  problems |> List.map (fun p -> p.Query) |> shouldBe __
-                  sqlSent().Length |> shouldBe __
+                  task {
+                      // Repo.Start translates every query an assembly defines as a value
+                      // in its modules, runs none of them, and by default fails start-up
+                      // naming those Plasm cannot translate. Warn reports each through
+                      // OnProblem instead, and starts. Here it checks the shop's
+                      // assembly (Shop.fs): Queries, whose queries translate, and
+                      // Mistakes, whose one query, Mistakes.shouting, does not.
+                      let found = ResizeArray<StartupProblem>()
+
+                      let! _ =
+                          Repo.Start(
+                              Db.model,
+                              repo.Provider,
+                              queriesIn = typeof<Customer>.Assembly,
+                              options =
+                                  { RepoOptions.Default with
+                                      Queries = StartupCheck.Warn
+                                      Schema = StartupCheck.Ignore
+                                      OnProblem = Some found.Add }
+                          )
+
+                      [ for p in found do
+                            match p with
+                            | StartupProblem.Query q -> q.Query
+                            | _ -> () ]
+                      |> shouldBe __
+
+                      sqlSent().Length |> shouldBe __
+                  }
           )
 
           Koan.Sync(

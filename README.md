@@ -38,9 +38,11 @@ data once, in the type if F# can say it there:
   error type, run by `repo.Transact`. Plasm validates no input: the domain's
   constructors do. A constraint with PostgreSQL's default name comes back as
   the field's error.
-- **At start-up or in a test**, `repo.CheckQueries` translates every query
-  value an assembly defines, `repo.CheckSchema` compares the model with the
-  database, and `repo.Ddl()` prints the tables the model expects.
+- **A repository is started, and checked as it starts.** `Repo.Start`
+  translates every query value an assembly defines and compares the model with
+  the database; by default either problem fails start-up, naming every one.
+  `RepoOptions.Queries` and `RepoOptions.Schema` turn each down to `Warn` or
+  `Ignore`. `repo.Ddl()` prints the tables the model expects.
 
 The example below is taken from [`examples/Plasm.Examples`](examples/Plasm.Examples)
 (`Model.fs`, `Queries.fs`, `Writes.fs`), shortened:
@@ -161,8 +163,9 @@ let expire : Tx<int, Refusal> =
         return n
     }
 
-let! issues = repo.CheckSchema()                                    // at start-up: does the model match the database?
-let problems = repo.CheckQueries(typeof<Order>.Assembly, "Shop")    // every query value translates
+// Every query value translates and the database fits, or start-up fails naming each problem.
+let! repo = Repo.Start(Db.model, Postgres.connect connectionString, queriesIn = typeof<Order>.Assembly)
+let! issues = repo.CheckSchema()                                    // again later, after a migration
 printfn "%s" (repo.Ddl())                                           // the tables, constraints and indexes the model expects
 do! repo.Sandbox(fun repo -> task { ... })                          // in tests: everything inside is rolled back
 ```
@@ -205,7 +208,8 @@ open Plasm
 open Plasm.Postgres
 open Plasm.Interactive               // wait: show a result, not a task
 
-let repo = Repo(Db.model, Postgres.connect connectionString)
+// Queries are defined as you go, so there is nothing to check yet.
+let repo = Repo.Start(Db.model, Postgres.connect connectionString, queriesIn = typeof<Order>.Assembly, options = RepoOptions.Unchecked) |> wait
 
 printfn "%s" (repo.Ddl())            // the tables the model expects; Plasm never runs them
 repo.Scaffold "payments" |> wait     // prints a record that says how the table stores it
@@ -313,7 +317,7 @@ an existing server, set `PLASM_TEST_PG` to an admin connection string.
 
 ```sh
 dotnet build Plasm.slnx
-dotnet test tests/Plasm.Specs      # the 502 acceptance scenarios
+dotnet test tests/Plasm.Specs      # the 508 acceptance scenarios
 dotnet test tests/Plasm.Tests      # 128 unit, property, compile-time and Ecto-compatibility tests
 dotnet run -c Release --project benchmarks/Plasm.Benchmarks -- counts
 ```

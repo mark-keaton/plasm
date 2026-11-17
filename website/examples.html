@@ -556,7 +556,7 @@ let! tagged = repo.All(plasm { for a in tableOf&lt;Article&gt; do where (a.Tags 
 
     <section class="example" id="testing" data-sql="testing">
       <h2>17 · Checks and the sandbox</h2>
-      <p>Plasm doesn't migrate schemas, so keep your migration tool. <code>repo.Ddl()</code> prints the tables the model expects, with constraints under the names Plasm maps violations by, for you to write the migration from. At start-up, <code>repo.CheckSchema</code> compares the model with the live database, and <code>repo.CheckQueries</code> translates every query an assembly defines as a value, without running any. In tests, <code>repo.Sandbox</code> runs code against the real database inside a transaction that is always rolled back.</p>
+      <p>Plasm doesn't migrate schemas, so keep your migration tool. <code>repo.Ddl()</code> prints the tables the model expects, with constraints under the names Plasm maps violations by, for you to write the migration from. A repository is started with <code>Repo.Start</code>, which translates every query an assembly defines as a value, without running any, and compares the model with the live database: by default either problem fails start-up, naming every one, and <code>RepoOptions.Queries</code> and <code>RepoOptions.Schema</code> turn each down to <code>Warn</code> or <code>Ignore</code>. In tests, <code>repo.Sandbox</code> runs code against the real database inside a transaction that is always rolled back.</p>
       <div class="view-fs">
 <pre class="code fsharp">printfn "%s" (repo.Ddl())
 // create table orders (
@@ -564,11 +564,10 @@ let! tagged = repo.All(plasm { for a in tableOf&lt;Article&gt; do where (a.Tags 
 //   customer_id bigint, status text not null, status_reason text, ...
 // alter table orders add constraint orders_customer_id_fkey foreign key (customer_id) references customers (id);
 
-// At start-up
-match repo.CheckQueries(typeof&lt;Order&gt;.Assembly, "Shop") with
-| [] -&gt; ()
-| problems -&gt; failwithf "queries that cannot be translated: %A" problems
+// At start-up: every query value translates and the database fits, or this fails, naming each problem
+let! repo = Repo.Start(Db.model, Postgres.connect connectionString, queriesIn = typeof&lt;Order&gt;.Assembly)
 
+// Later, after a migration
 match! repo.CheckSchema() with
 | Ok [] -&gt; ()
 | Ok issues -&gt; failwithf "the database does not match the model:\n%s" (issues |&gt; List.map string |&gt; String.concat "\n")
@@ -596,7 +595,8 @@ open Plasm.Postgres
 open Plasm.Interactive                  // wait: show a result, not a task
 open Shop.Model
 
-let repo = Repo(Db.model, Postgres.connect connectionString);;
+// Queries are defined as you go, so there is nothing to check yet.
+let repo = Repo.Start(Db.model, Postgres.connect connectionString, queriesIn = typeof&lt;Order&gt;.Assembly, options = RepoOptions.Unchecked) |&gt; wait;;
 
 let recent =
     plasm {
@@ -651,7 +651,7 @@ type Payment =
       <p>Re-sending a type to F# Interactive creates a new type with the same name. A query built from the old one says so, instead of failing with an unmapped type.</p>
 <pre class="code fsharp">#load &quot;Plasm.Examples/Model.fs&quot;          // redefine the model, e.g. after editing it
 open Shop.Model
-let repo = Repo(Db.model, Postgres.connect connectionString);;
+let repo = Repo.Start(Db.model, Postgres.connect connectionString, queriesIn = typeof&lt;Order&gt;.Assembly, options = RepoOptions.Unchecked) |&gt; wait;;
 recent;;                                   // built from the earlier Order</pre>
 <pre class="code output" style="white-space: pre-wrap">val it: Query&lt;Order&gt; =
   cannot be translated: Order in this query comes from an earlier F# Interactive submission (FSI_0003) than the Order this repository&#x27;s model maps (FSI_0013); the type was redefined after the query was built. Re-evaluate the query, and anything it is built from, after redefining a type.</pre>

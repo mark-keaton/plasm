@@ -5,7 +5,7 @@
 # A repo pairs a model with a database
 10
 []
-# In your app, you make the repo
+# In your app, you start the repo
 3L
 # sqlSent () is the SQL a koan has sent
 []

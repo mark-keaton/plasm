@@ -52,15 +52,26 @@ let lesson =
           )
 
           Koan.Task(
-              "In your app, you make the repo",
+              "In your app, you start the repo",
               fun repo ->
                   task {
                       // A Repo is made from a model, the record types it can store
                       // (Db.model, from Shop.fs), and a provider, the connection to
                       // the database. In your app the provider is
                       // Postgres.connect connectionString; here it is the koans' own,
-                      // repo.Provider. Both repos read the same database.
-                      let mine = Repo(Db.model, repo.Provider)
+                      // repo.Provider. Repo.Start makes it and checks it: every query
+                      // value in queriesIn translates and the database fits the model,
+                      // or start-up fails. The shop holds a query written wrong on
+                      // purpose (lesson 21), so this repo writes its query check as
+                      // Ignore: a repo that is not checked always says so.
+                      let! mine =
+                          Repo.Start(
+                              Db.model,
+                              repo.Provider,
+                              queriesIn = typeof<Customer>.Assembly,
+                              options = { RepoOptions.Default with Queries = StartupCheck.Ignore }
+                          )
+
                       let! customers = mine.Count(Query.from (tableOf<Customer>))
                       ok customers |> shouldBe __
                   }
@@ -146,9 +157,12 @@ let lesson =
               fun repo ->
                   task {
                       // A model that knows only products, and a repo over it on the
-                      // same database: Repo(model, provider), as in your app.
+                      // same database. Checked, it would refuse every shop query that
+                      // reads customers, so it is started unchecked: RepoOptions.Unchecked
+                      // writes both checks as Ignore.
                       let productsOnly = Model.buildOrFail [] [ typeof<Product> ]
-                      let! customers = Repo(productsOnly, repo.Provider).All(Query.from (tableOf<Customer>))
+                      let! narrow = Repo.Start(productsOnly, repo.Provider, queriesIn = typeof<Customer>.Assembly, options = RepoOptions.Unchecked)
+                      let! customers = narrow.All(Query.from (tableOf<Customer>))
 
                       // It cannot read customers: it returns an Error, it does not throw.
                       match err customers with

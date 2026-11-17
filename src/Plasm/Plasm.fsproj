@@ -35,5 +35,6 @@
     <InternalsVisibleTo Include="Plasm.Postgres" />
     <InternalsVisibleTo Include="Plasm.Tests" />
     <InternalsVisibleTo Include="Plasm.Specs.Steps" />
+    <InternalsVisibleTo Include="Plasm.TestDomain" />
   </ItemGroup>
 </Project>

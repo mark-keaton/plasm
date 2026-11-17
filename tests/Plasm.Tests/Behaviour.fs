@@ -99,7 +99,7 @@ let ``snapshot reads do not see writes committed between commands`` () =
                 injected <- true
                 (Seed.line db o p 1 1m).GetAwaiter().GetResult() |> ignore
 
-        let repo = Repo(db.Model, db.Provider, { OnCommand = Some inject; IncludeParameterValues = false })
+        let repo = Repo(db.Model, db.Provider, { RepoOptions.Default with OnCommand = Some inject })
         let q = Query.from (tableOf<Order>)
         let! snap = repo.All(q, ReadConsistency.Snapshot)
         Assert.Equal<OrderLine list>([], (ok snap).Head.Lines)

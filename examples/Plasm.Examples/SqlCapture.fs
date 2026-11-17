@@ -101,13 +101,19 @@ let run (connectionString: string) (outputPath: string) =
     task {
         let events = ResizeArray<CommandEvent>()
 
-        let repo =
-            Repo(
+        let! repo =
+            Repo.Start(
                 Db.model,
                 Postgres.connect connectionString,
-                { OnCommand = Some events.Add
-                  IncludeParameterValues = true }
+                queriesIn = typeof<Order>.Assembly,
+                options =
+                    { RepoOptions.Default with
+                        OnCommand = Some events.Add
+                        IncludeParameterValues = true }
             )
+
+        // The start-up check's own commands are not examples.
+        events.Clear()
 
         let examples = ResizeArray<Example>()
 
@@ -453,16 +459,13 @@ let run (connectionString: string) (outputPath: string) =
         do!
             capture
                 "testing"
-                "Checking the queries and printing the DDL send nothing. The schema check reads the catalogue; it found no differences for this model. The sandbox's insert and count run inside a transaction that is rolled back afterwards. Its BEGIN, savepoints and ROLLBACK are sent by the connection, not as commands, so they do not appear here."
+                "Starting a repository translates every query, which sends nothing, and reads the catalogue for the schema check; it found no differences for this model. Printing the DDL sends nothing. The sandbox's insert and count run inside a transaction that is rolled back afterwards. Its BEGIN, savepoints and ROLLBACK are sent by the connection, not as commands, so they do not appear here."
                 [ "information_schema.columns"; "INSERT INTO \"customers\"" ]
                 None
                 (fun () ->
                     task {
-                        match repo.CheckQueries(typeof<Order>.Assembly, "Shop") with
-                        | [] -> ()
-                        | found -> failwithf "the example queries do not translate: %A" found
-
-                        repo.Ddl() |> ignore
+                        let! started = Repo.Start(Db.model, Postgres.connect connectionString, queriesIn = typeof<Order>.Assembly, options = { RepoOptions.Default with OnCommand = Some events.Add })
+                        started.Ddl() |> ignore
                         let! issues = repo.CheckSchema()
 
                         match ok issues with

@@ -199,7 +199,7 @@ module Db =
               typeof<Account>
               typeof<Delivery> ]
 
-/// The shop's queries: values, so `repo.CheckQueries` can check them all.
+/// The shop's queries: values, so `Repo.Start` can check them all.
 module Queries =
 
     let drafts = plasm { for o in tableOf<Order> do where (o.Status = Draft) }
@@ -214,7 +214,7 @@ module Queries =
             })
 
 /// A query written by mistake: `shout` is F# that SQL cannot run, so Plasm
-/// cannot translate it. `repo.CheckQueries` finds it before it is ever run.
+/// cannot translate it. `Repo.Start` finds it before it is ever run.
 module Mistakes =
 
     let shout (s: string) = s.ToUpperInvariant() + "!"

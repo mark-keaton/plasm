@@ -1,50 +1,93 @@
-# Executable acceptance specification (Reqnroll): every query an application
-# defines is checked before it is used. Written before the implementation.
+# Executable acceptance specification (Reqnroll): a repository starts only when
+# its queries and the database fit. Written before the implementation.
 @implemented
-Feature: Every query is checked before it is used
+Feature: A repository starts only when its queries and the database fit
   As an F# application developer
-  I want every query my application defines translated in one check
-  So that a query Plasm cannot translate is found by a test or at start-up, never on first use
+  I want my repository checked when it starts, and start-up to fail by default
+  So that a query Plasm cannot translate, or a database that does not fit the
+  model, is found when the application starts, never on first use
 
-  `repo.CheckQueries assembly` finds the queries defined as values in the
-  assembly's modules, and the prepared queries, and translates each without
-  running it; a prepared query is translated with its arguments as parameters.
-  A query built inside a function is not a value, so it is not found.
+  `Repo.Start(model, provider, queriesIn = assembly)` is the one way to get a
+  repository. It translates every query its assembly defines as a module value,
+  prepared queries with their arguments as parameters, without running any,
+  and compares the model with the database. What it does with what it finds is
+  set in RepoOptions, separately for the queries and for the schema: `Crash`
+  (the default) fails start-up with every problem in one exception, `Warn`
+  reports each through OnProblem and starts, `Ignore` does not check. A check
+  that finds no queries has checked nothing, so that is a problem too. A
+  function returning a query is not a value, so it is not checked; how many
+  there are is said.
 
   Background:
     Given a configured relational database
     And mappings for Customers, Orders, OrderLines, Products, and Payments
 
-  Rule: The check translates every query without running it
+  Rule: By default a problem fails start-up, naming every one
 
-    Scenario: Queries that translate pass
-      When I check the queries of a module whose queries all translate
-      Then no problem is reported
+    Scenario: Queries that translate and a database that fits start a repository
+      When I start a repository for the assembly whose queries all translate
+      Then the repository starts
+      And it reads the Customers
+
+    Scenario: Queries that cannot be translated fail start-up, each named
+      When I start a repository for the assembly with queries Plasm cannot translate
+      Then start-up fails, saying "3 of 3 queries in Plasm.Specs.Queries.Bad cannot be translated"
+      And the failure names the queries "Bad.normalized", "BadPrepared.normalizedNamed" and "BadProjection.normalizedNames", in that order, each with why
+
+    Scenario: A database that does not fit fails start-up
+      Given the customers table has lost its email column
+      When I start a repository for the assembly whose queries all translate
+      Then start-up fails, saying "1 schema difference"
+      And the failure names the missing column customers.email
+
+    Scenario: Queries come before schema differences, so two runs read the same
+      Given the customers table has lost its email column
+      When I start a repository for the assembly with queries Plasm cannot translate
+      Then the failure lists the three queries by name, then the missing column
+
+    Scenario: An assembly with no queries has checked nothing
+      When I start a repository for an assembly that defines no queries
+      Then start-up fails, saying "found no query values in Plasm.Annotations"
+
+    Scenario: Functions returning a query are counted, not checked
+      When I start a repository for the assembly whose queries all translate, warning
+      Then the repository starts
+      And a note says "1 function returning a query is not checked: Good.namedLike"
+
+  Rule: Warn reports each problem and starts
+
+    Scenario: Warned problems are reported and the repository starts
+      When I start a repository for the assembly with queries Plasm cannot translate, warning
+      Then the repository starts
+      And 3 problems are reported, naming "Bad.normalized", "BadPrepared.normalizedNamed" and "BadProjection.normalizedNames"
+
+    Scenario: Without OnProblem a warning goes to standard error
+      When I start a repository for the assembly with queries Plasm cannot translate, warning, with no OnProblem
+      Then standard error names "Bad.normalized"
+
+    Scenario: The queries and the schema are set separately
+      Given the customers table has lost its email column
+      When I start a repository for the assembly whose queries all translate, warning only for the schema
+      Then the repository starts
+      And 1 problem is reported, naming the missing column customers.email
+
+  Rule: Ignore does not check
+
+    Scenario: Ignored, nothing is translated or read
+      Given the customers table has lost its email column
+      When I start a repository for the assembly with queries Plasm cannot translate, ignoring both
+      Then the repository starts
       And no database command is executed
 
-    Scenario: A query that cannot be translated is reported by its name
-      When I check the queries of a module with a query Plasm cannot translate
-      Then one problem is reported, for the query "Bad.normalized", saying why it cannot be translated
-
-    Scenario: A prepared query that cannot be translated is reported without being called
-      When I check the queries of a module with a prepared query Plasm cannot translate
-      Then one problem is reported, for the query "BadPrepared.normalizedNamed", saying why it cannot be translated
-
   Rule: A prepared query is still called like a function
-
-    Scenario: A checked prepared query reads with its argument
-      Given Customers named "Ada" and "Bob"
-      When I read with the checked prepared query for the name "Bob"
-      Then only the Customer named "Bob" is returned
-
-  Rule: A prepared query can end in a projection
 
     Scenario: A prepared projection reads with its argument
       Given Customers named "Ada" and "Bob"
       When I read the names with the checked prepared projection for the name "Bob"
       Then only the name "Bob" is returned
 
-    Scenario: A prepared projection that cannot be translated is reported without being called
-      When I check the queries of a module with a prepared projection Plasm cannot translate
-      Then one problem is reported, for the query "BadProjection.normalizedNames", saying why it cannot be translated
+  Rule: A repository is made only by starting it
 
+    Scenario: Repo has no public constructor
+      When I compile code that makes a repository with Repo(model, provider)
+      Then the code does not compile

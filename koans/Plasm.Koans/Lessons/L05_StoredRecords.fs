@@ -177,24 +177,29 @@ let lesson =
                   | Error errors -> errors |> List.map (fun e -> e.Property) |> shouldBe __
           )
 
-          Koan.Sync(
+          Koan.Task(
               "One record without a table lives in its owner's row",
               fun repo ->
-                  // Place (under Given) names no table, but a Depot holds one Place,
-                  // not a list: it is stored in the depots row, each of its fields in
-                  // a column named <field>_<subfield>. repo.Ddl prints the tables a
-                  // model expects, without touching the database.
-                  let ddl = Repo(Model.buildOrFail [] [ typeof<Depot> ], repo.Provider).Ddl()
-                  ddl.Contains "place_city text not null" |> shouldBe __
+                  task {
+                      // Place (under Given) names no table, but a Depot holds one Place,
+                      // not a list: it is stored in the depots row, each of its fields in
+                      // a column named <field>_<subfield>. repo.Ddl prints the tables a
+                      // model expects, without touching the database; a repo started
+                      // only to print them has nothing to check (RepoOptions.Unchecked).
+                      let! depots = Repo.Start(Model.buildOrFail [] [ typeof<Depot> ], repo.Provider, queriesIn = typeof<Depot>.Assembly, options = RepoOptions.Unchecked)
+                      depots.Ddl().Contains "place_city text not null" |> shouldBe __
+                  }
           )
 
-          Koan.Sync(
+          Koan.Task(
               "A field marked Json is one document",
               fun repo ->
-                  // Chore (under Given) marks its Steps [<Json>]: the whole list is kept
-                  // as one jsonb document in the chores row, each step an object keyed
-                  // in snake case, {"text": ..., "done": ...}. Queries can still reach
-                  // into it: List.exists (fun s -> not s.Done) c.Steps runs in SQL.
-                  let ddl = Repo(Model.buildOrFail [] [ typeof<Chore> ], repo.Provider).Ddl()
-                  ddl.Contains "steps jsonb not null" |> shouldBe __
+                  task {
+                      // Chore (under Given) marks its Steps [<Json>]: the whole list is kept
+                      // as one jsonb document in the chores row, each step an object keyed
+                      // in snake case, {"text": ..., "done": ...}. Queries can still reach
+                      // into it: List.exists (fun s -> not s.Done) c.Steps runs in SQL.
+                      let! chores = Repo.Start(Model.buildOrFail [] [ typeof<Chore> ], repo.Provider, queriesIn = typeof<Chore>.Assembly, options = RepoOptions.Unchecked)
+                      chores.Ddl().Contains "steps jsonb not null" |> shouldBe __
+                  }
           ) ]

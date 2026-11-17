@@ -34,7 +34,7 @@ the reference application in the same style.
    `Plasm.Koans.Core/KoansData.fs` and is the same for every koan.
 6. **Koans are written as an app would be.** A koan is the body of
    `fun repo -> task { ... }`, and the page shows only the body. It uses Plasm's
-   own API (`repo.All`, `repo.Explain`, `Repo(model, provider)`) and the test
+   own API (`repo.All`, `repo.Explain`, `Repo.Start(model, provider, queriesIn = ...)`) and the test
    helpers any Plasm test would have (`shouldBe`, `ok`, `err`, `sqlSent ()`),
    never machinery that exists only for the koans. Under *Given*, every
    definition says whether it is *your app*'s code or a *test helper*.
@@ -88,7 +88,7 @@ the reference application in the same style.
 | # | Lesson | What it is for |
 |---|---|---|
 | 20 | Failures | Results, `TxFailure`, the database's failures and the transaction's own rejections, read errors, qualified cases. |
-| 21 | Testing with Plasm | Sandboxes; `repo.CheckSchema()`, `repo.CheckQueries` over the app's query values, and `repo.Ddl()`. |
+| 21 | Testing with Plasm | Sandboxes; `Repo.Start` checking the app's query values, `repo.CheckSchema()`, and `repo.Ddl()`. |
 | 22 | Unions with fields | A union whose cases carry facts, stored across columns, and the domain's own members in queries. |
 
 ## Writing a koan

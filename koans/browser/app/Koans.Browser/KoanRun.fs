@@ -24,16 +24,20 @@ let init (bridge: IPGliteBridge) : Task<string> =
 
         let! provider = PGlite.connect bridge
 
-        repo <-
-            Some(
-                Repo(
-                    Shop.Db.model,
-                    provider,
-                    { RepoOptions.Default with
+        // The koans' own queries include one Plasm refuses on purpose (lesson
+        // 21 checks it), so the course's repository is written as unchecked.
+        let! started =
+            Repo.Start(
+                Shop.Db.model,
+                provider,
+                queriesIn = typeof<Shop.Customer>.Assembly,
+                options =
+                    { RepoOptions.Unchecked with
                         OnCommand = Some commands.Add
                         IncludeParameterValues = true }
-                )
             )
+
+        repo <- Some started
 
         return "ready"
     }

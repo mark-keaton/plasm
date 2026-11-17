@@ -205,8 +205,9 @@ let repo: Definition =
       Code =
         [ "/// Every koan is given repo: a Plasm Repo over the koans database,"
           "/// inside a sandbox, so whatever the koan changes is undone when it ends."
-          "/// In your app you make one yourself, from your model and a provider:"
-          "let repo = Repo(Db.model, Postgres.connect connectionString)" ]
+          "/// In your app you start one yourself, from your model and a provider;"
+          "/// it checks every query in the assembly and the database as it starts:"
+          "let! repo = Repo.Start(Db.model, Postgres.connect connectionString, queriesIn = typeof<Order>.Assembly)" ]
       Fields = []
       Cases = []
       Table = None

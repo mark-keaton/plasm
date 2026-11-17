@@ -48,6 +48,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Plasm.TestDomain/Plasm.TestDomain.fsproj" />
+    <ProjectReference Include="../Plasm.Specs.Queries.Good/Plasm.Specs.Queries.Good.fsproj" />
+    <ProjectReference Include="../Plasm.Specs.Queries.Bad/Plasm.Specs.Queries.Bad.fsproj" />
     <PackageReference Include="Reqnroll" />
   </ItemGroup>
 </Project>

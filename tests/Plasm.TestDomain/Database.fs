@@ -196,8 +196,9 @@ type TestDb =
         Repo(
             defaultArg model db.Model,
             provider,
-            { OnCommand = Some db.Recorder.Record
-              IncludeParameterValues = defaultArg includeParameterValues false }
+            { RepoOptions.Default with
+                OnCommand = Some db.Recorder.Record
+                IncludeParameterValues = defaultArg includeParameterValues false }
         )
 
 let fresh (model: Model) : Task<TestDb> =
@@ -225,8 +226,8 @@ let fresh (model: Model) : Task<TestDb> =
                 Repo(
                     model,
                     provider,
-                    { OnCommand = Some recorder.Record
-                      IncludeParameterValues = false }
+                    { RepoOptions.Default with
+                        OnCommand = Some recorder.Record }
                 )
               Model = model }
     }

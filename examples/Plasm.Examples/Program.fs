@@ -30,26 +30,37 @@ let provision () =
     task {
         let! db = Plasm.TestDomain.Database.freshDefault ()
         let! _ = db.Exec "drop schema public cascade; create schema public;"
-        let ddl = Repo(Db.model, Postgres.connect db.ConnectionString).Ddl()
+        // Only for its DDL, before the tables exist: nothing to check yet.
+        let! printer =
+            Repo.Start(
+                Db.model,
+                Postgres.connect db.ConnectionString,
+                queriesIn = typeof<Order>.Assembly,
+                options = { RepoOptions.Default with Queries = StartupCheck.Ignore; Schema = StartupCheck.Ignore }
+            )
+
+        let ddl = printer.Ddl()
         let! _ = db.Exec(ddl + "\n" + migration)
         return db.ConnectionString, ddl
     }
 
 let tour (connectionString: string) (ddl: string) =
     task {
-        let repo =
-            Repo(
+        // -- Start-up checks ----------------------------------------------------
+        // Repo.Start translates every query value in the assembly and compares
+        // the model with the database; by default either problem fails start-up.
+        let! repo =
+            Repo.Start(
                 Db.model,
                 Postgres.connect connectionString,
-                { RepoOptions.Default with
-                    OnCommand = Some(fun e -> printfn "   [sql %4.1fms, %d rows] %s" e.Duration.TotalMilliseconds e.Rows (e.Sql.Substring(0, min 100 e.Sql.Length))) }
+                queriesIn = typeof<Order>.Assembly,
+                options =
+                    { RepoOptions.Default with
+                        OnCommand = Some(fun e -> printfn "   [sql %4.1fms, %d rows] %s" e.Duration.TotalMilliseconds e.Rows (e.Sql.Substring(0, min 100 e.Sql.Length))) }
             )
 
-        // -- Start-up checks ----------------------------------------------------
         show "the DDL the model expects (printed, never run by Plasm)" ddl
-        let! issues = repo.CheckSchema()
-        show "schema check" (ok issues)
-        show "queries that cannot be translated" (repo.CheckQueries(typeof<Order>.Assembly, "Shop"))
+        show "start-up" "every query translates and the database fits the model"
 
         // -- Writes are transactions -------------------------------------------
         let! products =

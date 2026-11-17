@@ -10,6 +10,14 @@ open Plasm
 open Plasm.TestDomain.Domain
 open Plasm.Benchmarks.Workloads
 
+/// A repository for measuring reads: nothing to check, so both checks are
+/// written as Ignore.
+let private unchecked (db: Plasm.TestDomain.Database.TestDb) =
+    Repo
+        .Start(db.Model, db.Provider, queriesIn = typeof<Order>.Assembly, options = { RepoOptions.Default with Queries = StartupCheck.Ignore; Schema = StartupCheck.Ignore })
+        .GetAwaiter()
+        .GetResult()
+
 [<MemoryDiagnoser>]
 type GraphLoad() =
     let mutable repo: Repo = Unchecked.defaultof<_>
@@ -22,7 +30,7 @@ type GraphLoad() =
     [<GlobalSetup>]
     member this.Setup() =
         let db = database.Force().GetAwaiter().GetResult()
-        repo <- Repo(db.Model, db.Provider)
+        repo <- unchecked db
         cs <- db.ConnectionString
         page <- plasmPageWithPayments this.Parents
 
@@ -43,7 +51,7 @@ type Siblings() =
     [<GlobalSetup>]
     member _.Setup() =
         let db = database.Force().GetAwaiter().GetResult()
-        repo <- Repo(db.Model, db.Provider)
+        repo <- unchecked db
         cs <- db.ConnectionString
 
     [<Benchmark(Baseline = true)>]

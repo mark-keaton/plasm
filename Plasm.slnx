@@ -6,6 +6,8 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Plasm.TestDomain/Plasm.TestDomain.fsproj" />
+    <Project Path="tests/Plasm.Specs.Queries.Good/Plasm.Specs.Queries.Good.fsproj" />
+    <Project Path="tests/Plasm.Specs.Queries.Bad/Plasm.Specs.Queries.Bad.fsproj" />
     <Project Path="tests/Plasm.Tests/Plasm.Tests.fsproj" />
     <Project Path="tests/Plasm.Specs.Steps/Plasm.Specs.Steps.fsproj" />
     <Project Path="tests/Plasm.Specs/Plasm.Specs.csproj" />

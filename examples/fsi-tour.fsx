@@ -13,7 +13,11 @@ open Plasm.Postgres
 open Plasm.Interactive
 open Shop.Model
 
-let repo = Repo(Db.model, Postgres.connect (System.Environment.GetEnvironmentVariable "PLASM_PG"));;
+// F# Interactive defines its queries as it goes, so at start-up there is
+// nothing to check: the repository is started unchecked.
+let repo =
+    Repo.Start(Db.model, Postgres.connect (System.Environment.GetEnvironmentVariable "PLASM_PG"), queriesIn = typeof<Customer>.Assembly, options = RepoOptions.Unchecked)
+    |> wait;;
 
 // The tables the model expects. Plasm prints them; it never runs them.
 printfn "%s" (repo.Ddl());;
@@ -41,5 +45,7 @@ repo.Scaffold "payments" |> wait;;
 // Redefine the model (re-send Model.fs) and the earlier query explains itself.
 #load "Plasm.Examples/Model.fs"
 open Shop.Model
-let repo = Repo(Db.model, Postgres.connect (System.Environment.GetEnvironmentVariable "PLASM_PG"));;
+let repo =
+    Repo.Start(Db.model, Postgres.connect (System.Environment.GetEnvironmentVariable "PLASM_PG"), queriesIn = typeof<Customer>.Assembly, options = RepoOptions.Unchecked)
+    |> wait;;
 recent;;

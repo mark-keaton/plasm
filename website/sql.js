@@ -600,8 +600,29 @@ window.PLASM_SQL = {
     ]
   },
   "testing": {
-    "caption": "Checking the queries and printing the DDL send nothing. The schema check reads the catalogue; it found no differences for this model. The sandbox\u0027s insert and count run inside a transaction that is rolled back afterwards. Its BEGIN, savepoints and ROLLBACK are sent by the connection, not as commands, so they do not appear here.",
+    "caption": "Starting a repository translates every query, which sends nothing, and reads the catalogue for the schema check; it found no differences for this model. Printing the DDL sends nothing. The sandbox\u0027s insert and count run inside a transaction that is rolled back afterwards. Its BEGIN, savepoints and ROLLBACK are sent by the connection, not as commands, so they do not appear here.",
     "commands": [
+      {
+        "parameters": [
+          "@p0 = ?"
+        ],
+        "rows": 29,
+        "sql": "SELECT\n    table_name,\n    column_name,\n    data_type,\n    is_nullable,\n    column_default IS NOT NULL OR is_identity = \u0027YES\u0027 OR is_generated \u003C\u003E \u0027NEVER\u0027,\n    udt_schema,\n    udt_name\nFROM information_schema.columns\nWHERE table_schema = current_schema() AND table_name = ANY(@p0)"
+      },
+      {
+        "parameters": [
+          "@p0 = ?"
+        ],
+        "rows": 10,
+        "sql": "SELECT t.relname::text, a.attname::text, ic.relname::text, EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = i.indexrelid AND c.conrelid = t.oid AND c.contype IN (\u0027u\u0027, \u0027p\u0027))\nFROM pg_index i JOIN pg_class t ON t.oid = i.indrelid JOIN pg_namespace n ON n.oid = t.relnamespace JOIN pg_class ic ON ic.oid = i.indexrelid JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = i.indkey[0]\nWHERE i.indisunique AND i.indnkeyatts = 1 AND n.nspname = current_schema() AND t.relname::text = ANY(@p0)"
+      },
+      {
+        "parameters": [
+          "@p0 = ?"
+        ],
+        "rows": 6,
+        "sql": "SELECT t.relname::text, a.attname::text, r.relname::text, c.conname::text\nFROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid JOIN pg_class r ON r.oid = c.confrelid JOIN pg_namespace n ON n.oid = t.relnamespace JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = c.conkey[1]\nWHERE c.contype = \u0027f\u0027 AND array_length(c.conkey, 1) = 1 AND n.nspname = current_schema() AND t.relname::text = ANY(@p0)"
+      },
       {
         "parameters": [
           "@p0 = [articles, customers, orders, order_lines, payments, products, tags, article_tags]"

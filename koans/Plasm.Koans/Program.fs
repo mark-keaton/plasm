@@ -88,14 +88,21 @@ let main argv =
 
     let commands = ResizeArray<CommandEvent>()
 
+    // The koans' own queries include ones Plasm refuses on purpose (lesson 21
+    // checks them), so the course's repository is written as unchecked.
     let repo =
-        Repo(
-            Shop.Db.model,
-            Postgres.connect db.ConnectionString,
-            { RepoOptions.Default with
-                OnCommand = Some commands.Add
-                IncludeParameterValues = true }
-        )
+        Repo
+            .Start(
+                Shop.Db.model,
+                Postgres.connect db.ConnectionString,
+                queriesIn = typeof<Shop.Customer>.Assembly,
+                options =
+                    { RepoOptions.Unchecked with
+                        OnCommand = Some commands.Add
+                        IncludeParameterValues = true }
+            )
+            .GetAwaiter()
+            .GetResult()
 
     let results = ResizeArray<KoanResult>()
     let mutable stopped: KoanResult option = None

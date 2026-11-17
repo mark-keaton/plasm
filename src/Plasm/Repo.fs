@@ -82,19 +82,14 @@ module internal QueryDisplay =
             let header = $"  then {l.Path} ({l.Relationship}, {l.Target}), one command per batch of keys:"
             [ header; indent "  " (pretty l.Sql) ] @ loads l.Children)
 
-/// A query an application defines that Plasm cannot translate
-/// (`repo.CheckQueries`): its name, as Module.value, and why.
-type QueryProblem =
-    { Query: string
-      Error: TranslationError }
-
 /// A repository: where Plasm meets the database. Made from a model (the
-/// record types it can store) and a provider (the database connection), as in
-/// `Repo(model, Postgres.connect connectionString)`. It runs queries (All, One,
+/// record types it can store) and a provider (the database connection), and
+/// checked as it starts: `Repo.Start(model, Postgres.connect connectionString,
+/// queriesIn = typeof<Order>.Assembly)`. It runs queries (All, One,
 /// Count) and transactions (Transact), each returning a Result. It is
 /// the explicit boundary where descriptions are executed: every member performs
 /// database work; nothing else in the library does.
-type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
+type Repo internal (model: Model, provider: IProvider, ?options: RepoOptions) =
     let options = defaultArg options RepoOptions.Default
 
     // A provider without JSON documents cannot store a [<Json>] field: refused
@@ -363,14 +358,10 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
                 return Ok(rows |> Seq.map unbox<'R> |> List.ofSeq)
             })
 
-    /// Translates every query an assembly defines as a value in its modules
-    /// (queries, projections and prepared queries, with their arguments as
-    /// parameters), without running any, and returns those Plasm cannot
-    /// translate. Call it in a test, or at start-up, so an untranslatable query
-    /// is never first found when it is used. `inNamespace` limits the check to
-    /// the modules in that namespace or module. A query built inside a function
-    /// is not a value, so it is not checked.
-    member _.CheckQueries(assembly: Reflection.Assembly, ?inNamespace: string) : QueryProblem list =
+    /// Every query value in `assembly`'s modules (`inNamespace` limits it, for
+    /// Plasm's own tests), translated without running any; with how many were
+    /// found and the functions returning a query, which are not values.
+    member internal _.Scan(assembly: Reflection.Assembly, ?inNamespace: string) =
         let within (t: Type) =
             match inNamespace with
             | None -> true
@@ -380,13 +371,13 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
             t.GetCustomAttributes(typeof<CompilationMappingAttribute>, false)
             |> Seq.exists (fun a -> (a :?> CompilationMappingAttribute).SourceConstructFlags = SourceConstructFlags.Module)
 
+        let isQueryType (t: Type) =
+            t.IsGenericType && (t.GetGenericTypeDefinition() = typedefof<Query<_>> || t.GetGenericTypeDefinition() = typedefof<Projection<_>>)
+
         let rec isQuery (t: Type) =
-            if t.IsGenericType && (t.GetGenericTypeDefinition() = typedefof<Query<_>> || t.GetGenericTypeDefinition() = typedefof<Projection<_>>) then
-                true
-            elif Microsoft.FSharp.Reflection.FSharpType.IsFunction t then
-                isQuery (snd (Microsoft.FSharp.Reflection.FSharpType.GetFunctionElements t))
-            else
-                false
+            if isQueryType t then true
+            elif Microsoft.FSharp.Reflection.FSharpType.IsFunction t then isQuery (snd (Microsoft.FSharp.Reflection.FSharpType.GetFunctionElements t))
+            else false
 
         let translates (q: ICheckable) =
             match q.Select with
@@ -395,17 +386,132 @@ type Repo(model: Model, provider: IProvider, ?options: RepoOptions) =
             | None when not q.Def.Joins.IsEmpty -> Translate.projection model (ref false) q.Def None |> Result.map ignore
             | None -> planFor q.Def |> Result.map ignore
 
-        [ for t in assembly.GetTypes() do
-              if isModule t && within t then
-                  for p in t.GetProperties(Reflection.BindingFlags.Static ||| Reflection.BindingFlags.Public ||| Reflection.BindingFlags.NonPublic) do
-                      if p.GetIndexParameters().Length = 0 && isQuery p.PropertyType then
-                          match p.GetValue null with
-                          | :? ICheckable as q ->
-                              match translates q with
-                              | Error e -> yield { Query = $"{t.FullName.Replace('+', '.')}.{p.Name}"; Error = e }
-                              | Ok() -> ()
-                          // A function that builds a query each call is not a value Plasm can check.
-                          | _ -> () ]
+        let flags = Reflection.BindingFlags.Static ||| Reflection.BindingFlags.Public ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.DeclaredOnly
+        let mutable found = 0
+        let problems = ResizeArray<QueryProblem>()
+        let functions = ResizeArray<string>()
+
+        for t in assembly.GetTypes() do
+            if isModule t && within t then
+                let name (m: string) = $"{t.FullName.Replace('+', '.')}.{m}"
+
+                for p in t.GetProperties flags do
+                    if p.GetIndexParameters().Length = 0 && isQuery p.PropertyType then
+                        match p.GetValue null with
+                        | :? ICheckable as q ->
+                            found <- found + 1
+
+                            match translates q with
+                            | Error e -> problems.Add { Query = name p.Name; Error = e }
+                            | Ok() -> ()
+                        // A function that builds a query each call is not a value Plasm can check.
+                        | _ -> functions.Add(name p.Name)
+
+                for m in t.GetMethods flags do
+                    if not m.IsSpecialName && m.GetParameters().Length > 0 && isQuery m.ReturnType then
+                        functions.Add(name m.Name)
+
+        {| Found = found
+           Problems = problems |> Seq.sortBy (fun p -> p.Query) |> List.ofSeq
+           Functions = functions |> Seq.distinct |> Seq.sort |> List.ofSeq |}
+
+    /// The query values of `assembly` that Plasm cannot translate (Plasm's own
+    /// tests; an application starts its repository with Repo.Start).
+    member internal this.CheckQueries(assembly: Reflection.Assembly, ?inNamespace: string) : QueryProblem list =
+        (match inNamespace with
+         | Some n -> this.Scan(assembly, n)
+         | None -> this.Scan assembly)
+            .Problems
+
+    /// The one way to get a repository (query-check.feature): made from a
+    /// model and a provider, then checked. Every query value `queriesIn`
+    /// defines is translated, without running any, and the model is compared
+    /// with the database; RepoOptions.Queries and RepoOptions.Schema say what
+    /// to do with what is found: Crash (the default) raises one
+    /// PlasmStartupException naming every problem, Warn reports each through
+    /// OnProblem and starts, Ignore does not check.
+    static member Start(model: Model, provider: IProvider, queriesIn: Reflection.Assembly, ?options: RepoOptions, ?cancellationToken: CancellationToken) : Task<Repo> =
+        let options = defaultArg options RepoOptions.Default
+        let ct = defaultArg cancellationToken CancellationToken.None
+
+        task {
+            let repo = Repo(model, provider, options)
+            let assembly = queriesIn.GetName().Name
+
+            let scan =
+                if options.Queries = StartupCheck.Ignore then None else Some(repo.Scan queriesIn)
+
+            let queries =
+                match scan with
+                | None -> []
+                | Some s ->
+                    [ if s.Found = 0 then yield StartupProblem.NoQueries assembly
+                      for p in s.Problems -> StartupProblem.Query p ]
+
+            let! schema =
+                if options.Schema = StartupCheck.Ignore then
+                    Task.FromResult []
+                else
+                    task {
+                        match! repo.CheckSchema ct with
+                        | Ok issues ->
+                            return
+                                issues
+                                |> List.sortBy (fun i -> i.Table, defaultArg i.Column "", i.Model, defaultArg i.Field "", string i.Kind)
+                                |> List.map StartupProblem.Schema
+                        | Error e -> return [ StartupProblem.Unchecked e ]
+                    }
+
+            let functions =
+                match scan with
+                | Some s when not s.Functions.IsEmpty -> [ StartupProblem.UncheckedFunctions s.Functions ]
+                | _ -> []
+
+            let report =
+                match options.OnProblem with
+                | Some f -> f
+                | None -> fun p -> eprintfn "Plasm: %s" (string p)
+
+            if options.Queries = StartupCheck.Warn then
+                for p in queries @ functions do
+                    report p
+
+            if options.Schema = StartupCheck.Warn then
+                for p in schema do
+                    report p
+
+            let crash =
+                [ if options.Queries = StartupCheck.Crash then yield! queries
+                  if options.Schema = StartupCheck.Crash then yield! schema ]
+
+            if not crash.IsEmpty then
+                let plural n one many = if n = 1 then $"{n} {one}" else $"{n} {many}"
+
+                let summary =
+                    [ match scan with
+                      | Some s when options.Queries = StartupCheck.Crash && not s.Problems.IsEmpty ->
+                          $"{s.Problems.Length} of {s.Found} queries in {assembly} cannot be translated"
+                      | _ -> ()
+                      let differences = schema |> List.filter (function StartupProblem.Schema _ -> true | _ -> false)
+
+                      if options.Schema = StartupCheck.Crash && not differences.IsEmpty then
+                          plural differences.Length "schema difference" "schema differences"
+
+                      match functions with
+                      | [ StartupProblem.UncheckedFunctions names ] ->
+                          plural names.Length "function returning a query, which is not checked" "functions returning a query, which are not checked"
+                      | _ -> () ]
+
+                let first =
+                    match summary with
+                    | [] -> "Plasm did not start"
+                    | parts -> "Plasm did not start: " + String.concat "; " parts
+
+                let lines = first :: [ for p in crash -> $"  - {p}" ]
+                raise (PlasmStartupException(crash, String.concat Environment.NewLine lines))
+
+            return repo
+        }
 
     /// The DDL this repository's model expects (ddl.feature): every table,
     /// its columns, key and constraints, with the names Plasm maps violations
