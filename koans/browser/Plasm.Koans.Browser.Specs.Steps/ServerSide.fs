@@ -77,7 +77,9 @@ let private session =
                       "open Plasm.Koans"
                       "open Plasm.Koans.Shop"
                       "let commands = ResizeArray<string>()"
-                      $"let repo = Repo(Db.model, Plasm.Postgres.Postgres.connect @\"{cs}\", {{ RepoOptions.Default with OnCommand = Some(fun e -> commands.Add e.Sql) }})" ]
+                      // Started as an application starts it, with nothing to check:
+                      // the snippets bring their own queries.
+                      $"let repo = Repo.Start(Db.model, Plasm.Postgres.Postgres.connect @\"{cs}\", typeof<Plasm.Koans.Koans.Koan>.Assembly, {{ RepoOptions.Unchecked with OnCommand = Some(fun e -> commands.Add e.Sql) }}).Result" ]
             )
 
             return fsi, run
