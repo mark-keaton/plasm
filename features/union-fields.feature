@@ -103,6 +103,11 @@ Feature: A union with fields is stored across columns
       When I count the Cards grouped by the member Card.PhaseName, which names each case in words
       Then the counts are 1 "not started", 1 "in progress" and 2 "it's done"
 
+    Scenario: A stage no case names is refused through a member, as reading the Card is
+      Given a cards row whose stage is archived, which no case names
+      When I read the Cards' phase names through the member Card.PhaseName
+      Then the read fails, naming the match on the Card's Stage, rather than giving a phase
+
   Rule: Bulk writes and the schema check know the columns
 
     Scenario: A bulk update sets every column of the union

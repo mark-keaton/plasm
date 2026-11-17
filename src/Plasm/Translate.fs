@@ -73,6 +73,7 @@ let rec show (e: Expr) : string =
     | PropertyGet(Some o, p, []) -> $"{show o}.{p.Name}"
     | PropertyGet(None, p, []) -> p.Name
     | Lambda(v, b) -> $"fun {v.Name} -> {show b}"
+    | IfThenElse(UnionCaseTest(x, _), _, _) -> $"a match on {show x}"
     | IfThenElse(a, b, Bool false) -> $"{show a} && {show b}"
     | IfThenElse(a, Bool true, b) -> $"{show a} || {show b}"
     | Call(None, mi, [ a; b ]) when mi.Name.StartsWith "op_" ->
@@ -745,6 +746,33 @@ let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
         | UnionLeaf ctx (alias, f) -> Sql.Column(alias, f.Column)
         | UnionOptionalLeaf ctx (alias, f) -> Sql.Column(alias, f.Column)
         // A value chosen by a test (an `if`, or a `match` on a union's case).
+        // A match on a union's case (union-fields.feature): F# makes its last
+        // case the else, so it gets its own WHEN, and a stored case no case
+        // names is NULL, refused when read as reading the record refuses it.
+        | IfThenElse(UnionCaseTest(UnionPath ctx (alias, u), _), _, _) when
+            e.Type <> typeof<bool>
+            && (let rec same (x: Expr) =
+                    match x with
+                    | IfThenElse(UnionCaseTest(UnionPath ctx (a2, u2), _), _, rest) when a2 = alias && u2.Type = u.Type -> same rest
+                    | _ -> true
+
+                same e)
+            ->
+            let rec chain (x: Expr) acc =
+                match x with
+                | IfThenElse(UnionCaseTest(UnionPath ctx (a2, u2), case), v, rest) when a2 = alias && u2.Type = u.Type ->
+                    chain rest ((case, v) :: acc)
+                | otherwise -> List.rev acc, otherwise
+
+            let tested, otherwise = chain e []
+            let left = u.Cases |> Array.filter (fun c -> tested |> List.forall (fun (t, _) -> t.Tag <> c.Case.Tag))
+
+            let branches =
+                [ for case, v in tested -> caseIs alias u case, branch ctx v
+                  if left.Length > 0 then
+                      yield Sql.disj [ for c in left -> caseIs alias u c.Case ], branch ctx otherwise ]
+
+            Sql.Case(branches, Sql.Literal "NULL")
         | IfThenElse(cond, a, b) when e.Type <> typeof<bool> -> Sql.Case([ predicate ctx cond, branch ctx a ], branch ctx b)
         // `Some c.Id` in a comparison or join key: the inner value.
         | NewUnionCase(c, [ x ]) when c.Name = "Some" && Reflection.isOption e.Type -> scalar ctx x

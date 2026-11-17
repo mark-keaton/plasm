@@ -227,6 +227,24 @@ type UnionFieldSteps(w: World) =
     member _.BacklogWithAssignee() =
         w.Db.Exec "insert into cards (title, stage, stage_assignee) values ('t', 'backlog', 'ada')" |> unit
 
+    [<StepDefinition("a cards row whose stage is archived, which no case names")>]
+    member _.Archived() =
+        w.Db.Exec "insert into cards (title, stage) values ('t', 'archived')" |> unit
+
+    [<StepDefinition("I read the Cards' phase names through the member Card.PhaseName")>]
+    member _.PhaseNames() =
+        task {
+            let! r = repo().All(plasm { for c in tableOf<Card> do select c.PhaseName })
+            w.Set("phaseNames", r)
+        }
+        |> unit
+
+    [<StepDefinition("the read fails, naming the match on the Card's Stage, rather than giving a phase")>]
+    member _.PhaseNamesFail() =
+        match w.Get<Result<string list, DbError>> "phaseNames" with
+        | Error(DbError.Materialization m) -> check (m.Property = "a match on c.Stage") $"the failure says %A{m}"
+        | other -> failwithf "expected a materialization error, got %A" other
+
     [<StepDefinition("I read the Cards")>]
     member _.Read() =
         task {

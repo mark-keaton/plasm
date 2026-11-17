@@ -192,6 +192,13 @@ module internal Sql =
         | [ e ] -> e
         | e :: rest -> Binary("AND", e, conj rest)
 
+    /// Any of the conditions; FALSE when there are none.
+    let rec disj (es: Expr list) =
+        match es with
+        | [] -> Literal "FALSE"
+        | [ e ] -> e
+        | e :: rest -> Binary("OR", e, disj rest)
+
     /// A database type name, quoted by the dialect: `"sales"."order_status"`,
     /// with `[]` for its array type.
     let typeName (d: ISqlDialect) (parts: string list) (array: bool) =
