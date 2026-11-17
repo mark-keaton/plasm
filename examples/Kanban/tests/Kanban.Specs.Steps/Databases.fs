@@ -54,11 +54,15 @@ let migrated () : Task<string> =
 /// The SQL of every command the scenarios' repositories have sent, in order.
 let commands = System.Collections.Concurrent.ConcurrentQueue<string>()
 
-let repoFor (connectionString: string) : Repo =
-    Repo(
+/// A repository started as the application starts its own: every query the
+/// server declares is translated and the tables are compared with the model,
+/// and a problem with either stops the scenario here.
+let repoFor (connectionString: string) : Task<Repo> =
+    Repo.Start(
         Db.model,
         Plasm.Postgres.PostgresProvider(NpgsqlDataSource.Create connectionString),
-        { RepoOptions.Default with OnCommand = Some(fun command -> commands.Enqueue command.Sql) }
+        queriesIn = typeof<Kanban.Server.Workflows.Refusal>.Assembly,
+        options = { RepoOptions.Default with OnCommand = Some(fun command -> commands.Enqueue command.Sql) }
     )
 
 /// The database most scenarios share. Each works inside a sandbox, so
@@ -67,5 +71,5 @@ let shared: Lazy<Task<Repo>> =
     lazy
         (task {
             let! connectionString = migrated ()
-            return repoFor connectionString
+            return! repoFor connectionString
         })

@@ -476,7 +476,13 @@ type KanbanSteps(w: World, d: Driver) =
     [<Then("it fails to start, naming {string}")>]
     member _.ThenFailsToStart(column: string) =
         match w.StartFailure with
-        | Some(Host.SchemaMismatch differences) ->
+        | Some(:? PlasmStartupException as refusal) ->
+            let differences =
+                refusal.Problems
+                |> List.choose (function
+                    | StartupProblem.Schema issue -> Some(string issue)
+                    | _ -> None)
+
             if not (differences |> List.exists (fun d -> d.Contains column)) then
                 failwithf "expected a difference naming %s, got %A" column differences
         | other -> failwithf "expected the application to refuse to start, got %A" other

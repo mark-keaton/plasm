@@ -19,19 +19,6 @@ open Npgsql
 open Plasm
 open Kanban.Api
 
-/// The database does not fit the model, so the application did not start.
-exception SchemaMismatch of differences: string list with
-    override e.Message =
-        "The database does not fit the application's model:\n"
-        + (e.differences |> List.map (fun d -> "  - " + d) |> String.concat "\n")
-
-/// A query the application declares is one Plasm cannot translate, so the
-/// application did not start.
-exception UntranslatableQueries of problems: string list with
-    override e.Message =
-        "Plasm cannot translate these queries:\n"
-        + (e.problems |> List.map (fun p -> "  - " + p) |> String.concat "\n")
-
 /// /health: healthy while the tables still fit the model.
 type SchemaHealthCheck(repo: Repo) =
     interface IHealthCheck with
@@ -84,12 +71,13 @@ let build (args: string[]) (configure: WebApplicationBuilder -> unit) : Task<Web
             | "" -> failwith "Set the connection string 'Kanban' (ConnectionStrings:Kanban)."
             | cs -> cs
 
+        // The repository is started below, after the migrations: starting it
+        // reads the database. The services ask for it only once it is there.
+        let started = TaskCompletionSource<Repo>()
+
         builder.Services
             .AddSingleton<NpgsqlDataSource>(fun _ -> NpgsqlDataSource.Create connectionString)
-            .AddSingleton<Repo>(fun services ->
-                Database.repo
-                    (services.GetRequiredService<NpgsqlDataSource>())
-                    (services.GetRequiredService<ILoggerFactory>().CreateLogger "Kanban.Sql"))
+            .AddSingleton<Repo>(fun _ -> started.Task.Result)
             .AddSingleton<Service.Deps>(fun services ->
                 { Repo = services.GetRequiredService<Repo>()
                   Clock = fun () -> DateTimeOffset.UtcNow
@@ -120,19 +108,18 @@ let build (args: string[]) (configure: WebApplicationBuilder -> unit) : Task<Web
             | Ok() -> ()
             | Error message -> failwith $"Migrating the database failed: {message}"
 
-        // Refuse to serve with a query that would fail the first time it is used.
-        match Database.untranslatable (app.Services.GetRequiredService<Repo>()) with
-        | [] -> ()
-        | problems ->
-            do! app.DisposeAsync()
-            raise (UntranslatableQueries problems)
+        // Plasm refuses to start with a query that would fail the first time
+        // it is used, or tables the model cannot read or write.
+        try
+            let! repo =
+                Database.start
+                    (app.Services.GetRequiredService<NpgsqlDataSource>())
+                    (app.Services.GetRequiredService<ILoggerFactory>().CreateLogger "Kanban.Sql")
 
-        // Refuse to serve from tables the model cannot read or write.
-        match! Database.differences (app.Services.GetRequiredService<Repo>()) with
-        | [] -> ()
-        | differences ->
+            started.SetResult repo
+        with :? PlasmStartupException as refusal ->
             do! app.DisposeAsync()
-            raise (SchemaMismatch differences)
+            Runtime.ExceptionServices.ExceptionDispatchInfo.Throw refusal
 
         // The client's files, when it has been built into wwwroot (npm run build).
         app.UseDefaultFiles().UseStaticFiles() |> ignore

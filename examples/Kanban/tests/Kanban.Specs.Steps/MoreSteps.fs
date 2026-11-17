@@ -269,9 +269,37 @@ type AccountSteps(w: World, d: Driver) =
 type QuerySteps(w: World) =
     let mutable problems: string list = []
 
+    /// Starts a repository over the server's queries with the query check
+    /// turned down to Warn, so every problem is collected instead of the
+    /// first start-up failing. No queries found is a problem too. The tables
+    /// are left out: this scenario is about the queries, so nothing is sent
+    /// to the database and the data source is never opened.
     [<When("every query the application declares is checked against its model")>]
-    member _.Check() =
-        problems <- Kanban.Server.Database.untranslatable w.Repo
+    member _.Check() : Task =
+        task {
+            let found = ResizeArray<string>()
+
+            let options =
+                { RepoOptions.Default with
+                    Queries = StartupCheck.Warn
+                    Schema = StartupCheck.Ignore
+                    OnProblem =
+                        Some(fun problem ->
+                            match problem with
+                            | StartupProblem.Query _
+                            | StartupProblem.NoQueries _ -> found.Add(string problem)
+                            | _ -> ()) }
+
+            let! _ =
+                Repo.Start(
+                    Kanban.Server.Db.model,
+                    Plasm.Postgres.PostgresProvider(Npgsql.NpgsqlDataSource.Create "Host=localhost"),
+                    queriesIn = typeof<Kanban.Server.Workflows.Refusal>.Assembly,
+                    options = options
+                )
+
+            problems <- List.ofSeq found
+        }
 
     [<Then("none of them is refused")>]
     member _.NoneRefused() =

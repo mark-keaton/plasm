@@ -197,7 +197,8 @@ type Hooks(w: World, scenario: ScenarioContext) =
             elif tagged "committed" then
                 let! connectionString = Databases.migrated ()
                 w.ConnectionString <- connectionString
-                w.Repo <- Databases.repoFor connectionString
+                let! repo = Databases.repoFor connectionString
+                w.Repo <- repo
             else
                 let! shared = Databases.shared.Value
                 // Repo.Sandbox takes the work as a function. A scenario's steps

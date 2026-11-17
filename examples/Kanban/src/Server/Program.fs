@@ -6,6 +6,6 @@ let main args =
         let app = (Host.build args ignore).GetAwaiter().GetResult()
         app.Run()
         0
-    with Host.SchemaMismatch _ as mismatch ->
-        eprintfn "%s" mismatch.Message
+    with :? Plasm.PlasmStartupException as refusal ->
+        eprintfn "%s" refusal.Message
         1

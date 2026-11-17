@@ -1,5 +1,5 @@
-/// The database's side of start-up: migrations, the repository, and the check
-/// that the two agree.
+/// The database's side of start-up: migrations, and the repository, which
+/// Plasm checks against the database and the application's queries as it starts.
 module Kanban.Server.Database
 
 open System.Threading.Tasks
@@ -26,27 +26,28 @@ let migrate (connectionString: string) : Result<unit, string> =
 
 /// The application's one repository. Each call takes a pooled connection from
 /// the data source for as long as the call lasts.
-let repo (dataSource: NpgsqlDataSource) (log: ILogger) : Repo =
+///
+/// Starting it is the start-up check: Plasm translates every query value in
+/// this assembly (`Workflows.Queries`; all of them are values) and compares
+/// `Db.model` with the tables. Both are left at their default, which is to
+/// raise `PlasmStartupException` listing every problem, so the application
+/// does not serve with a query or a table that would fail on first use.
+let start (dataSource: NpgsqlDataSource) (log: ILogger) : Task<Repo> =
     let options =
         { RepoOptions.Default with
             OnCommand =
                 Some(fun command ->
                     log.LogDebug("{Milliseconds:0.0} ms, {Rows} rows: {Sql}", command.Duration.TotalMilliseconds, command.Rows, command.Sql)) }
 
-    Repo(Db.model, PostgresProvider dataSource, options)
+    Repo.Start(Db.model, PostgresProvider dataSource, queriesIn = typeof<Marker>.Assembly, options = options)
 
 /// Every difference between the tables and `Db.model` that would make a read
-/// or a write fail; empty when they fit.
+/// or a write fail; empty when they fit. Start-up has already checked this
+/// once; `/health` asks again, since a database can change under a running
+/// application.
 let differences (repo: Repo) : Task<string list> =
     task {
         match! repo.CheckSchema() with
         | Ok issues -> return issues |> List.map string
         | Error e -> return [ string e ]
     }
-
-/// Every query the application declares (`Workflows.Queries`; all of them are
-/// values) that Plasm cannot translate, as "name: reason"; empty when all can
-/// be. Nothing is sent to the database.
-let untranslatable (repo: Repo) : string list =
-    repo.CheckQueries(typeof<Marker>.Assembly, "Kanban.Server")
-    |> List.map (fun problem -> $"{problem.Query}: {problem.Error}")
