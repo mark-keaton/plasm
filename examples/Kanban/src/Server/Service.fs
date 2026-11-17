@@ -80,7 +80,9 @@ module private View =
 
     let cards (cards: Card list) : CardView[] = cards |> List.map card |> Array.ofList
 
-    let summary (counts: (BoardId * StageKind * int64) list) (row: Board, newest: NewestTitle list, blocked: BlockedTitle list) : BoardSummary =
+    let summary (counts: (BoardId * StageKind * int64) list) (line: BoardLine) : BoardSummary =
+        let row = line.Board
+
         let count kind =
             counts
             |> List.tryPick (fun (board, k, n) -> if board = row.Id && k = kind then Some(int n) else None)
@@ -92,8 +94,8 @@ module private View =
           Backlog = count StageKind.Backlog
           Doing = count StageKind.Doing
           Done = count StageKind.Done
-          Newest = [| for NewestTitle title in newest -> title.Value |]
-          Blocked = [| for BlockedTitle title in blocked -> title.Value |] }
+          Newest = [| for title in line.Newest -> title.Value |]
+          Blocked = [| for title in line.Blocked -> title.Value |] }
 
     /// "WipLimit" (the domain's field, which Plasm names) as the client's "wipLimit".
     let fieldError (e: FieldError) =
@@ -238,11 +240,11 @@ let create (deps: Deps) (session: Session) (ct: CancellationToken) : IKanbanApi 
 
                     task {
                         let! outcome = transact deps ct (createBoard board cards)
-                        let newest = cards |> List.rev |> List.truncate 3 |> List.map (fun card -> NewestTitle card.Title)
+                        let newest = cards |> List.rev |> List.truncate 3 |> List.map (fun card -> card.Title)
 
                         return
                             outcome
-                            |> Result.map (fun stored -> View.summary [ board.Id, StageKind.Backlog, int64 cards.Length ] (stored, newest, []))
+                            |> Result.map (fun stored -> View.summary [ board.Id, StageKind.Backlog, int64 cards.Length ] { Board = stored; Newest = newest; Blocked = [] })
                     }
                     |> Async.AwaitTask)
 
@@ -308,10 +310,10 @@ let create (deps: Deps) (session: Session) (ct: CancellationToken) : IKanbanApi 
                 | Ok rows ->
                     return
                         Ok
-                            [| for card, board in rows do
+                            [| for row in rows do
                                    // A card's board is deleted only with its cards.
-                                   match board with
-                                   | Some board -> { Slug = board.Slug.Value; Board = board.Name.Value; Card = View.card card }
+                                   match row.Board with
+                                   | Some board -> { Slug = board.Slug.Value; Board = board.Name.Value; Card = View.card row.Card }
                                    | None -> () |]
             }
             |> Async.AwaitTask
@@ -370,13 +372,15 @@ let create (deps: Deps) (session: Session) (ct: CancellationToken) : IKanbanApi 
                     | Ok rows ->
                         return
                             Ok
-                                [| for slug, name, CardId card, title, since in rows ->
-                                       { Board = slug.Value
-                                         BoardName = name.Value
+                                [| for row in rows ->
+                                       let (CardId card) = row.Card
+
+                                       { Board = row.Slug.Value
+                                         BoardName = row.Board.Value
                                          Card = card
-                                         Title = title.Value
+                                         Title = row.Title.Value
                                          // A card with an assignee has a start (the table's check).
-                                         Since = defaultArg since DateTimeOffset.MinValue } |]
+                                         Since = defaultArg row.Since DateTimeOffset.MinValue } |]
                 }
                 |> Async.AwaitTask)
 

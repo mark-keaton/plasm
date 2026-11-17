@@ -31,8 +31,8 @@ Feature: A repository starts only when its queries and the database fit
 
     Scenario: Queries that cannot be translated fail start-up, each named
       When I start a repository for the assembly with queries Plasm cannot translate
-      Then start-up fails, saying "3 of 3 queries in Plasm.Specs.Queries.Bad cannot be translated"
-      And the failure names the queries "Bad.normalized", "BadPrepared.normalizedNamed" and "BadProjection.normalizedNames", in that order, each with why
+      Then start-up fails, saying "4 of 4 queries in Plasm.Specs.Queries.Bad cannot be translated"
+      And the failure names the queries "Bad.normalized", "BadLoads.counted", "BadPrepared.normalizedNamed" and "BadProjection.normalizedNames", in that order, each with why
 
     Scenario: A database that does not fit fails start-up
       Given the customers table has lost its email column
@@ -43,7 +43,7 @@ Feature: A repository starts only when its queries and the database fit
     Scenario: Queries come before schema differences, so two runs read the same
       Given the customers table has lost its email column
       When I start a repository for the assembly with queries Plasm cannot translate
-      Then the failure lists the three queries by name, then the missing column
+      Then the failure lists the four queries by name, then the missing column
 
     Scenario: An assembly with no queries has checked nothing
       When I start a repository for an assembly that defines no queries
@@ -59,7 +59,7 @@ Feature: A repository starts only when its queries and the database fit
     Scenario: Warned problems are reported and the repository starts
       When I start a repository for the assembly with queries Plasm cannot translate, warning
       Then the repository starts
-      And 3 problems are reported, naming "Bad.normalized", "BadPrepared.normalizedNamed" and "BadProjection.normalizedNames"
+      And 4 problems are reported, naming "Bad.normalized", "BadLoads.counted", "BadPrepared.normalizedNamed" and "BadProjection.normalizedNames"
 
     Scenario: Without OnProblem a warning goes to standard error
       When I start a repository for the assembly with queries Plasm cannot translate, warning, with no OnProblem

@@ -324,7 +324,7 @@ let spread () =
             }
 
         let c () = task { let! r = efPage db.ConnectionString null 1000 true in return efShape r }
-        let variants = [ "including", a; "second query", b; "EF split", c ]
+        let variants = [ "let!", a; "second query", b; "EF split", c ]
 
         for _, op in variants do
             for _ in 1..60 do

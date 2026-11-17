@@ -22,7 +22,7 @@ let private unchecked (db: Plasm.TestDomain.Database.TestDb) =
 type GraphLoad() =
     let mutable repo: Repo = Unchecked.defaultof<_>
     let mutable cs = ""
-    let mutable page: Projection<Order * Payment list> = Unchecked.defaultof<_>
+    let mutable page: Projection<PageRow> = Unchecked.defaultof<_>
 
     [<Params(20, 100, 1000)>]
     member val Parents = 20 with get, set

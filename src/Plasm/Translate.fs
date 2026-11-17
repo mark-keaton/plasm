@@ -93,6 +93,12 @@ let rec show (e: Expr) : string =
 
         $"{show a} {op} {show b}"
     | Call(None, mi, [ a ]) when mi.Name = "MakeDecimal" -> show a
+    | Call(None, mi, args) when mi.IsDefined(typeof<CompilationSourceNameAttribute>, false) ->
+        // An F# module function as written: List.length payments.
+        let m = mi.DeclaringType.Name
+        let m = if m.EndsWith "Module" then m.Substring(0, m.Length - 6) else m
+        let name = (mi.GetCustomAttributes(typeof<CompilationSourceNameAttribute>, false).[0] :?> CompilationSourceNameAttribute).SourceName
+        String.concat " " ($"{m}.{name}" :: (args |> List.map show))
     | Call(None, mi, args) -> $"""{mi.Name} ({args |> List.map show |> String.concat ", "})"""
     | Call(Some o, mi, args) -> $"""{show o}.{mi.Name}({args |> List.map show |> String.concat ", "})"""
     | NewUnionCase(c, []) -> c.Name
@@ -118,9 +124,21 @@ let private reflectedBodies = Collections.Concurrent.ConcurrentDictionary<Reflec
 let private reflectedBody (m: Reflection.MethodBase) =
     if isNull m then None else reflectedBodies.GetOrAdd(m, fun m -> Expr.TryGetReflectedDefinition m)
 
+/// The quoted body of a query that binds loads (loads.feature): read by its
+/// own builder, names and all, so normalising leaves it as written.
+let private isLoadsBody (e: Expr) =
+    match e with
+    | QuoteTyped x
+    | QuoteRaw x ->
+        FSharpType.IsFunction x.Type
+        && (let r = snd (FSharpType.GetFunctionElements x.Type)
+            r.IsGenericType && r.GetGenericTypeDefinition() = typedefof<Loads<_>>)
+    | _ -> false
+
 /// True when `normalize` would change something (avoids rebuilding trees).
 let rec private needsNormalize (e: Expr) =
     match e with
+    | _ when isLoadsBody e -> false
     | Call(None, mi, [ _; _ ]) when mi.Name = "op_PipeRight" || mi.Name = "op_PipeLeft" -> true
     | PropertyGet(_, p, []) when (reflectedBody p.GetMethod).IsSome -> true
     | Call(_, mi, _) when (reflectedBody mi).IsSome -> true
@@ -140,6 +158,7 @@ let rec private applyReflected (body: Expr) (args: Expr list) =
 let rec normalize (e: Expr) : Expr =
     if not (needsNormalize e) then e else
     match e with
+    | _ when isLoadsBody e -> e
     | Call(None, mi, [ x; f ]) when mi.Name = "op_PipeRight" -> normalize (Expr.Application(f, x))
     | Call(None, mi, [ f; x ]) when mi.Name = "op_PipeLeft" -> normalize (Expr.Application(f, x))
     | Application(f, x) ->
@@ -1330,7 +1349,7 @@ and innerCheckable (what: string) ctx (whole: Expr) (q: Expr) : ICheckable =
 
                     match a with
                     | _ when mi.Name = "For" && i = 0 && pt.IsGenericType && pt.GetGenericTypeDefinition() = typedefof<Table<_>> -> null
-                    | _ when mi.Name = "For" && i = 1 -> null
+                    | _ when mi.Name = "For" && i = 1 && not (typeof<Expr>.IsAssignableFrom pt) -> null
                     | _ when typeof<ICheckable>.IsAssignableFrom pt || (pt.IsGenericType && pt.GetGenericTypeDefinition() = typedefof<Query<_>>) -> build a
                     | QuoteTyped x | QuoteRaw x when typeof<Expr>.IsAssignableFrom pt ->
                         if pt = typeof<Expr> then
@@ -1967,8 +1986,109 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
         else
             sel, s)
 
-/// A query ending in `including (plasm { ... })` (including.feature): the
-/// outer query without it, and the inner query as one more load, read in
+/// One field of the row `return` builds (loads.feature).
+type ReturnField =
+    | RootRecord
+    | Column of Reflection.PropertyInfo
+    | Load of int
+
+/// The row a query's `return` builds from its record and its loads.
+type ReturnShape =
+    { Type: Type
+      Fields: ReturnField list
+      Make: obj[] -> obj }
+
+    /// The row for a record and what each load found for it, in order.
+    member r.Build (record: obj) (loads: obj[]) =
+        r.Make(
+            [| for f in r.Fields ->
+                   match f with
+                   | RootRecord -> record
+                   | Column p -> p.GetValue record
+                   | Load i -> loads.[i] |]
+        )
+
+/// Checks and resolves what `return` builds (loads.feature): a record or
+/// an anonymous record whose fields are the query's record, one of its fields,
+/// or a name bound by `let!` or `and!`, each name once. Anything else would
+/// need evaluating, so it is refused, naming the field.
+let returnShape (def: QueryDef) : ReturnShape option =
+    match def.Return with
+    | None -> None
+    | Some r ->
+        match r.Shape with
+        | Some p -> invalid p
+        | None -> ()
+
+        // An anonymous record's fields are in name order, so F# binds its
+        // arguments first, keeping the order they are written in.
+        let rec written (e: Expr) =
+            match e with
+            | Let(v, value, rest) -> written (rest.Substitute(fun x -> if x = v then Some value else None))
+            | e -> e
+
+        let t, args =
+            match written r.Body with
+            | NewRecord(t, args) -> t, args
+            | _ -> invalid "return builds a record or an anonymous record, naming each field, as in return {| Order = o; Payments = payments |}"
+
+        let names = FSharpType.GetRecordFields(t, true) |> Array.map (fun p -> p.Name) |> List.ofArray
+        let loadOf (v: Var) = r.Names |> List.tryFindIndex ((=) (Some v))
+
+        let isQuery (t: Type) =
+            t.IsGenericType
+            && (let d = t.GetGenericTypeDefinition()
+                d = typedefof<Query<_>>
+                || d = typedefof<Projection<_>>
+                || d = typedefof<One<_>>
+                || d = typedefof<OneProjection<_>>)
+
+        let example =
+            match FSharpType.GetRecordFields(r.Root.Type, true) |> Array.tryHead with
+            | Some p -> $"{r.Root.Name}.{p.Name}"
+            | None -> $"{r.Root.Name}.Field"
+
+        let fields =
+            List.zip names args
+            |> List.map (fun (name, arg) ->
+                match arg with
+                | Var v when v = r.Root -> name, RootRecord
+                | PropertyGet(Some(Var v), p, []) when v = r.Root -> name, Column p
+                // A load goes in the field of its own name, so two loads of one
+                // type cannot be crossed.
+                | Var v when (loadOf v).IsSome ->
+                    let own = string (Char.ToUpperInvariant v.Name.[0]) + v.Name.Substring 1
+
+                    if name <> own && name <> v.Name then
+                        invalid $"{v.Name} is returned in the field {name}: a load is returned in the field of its name, {own}"
+
+                    name, Load (loadOf v).Value
+                | Var v when r.Lets |> List.exists (fun (x, value) -> x = v && isQuery value.Type) ->
+                    invalid $"the field {name} of return is {v.Name}, a query bound with let, which is not loaded: bind it with let!"
+                | _ ->
+                    invalid
+                        $"the field {name} of return is {show arg}: a field of return is the query's record ({r.Root.Name}), one of its fields ({example}), or a name bound by let! or and!, each once; compute it from the rows read")
+
+        r.Names
+        |> List.iteri (fun i n ->
+            let keyword = if i = 0 then "let!" else "and!"
+            let label = n |> Option.map (fun v -> v.Name) |> Option.defaultValue "_"
+
+            match fields |> List.filter (fun (_, f) -> f = Load i) |> List.map fst with
+            | [] -> invalid $"{label} is bound by {keyword} but not returned: return it in a field, or remove it, as each load is one more command"
+            | [ _ ] -> ()
+            | [ a; b ] -> invalid $"{label} is returned twice, in {a} and {b}: return each load once"
+            | many -> invalid $"""{label} is returned {many.Length} times, in {String.concat ", " many}: return each load once""")
+
+        let make = FSharpValue.PreComputeRecordConstructor(t, true)
+
+        Some
+            { Type = t
+              Fields = List.map snd fields
+              Make = make }
+
+/// One load bound by `let!` or `and!` (loads.feature): the outer query
+/// without it, and the inner query as one more load, read in
 /// batches of the outer column's values.
 type IncludingParts =
     { Outer: QueryDef
@@ -1981,12 +2101,16 @@ type IncludingParts =
       /// as (value, the matching column's value); None for whole records.
       Projected: Shape option
       /// The type of the list's items: the inner record, what it selects, or
-      /// the inner record with its own lists when it ends in `including`.
+      /// or the row its own `return` builds when it binds loads of its own.
       ElementType: Type
-      /// The inner query's own `including`s, in the order written.
+      /// The inner query's own loads, in the order written.
       Nested: IncludingParts list
-      /// `includingOne`: at most one item, as an option.
-      One: bool }
+      /// The one record a tie can find (`referredBy`): an option.
+      One: bool
+      /// The name it is bound to, for the plan.
+      Name: string
+      /// The row the inner query's `return` builds, when it binds loads.
+      Return: ReturnShape option }
 
     /// What the outer tuple holds for this level: a list of its items, or an
     /// option of the one.
@@ -1996,11 +2120,15 @@ type IncludingParts =
 
 let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including: IncludingDef) : Result<IncludingParts, TranslationError> =
     let lambda = including.Inner
-    let op = if including.One then "includingOne" else "including"
+
+    let op =
+        match including.Bound with
+        | Some(keyword, name) -> $"{keyword} {name}"
+        | None -> "a load"
 
     wrap (fun () ->
         if not def.Joins.IsEmpty || not def.GroupBy.IsEmpty then
-            invalid "including follows a query of one record: it cannot follow join, leftJoin or groupBy"
+            invalid $"{op} binds a load for each record of a query of one record type: a query that joins or groups cannot bind loads"
 
         let outerSchema = schemaOf model def.Root
 
@@ -2016,9 +2144,10 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
         let checkable = innerCheckable op ctx lambda body
         let inner = checkable.Def
         checkProblems inner
+        let shape = returnShape inner
 
         if not inner.Joins.IsEmpty || not inner.GroupBy.IsEmpty || not inner.Havings.IsEmpty then
-            invalid "an including query reads one record type: it cannot join or group"
+            invalid $"the query of {op} reads one record type: it cannot join or group"
 
         let target = schemaOf model inner.Root
 
@@ -2027,7 +2156,7 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
             | Ok s ->
                 for a in s.Assocs do
                     if (a.Owned || a.Linked) && a.Target = target.Type then
-                        invalid $"{target.Name} records are loaded with their {s.Name}: read the {s.Name}, which comes with them, instead of including them"
+                        invalid $"{target.Name} records are loaded with their {s.Name}: read the {s.Name}, which comes with them, instead of binding them with {op}"
             | Error _ -> ()
 
         let rec conjuncts (e: Expr) =
@@ -2046,7 +2175,7 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
             | _ -> None
 
         let refersOtherwise (c: Expr) =
-            fail c "an including query refers to the outer record only by one equality between an inner and an outer column, as in where (p.OrderId = o.Id)"
+            fail c $"the query of {op} refers to the outer record only by one equality between an inner and an outer column, as in where (p.OrderId = o.Id)"
 
         let mutable correlation = None
 
@@ -2084,22 +2213,16 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
         let innerName, outerName =
             match correlation with
             | Some c -> c
-            | None -> fail lambda "an including query refers to the outer record by one equality between an inner and an outer column, as in where (p.OrderId = o.Id)"
+            | None -> fail lambda $"the query of {op} refers to the outer record by one equality between an inner and an outer column, as in where (p.OrderId = o.Id)"
 
         let matchField = target.Field innerName
         let outerField = outerSchema.Field outerName
         let innerDef = { inner with Wheres = wheres }
 
-        if including.One then
-            if innerDef.Paged then
-                invalid "take and skip mean nothing in includingOne: it finds at most one record for each, by its tie"
-
-            if matchField.Name <> target.Key.Name && not matchField.Unique then
-                fail lambda $"includingOne needs a tie that finds at most one {target.Name}: {target.Name}.{matchField.Name} is neither the key of {target.Name} nor unique. Use including for a list"
         let iw, io = translateBody (newCtxWith model vol) innerDef "t0" target
 
         if innerDef.Paged && io.IsEmpty then
-            invalid $"take/skip inside including needs an order: without one, which {target.Name} records come first for each {outerSchema.Name} is not defined"
+            invalid $"take/skip in the query of {op} needs an order: without one, which {target.Name} records come first for each {outerSchema.Name} is not defined"
 
         let ranked = stableOrder "t0" target io
         let limit, offset = limitExprs innerDef
@@ -2126,7 +2249,7 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
                 Where = first @ last
                 OrderBy = orderBy }
 
-        // An inner query ending in `including` reads whole records; its
+        // An inner query that binds loads reads whole records; its
         // projection is the tuple the reader builds, not a select.
         let selected = if inner.Includings.IsEmpty then checkable.Select else None
 
@@ -2205,16 +2328,14 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
             | None -> buildRecords
           Projected = projected |> Option.map snd
           ElementType =
-            match selected with
-            | Some select -> snd (FSharpType.GetFunctionElements select.Type)
-            | None when nested.IsEmpty -> target.Type
-            | None ->
-                FSharpType.MakeTupleType(
-                    [| yield target.Type
-                       for n in nested -> n.HeldType |]
-                )
+            match shape, selected with
+            | Some r, _ -> r.Type
+            | None, Some select -> snd (FSharpType.GetFunctionElements select.Type)
+            | None, None -> target.Type
           Nested = nested
-          One = including.One })
+          One = including.One
+          Name = including.Bound |> Option.map snd |> Option.defaultValue "_"
+          Return = shape })
 
 // ---------------------------------------------------------------------------
 // Bulk writes

@@ -42,18 +42,20 @@ let orderPage page size (q: Query<Order>) =
     }
 
 /// Payments are their own aggregate: each order of a query with its succeeded
-/// payments, as (Order * Payment list), read with one more command for all of
-/// them.
+/// payments, read with one more command for all of them. `return` says what a
+/// row is; the load goes in the field of its name.
 let withSucceededPayments (q: Query<Order>) =
     plasm {
         for o in q do
-            including (
-                plasm {
-                    for p in referring<Payment> o do
-                        where (p.Status = Succeeded)
-                        orderBy p.CreatedAt
-                }
-            )
+
+        let! payments =
+            plasm {
+                for p in referring<Payment> o do
+                where (p.Status = Succeeded)
+                orderBy p.CreatedAt
+            }
+
+        return {| Order = o; Payments = payments |}
     }
 
 /// Only the projected columns are read.
@@ -163,21 +165,22 @@ let tagsNamed =
 
 /// The page the EF Core comparison reads, clause for clause like the C# version
 /// (benchmarks/Plasm.Benchmarks.EfModel/Model.cs); the lines come with each
-/// order, and the succeeded payments come with `including`.
+/// order, and the succeeded payments come with `let!`.
 let efComparisonPage =
     Query.prepare (fun (size: Arg<int>) ->
         plasm {
             for o in tableOf<Order> do
-                where (o.Status = Published)
-                orderByDescending o.PlacedAt
-                thenBy o.Id
-                take size.Value
+            where (o.Status = Published)
+            orderByDescending o.PlacedAt
+            thenBy o.Id
+            take size.Value
 
-                including (
-                    plasm {
-                        for p in referring<Payment> o do
-                            where (p.Status = Succeeded)
-                            orderBy p.CreatedAt
-                    }
-                )
+            let! payments =
+                plasm {
+                    for p in referring<Payment> o do
+                    where (p.Status = Succeeded)
+                    orderBy p.CreatedAt
+                }
+
+            return {| Order = o; Payments = payments |}
         })

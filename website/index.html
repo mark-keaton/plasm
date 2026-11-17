@@ -79,7 +79,7 @@ let! orders = repo.All(page customerId)
   <div class="wrap section">
     <div class="lede">
       <h2>How a page of orders loads</h2>
-      <p>The orders are chosen first. Their lines then receive exactly the selected keys as one array parameter. Payments are another aggregate: a query ending in <code>including</code> reads them for the same keys, and its result, <code>Order * Payment list</code>, says so.</p>
+      <p>The orders are chosen first. Their lines then receive exactly the selected keys as one array parameter. Payments are another aggregate: a <code>let!</code> reads them for the same keys, and <code>return</code> puts them in the row's <code>Payments</code> field.</p>
     </div>
     <ol class="flow" style="list-style: none; margin: 0; padding: 0">
       <li class="step first"><span class="num">1 · the orders</span><strong>orders</strong><code>ORDER BY placed_at DESC, id LIMIT 20</code></li>

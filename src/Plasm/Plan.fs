@@ -151,24 +151,26 @@ module internal Planner =
                   Loads = loads
                   Reusable = not vol.Value })
 
-    /// One `including` (including.feature): the inner query as one more load
-    /// in batches of its outer level's values.
+    /// One load bound by `let!` or `and!` (loads.feature): its query as one
+    /// more command in batches of its outer level's values.
     type IncludingLevel =
         { Parts: Translate.IncludingParts
           /// What the inner records own or link, loaded with them.
           Children: LoadNode list
-          /// The inner query's own `including`s, in the order written.
+          /// The inner query's own loads, in the order written.
           Nested: IncludingLevel list }
 
-    /// A query ending in `including`s: the outer plan and each list's level.
+    /// A query that binds loads: the outer plan and each load's level.
     type Including =
         { Outer: Plan
           Levels: IncludingLevel list
-          Strategy: LoadStrategy }
+          Strategy: LoadStrategy
+          /// The row `return` builds.
+          Return: Translate.ReturnShape }
 
     let including (dialect: ISqlDialect) (model: Model) (def: QueryDef) : Result<Including, TranslationError> =
         match def.Includings with
-        | [] -> Error(TranslationError.InvalidQuery "the query does not end in including")
+        | [] -> Error(TranslationError.InvalidQuery "the query binds no loads")
         | lambdas ->
             let vol = ref false
 
@@ -181,43 +183,6 @@ module internal Planner =
                         | (Error _ as e), _ -> e
                         | _, Error e -> Error e)
                     (Ok [])
-
-            // Two loads of one type at one level could be swapped and still
-            // compile: refused, naming them (including.feature).
-            let rec sameTyped (inner: bool) (ps: Translate.IncludingParts list) =
-                let ordinal n =
-                    match n % 100, n % 10 with
-                    | (11 | 12 | 13), _ -> $"{n}th"
-                    | _, 1 -> $"{n}st"
-                    | _, 2 -> $"{n}nd"
-                    | _, 3 -> $"{n}rd"
-                    | _ -> $"{n}th"
-
-                let indexed = ps |> List.mapi (fun i p -> i + 1, p)
-
-                let clash =
-                    indexed
-                    |> List.tryPick (fun (i, p) ->
-                        indexed |> List.tryFind (fun (j, q) -> j > i && q.HeldType = p.HeldType) |> Option.map (fun (j, _) -> i, j, p))
-
-                match clash with
-                | Some(i, j, p) ->
-                    let where = if inner then " of the inner query" else ""
-                    let typeName = Reflection.fsharpTypeName p.HeldType
-
-                    Some(
-                        TranslationError.InvalidQuery
-                            $"the {ordinal i} and {ordinal j} includings{where} both give a {typeName}, so the result's type cannot tell them apart and the two written in the other order would still compile. Give each a type of its own: select a one-case type in each inner query, as in select (NewestTitle c.Title)"
-                    )
-                | None -> ps |> List.tryPick (fun p -> sameTyped true p.Nested)
-
-            let parts =
-                match parts with
-                | Ok ps ->
-                    match sameTyped false ps with
-                    | Some e -> Error e
-                    | None -> Ok ps
-                | e -> e
 
             match parts with
             | Error e -> Error e
@@ -235,7 +200,9 @@ module internal Planner =
 
                         { Outer = { outer with Reusable = outer.Reusable && not vol.Value }
                           Levels = levels
-                          Strategy = LoadStrategy.BatchedByKeys dialect.Capabilities.MaxKeysPerCommand })
+                          Strategy = LoadStrategy.BatchedByKeys dialect.Capabilities.MaxKeysPerCommand
+                          // A query binds loads only with let! and return.
+                          Return = (Translate.returnShape def).Value })
 
     let rec private describeNode (dialect: ISqlDialect) (n: LoadNode) : LoadStep =
         let sample = n.Build(Array.CreateInstance(n.KeyField.ProviderType, 1))
@@ -260,8 +227,8 @@ module internal Planner =
         let rec step (l: IncludingLevel) : LoadStep =
             let sample = l.Parts.Build(Array.CreateInstance(l.Parts.MatchField.ProviderType, 1))
 
-            { Path = "including"
-              Relationship = if l.Parts.One then "includes one" else "includes"
+            { Path = l.Parts.Name
+              Relationship = if l.Parts.One then "binds one" else "binds"
               Target = l.Parts.Target.Name
               Strategy = p.Strategy
               Sql = (Sql.renderSelect dialect sample).Sql

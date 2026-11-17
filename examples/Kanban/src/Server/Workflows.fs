@@ -7,6 +7,7 @@
 /// transaction, and what is read and written is the domain's own record.
 module Kanban.Server.Workflows
 
+open System
 open Plasm
 open Kanban
 open Kanban.Server.Db
@@ -18,11 +19,23 @@ type Refusal =
     /// The caller's copy of the card is older than the stored one.
     | StaleCopy
 
-/// The title of one of a board's newest cards.
-type NewestTitle = NewestTitle of Title
+/// A board as the list of boards shows it: the board, with what was read of
+/// its cards.
+type BoardLine =
+    { Board: Board
+      Newest: Title list
+      Blocked: Title list }
 
-/// The title of one of a board's blocked cards.
-type BlockedTitle = BlockedTitle of Title
+/// A blocked card with the board it is on.
+type BlockedCard = { Card: Card; Board: Board option }
+
+/// A card someone is working on, with the board it is on.
+type WorkLine =
+    { Slug: Slug
+      Board: Title
+      Card: CardId
+      Title: Title
+      Since: DateTimeOffset option }
 
 /// Built and planned once; a call only binds its arguments. Every one is a
 /// value, so the application can check them all before it serves anything.
@@ -33,33 +46,35 @@ module Queries =
     /// first. The cards are another aggregate, so the query asks for what it
     /// needs of them, twice. `referring<Card> b` is the cards that hold this
     /// board's id: a Card has one field of type BoardId, so nothing more
-    /// needs saying. The query's type says what it read:
-    /// (Board * NewestTitle list * BlockedTitle list). Both lists hold
-    /// titles, so each has a type of its own: written in the other order,
-    /// the query no longer fits the code that reads it. Each `including` is
-    /// one more command for all the boards.
+    /// needs saying. Each `let!` or `and!` is one more command for all the
+    /// boards, and `return` says what a row is: a BoardLine. A load is
+    /// returned in the field of its own name, so the two lists of titles
+    /// cannot be crossed.
     let boardsWithCards =
         plasm {
             for b in tableOf<Board> do
                 orderBy b.Name
 
-                including (
+                let! newest =
                     plasm {
                         for c in referring<Card> b do
                             orderByDescending c.Created
                             take 3
-                            select (NewestTitle c.Title)
+                            select c.Title
                     }
-                )
 
-                including (
+                and! blocked =
                     plasm {
                         for c in referring<Card> b do
                             where c.Blocked.IsSome
                             orderBy (c.Blocked |> Option.map (fun blocker -> blocker.Since))
-                            select (BlockedTitle c.Title)
+                            select c.Title
                     }
-                )
+
+                return
+                    { Board = b
+                      Newest = newest
+                      Blocked = blocked }
         }
 
     /// (board, stage, number of cards), one row per stage a board has cards in.
@@ -149,16 +164,18 @@ module Queries =
 
     /// Every blocked card, the longest blocked first, each with the board it
     /// is on. A card holds its board's id, so there is at most one board:
-    /// the result is (Card * Board option), not a list to take the head of.
+    /// `let!` binds a Board option, not a list to take the head of.
     let blockedEverywhere =
         plasm {
             for c in tableOf<Card> do
                 where c.Blocked.IsSome
                 orderBy (c.Blocked |> Option.map (fun blocker -> blocker.Since))
-                includingOne (referredBy<Board> c)
+                let! board = referredBy<Board> c
+                return { Card = c; Board = board }
         }
 
-    /// What someone is working on, each card joined to its board: one command.
+    /// What someone is working on, each card joined to its board: one command,
+    /// and each row a WorkLine.
     let workOf =
         Query.prepare (fun (person: Arg<Person>) ->
             plasm {
@@ -166,7 +183,12 @@ module Queries =
                     join b in tableOf<Board> on (c.Board = b.Id)
                     where (c.Assignee = Some person.Value)
                     orderBy c.Since
-                    select (b.Slug, b.Name, c.Id, c.Title, c.Since)
+                    select
+                        { Slug = b.Slug
+                          Board = b.Name
+                          Card = c.Id
+                          Title = c.Title
+                          Since = c.Since }
             })
 
     let accountNamed =

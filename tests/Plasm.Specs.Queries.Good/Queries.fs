@@ -19,3 +19,12 @@ module Good =
 
     /// A function returning a query: not a value, so not checked, only counted.
     let namedLike (prefix: string) = plasm { for c in tableOf<Customer> do where (c.Name.StartsWith prefix) }
+
+    /// Loads bound with let! (let-loads.feature): translated at start-up like any query.
+    let withPayments =
+        plasm {
+            for o in tableOf<Order> do
+            orderBy o.Total
+            let! payments = referring<Payment> o
+            return {| Order = o; Payments = payments |}
+        }

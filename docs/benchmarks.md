@@ -65,7 +65,7 @@ The variants are:
 
 - **Plasm:** `repo.All (plasmPageWithPayments n)` gives each order with its
   lines and its succeeded payments: three commands (the orders, the lines of
-  exactly those orders, and their succeeded payments through `including`, the
+  exactly those orders, and their succeeded payments through a `let!`, the
   order ids as one array parameter).
 
   Until 2026-11-15 the payments were a second query prepared once,
@@ -127,10 +127,12 @@ rows per order), and in the siblings case the full 10 × 10 cross product.
 
 ### Time and allocations with `including` (`counts`, 2026-11-16)
 
-The page read as one query ending in `including`. The first measurement found
+Measured when the payments were written with `including`, since replaced by a
+`let!` (loads.feature), which is planned and read by the same code. The page
+read as one query ending in `including`. The first measurement found
 `including` planned again on every call (about 520 KB more per call, whatever
 the page size); its plan is now cached like any query's
-(`including.feature`: A query ending in including is planned once). Medians of
+(`loads.feature`: A query that binds loads is planned once). Medians of
 three `counts` runs on an otherwise idle machine:
 
 | Workload | Plasm | EF single | EF split |

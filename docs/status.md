@@ -38,7 +38,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 
 | Suite | What it proves | Result |
 |---|---|---|
-| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 508 / 508 pass (outline examples counted separately) |
+| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 507 / 507 pass (outline examples counted separately) |
 | `tests/Plasm.Tests`: `Translation.fs` | SQL-shape contracts (options, membership, `exists`, `List.exists`/`forall` over owned lists, pagination), unsupported-expression errors, model-configuration errors | 42 pass |
 | `tests/Plasm.Tests`: `CompileTime.fs` | Typed API acceptance and rejection, checked with FSharp.Compiler.Service against the real assemblies; each rejection pins its error code and has a passing control snippet | 15 pass |
 | `tests/Plasm.Tests`: `Properties.fs` (FsCheck, real database) | Predicate-order equivalence matching F# semantics; extending a query never alters it; an update records exactly the differing fields; the same aggregates for every batch size, with key-proportional command counts; owned lines keep their declared order per owner | 5 properties pass |
@@ -51,7 +51,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 | `koans/browser` | The browser koans (PGlite) | 120 scenarios pass |
 
 Run the library's tests with `dotnet test` from the repository root (Docker is
-required, or set `PLASM_TEST_PG`): 508 scenarios and 128 unit tests.
+required, or set `PLASM_TEST_PG`): 507 scenarios and 128 unit tests.
 
 ## Supported behaviour
 
@@ -217,29 +217,27 @@ required, or set `PLASM_TEST_PG`): 508 scenarios and 128 unit tests.
   `repo.Exists`, `repo.Explain` (the plan and its loads, with no database
   access).
 - `ReadConsistency.Snapshot` reads a query and what it owns in one snapshot.
-- `including (plasm { ... })`: each record paired with the list an inner query
-  finds for it, `Projection<Order * Payment list>`, with conditions, order and
-  `take` per record; the inner query may end in `select` or `selectDistinct`,
-  and then reads only what it selects. Up to sixteen may follow one another,
-  giving a flat tuple in the order written (`Order * Payment list * Order list`),
-  and an inner query may end in its own (`Customer * (Order * Payment list)
-  list`), each one more command per batch at any depth. A tie to an optional
-  column is written `o.CustomerId = Some c.Id`. `includingOne` gives the one
-  record a tie can find as an option (`Order * Customer option`), only when the
-  tie is the inner record's key or a unique field, and mixes with `including`
-  under the same limit; a second match in the database (a unique constraint
-  missing) is a materialization error, never a choice (`including.feature`).
-  Two loads of one type at one level (`Payment list` twice, `Customer option`
-  twice) are refused, naming their positions: the result's type is what keeps
-  them apart, so each selects a one-case type of its own (`select (NewestTitle
-  c.Title)`).
+- Loads bound with `let!` and `and!`, the row built by `return`
+  (`loads.feature`): after `for` and its `where`, `orderBy` and `take`, each
+  `let!` or `and!` binds what one more query finds for each record, with its
+  conditions, order and `take` per record, one more command per batch at any
+  depth, so loads never multiply rows; there is no limit to how many. A query
+  gives a list of its records or of what it selects (`select`,
+  `selectDistinct`); `referredBy<Customer> o`, and what is selected of it,
+  an option. A load may bind loads of its own. `return` builds a record or an
+  anonymous record of the query's record, its fields or members, and the
+  loads, each load once and in the field of its name (`let! newest` in
+  `Newest`), so two loads of one type cannot be crossed; anything else is
+  refused when the query is planned, so at start-up. A tie to an optional
+  column is written `o.CustomerId = Some c.Id`.
 - `referring<Payment> o` and `referredBy<Customer> o`: the tie the typed ids
   prove, so a plain relationship is never written by hand. `referring` is the
   Payments whose one field referring to o's record (plain or an option) holds
   o's key; `referredBy` is the Customer whose key o's one field referring to a
-  Customer holds, at most one, so `includingOne` takes it. Both are queries: in `including`,
-  `includingOne` and `exists`, as a source narrowed further, with a record in
-  hand, in prepared queries. The key is never the tie, so a record referring to
+  Customer holds, at most one, so a `let!` of it binds an option and `repo.One`
+  reads it for a record in hand. `referring` is a query: in `let!` and
+  `exists`, as a source narrowed further, with a record in hand, in prepared
+  queries. The key is never the tie, so a record referring to
   its own kind reads its children with one and its parent with the other. A
   field is a tie exactly when the model counts it as a reference: never one
   marked [<NotReference>], never one of a built-in type such as int64. Not
@@ -449,20 +447,16 @@ These are medians from a machine shared with other work; times varied by up to
   streaming (`IAsyncEnumerable`) results.
 - `Query.prepare3` for projections.
 
-**Limits of the 2026-11-15 additions** (`including`, `selectDistinct`, values,
+**Limits of the 2026-11-15 additions** (loads, `selectDistinct`, values,
 documents), each refused by name rather than guessed:
 
 - `selectDistinct` with `take` or `skip`: in the query they come first and
   would page the rows, while the database pages the distinct values. A paged
   list of distinct values is a real need, to be revisited with a real case.
-- `including` after a `join` or `leftJoin`; a tie of more than one column
-  (composite); a seventeenth `including` or `includingOne` in one query; `take` or
-  `skip` inside `includingOne`. Sixteen is a limit only because
-  F# has no variadic generics: each length of tuple is one more overload of
-  `including`, and there they stop (a seventeenth does not compile). Each
-  overload is listed when an argument fits none, so passing a non-query to
-  `including` gives an error naming all 64 (about 9 KB, twice the 8-wide one); a type
-  error inside the inner query is reported exactly, as before.
+- Loads after a `join` or `leftJoin`; a tie of more than one column
+  (composite); `orderBy`, `take` or `skip` on what `referredBy` finds (they do
+  not compile: one record has no order). A field of `return` computed from a
+  load is refused: compute it from the rows read.
 - In a value: `[<Unique>]`, `[<Column>]`, a list, or a stored record.
 - In a document: a union with fields and a `Map`; reading a field of an
   optional document in a query (test `IsSome` and read the field from the
@@ -481,7 +475,7 @@ documents), each refused by name rather than guessed:
   write needs its type written: `repo.Transact(Tx.insert ada: Tx<Customer,
   unit>)`. Stored untyped as a top-level value it becomes `obj`. Transactions
   written as functions with a declared return type need nothing.
-- A query ending in `including` reads its outer records and the included ones
+- A query that binds loads reads its records and what each load finds
   in separate commands, outside a snapshot (`ReadConsistency.Snapshot` is not
   offered for projections): a write committed between them can be seen by the
   second and not the first, as for what a record owns. Read it with `Tx.all`
@@ -629,16 +623,17 @@ a1; their behaviour is in `owned-records.feature` and
 ### Two capabilities dropped, then restored in another form
 
 Both were dropped with the second style (2026-11-14) and came back on
-2026-11-15, at the user's request, as `including` (`including.feature`): the
-loaded records are in the result's type, not in a field that may be unloaded.
+2026-11-15, at the user's request, as `including`, replaced on 2026-11-17 by
+loads bound with `let!` (`loads.feature`): the loaded records are in the
+row's type, not in a field that may be unloaded.
 
 - **Choosing per query which relationships to load** (`preload`,
   `replacePreload`, `repo.Preload`). An aggregate still always loads whole.
-  Another aggregate's records come with a query ending in
-  `including (plasm { ... })`, as `Projection<Order * Payment list>`: one more
-  command per batch of outer values.
-- **Top-N children per parent** (`limitPerParent`). `take` inside the inner
-  query of `including` applies per outer record, with the order it requires
+  Another aggregate's records come with a `let!` in the query, in the field
+  of its name of the row `return` builds: one more command per batch of outer
+  values.
+- **Top-N children per parent** (`limitPerParent`). `take` inside a load's
+  query applies per outer record, with the order it requires
   (`ROW_NUMBER() OVER (PARTITION BY ...)`).
 
 ### Still unproven
@@ -689,6 +684,7 @@ loaded records are in the result's type, not in a field that may be unloaded.
 | 2026-11-16 | Strictness review: an attribute where Plasm does not read it was dropped silently; the model is now refused, naming it: `[<Table "">]`; `[<Assigned>]` off the key or on a key that is not an integer; `[<OrderedBy>]` off a list; `[<JoinTable>]` off a list of stored records or on an owned list; `[<NotReference>]` on a field of no record's key type; `[<Unique>]` or `[<Generated>]` on a union with fields, a value, a `[<Json>]` field or a list of stored records; and every attribute inside a value, as `[<Column>]` already was | `features/stored-records.feature` |
 | 2026-11-16 | Strictness and elegance reviews: refusal messages and doc comments that named removed API now name what exists: a plain list says to mark it `[<Json>]`, two fields of one column are named, an owned record found twice says so, a key-only versioned change points to `Tx.update`'s `expectVersion`; the doc comments of `Tx`, `transaction`, `BulkWrite`, `repo.All`, `repo.Scaffold`, `referring`/`referredBy` and the misplaced `CheckSchema` summary; README's scenario count | `features/stored-records.feature` |
 | 2026-11-16 | Two loads of one type side by side are refused at translation, so at start-up once queries are checked there, at the user's question ("Is there *any* way we could flag that in the compiler if a user doesn't notice? Or it just a timebomb?"): `Board * Title list * Title list` compiled with its includings in either order. The remedy is the newtype Kanban shows (6f3cfe0, `NewestTitle`, `BlockedTitle`); compared per level, never with the root. The sixteen-list scenario now gives each list a type of its own | `features/including.feature` |
+| 2026-11-17 | **Reversal**: `including` and `includingOne` are replaced by loads bound with `let!` and `and!`, the row built by `return`, at the user's choice after two spikes in the real library ("I think I like Option 2"; the other, rows generated from `X.Of(...)` by a build step, stays on the unmerged branch spike/row-of). Each load is one including as before; `return` builds a record; a load goes in the field of its name, which replaces the same-type refusal and the one-case-type remedy (2026-11-16); the limit of sixteen and its 64 overloads are gone; `referredBy` gives a `One<'T>`, no longer a query, which a `let!` binds as an option, as it does what is selected of it; `repo.One(referredBy<T> x)` for a record in hand. Koans, examples, benchmarks, README, website and Kanban converted in the same commit | `features/loads.feature` |
 | 2026-11-16 | **Start-up checking by default**, at the user's request ("Can we have a startup check available as a default in the library? And the default is \"crash\", but we can add a setting to turn it down to Warning or Ignore?"): `Repo.Start` is the one way to get a repository; the constructor and `repo.CheckQueries` are internal (Plasm's own tests reach them through InternalsVisibleTo), so the namespace argument that read a typo as success is gone; `RepoOptions.Queries` and `RepoOptions.Schema`, each `Crash`, `Warn` or `Ignore`, since a database migrated after start-up is a reason to relax the schema alone; `OnProblem` beside `OnCommand`; no queries found is a problem; functions returning a query are counted in a note. Koans, the browser course, benchmarks, examples, the F# Interactive tour, README and website start their repositories; a repository that is not checked writes Ignore (`RepoOptions.Unchecked`) | `features/query-check.feature` |
 | 2026-11-16 | `referring<T> o` and `referredBy<T> o`: the tie derived from the typed ids, at the user's request (asked whether F# could generate nine hand-written relationship functions). Reverses "no inferred tie" from the `including` design: with typed ids it is a proof, not a guess; not exactly one candidate field is refused, never picked. Plain ties in koans, README, website, examples and Kanban moved to it | `features/referring.feature` |
 | 2026-11-15 | `[<Json>]`: one jsonb document per field in Plasm's own strict mapping (unknown keys refused, since writes replace the whole document); JSON rendered through `ISqlDialect.Json`, refused at repository creation when absent | `features/json-columns.feature` |

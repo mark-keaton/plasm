@@ -9,10 +9,10 @@ Feature: A tie that the typed ids prove is left to Plasm
   `referring<Payment> o` is the Payments whose one field referring to o's
   record (of its key's typed id, plain or an option) equals o's key: exactly `plasm { for p in tableOf<Payment> do
   where (p.OrderId = o.Id) }`. `referredBy<Customer> o` is the Customer whose
-  key equals o's one field referring to a Customer; it finds at most one, so
-  `includingOne` takes it. Both are queries: they serve in `including`,
-  `includingOne` and `exists`, as the source of a query that narrows them, and
-  with a record in hand. The key itself is never the tie, so a record that
+  key equals o's one field referring to a Customer; it finds at most one, so a
+  `let!` of it binds an option (loads.feature), and `repo.One` reads it for a
+  record in hand. `referring` is a query: it serves in `let!` and `exists`, as
+  the source of a query that narrows it, and with a record in hand. The key itself is never the tie, so a record that
   refers to its own kind (a Category's Parent) reads its children with
   `referring` and its parent with `referredBy`. When there is not exactly one
   such field, the query is refused, naming the record and the fields: Plasm
@@ -38,7 +38,7 @@ Feature: A tie that the typed ids prove is left to Plasm
   Rule: referring reads the records that refer to a record
 
     Scenario: Each Order with the Payments referring to it
-      When I read the Orders by total, including the Payments referring to each, by minute
+      When I read the Orders by total, binding the Payments referring to each, by minute
       Then the Orders and their Payments are:
         | order | payments                              |
         | 5     |                                       |
@@ -48,7 +48,7 @@ Feature: A tie that the typed ids prove is left to Plasm
       And the Payments command is the one the tie written by hand sends
 
     Scenario: A query that narrows the Payments referring to each Order
-      When I read the Orders by total, including the succeeded Payments referring to each
+      When I read the Orders by total, binding the succeeded Payments referring to each
       Then the Orders and their Payments are:
         | order | payments                   |
         | 5     |                            |
@@ -57,7 +57,7 @@ Feature: A tie that the typed ids prove is left to Plasm
         | 200   |                            |
 
     Scenario: In a prepared query
-      When I read the Orders including the Payments referring to each of at least 25, through a prepared query
+      When I read the Orders binding the Payments referring to each of at least 25, through a prepared query
       Then the Order of 50 comes with the Payments 30 Succeeded
 
     Scenario: In exists
@@ -71,7 +71,7 @@ Feature: A tie that the typed ids prove is left to Plasm
   Rule: referredBy reads the one record a record refers to
 
     Scenario: Each Order with the Customer it refers to
-      When I read the Orders by total, including the Customer each refers to
+      When I read the Orders by total, binding the Customer each refers to, by referredBy
       Then the Orders and their Customers are:
         | order | customer |
         | 5     | none     |
@@ -87,7 +87,7 @@ Feature: A tie that the typed ids prove is left to Plasm
 
     Scenario: Each Category with its children and its parent
       Given the Categories "Tools", "Saws" and "Drills" in Tools, and "Hand saws" in Saws
-      When I read the Categories by name, including their children and their parent
+      When I read the Categories by name, binding their children and their parent
       Then the Categories, their children and their parent are:
         | category  | children        | parent |
         | Drills    |                 | Tools  |

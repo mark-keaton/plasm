@@ -187,21 +187,23 @@ for o in orders do
 
     <section class="example" id="references" data-sql="references">
       <h2>5 · Other aggregates, by id</h2>
-      <p>An order refers to its customer, and a payment to its order, by id. To read each order with another aggregate's records, end the query in <code>including</code>: <code>referring&lt;Payment&gt; o</code> is the payments that refer to the order (Payment has one field of type <code>OrderId</code>, so Plasm writes the tie <code>p.OrderId = o.Id</code>), and the result is <code>(Order * Payment list) list</code>, so the type says what was read. The payments of every order come in one more command, with the order ids as one array parameter.</p>
+      <p>An order refers to its customer, and a payment to its order, by id. To read each order with another aggregate's records, bind them with <code>let!</code> and build the row with <code>return</code>: <code>referring&lt;Payment&gt; o</code> is the payments that refer to the order (Payment has one field of type <code>OrderId</code>, so Plasm writes the tie <code>p.OrderId = o.Id</code>), and a load goes in the field of its own name, so the row's type says what was read. The payments of every order come in one more command, with the order ids as one array parameter.</p>
       <div class="view-fs">
 <pre class="code fsharp">let withSucceededPayments (q: Query&lt;Order&gt;) =
     plasm {
         for o in q do
-            including (
-                plasm {
-                    for p in referring&lt;Payment&gt; o do
-                        where (p.Status = Succeeded)
-                        orderBy p.CreatedAt
-                }
-            )
+
+        let! payments =
+            plasm {
+                for p in referring&lt;Payment&gt; o do
+                where (p.Status = Succeeded)
+                orderBy p.CreatedAt
+            }
+
+        return {| Order = o; Payments = payments |}
     }
 
-let! orders = repo.All(withSucceededPayments page)   // (Order * Payment list) list</pre>
+let! orders = repo.All(withSucceededPayments page)   // {| Order: Order; Payments: Payment list |} list</pre>
       </div>
     </section>
 
@@ -351,7 +353,7 @@ orderBy (c |&gt; Option.map (fun c -&gt; c.Name))             // missing custome
               <tr><td>Tiebreaker</td><td><code>.ThenBy(o =&gt; o.Id)</code></td><td><code>thenBy o.Id</code> (Plasm would also add it automatically)</td></tr>
               <tr><td>One page</td><td><code>.Take(20)</code></td><td><code>take 20</code></td></tr>
               <tr><td>The lines</td><td><code>.Include(o =&gt; o.Lines)</code></td><td>Always: the order owns them</td></tr>
-              <tr><td>Successful payments, by date</td><td><code>.Include(o =&gt; o.Payments.Where(p =&gt; p.Status == "succeeded").OrderBy(p =&gt; p.CreatedAt))</code></td><td><code>including (plasm { for p in referring&lt;Payment&gt; o do where (p.Status = Succeeded); orderBy p.CreatedAt })</code></td></tr>
+              <tr><td>Successful payments, by date</td><td><code>.Include(o =&gt; o.Payments.Where(p =&gt; p.Status == "succeeded").OrderBy(p =&gt; p.CreatedAt))</code></td><td><code>let! payments = plasm { for p in referring&lt;Payment&gt; o do where (p.Status = Succeeded); orderBy p.CreatedAt }</code></td></tr>
               <tr><td>Load children in separate queries</td><td><code>.AsSplitQuery()</code></td><td>Always; there is no single-query mode</td></tr>
               <tr><td>No change tracking</td><td><code>.AsNoTracking()</code></td><td>Always; results are immutable values</td></tr>
             </tbody>
@@ -370,21 +372,22 @@ let efComparisonPage =
     Query.prepare (fun (size: Arg&lt;int&gt;) -&gt;
         plasm {
             for o in tableOf&lt;Order&gt; do
-                where (o.Status = Published)
-                orderByDescending o.PlacedAt
-                thenBy o.Id
-                take size.Value
+            where (o.Status = Published)
+            orderByDescending o.PlacedAt
+            thenBy o.Id
+            take size.Value
 
-                including (
-                    plasm {
-                        for p in referring&lt;Payment&gt; o do
-                            where (p.Status = Succeeded)
-                            orderBy p.CreatedAt
-                    }
-                )
+            let! payments =
+                plasm {
+                    for p in referring&lt;Payment&gt; o do
+                    where (p.Status = Succeeded)
+                    orderBy p.CreatedAt
+                }
+
+            return {| Order = o; Payments = payments |}
         })
 
-let! orders = repo.All(efComparisonPage 20)   // (Order * Payment list) list</pre>
+let! orders = repo.All(efComparisonPage 20)   // {| Order: Order; Payments: Payment list |} list</pre>
         <p class="small">Both send the same parent query: <code>WHERE status = 'published' ORDER BY placed_at DESC, id LIMIT 20</code>, then one query for the lines and one for the payments. They differ in how each child query is limited to those 20 orders. Switch to <em>Generated SQL</em> to compare: Plasm sends the 20 order ids as one array parameter, while EF Core runs the parent query again inside every child query. The timings are in <code>docs/benchmarks.md</code>.</p>
       </div>
       <div class="sql-extra" hidden>

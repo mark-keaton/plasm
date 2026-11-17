@@ -55,6 +55,11 @@ type Order =
       Version: int
       Lines: OrderLine list }
 
+    /// An Order of 50 or more: the domain's own word, usable in a query
+    /// (loads.feature).
+    [<ReflectedDefinition>]
+    member o.Large = o.Total >= 50m
+
 and [<Table "order_lines">] OrderLine =
     { Id: OrderLineId
       OrderId: OrderId

@@ -62,8 +62,9 @@ module ReferringGood =
         Query.prepare (fun (least: Arg<decimal>) ->
             plasm {
                 for o in tableOf<Plasm.TestDomain.Domain.Order> do
-                    orderBy o.Total
-                    including (plasm { for p in referring<Plasm.TestDomain.Domain.Payment> o do where (p.Amount >= least.Value); orderBy p.CreatedAt })
+                orderBy o.Total
+                let! payments = plasm { for p in referring<Plasm.TestDomain.Domain.Payment> o do where (p.Amount >= least.Value); orderBy p.CreatedAt }
+                return {| Order = o; Payments = payments |}
             })
 
 /// Checked by `repo.CheckQueries`: a Transfer has two fields of AccountId.
@@ -71,7 +72,8 @@ module ReferringBad =
     let withTransfers =
         plasm {
             for a in tableOf<Account> do
-                including (referring<Transfer> a)
+            let! transfers = referring<Transfer> a
+            return {| Account = a; Transfers = transfers |}
         }
 
 namespace Plasm.Specs
@@ -91,10 +93,12 @@ type ReferringSteps(w: World) =
     let payment (p: Payment) = $"{total p.Amount} {p.Status}"
 
     let orderOf (t: decimal) =
-        (w.Get<Map<decimal, OrderId>> "includingOrders").[t]
+        (w.Get<Map<decimal, OrderId>> "loadsOrders").[t]
 
-    let pairs (r: Result<('T * 'U list) list, DbError>) =
-        r |> Result.map (List.map (fun (o, xs) -> box o, List.map box xs))
+    /// Keeps each row as its Order and its Payments, as the loads steps compare them.
+    let rows (r: Result<'R list, DbError>) (row: 'R -> Order * Payment list) =
+        let kept: Result<(Order * obj list) list, DbError> = r |> Result.map (List.map (fun x -> let o, ps = row x in o, List.map box ps))
+        w.Set("loads", kept)
 
     let orderRecord (t: decimal) =
         task {
@@ -102,7 +106,7 @@ type ReferringSteps(w: World) =
             return (ok r).Value
         }
 
-    [<StepDefinition("I read the Orders by total, including the Payments referring to each, by minute")>]
+    [<StepDefinition("I read the Orders by total, binding the Payments referring to each, by minute")>]
     member _.Referring() =
         task {
             w.MarkCommands()
@@ -111,12 +115,13 @@ type ReferringSteps(w: World) =
                 w.Repo.All(
                     plasm {
                         for o in tableOf<Order> do
-                            orderBy o.Total
-                            including (plasm { for p in referring<Payment> o do orderBy p.CreatedAt })
+                        orderBy o.Total
+                        let! payments = plasm { for p in referring<Payment> o do orderBy p.CreatedAt }
+                        return {| Order = o; Payments = payments |}
                     }
                 )
 
-            w.Set("including", pairs r)
+            rows r (fun x -> x.Order, x.Payments)
             w.Set("referringSql", (w.CommandsSinceMark |> List.last).Sql)
         }
         |> unit
@@ -125,33 +130,43 @@ type ReferringSteps(w: World) =
     member _.SameSql() =
         task {
             w.MarkCommands()
-            let! _ = w.Repo.All Plasm.Specs.Including.IncludingGood.withPayments
+            let! _ =
+                w.Repo.All(
+                    plasm {
+                        for o in tableOf<Order> do
+                        orderBy o.Total
+                        let! payments = plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id); orderBy p.CreatedAt }
+                        return {| Order = o; Payments = payments |}
+                    }
+                )
+
             let byHand = (w.CommandsSinceMark |> List.last).Sql
             equal byHand (w.Get<string> "referringSql") "the Payments command"
         }
         |> unit
 
-    [<StepDefinition("I read the Orders by total, including the succeeded Payments referring to each")>]
+    [<StepDefinition("I read the Orders by total, binding the succeeded Payments referring to each")>]
     member _.Narrowed() =
         task {
             let! r =
                 w.Repo.All(
                     plasm {
                         for o in tableOf<Order> do
-                            orderBy o.Total
-                            including (plasm { for p in referring<Payment> o do where (p.Status = Succeeded); orderBy p.CreatedAt })
+                        orderBy o.Total
+                        let! succeeded = plasm { for p in referring<Payment> o do where (p.Status = Succeeded); orderBy p.CreatedAt }
+                        return {| Order = o; Succeeded = succeeded |}
                     }
                 )
 
-            w.Set("including", pairs r)
+            rows r (fun x -> x.Order, x.Succeeded)
         }
         |> unit
 
-    [<StepDefinition("I read the Orders including the Payments referring to each of at least 25, through a prepared query")>]
+    [<StepDefinition("I read the Orders binding the Payments referring to each of at least 25, through a prepared query")>]
     member _.Prepared() =
         task {
             let! r = w.Repo.All(ReferringGood.ofAtLeast 25m)
-            w.Set("including", pairs r)
+            rows r (fun x -> x.Order, x.Payments)
         }
         |> unit
 
@@ -159,7 +174,7 @@ type ReferringSteps(w: World) =
     member _.Exists() =
         task {
             let! r = w.Repo.All(plasm { for o in tableOf<Order> do where (exists (referring<Payment> o)); orderBy o.Total })
-            w.Set("includingExists", ok r)
+            w.Set("loadsExists", ok r)
         }
         |> unit
 
@@ -176,19 +191,23 @@ type ReferringSteps(w: World) =
     member _.PaymentsRead(text: string) =
         equal text (w.Get<Payment list> "referringPayments" |> List.map payment |> String.concat ", ") "payments"
 
-    [<StepDefinition("I read the Orders by total, including the Customer each refers to")>]
+    [<StepDefinition("I read the Orders by total, binding the Customer each refers to, by referredBy")>]
     member _.ReferredBy() =
         task {
             let! r =
                 w.Repo.All(
                     plasm {
                         for o in tableOf<Order> do
-                            orderBy o.Total
-                            includingOne (referredBy<Customer> o)
+                        orderBy o.Total
+                        let! customer = referredBy<Customer> o
+                        return {| Order = o; Customer = customer |}
                     }
                 )
 
-            w.Set("includingOne", r |> Result.map (List.map (fun (o, c) -> total o.Total, c |> Option.map (fun (c: Customer) -> c.Name))))
+            let shown: Result<(string * string option) list, DbError> =
+                r |> Result.map (List.map (fun x -> total x.Order.Total, x.Customer |> Option.map (fun c -> c.Name)))
+
+            w.Set("includingOne", shown)
         }
         |> unit
 
@@ -196,8 +215,8 @@ type ReferringSteps(w: World) =
     member _.ReferredByInHand() =
         task {
             let! order = orderRecord 200m
-            let! r = w.Repo.All(referredBy<Customer> order)
-            w.Set("referredCustomers", ok r)
+            let! r = w.Repo.One(referredBy<Customer> order)
+            w.Set("referredCustomers", ok r |> Option.toList)
         }
         |> unit
 
@@ -221,7 +240,7 @@ type ReferringSteps(w: World) =
         }
         |> unit
 
-    [<StepDefinition("I read the Categories by name, including their children and their parent")>]
+    [<StepDefinition("I read the Categories by name, binding their children and their parent")>]
     member _.Family() =
         task {
             let repo = w.Get<Repo> "categoryRepo"
@@ -230,13 +249,14 @@ type ReferringSteps(w: World) =
                 repo.All(
                     plasm {
                         for c in tableOf<Category> do
-                            orderBy c.Name
-                            including (plasm { for x in referring<Category> c do orderBy x.Name })
-                            includingOne (referredBy<Category> c)
+                        orderBy c.Name
+                        let! children = plasm { for x in referring<Category> c do orderBy x.Name }
+                        and! parent = referredBy<Category> c
+                        return {| Category = c; Children = children; Parent = parent |}
                     }
                 )
 
-            w.Set("family", ok r)
+            w.Set("family", ok r |> List.map (fun x -> x.Category, x.Children, x.Parent))
         }
         |> unit
 

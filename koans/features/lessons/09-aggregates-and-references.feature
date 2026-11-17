@@ -1,7 +1,7 @@
 # Lesson 09 of the Plasm Koans. Each row is one koan: what the learner discovers,
 # and the acceptance scenario of Plasm it teaches (feature: scenario).
 Feature: About aggregates and references
-  An aggregate is a record with the records it owns, read whole: an Order is always read with its lines, in one more command for any number of orders. Other aggregates are referred to by id and reached with a query, a join, an exists, or including.
+  An aggregate is a record with the records it owns, read whole: an Order is always read with its lines, in one more command for any number of orders. Other aggregates are referred to by id and reached with a query, a join, an exists, or a let! that binds them to each record.
 
   Prerequisites: lesson 08.
 
@@ -27,8 +27,8 @@ Feature: About aggregates and references
       | Every line passes, as F# reads it                 | List.forall over o.Lines keeps an order with no lines, as F# would                                         | linked-collections: Cards whose every tag passes, as F# reads a list  |
       | Orders with a succeeded payment                   | exists (an inner query over referring<Payment> o) reaches another aggregate inside a where                    | query-exists: Orders with a succeeded payment                         |
       | Orders without a succeeded payment                | not (exists ...) keeps the orders no matching payment refers to                                            | query-exists: Orders without a succeeded payment                      |
-      | Each order with its payments                      | referring<Payment> o is the payments that refer to an order; including pairs each order with them, in one more command for any number of orders | referring: Each Order with the Payments referring to it |
-      | A relationship that says more is written once     | a [<ReflectedDefinition>] function built on referring says more than the tie; it serves exists and is narrowed inside including, where take 1 is per order and select picks what the list holds | including: A relationship that says more than the tie is written once and serves including and exists |
-      | Each order with its payments and its deliveries   | two includings give a flat tuple in the order written, each list one more command                           | including: Each Order with its Payments and the Orders of the same Customer |
-      | Each customer with their orders, each with its payments | an inner query may end in its own including; referring finds an optional field too                      | including: Each Customer with their Orders, each with its Payments    |
-      | Each order with its customer                      | referredBy<Customer> o is the one customer an order refers to; includingOne gives it as an option          | referring: Each Order with the Customer it refers to                  |
+      | Each order with its payments                      | referring<Payment> o is the payments that refer to an order; let! binds them to each order, in one more command for any number of orders, and return builds the row | referring: Each Order with the Payments referring to it |
+      | A relationship that says more is written once     | a [<ReflectedDefinition>] function built on referring says more than the tie; it serves exists and is narrowed inside a let!, where take 1 is per order and select picks what the list holds | loads: A relationship that says more than the tie is written once and serves let! and exists |
+      | Each order with its payments and its deliveries   | and! binds a second load beside the first, each in the field of its name and one more command | loads: Each Order with its Payments and the Orders of the same Customer |
+      | Each customer with their orders, each with its payments | a load's query may bind loads of its own and build its own row; referring finds an optional field too | loads: Each Customer with their Orders, each with its Payments    |
+      | Each order with its customer                      | referredBy<Customer> o is the one customer an order refers to; a let! of it, or of what is selected of it, binds an option          | referring: Each Order with the Customer it refers to                  |

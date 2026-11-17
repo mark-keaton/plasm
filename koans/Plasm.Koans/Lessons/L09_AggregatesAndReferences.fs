@@ -225,20 +225,20 @@ let lesson =
               "Each order with its payments",
               fun repo ->
                   task {
-                      // A query ending in including reads each order with the list an
-                      // inner query finds for it, here the payments referring to it.
-                      // The result's type, (Order * Payment list), says what was read.
-                      // Plasm reads the payments of every order in one more command and
-                      // pairs them up.
+                      // let! binds what another query finds for each order, here the
+                      // payments referring to it, and return builds the row: the load
+                      // goes in the field of its name. Plasm reads the payments of every
+                      // order in one more command and pairs them up.
                       let withPayments =
                           plasm {
                               for o in tableOf<Order> do
-                                  orderBy o.Id
-                                  including (plasm { for p in referring<Payment> o do orderBy p.Id })
+                              orderBy o.Id
+                              let! payments = plasm { for p in referring<Payment> o do orderBy p.Id }
+                              return {| Order = o; Payments = payments |}
                           }
 
                       let! rows = repo.All withPayments
-                      ok rows |> List.map (fun (o, payments) -> o.Id, payments.Length) |> shouldBe __
+                      ok rows |> List.map (fun row -> row.Order.Id, row.Payments.Length) |> shouldBe __
                       sqlSent().Length |> shouldBe __
                   }
           )
@@ -250,19 +250,20 @@ let lesson =
                       // succeededPaymentsOf (top of this lesson) says more than the tie,
                       // so it is a function, written once and built on referring. It
                       // works inside exists, and as the start of an inner query that
-                      // narrows it further. Inside including, orderBy and take apply to
-                      // each order's payments, and select picks what the list holds:
-                      // here, the status of the newest one of each.
+                      // narrows it further. In a let!, orderBy and take apply to each
+                      // order's payments, and select picks what the list holds: here,
+                      // the status of the newest one of each.
                       let paidOrders =
                           plasm {
                               for o in tableOf<Order> do
-                                  where (exists (succeededPaymentsOf o))
-                                  orderBy o.Id
-                                  including (plasm { for p in succeededPaymentsOf o do orderByDescending p.CreatedAt; take 1; select p.Status })
+                              where (exists (succeededPaymentsOf o))
+                              orderBy o.Id
+                              let! newest = plasm { for p in succeededPaymentsOf o do orderByDescending p.CreatedAt; take 1; select p.Status }
+                              return {| Order = o; Newest = newest |}
                           }
 
                       let! rows = repo.All paidOrders
-                      ok rows |> List.map (fun (o, newest) -> o.Id, newest) |> shouldBe __
+                      ok rows |> List.map (fun row -> row.Order.Id, row.Newest) |> shouldBe __
                   }
           )
 
@@ -270,19 +271,20 @@ let lesson =
               "Each order with its payments and its deliveries",
               fun repo ->
                   task {
-                      // A query may end in up to sixteen includings. Each adds one list
-                      // to the tuple, in the order written, and is one more command:
-                      // two lists never multiply each other's rows.
+                      // and! binds one more load beside the first, as many as you need.
+                      // Each is one more command, so two lists never multiply each
+                      // other's rows, and each goes in the field of its name.
                       let withBoth =
                           plasm {
                               for o in tableOf<Order> do
-                                  orderBy o.Id
-                                  including (referring<Payment> o)
-                                  including (referring<Delivery> o)
+                              orderBy o.Id
+                              let! payments = referring<Payment> o
+                              and! deliveries = referring<Delivery> o
+                              return {| Order = o; Payments = payments; Deliveries = deliveries |}
                           }
 
                       let! rows = repo.All withBoth
-                      ok rows |> List.map (fun (o, payments, deliveries) -> o.Id, payments.Length, deliveries |> List.map (fun d -> d.StageName)) |> shouldBe __
+                      ok rows |> List.map (fun row -> row.Order.Id, row.Payments.Length, row.Deliveries |> List.map (fun d -> d.StageName)) |> shouldBe __
                       sqlSent().Length |> shouldBe __
                   }
           )
@@ -291,20 +293,28 @@ let lesson =
               "Each customer with their orders, each with its payments",
               fun repo ->
                   task {
-                      // An inner query may end in its own including, so its items come
-                      // with their own lists: Customer * (Order * Payment list) list.
-                      // An order's CustomerId is optional; referring finds it all the
-                      // same, as o.CustomerId = Some c.Id.
+                      // A load's query may bind loads of its own and build its own row,
+                      // so each customer's orders come with their payments. An order's
+                      // CustomerId is optional; referring finds it all the same, as
+                      // o.CustomerId = Some c.Id.
                       let customers =
                           plasm {
                               for c in tableOf<Customer> do
-                                  orderBy c.Id
+                              orderBy c.Id
 
-                                  including (plasm { for o in referring<Order> c do orderBy o.Id; including (referring<Payment> o) })
+                              let! orders =
+                                  plasm {
+                                      for o in referring<Order> c do
+                                      orderBy o.Id
+                                      let! payments = referring<Payment> o
+                                      return {| Order = o; Payments = payments |}
+                                  }
+
+                              return {| Customer = c; Orders = orders |}
                           }
 
                       let! rows = repo.All customers
-                      ok rows |> List.map (fun (c, orders) -> c.Name, orders |> List.map (fun (o, payments) -> o.Id, payments.Length)) |> shouldBe __
+                      ok rows |> List.map (fun row -> row.Customer.Name, row.Orders |> List.map (fun x -> x.Order.Id, x.Payments.Length)) |> shouldBe __
                   }
           )
 
@@ -314,16 +324,17 @@ let lesson =
                   task {
                       // referredBy<Customer> o is the customer this order refers to: the
                       // one whose key is the order's CustomerId. A key finds at most one,
-                      // so includingOne takes it and gives an option; an order with no
-                      // customer comes with None.
+                      // so a let! of it, or of what is selected of it, binds an option;
+                      // an order with no customer comes with None.
                       let withCustomer =
                           plasm {
                               for o in tableOf<Order> do
-                                  orderBy o.Id
-                                  includingOne (plasm { for c in referredBy<Customer> o do select c.Name })
+                              orderBy o.Id
+                              let! name = plasm { for c in referredBy<Customer> o do select c.Name }
+                              return {| Order = o; Name = name |}
                           }
 
                       let! rows = repo.All withCustomer
-                      ok rows |> List.map (fun (o, name) -> o.Id, name) |> shouldBe __
+                      ok rows |> List.map (fun row -> row.Order.Id, row.Name) |> shouldBe __
                   }
           ) ]

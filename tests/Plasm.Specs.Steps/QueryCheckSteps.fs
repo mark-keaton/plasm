@@ -45,6 +45,10 @@ type QueryCheckSteps(w: World) =
 
     let reported () = w.Get<StartupProblem list> "reported"
 
+    /// The names in `"A", "B" and "C"`, in order.
+    let quoted (listed: string) =
+        [ for m in System.Text.RegularExpressions.Regex.Matches(listed, "\"([^\"]*)\"") -> m.Groups.[1].Value ]
+
     [<StepDefinition("I start a repository for the assembly whose queries all translate")>]
     member _.StartGood() = start goodAssembly id
 
@@ -107,8 +111,8 @@ type QueryCheckSteps(w: World) =
         let e = failure ()
         check (e.Message.Contains text) e.Message
 
-    [<StepDefinition("^the failure names the queries \"(.*)\", \"(.*)\" and \"(.*)\", in that order, each with why$")>]
-    member _.NamesQueries(a: string, b: string, c: string) =
+    [<StepDefinition("^the failure names the queries (.*), in that order, each with why$")>]
+    member _.NamesQueries(listed: string) =
         let names =
             [ for p in (failure ()).Problems do
                   match p with
@@ -117,8 +121,9 @@ type QueryCheckSteps(w: World) =
                       q.Query
                   | _ -> () ]
 
-        equal 3 names.Length "queries named"
-        List.zip names [ a; b; c ] |> List.iter (fun (n, e) -> check (n.EndsWith e) $"{n} is not {e}")
+        let expected = quoted listed
+        equal expected.Length names.Length "queries named"
+        List.zip names expected |> List.iter (fun (n, e) -> check (n.EndsWith e) $"{n} is not {e}")
 
     [<StepDefinition("the failure names the missing column customers.email")>]
     member _.NamesColumn() =
@@ -131,7 +136,7 @@ type QueryCheckSteps(w: World) =
                  | _ -> false))
             e.Message
 
-    [<StepDefinition("the failure lists the three queries by name, then the missing column")>]
+    [<StepDefinition("the failure lists the four queries by name, then the missing column")>]
     member _.Ordered() =
         let kinds =
             (failure ()).Problems
@@ -140,7 +145,7 @@ type QueryCheckSteps(w: World) =
                 | StartupProblem.Schema _ -> "schema"
                 | other -> string other)
 
-        equal [ "query"; "query"; "query"; "schema" ] kinds "the order of the problems"
+        equal [ "query"; "query"; "query"; "query"; "schema" ] kinds "the order of the problems"
         let message = (failure ()).Message
         check (message.IndexOf "Bad.normalized" < message.IndexOf "customers") message
 
@@ -154,11 +159,13 @@ type QueryCheckSteps(w: World) =
 
         check (notes |> List.exists (fun n -> n.Contains "1 function returning a query is not checked" && n.Contains text.[text.LastIndexOf ' ' + 1 ..])) $"%A{notes}"
 
-    [<StepDefinition("^(\\d+) problems are reported, naming \"(.*)\", \"(.*)\" and \"(.*)\"$")>]
-    member _.Reported(n: int, a: string, b: string, c: string) =
+    [<StepDefinition("^(\\d+) problems are reported, naming (.*)$")>]
+    member _.Reported(n: int, listed: string) =
         let queries = [ for p in reported () do match p with StartupProblem.Query q -> q.Query | _ -> () ]
+        let expected = quoted listed
         equal n queries.Length "problems reported"
-        List.zip queries [ a; b; c ] |> List.iter (fun (q, e) -> check (q.EndsWith e) $"{q} is not {e}")
+        equal n expected.Length "names expected"
+        List.zip queries expected |> List.iter (fun (q, e) -> check (q.EndsWith e) $"{q} is not {e}")
 
     [<StepDefinition("1 problem is reported, naming the missing column customers.email")>]
     member _.ReportedColumn() =
@@ -199,7 +206,7 @@ type QueryCheckSteps(w: World) =
     [<StepDefinition("only the name \"(.*)\" is returned")>]
     member _.OnlyName(name: string) = equal [ name ] (w.Get<string list> "names") "names"
 
-    // A module's queries checked by the internal CheckQueries (including,
+    // A module's queries checked by the internal CheckQueries (loads,
     // distinct, exists and json features).
 
     [<StepDefinition("no problem is reported")>]

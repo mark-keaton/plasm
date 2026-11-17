@@ -57,18 +57,23 @@ let plasmPage (n: int) =
             take n
     }
 
-/// The page, each order with its succeeded payments: one query ending in
-/// `including`, whose payments come in one more command for the whole page.
+/// An order of the page with its succeeded payments.
+type PageRow = { Order: Order; Payments: Payment list }
+
+/// The page, each order with its succeeded payments: one query whose `let!`
+/// reads the payments in one more command for the whole page.
 let plasmPageWithPayments (n: int) =
     plasm {
         for o in plasmPage n do
-            including (
-                plasm {
-                    for p in referring<Payment> o do
-                        where (p.Status = Succeeded)
-                        orderBy p.CreatedAt
-                }
-            )
+
+        let! payments =
+            plasm {
+                for p in referring<Payment> o do
+                where (p.Status = Succeeded)
+                orderBy p.CreatedAt
+            }
+
+        return { Order = o; Payments = payments }
     }
 
 let siblingOrderId = 1L
@@ -102,10 +107,10 @@ let private all (repo: Repo) (q: Query<'T>) =
     }
 
 /// A page of orders with their lines and their succeeded payments.
-let runPage (repo: Repo) (page: Projection<Order * Payment list>) : Task<Order list * Payment list> =
+let runPage (repo: Repo) (page: Projection<PageRow>) : Task<Order list * Payment list> =
     task {
         match! repo.All page with
-        | Ok rows -> return rows |> List.map fst, rows |> List.collect snd
+        | Ok rows -> return rows |> List.map (fun r -> r.Order), rows |> List.collect (fun r -> r.Payments)
         | Error e -> return failwithf "Plasm query failed: %O" e
     }
 

@@ -37,7 +37,7 @@
     <Compile Include="PgEnumSteps.fs" />
     <Compile Include="ConventionSteps.fs" />
     <Compile Include="ExistsSteps.fs" />
-    <Compile Include="IncludingSteps.fs" />
+    <Compile Include="LoadsSteps.fs" />
     <Compile Include="ReferringSteps.fs" />
     <Compile Include="DistinctSteps.fs" />
     <Compile Include="ValueRecordSteps.fs" />

@@ -129,7 +129,7 @@ type Repo internal (model: Model, provider: IProvider, ?options: RepoOptions) =
                 Ok p
             | other -> other
 
-    // A query ending in `including`, planned once per value like any query.
+    // A query that binds loads (loads.feature), planned once per value like any query.
     let includingPlans = ConditionalWeakTable<QueryDef, Planner.Including>()
 
     let includingFor (def: QueryDef) =
@@ -372,7 +372,9 @@ type Repo internal (model: Model, provider: IProvider, ?options: RepoOptions) =
             |> Seq.exists (fun a -> (a :?> CompilationMappingAttribute).SourceConstructFlags = SourceConstructFlags.Module)
 
         let isQueryType (t: Type) =
-            t.IsGenericType && (t.GetGenericTypeDefinition() = typedefof<Query<_>> || t.GetGenericTypeDefinition() = typedefof<Projection<_>>)
+            t.IsGenericType
+            && (let d = t.GetGenericTypeDefinition()
+                d = typedefof<Query<_>> || d = typedefof<Projection<_>> || d = typedefof<One<_>> || d = typedefof<OneProjection<_>>)
 
         let rec isQuery (t: Type) =
             if isQueryType t then true
@@ -580,6 +582,11 @@ type Repo internal (model: Model, provider: IProvider, ?options: RepoOptions) =
         }
 
     /// Executes a query expected to return at most one row.
+    /// The one record a tie can find for a record in hand
+    /// (`repo.One(referredBy<Customer> order)`), if there is one.
+    member this.One(one: One<'T>, ?cancellationToken: CancellationToken) =
+        this.One(Query<'T>(one.Def), ?cancellationToken = cancellationToken)
+
     member this.One(query: Query<'T>, ?cancellationToken: CancellationToken) =
         task {
             // Remembered per query value, so repeated lookups reuse one plan.

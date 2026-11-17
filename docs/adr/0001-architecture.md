@@ -1,9 +1,43 @@
 # ADR 0001: Ecto's architecture, expressed in F#
 
-- Status: accepted (first delivery); amended 2026-11-14 (strict design, one style) and 2026-11-15 (a record says how it is stored; `including`)
+- Status: accepted (first delivery); amended 2026-11-14 (strict design, one style), 2026-11-15 (a record says how it is stored; `including`) and 2026-11-17 (loads bound with `let!` replace `including`)
 - Date: 2026-11-12
 
+## Amendment, 2026-11-17: loads bound with `let!`, the row built by `return`
+
+`including` (next amendment) is replaced. After `for` and its `where`,
+`orderBy` and `take`, each `let!` or `and!` binds what one more query finds for
+each record, and `return` builds the row as a record or an anonymous record:
+
+```fsharp
+plasm {
+    for o in tableOf<Order> do
+    orderBy o.Total
+    let! payments = referring<Payment> o
+    return {| Order = o; Payments = payments |}
+}
+```
+
+A load is read exactly as an `including` was: one more command per batch of
+outer values, its conditions, order and `take` per record, loads never
+multiplying each other's rows. A query gives a list; `referredBy<Customer> o`,
+the one record a tie can find, gives an option, and so does what is selected
+of it. A load's query may bind loads of its own, and there is no limit to how
+many a query binds (`including` stopped at sixteen, one overload per arity).
+
+The name rule: a load is returned in the field of its own name (`let! newest`
+in `Newest`), so two loads of one type cannot be crossed, and the refusal of
+two `including`s of one type, with its one-case-type remedy, is gone. `return`
+is read from the query's quotation, never run: a field is the record, one of
+its fields or members, or a load, each load once; anything else is refused when
+the query is planned, and so at start-up. The user chose this form on
+2026-11-17 over `including` and over a variant whose rows a build step
+generated (`return BoardLine.Of(b, newest, blocked)`), which stays on an
+unmerged branch.
+
 ## Amendment, 2026-11-15: another aggregate's records, in the result's type
+
+Superseded by the amendment of 2026-11-17; kept as the record of the decision.
 
 At the user's request a query can end in `including (plasm { ... })`. Each
 record comes paired with the list the inner query finds for it, as
@@ -99,8 +133,8 @@ record says it itself; see the amendment above):
   the `Rel` module (`Rel.any`, `Rel.all`, `Rel.exists`).
 - `limitPerParent` (top-N children per parent) was dropped on purpose: the
   latest few rows per parent is a report, written as hand-written SQL.
-  (Restored 2026-11-15 in another form: `take` inside `including`; see the
-  amendment of that date.)
+  (Restored 2026-11-15 in another form: `take` inside `including`, and since
+  2026-11-17 inside a `let!`'s query; see the amendments of those dates.)
 
 **Writing an aggregate.** `Tx.update (original, changed)` compares the record
 read with the record the domain decided on. It writes only the columns that

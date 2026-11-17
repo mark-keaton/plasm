@@ -82,9 +82,27 @@ type internal JoinDef =
       OuterKey: Expr
       InnerKey: Expr }
 
-/// One `including` or `includingOne` (including.feature): the inner query, a
-/// lambda over the root record.
-type internal IncludingDef = { Inner: Expr; One: bool }
+/// One load bound by `let!` or `and!` (loads.feature): its query, a lambda
+/// over the query's record.
+type internal IncludingDef =
+    { Inner: Expr
+      One: bool
+      /// The keyword and the name it is bound to, for messages.
+      Bound: (string * string) option }
+
+/// The row a query's `return` builds (loads.feature), as written. It is
+/// checked and resolved when the query is planned (Translate.returnShape).
+type internal ReturnDef =
+    { /// The query's record.
+      Root: Var
+      /// What `return` builds.
+      Body: Expr
+      /// The name each load is bound to, in the order written.
+      Names: Var option list
+      /// Values bound with a plain `let` before the loads.
+      Lets: (Var * Expr) list
+      /// Why the body is not loads followed by `return`, when it is not.
+      Shape: string option }
 
 type internal QueryDef =
     { Root: Type
@@ -106,11 +124,14 @@ type internal QueryDef =
       Args: obj[]
       /// Requests that cannot be honoured, reported when the query is planned.
       Problems: string list
-      /// Each `including` and `includingOne`, in the order written
-      /// (including.feature).
+      /// Each load bound by `let!` or `and!`, in the order written
+      /// (loads.feature).
       Includings: IncludingDef list
       /// `selectDistinct`: each selected value once (distinct.feature).
-      Distinct: bool }
+      Distinct: bool
+      /// The row `return` builds from the record and its loads
+      /// (loads.feature); None when the query binds no loads.
+      Return: ReturnDef option }
 
     member d.Paged =
         d.Limit.IsSome || d.Offset.IsSome || d.LimitArg.IsSome || d.OffsetArg.IsSome
@@ -130,7 +151,8 @@ type internal QueryDef =
           Args = [||]
           Problems = []
           Includings = []
-          Distinct = false }
+          Distinct = false
+          Return = None }
 
 /// Something that can describe a query for display: a `Repo`.
 type internal IQueryDescriber =
@@ -174,16 +196,29 @@ type internal ICheckable =
     abstract Def: QueryDef
     abstract Select: Expr option
 
+/// What a `let!` binds a list of: a query, or a projection (loads.feature).
+type IRows<'T> =
+    interface
+    end
+
+/// What a `let!` binds an option of: the one record a tie can find, or a
+/// projection of it (loads.feature).
+type IRow<'T> =
+    interface
+    end
+
 /// An immutable description of a query over `'T` with its relationship loads.
 /// Building or extending a query never touches the database; execute it with a
 /// `Repo`.
-[<Sealed; StructuredFormatDisplay("{Description}")>]
+[<StructuredFormatDisplay("{Description}")>]
 type Query<'T> internal (def: QueryDef) =
     member internal _.Def = def
 
     interface ICheckable with
         member _.Def = def
         member _.Select = None
+
+    interface IRows<'T>
 
     /// The SQL this query runs, with its parameter values and one command per
     /// relationship load, as translated by the most recently created repository
@@ -211,13 +246,41 @@ type Projection<'R> internal (def: QueryDef, select: Expr) =
         member _.Def = def
         member _.Select = Some select
 
-module internal QueryOps =
-    /// One more `including`: a projection built from a query only ever comes
-    /// from the operations above, so its record is the tuple of the outer
-    /// record and the lists in the order written.
-    let including (one: bool) (def: QueryDef) (inner: Expr) : Projection<'R> =
-        Projection<'R>({ def with Includings = def.Includings @ [ { Inner = inner; One = one } ] }, inner)
+    interface IRows<'R>
 
+/// The one record a tie can find (`referredBy<Customer> o`): at most one row,
+/// so a `let!` of it binds an option (loads.feature). `select` reads part of
+/// it, still at most one.
+[<Sealed>]
+type One<'T> internal (def: QueryDef) =
+    member internal _.Def = def
+
+    interface ICheckable with
+        member _.Def = def
+        member _.Select = None
+
+    interface IRow<'T>
+
+/// What `select` reads of the one record a tie can find: at most one row.
+[<Sealed>]
+type OneProjection<'R> internal (def: QueryDef, select: Expr) =
+    member internal _.Def = def
+    member internal _.Select = select
+
+    interface ICheckable with
+        member _.Def = def
+        member _.Select = Some select
+
+    interface IRow<'R>
+
+/// What the `let!` and `and!` of a query bind (loads.feature). It is only
+/// ever quoted, read by the query that binds it, and never built.
+[<Sealed>]
+type Loads<'R> internal () =
+    class
+    end
+
+module internal QueryOps =
     /// A derived query. It is no longer the prepared query it may have come
     /// from, so it is planned from its own description, not the template.
     let inline map (q: Query<'T>) f : Query<'T> = Query<'T>({ f q.Def with Template = None })
@@ -325,6 +388,117 @@ module internal QueryOps =
                       OuterKey = outerKey
                       InnerKey = innerKey } ] }
 
+/// A query whose body binds loads with `let!` and `and!` and ends in `return`
+/// (loads.feature), read from the body's quotation: each load is one more
+/// command for all the rows, and `return` the row built from the record and
+/// the loads.
+/// Nothing in the body is run.
+module internal LetLoads =
+    open Microsoft.FSharp.Quotations.Patterns
+
+    let private builderCall (name: string) (mi: MethodInfo) =
+        mi.Name = name && mi.DeclaringType.Name = "QueryBuilder"
+
+    /// Each source of the loads, with its place in the tuple `and!` makes:
+    /// `MergeSources(a, MergeSources(b, c))` is a at [0], b at [1; 0], c at [1; 1].
+    let rec private sources (e: Expr) : (int list * Expr) list =
+        // A load reaches the builder as the IRows or IRow it is.
+        let load (x: Expr) =
+            match x with
+            | Coerce(x, t) when t.IsGenericType && (t.GetGenericTypeDefinition() = typedefof<IRows<_>> || t.GetGenericTypeDefinition() = typedefof<IRow<_>>) -> x
+            | x -> x
+
+        match e with
+        | Call(Some _, mi, [ a; b ]) when builderCall "MergeSources" mi ->
+            ([ 0 ], load a) :: (sources b |> List.map (fun (p, x) -> 1 :: p, x))
+        | Coerce _ -> [ [], load e ]
+        | e -> [ [], e ]
+
+    let private shapeProblem =
+        "after for, and its where, orderBy and take, a query binds loads with let! and and!, then ends in return"
+
+    /// What a member only ever quoted returns, were it run.
+    let quoted () : 'T =
+        invalidOp "let! and and! are read from the query that binds them, never run"
+
+    let projection (def: QueryDef) (body: Expr) : Projection<'R> =
+        let root, rest =
+            match body with
+            | Lambda(arg, Let(v, Var a, rest)) when a = arg -> v, rest
+            | Lambda(arg, rest) -> arg, rest
+            | other -> Var("x", def.Root), other
+
+        let rec lets acc (e: Expr) =
+            match e with
+            | Call(Some _, mi, _) when builderCall "BindReturn" mi -> List.rev acc, e
+            | Let(v, value, rest) -> lets ((v, value) :: acc) rest
+            | e -> List.rev acc, e
+
+        let bound, call = lets [] rest
+
+        let within (e: Expr) =
+            Expr.Lambda(root, List.foldBack (fun (v, value) inner -> Expr.Let(v, value, inner)) bound e)
+
+        let shaped includings names ret problem =
+            let ret =
+                { Root = root
+                  Body = ret
+                  Names = names
+                  Lets = bound
+                  Shape = problem }
+
+            Projection<'R>(
+                { def with
+                    Template = None
+                    Includings = includings
+                    Problems = def.Problems @ Option.toList problem
+                    Return = Some ret },
+                body
+            )
+
+        match call with
+        | Call(Some _, mi, [ source; Lambda(tuple, ret) ]) when builderCall "BindReturn" mi ->
+            let leaves = sources source
+
+            // The names the pattern binds, each with its place in the tuple.
+            let rec named (places: Map<Var, int list>) (e: Expr) =
+                let rec place (x: Expr) =
+                    match x with
+                    | Var v -> places.TryFind v
+                    | TupleGet(t, i) -> place t |> Option.map (fun p -> p @ [ i ])
+                    | _ -> None
+
+                match e with
+                | Let(v, value, rest) when (place value).IsSome -> named (places.Add(v, (place value).Value)) rest
+                | e -> places, e
+
+            let places, ret = named (Map [ tuple, [] ]) ret
+
+            // A single let! binds its name from the lambda's variable, so
+            // the name is the other variable at its place, when there is one.
+            let names =
+                [ for path, _ in leaves ->
+                      let at = places |> Map.toList |> List.filter (fun (_, p) -> p = path) |> List.map fst
+
+                      match at |> List.filter ((<>) tuple), at with
+                      | v :: _, _ -> Some v
+                      | [], v :: _ -> Some v
+                      | [], [] -> None ]
+
+            let includings =
+                List.zip leaves names
+                |> List.mapi (fun i ((_, e), name) ->
+                    let keyword = if i = 0 then "let!" else "and!"
+
+                    { Inner = within e
+                      One =
+                        e.Type.IsGenericType
+                        && (e.Type.GetGenericTypeDefinition() = typedefof<One<_>> || e.Type.GetGenericTypeDefinition() = typedefof<OneProjection<_>>)
+                      Bound = name |> Option.map (fun v -> keyword, v.Name) })
+
+            shaped includings names ret None
+        | other -> shaped [] [] other (Some shapeProblem)
+
 /// Computation expression for queries:
 ///
 /// ```fsharp
@@ -344,6 +518,34 @@ type QueryBuilder() =
     member _.For(source: Query<'T>, _body: 'T -> Query<'T>) : Query<'T> = source
     member _.Yield(_: 'T) : Query<'T> = Query<'T>(QueryDef.Empty typeof<'T>)
     member _.Zero() : Query<'T> = Query<'T>(QueryDef.Empty typeof<'T>)
+
+    // -- Loads bound with let! and and!, the row built by return (loads.feature) --
+
+    /// A query whose body binds loads with `let!` and `and!` and ends in
+    /// `return`: each load is one more command for all the rows, and `return`
+    /// builds each row. The body is read from its quotation, never run.
+    member _.For(_source: Table<'T>, [<ReflectedDefinition>] body: Expr<'T -> Loads<'R>>) : Projection<'R> =
+        LetLoads.projection (QueryDef.Empty typeof<'T>) body
+
+    member _.For(source: Query<'T>, [<ReflectedDefinition>] body: Expr<'T -> Loads<'R>>) : Projection<'R> =
+        LetLoads.projection source.Def body
+
+    /// `let! x = load` ... `return`: a query or a projection binds a list,
+    /// the one record a tie can find an option.
+    member _.BindReturn(_load: IRows<'A>, _row: 'A list -> 'R) : Loads<'R> = LetLoads.quoted ()
+    member _.BindReturn(_load: IRow<'A>, _row: 'A option -> 'R) : Loads<'R> = LetLoads.quoted ()
+    member _.BindReturn(_loads: Loads<'A>, _row: 'A -> 'R) : Loads<'R> = LetLoads.quoted ()
+
+    /// `and!`: one more load beside the others.
+    member _.MergeSources(_a: IRows<'A>, _b: IRows<'B>) : Loads<'A list * 'B list> = LetLoads.quoted ()
+    member _.MergeSources(_a: IRows<'A>, _b: IRow<'B>) : Loads<'A list * 'B option> = LetLoads.quoted ()
+    member _.MergeSources(_a: IRows<'A>, _b: Loads<'B>) : Loads<'A list * 'B> = LetLoads.quoted ()
+    member _.MergeSources(_a: IRow<'A>, _b: IRows<'B>) : Loads<'A option * 'B list> = LetLoads.quoted ()
+    member _.MergeSources(_a: IRow<'A>, _b: IRow<'B>) : Loads<'A option * 'B option> = LetLoads.quoted ()
+    member _.MergeSources(_a: IRow<'A>, _b: Loads<'B>) : Loads<'A option * 'B> = LetLoads.quoted ()
+
+    /// `for c in referredBy<Customer> o do`: still the one record.
+    member _.For(source: One<'T>, _body: 'T -> Query<'T>) : One<'T> = source
 
     /// Adds a filter. Multiple filters combine with AND.
     [<CustomOperation("where", MaintainsVariableSpace = true)>]
@@ -441,277 +643,6 @@ type QueryBuilder() =
         ) : Query<'R> =
         Query<'R>(QueryOps.join { outer.Def with Template = None } LeftJoin typeof<'U> outerKey innerKey)
 
-    /// Reads each record with the list an inner query finds for it, as
-    /// `record * list`. The inner query refers to the record by one equality
-    /// between an inner and an outer column; its conditions, order and `take`
-    /// apply per record. One more command per batch of outer values. An inner
-    /// query ending in `select` or `selectDistinct` gives a list of what it
-    /// selects; one ending in its own `including`s, its records with theirs.
-    /// `includingOne` gives the one record the tie can find, as an option: the
-    /// tie must be the inner record's key or a unique field.
-    ///
-    /// One overload per arity, as F# has no variadic generics: the outer record
-    /// and up to 16 lists or options, mixed in any order (the number is stated
-    /// here and in including.feature). A seventeenth finds no overload. A projection
-    /// can be followed only by these, since only they keep the query's
-    /// variable in scope, so its earlier elements may be of any type.
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'U list> =
-        QueryOps.including false q.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'U list> =
-        QueryOps.including false q.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'U option> =
-        QueryOps.including true q.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'U option> =
-        QueryOps.including true q.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'O>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'O * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("including", MaintainsVariableSpace = true)>]
-    member _.Including(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'O>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'O * 'U list> =
-        QueryOps.including false p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'O>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Query<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'O * 'U option> =
-        QueryOps.including true p.Def inner
-
-    [<CustomOperation("includingOne", MaintainsVariableSpace = true)>]
-    member _.IncludingOne(p: Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'O>, [<ProjectionParameter; ReflectedDefinition>] inner: Expr<'T -> Projection<'U>>) : Projection<'T * 'A * 'B * 'C * 'D * 'E * 'F * 'G * 'H * 'I * 'J * 'K * 'L * 'M * 'N * 'O * 'U option> =
-        QueryOps.including true p.Def inner
-
     /// Projects each row, keeping each selected value once (as `List.distinct`;
     /// None is one value). Order by selected values only; `take` and `skip`
     /// are refused with it. Must be the last operation.
@@ -724,6 +655,11 @@ type QueryBuilder() =
     [<CustomOperation("select")>]
     member _.Select(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] projection: Expr<'T -> 'R>) : Projection<'R> =
         Projection<'R>(q.Def, projection)
+
+    /// Reads part of the one record a tie can find: still at most one.
+    [<CustomOperation("select")>]
+    member _.Select(q: One<'T>, [<ProjectionParameter; ReflectedDefinition>] projection: Expr<'T -> 'R>) : OneProjection<'R> =
+        OneProjection<'R>(q.Def, projection)
 
 module internal Prepared =
     open Microsoft.FSharp.Quotations.Patterns
@@ -883,7 +819,7 @@ module internal Ties =
         let def = { QueryDef.Empty t with Wheres = [ Expr.Lambda(x, Expr.Call(mi, [ Expr.Var x; outer ])) ] }
 
         Activator.CreateInstance(
-            typedefof<Query<_>>.MakeGenericType t,
+            (if referring then typedefof<Query<_>> else typedefof<One<_>>).MakeGenericType t,
             Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public,
             null,
             [| box def |],
@@ -898,18 +834,19 @@ module TieQueries =
     /// The `'T` records that refer to `record`: those whose one field referring
     /// to its record (plain or an option) holds its key. `referring<Payment> o` is
     /// `plasm { for p in tableOf<Payment> do where (p.OrderId = o.Id) }`. A
-    /// query: use it in `including`, `exists`, as a source, or with a record in
-    /// hand. Not exactly one such field is refused, naming them.
+    /// query: bind it with `let!`, use it in `exists`, as a source, or with a
+    /// record in hand. Not exactly one such field is refused, naming them.
     let referring<'T> (record: obj) : Query<'T> =
         if isNull record then nullArg "record"
         Ties.make typeof<'T> true (Expr.Value(record, record.GetType())) :?> Query<'T>
 
     /// The `'T` record that `record` refers to: the one whose key equals
     /// `record`'s one field referring to a `'T` (a None finds nothing). At most
-    /// one, so `includingOne` takes it.
-    let referredBy<'T> (record: obj) : Query<'T> =
+    /// one, so a `let!` of it binds an option; `repo.One` reads it for a record
+    /// in hand.
+    let referredBy<'T> (record: obj) : One<'T> =
         if isNull record then nullArg "record"
-        Ties.make typeof<'T> false (Expr.Value(record, record.GetType())) :?> Query<'T>
+        Ties.make typeof<'T> false (Expr.Value(record, record.GetType())) :?> One<'T>
 
 /// The query a read of one row runs (Repo.One, Tx.one).
 module internal OneRow =

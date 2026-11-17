@@ -543,7 +543,7 @@ let readProjection (s: Session) (model: Model) (select: Sql.Select) (shape: Tran
             |> List.ofSeq
     }
 
-/// One `including` level (including.feature): reads what it finds for the
+/// One load (loads.feature): reads what its query finds for the
 /// `parents` rows, in batches of their values, and its own levels over those;
 /// returns each parent row's list.
 let rec private readLevel (s: Session) (model: Model) (batchSize: int) (parents: IReadOnlyList<obj[]>) (l: Planner.IncludingLevel) : Task<obj[] -> obj> =
@@ -593,16 +593,15 @@ let rec private readLevel (s: Session) (model: Model) (batchSize: int) (parents:
                 lists.Add f
 
             let element =
-                if lists.Count = 0 then
-                    fun (cr: obj[]) -> parts.Target.Shape.Construct cr
-                else
-                    fun cr -> FSharp.Reflection.FSharpValue.MakeTuple([| yield parts.Target.Shape.Construct cr; for f in lists -> f cr |], parts.ElementType)
+                match parts.Return with
+                | Some r -> fun (cr: obj[]) -> r.Build (parts.Target.Shape.Construct cr) [| for f in lists -> f cr |]
+                | None -> fun (cr: obj[]) -> parts.Target.Shape.Construct cr
 
             for cr in childRows do
                 add (keyOf parts.MatchField cr.[parts.MatchField.Index]) (element cr)
 
-        // A list of the items, or for includingOne an option of the one. The
-        // tie is the inner key or a unique field, which proves at most one
+        // A list of the items, or for a let! of referredBy an option of the
+        // one. The tie is the inner key, which proves at most one
         // only as far as the database keeps it: a second is an error, as for
         // an owned optional record, never a choice.
         let outer = parts.Outer.Root.Name
@@ -620,7 +619,7 @@ let rec private readLevel (s: Session) (model: Model) (batchSize: int) (parents:
                               Property = parts.OuterField.Name
                               Value = $"{items.Count} rows"
                               Message =
-                                $"includingOne found {items.Count} {parts.Target.Name}s for one {outer} (its {parts.OuterField.Name} is {key}) where its tie on {parts.Target.Name}.{parts.MatchField.Name} proves at most one; the database holds more than the model says (is a unique constraint missing?)" }
+                                $"a let! of referredBy found {items.Count} {parts.Target.Name}s for one {outer} (its {parts.OuterField.Name} is {key}) where its tie on {parts.Target.Name}.{parts.MatchField.Name} proves at most one; the database holds more than the model says (is a unique constraint missing?)" }
                     )
 
                 if items.Count = 0 then
@@ -640,8 +639,8 @@ let rec private readLevel (s: Session) (model: Model) (batchSize: int) (parents:
                 | None -> hold null none
     }
 
-/// A query ending in `including`s (including.feature): the outer records,
-/// each in a tuple with the list of each level, in the order written.
+/// A query that binds loads (loads.feature): the outer records, each in the
+/// row its `return` builds from it and what each load found for it.
 let readIncluding (s: Session) (model: Model) (p: Planner.Including) : Task<obj list> =
     task {
         let outerSchema = p.Outer.RootSchema
@@ -658,13 +657,7 @@ let readIncluding (s: Session) (model: Model) (p: Planner.Including) : Task<obj 
             let! f = readLevel s model batchSize rows l
             lists.Add f
 
-        let tuple =
-            FSharp.Reflection.FSharpType.MakeTupleType(
-                [| yield outerSchema.Type
-                   for l in p.Levels -> l.Parts.HeldType |]
-            )
-
-        return [ for r in rows -> FSharp.Reflection.FSharpValue.MakeTuple([| yield outerSchema.Shape.Construct r; for f in lists -> f r |], tuple) ]
+        return [ for r in rows -> p.Return.Build (outerSchema.Shape.Construct r) [| for f in lists -> f r |] ]
     }
 
 // ---------------------------------------------------------------------------

@@ -55,7 +55,7 @@ F# types and semantics throughout.
   it, one command per list per batch of owners (`= ANY(@keys)`), at every
   level. There is no cartesian explosion to avoid and no `AsSplitQuery` to
   remember. Other aggregates are referred to by id and read by a join,
-  `exists`, or `including` (each record paired with a list, in the result's type). In Plasm's own benchmark a page of 1,000 orders
+  `exists`, or a `let!` that binds the list to each record, in a field of its name. In Plasm's own benchmark a page of 1,000 orders
   with their lines and payments took 14.5 ms against EF Core's 21 ms (split
   query) and 66 ms (single query) ([benchmarks.md](benchmarks.md)).
 - **No hidden queries.** Owned and linked fields are plain values, always

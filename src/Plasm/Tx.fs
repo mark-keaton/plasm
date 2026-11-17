@@ -378,7 +378,7 @@ type Tx =
         ) : Tx<'T list, 'E> =
         TxCore.step (TxCore.at file line $"all {typeof<'T>.Name}") (fun rt -> TxCore.rows rt query)
 
-    /// Every row a projection (a query ending in `select` or `including`)
+    /// Every row a projection (a query ending in `select`, or binding loads)
     /// returns, inside the transaction.
     static member all
         (

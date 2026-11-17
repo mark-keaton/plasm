@@ -19,3 +19,12 @@ module BadPrepared =
 module BadProjection =
     let normalizedNames =
         Query.prepare (fun (name: Arg<string>) -> plasm { for c in tableOf<Customer> do where (c.Name.Normalize() = name.Value); select c.Name })
+
+module BadLoads =
+    // A field computed from a load: return names each load once (let-loads.feature).
+    let counted =
+        plasm {
+            for o in tableOf<Order> do
+            let! payments = referring<Payment> o
+            return {| Order = o; Count = List.length payments |}
+        }

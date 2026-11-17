@@ -111,14 +111,15 @@ let withProduct (product: ProductId) =
 // Built and planned once; each call binds its argument.
 let orderById = Query.prepare (fun (id: Arg<OrderId>) -> plasm { for o in tableOf<Order> do where (o.Id = id.Value) })
 
-// Payments are their own aggregate: each order with its succeeded payments,
-// read as (Order * Payment list) with one more command for the whole page.
+// Payments are their own aggregate: let! binds each order's succeeded payments,
+// read with one more command for the whole page, and return builds the row.
 // referring<Payment> o is the payments that refer to o: Payment's one field of
 // type OrderId is the tie, so it is not written by hand.
 let withSucceededPayments (q: Query<Order>) =
     plasm {
         for o in q do
-            including (plasm { for p in referring<Payment> o do where (p.Status = Succeeded); orderBy p.CreatedAt })
+        let! payments = plasm { for p in referring<Payment> o do where (p.Status = Succeeded); orderBy p.CreatedAt }
+        return {| Order = o; Payments = payments |}
     }
 
 // Writes: read what the decision needs, let the domain decide, write what it decided.
@@ -189,8 +190,8 @@ part:
 | Removed | Instead |
 |---|---|
 | `Assoc<'T>`, `NotLoaded`/`Loaded`, `hasMany`/`hasOne`/`belongsTo`/`manyToMany`, the `Assoc` and `Rel` modules | owned and linked records as plain fields, always loaded; typed ids as references; `exists (plasm { ... })`, `List.exists`/`forall` and `Option.exists`/`IsSome`/`IsNone` in queries |
-| `preload`, `replacePreload`, `repo.Preload` | an aggregate loads whole; another aggregate's records come with a query ending in `including (plasm { ... })`, its result typed `Order * Payment list` |
-| `limitPerParent` | `take` inside `including`, which applies per record |
+| `preload`, `replacePreload`, `repo.Preload` | an aggregate loads whole; another aggregate's records are bound with `let!` and the row built with `return` (`features/loads.feature`) |
+| `limitPerParent` | `take` inside a `let!`'s query, which applies per record |
 | `Changeset` (now internal), `putChildren`/`replaceChildren`/`putLinks`/`addLinks`/`removeLinks`, `ReplaceScope`, `OnReplace` | `Tx.update (original, changed)`: what a record owns or links is written by difference |
 | `Changeset.validate*`, `cast`, `castWith`, `set`, `clear`, `forKey`, `getField`, `tryGetChange`, `addError` | the domain's constructors; constraints come back as field errors |
 | the pipeline `Query.where`/`select`/... functions | `plasm { }` |
@@ -317,7 +318,7 @@ an existing server, set `PLASM_TEST_PG` to an admin connection string.
 
 ```sh
 dotnet build Plasm.slnx
-dotnet test tests/Plasm.Specs      # the 508 acceptance scenarios
+dotnet test tests/Plasm.Specs      # the 507 acceptance scenarios
 dotnet test tests/Plasm.Tests      # 128 unit, property, compile-time and Ecto-compatibility tests
 dotnet run -c Release --project benchmarks/Plasm.Benchmarks -- counts
 ```
