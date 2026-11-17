@@ -578,14 +578,18 @@ and private writeLinks model (sess: Session) (schema: SchemaInfo) (s: CsState) (
             let run (sql: string) (ps: obj list) =
                 execute sess { Sql = sql; Parameters = ps }
 
+            // Written in the hand of the other statements: quoted names, the
+            // owner bound once (readable-sql.feature).
+            let u, k = q "u", q "k"
+
             let insertMissing () =
                 run
-                    $"INSERT INTO {jt} ({oc}, {tc}) SELECT {p 0}, u.k FROM unnest({p 1}) AS u(k) WHERE NOT EXISTS (SELECT 1 FROM {jt} AS x WHERE x.{oc} = {p 2} AND x.{tc} = u.k)"
-                    [ owner; box arr; owner ]
+                    $"INSERT INTO {jt} ({oc}, {tc}) SELECT {p 0}, {u}.{k} FROM unnest({p 1}) AS {u}({k}) WHERE NOT EXISTS (SELECT 1 FROM {jt} WHERE {jt}.{oc} = {p 0} AND {jt}.{tc} = {u}.{k})"
+                    [ owner; box arr ]
 
             match l.Mode with
             | PutLinks ->
-                let! _ = run $"DELETE FROM {jt} WHERE {oc} = {p 0} AND NOT ({tc} = ANY({p 1}))" [ owner; box arr ]
+                let! _ = run $"DELETE FROM {jt} WHERE {oc} = {p 0} AND {tc} <> ALL({p 1})" [ owner; box arr ]
                 let! _ = insertMissing ()
                 written <- written.Add(a.Name, a.Ctors.Loaded(a.MakeList l.Targets))
 

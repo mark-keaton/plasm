@@ -39,6 +39,7 @@
     <Compile Include="ExistsSteps.fs" />
     <Compile Include="LoadsSteps.fs" />
     <Compile Include="ReferringSteps.fs" />
+    <Compile Include="ReadableSqlSteps.fs" />
     <Compile Include="DistinctSteps.fs" />
     <Compile Include="ValueRecordSteps.fs" />
     <Compile Include="JsonSteps.fs" />

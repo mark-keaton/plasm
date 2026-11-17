@@ -298,7 +298,7 @@ type PreparedSteps(w: World) =
     member _.InspectPrepared() =
         w.MarkCommands()
         let plan = w.Repo.Explain(ordersOf (w.Get "ada")) |> ok
-        check (plan.Sql.Contains "WHERE (\"t0\".\"customer_id\" = @p0)") plan.Sql
+        check (plan.Sql.Contains "WHERE \"t0\".\"customer_id\" = @p0") plan.Sql
         equal 0 w.CommandsSinceMark.Length "commands"
 
     [<StepDefinition("it can be counted for an argument")>]

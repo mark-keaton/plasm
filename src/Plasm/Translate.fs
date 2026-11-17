@@ -869,6 +869,13 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
             match predicate ctx a with
             | Sql.Exists _ as x -> Sql.Not x
             | x when mayBeNull ctx a -> Sql.IsNotTrue x
+            // Neither side can be NULL, so the negation is the opposite comparison.
+            | Sql.Binary("=", l, r) -> Sql.Binary("<>", l, r)
+            | Sql.Binary("<>", l, r) -> Sql.Binary("=", l, r)
+            | Sql.Binary("<", l, r) -> Sql.Binary(">=", l, r)
+            | Sql.Binary(">=", l, r) -> Sql.Binary("<", l, r)
+            | Sql.Binary(">", l, r) -> Sql.Binary("<=", l, r)
+            | Sql.Binary("<=", l, r) -> Sql.Binary(">", l, r)
             | x -> Sql.Not x
         // Left-joined sources: presence tests and option predicates.
         | Call(None, mi, [ RowBinding ctx b ]) when b.Optional && (mi.Name = "get_IsSome" || isOptionModule mi "IsSome") ->
@@ -1876,13 +1883,28 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
         let columns = ResizeArray<Sql.Expr * string>()
         let labels = ResizeArray<string>()
 
+        // A record's field names the one column it reads (readable-sql.feature);
+        // anything else, or a name already taken, is c0, c1, ...
+        let mutable fieldName: string option = None
+        let taken = Collections.Generic.HashSet<string>()
+
         let add (sql: Sql.Expr) (label: string) =
             let i = columns.Count
-            columns.Add(sql, $"c{i}")
+
+            let alias =
+                match fieldName with
+                | Some n when taken.Add n -> n
+                | _ -> $"c{i}"
+
+            fieldName <- None
+            taken.Add alias |> ignore
+            columns.Add(sql, alias)
             labels.Add label
             i
 
         let addEntity (b: Binding) =
+            fieldName <- None
+
             if c.Grouped then
                 invalid $"a whole {b.Schema.Name} cannot be selected from a grouped query; select grouped keys and Agg functions"
 
@@ -1967,10 +1989,22 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
                 match e with
                 | NewTuple parts ->
                     let ctor = FSharpValue.PreComputeTupleConstructor e.Type
-                    Build(ctor, parts |> List.map (shape ctx))
+                    Build(ctor, parts |> List.map (fun p -> fieldName <- None; shape ctx p))
                 | NewRecord(t, parts) ->
                     let ctor = FSharpValue.PreComputeRecordConstructor(t, true)
-                    Build(ctor, parts |> List.map (shape ctx))
+                    let names = FSharpType.GetRecordFields(t, true) |> Array.map (fun f -> f.Name) |> List.ofArray
+
+                    Build(
+                        ctor,
+                        List.map2
+                            (fun name p ->
+                                fieldName <- Some name
+                                let part = shape ctx p
+                                fieldName <- None
+                                part)
+                            names
+                            parts
+                    )
                 | NewUnionCase(c, parts) ->
                     let ctor = FSharpValue.PreComputeUnionConstructor(c, true)
                     Build(ctor, parts |> List.map (shape ctx))
@@ -2265,9 +2299,10 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
         let matchColumn = Sql.Column("t0", matchField.Column)
 
         // Keeps the rows whose number among their outer value's rows is within
-        // the inner query's skip and take.
+        // the inner query's skip and take. The numbered rows are a derived
+        // table of their own name, never the name of the table inside it.
         let page (numbered: Sql.Select) (columns: (Sql.Expr * string) list) (orderBy: Sql.OrderItem list) =
-            let rn = Sql.Column("t0", "__rn")
+            let rn = Sql.Column("ranked", "__rn")
 
             let first =
                 match offset with
@@ -2280,7 +2315,7 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
                 | Some l, None -> [ Sql.Binary("<=", rn, l) ]
                 | None, _ -> []
 
-            { Sql.select (Sql.Subquery(numbered, "t0")) with
+            { Sql.select (Sql.Subquery(numbered, "ranked")) with
                 Columns = columns
                 Where = first @ last
                 OrderBy = orderBy }
@@ -2334,7 +2369,7 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
                 filtered
             else
                 let numbered = { filtered with Columns = filtered.Columns @ [ Sql.RowNumber(matchColumn, ranked), "__rn" ]; OrderBy = [] }
-                page numbered [ for _, alias in filtered.Columns -> Sql.Column("t0", alias), alias ] [ { Expr = Sql.Column("t0", "__rn"); Desc = false; NullsFirst = None } ]
+                page numbered [ for _, alias in filtered.Columns -> Sql.Column("ranked", alias), alias ] [ { Expr = Sql.Column("ranked", "__rn"); Desc = false; NullsFirst = None } ]
 
         let buildRecords (keys: Array) : Sql.Select =
             let filtered =
@@ -2352,7 +2387,19 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
                           for part in f.Parts -> Sql.Column("t0", part.Name), part.Name ]
 
                 let numbered = { filtered with Columns = plain @ [ Sql.RowNumber(matchColumn, ranked), "__rn" ] }
-                page numbered (entityColumns "t0" target) ranked
+
+                // The outer query reads the numbered rows' columns of the same names.
+                let rec outer (x: Sql.Expr) =
+                    match x with
+                    | Sql.Column("t0", n) -> Sql.Column("ranked", n)
+                    | Sql.Func(f, xs) -> Sql.Func(f, List.map outer xs)
+                    | Sql.Binary(op, a, b) -> Sql.Binary(op, outer a, outer b)
+                    | Sql.Cast(a, t, arr) -> Sql.Cast(outer a, t, arr)
+                    | Sql.AsText a -> Sql.AsText(outer a)
+                    | Sql.Case(bs, o) -> Sql.Case(bs |> List.map (fun (c, v) -> outer c, outer v), outer o)
+                    | x -> x
+
+                page numbered (entityColumns "ranked" target) (ranked |> List.map (fun o -> { o with Expr = outer o.Expr }))
 
         { Outer = { def with Includings = [] }
           OuterField = outerField

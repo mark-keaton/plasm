@@ -240,7 +240,7 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "owned"
                 "The page is chosen first (ORDER BY with the key as tiebreaker, LIMIT, OFFSET). The lines of exactly those orders follow in one command, their keys as one array parameter: two commands for a page of 20 or of 1,000."
-                [ "LIMIT @p1"; "OFFSET @p2"; "\"t0\".\"id\" ASC"; "\"t0\".\"order_id\" = ANY(@p0)" ]
+                [ "LIMIT @p1"; "OFFSET @p2"; "\"t0\".\"placed_at\" DESC, \"t0\".\"id\""; "\"t0\".\"order_id\" = ANY(@p0)" ]
                 None
                 (fun () -> task { let! _ = repo.All(Query.from (tableOf<Order>) |> forCustomer ada.Id |> orderPage 0 20) in () })
 
@@ -249,7 +249,7 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "references"
                 "The orders, their lines, then one command for the payments of every order on the page: the ids are one array parameter, and the status filter and the ordering run in SQL. No orders query is sent again."
-                [ "\"t0\".\"order_id\" = ANY(@p0)"; "\"t0\".\"status\" = @p1"; "ORDER BY \"t0\".\"created_at\" ASC" ]
+                [ "\"t0\".\"order_id\" = ANY(@p0)"; "\"t0\".\"status\" = @p1"; "ORDER BY \"t0\".\"created_at\"" ]
                 None
                 (fun () -> task { let! _ = repo.All(withSucceededPayments (Query.from (tableOf<Order>) |> orderPage 0 20)) in () })
 
@@ -258,7 +258,7 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "projections"
                 "Only the three projected columns are selected, and no Order is built, so no lines are read. Explain itself sends nothing."
-                [ "\"t0\".\"id\" AS \"c0\""; "\"t0\".\"total\" AS \"c1\""; "\"t0\".\"version\" AS \"c2\"" ]
+                [ "\"t0\".\"id\" AS \"Id\""; "\"t0\".\"total\" AS \"Total\""; "\"t0\".\"version\" AS \"Version\"" ]
                 None
                 (fun () -> task { let! _ = repo.All totals in () })
 
@@ -267,7 +267,7 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "changes"
                 "The order is read with its lines. The update sets only what differs from the record read, here the total, and requires the version the caller saw. The line left out is checked to belong to the order, then deleted. Cancelling writes the status and its reason, the two columns of the case."
-                [ "SET \"total\" = @p0, \"version\" = (\"orders\".\"version\" + @p1)"
+                [ "SET \"total\" = @p0, \"version\" = \"orders\".\"version\" + @p1"
                   "\"orders\".\"version\" = @p"
                   "DELETE FROM \"order_lines\""
                   "SET \"status\" = @p0, \"status_reason\" = @p1" ]
@@ -312,10 +312,10 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "joins"
                 "Each join is part of one command. The inner join drops the order without a customer, and its whole Orders come with their lines, in one more command; the left join keeps it, and its customer columns read as NULL, which becomes None. Chained joins add one JOIN each, and the projection reads only the three columns it names."
-                [ "INNER JOIN \"customers\" AS \"j1\" ON (\"t0\".\"customer_id\" = \"j1\".\"id\")"
+                [ "INNER JOIN \"customers\" AS \"j1\" ON \"t0\".\"customer_id\" = \"j1\".\"id\""
                   "LEFT JOIN \"customers\" AS \"j1\""
                   "\"j1\".\"email\" AS \"c1\""
-                  "INNER JOIN \"products\" AS \"j2\" ON (\"j1\".\"product_id\" = \"j2\".\"id\")" ]
+                  "INNER JOIN \"products\" AS \"j2\" ON \"j1\".\"product_id\" = \"j2\".\"id\"" ]
                 None
                 (fun () ->
                     task {
@@ -358,7 +358,7 @@ let run (connectionString: string) (outputPath: string) =
                   "COALESCE(SUM(\"t0\".\"total\"), 0)"
                   "AVG(\"t0\".\"total\")"
                   "GROUP BY \"j1\".\"name\""
-                  "HAVING (COUNT(*) > @p0)"
+                  "HAVING COUNT(*) > @p0"
                   "ORDER BY COALESCE(SUM(\"t0\".\"total\"), 0) DESC" ]
                 None
                 (fun () ->
@@ -374,7 +374,7 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "bulk"
                 "One UPDATE changes every matching draft. Only the assigned field is in the SET clause, as its two columns, and the version is incremented. The upsert is one INSERT; a row whose SKU already exists is updated from the incoming row (excluded) instead, and both kinds come back through RETURNING."
-                [ "SET \"status\" = @p0, \"status_reason\" = @p1, \"version\" = (\"orders\".\"version\" + @p2)"
+                [ "SET \"status\" = @p0, \"status_reason\" = @p1, \"version\" = \"orders\".\"version\" + @p2"
                   "\"orders\".\"placed_at\" < @p"
                   "ON CONFLICT (\"sku\") DO UPDATE"
                   "\"name\" = \"excluded\".\"name\"" ]
@@ -441,8 +441,8 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "linked"
                 "Tags are read with their articles in one more command, joined through article_tags, which also supplies each row's article. Retagging inserts only the tags not yet stored, then writes only join-table rows: links outside the new set are deleted, missing ones inserted. The filter is an EXISTS through the join table."
-                [ "INNER JOIN \"article_tags\" AS \"j\" ON (\"j\".\"tag_id\" = \"t0\".\"id\")"
-                  "(\"j\".\"article_id\" = ANY(@p0))"
+                [ "INNER JOIN \"article_tags\" AS \"j\" ON \"j\".\"tag_id\" = \"t0\".\"id\""
+                  "\"j\".\"article_id\" = ANY(@p0)"
                   "ON CONFLICT (\"name\") DO NOTHING"
                   "DELETE FROM \"article_tags\""
                   "unnest(@p1)" ]

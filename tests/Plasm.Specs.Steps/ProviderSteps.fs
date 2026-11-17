@@ -18,6 +18,7 @@ type TestDialectProvider(inner: IProvider) =
             member _.ColumnTypes t = inner.Dialect.ColumnTypes t
             member _.NullSafeComparison negated = if negated then "IS NOT" else "IS"
 
+            member _.LikeEscape = " ESCAPE '\\'"
             member _.FunctionName name =
                 match name with
                 | "char_length" -> "length"

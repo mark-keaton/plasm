@@ -287,7 +287,7 @@ type LoadingSteps(w: World) =
     member _.AppliedInDatabase() =
         let cmd = commandsOn "payments" w.CommandsSinceMark |> List.exactlyOne
         check (cmd.Sql.Contains "\"status\" = ") "filter in SQL"
-        check (cmd.Sql.Contains "ORDER BY \"t0\".\"created_at\" ASC") "ordering in SQL"
+        check (cmd.Sql.Contains "ORDER BY \"t0\".\"created_at\"") "ordering in SQL"
         equal 3 cmd.Rows "only successful payments transferred"
 
     [<StepDefinition("the application groups the Payments by their Order")>]

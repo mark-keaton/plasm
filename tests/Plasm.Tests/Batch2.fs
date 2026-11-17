@@ -90,7 +90,7 @@ let ``paging groups appends the grouping keys as the tiebreaker`` () =
     }
     |> projectionSql
     |> contains
-        "GROUP BY \"t0\".\"customer_id\", \"t0\".\"status\" ORDER BY COUNT(*) DESC, \"t0\".\"customer_id\" ASC, \"t0\".\"status\" ASC LIMIT @p0"
+        "GROUP BY \"t0\".\"customer_id\", \"t0\".\"status\" ORDER BY COUNT(*) DESC, \"t0\".\"customer_id\", \"t0\".\"status\" LIMIT @p0"
 
 [<Fact>]
 let ``count and exists over joins, pages and groups`` () =
@@ -218,7 +218,7 @@ let ``upserts accept composite conflict targets and computed updates`` () =
         )
 
     let sql = (ok (offlineRepo.Explain bulk)).Sql
-    contains "ON CONFLICT (\"sku\", \"name\") DO UPDATE SET \"name\" = (\"products\".\"name\" || \"excluded\".\"name\")" sql
+    contains "ON CONFLICT (\"sku\", \"name\") DO UPDATE SET \"name\" = \"products\".\"name\" || \"excluded\".\"name\"" sql
     contains "RETURNING \"id\", \"sku\", \"name\"" sql
 
 // -- Hand-written SQL ----------------------------------------------------------
@@ -352,7 +352,7 @@ let ``expressions of arguments are compiled into bound parameters`` () =
                         where (o.Total > decimal (n.Value * 10))
                 })
 
-        contains "WHERE (\"t0\".\"total\" > @p0)" (sqlOf (over 1))
+        contains "WHERE \"t0\".\"total\" > @p0" (sqlOf (over 1))
         let! r = db.Repo.All(over 1)
         Assert.Equal<OrderId list>([ big ], ok r |> List.map (fun o -> o.Id))
     }

@@ -750,6 +750,8 @@ type internal PGliteDialect(maxKeys: int) =
         member _.NullSafeComparison negated =
             if negated then "IS DISTINCT FROM" else "IS NOT DISTINCT FROM"
 
+        // A backslash is PostgreSQL's own escape character in LIKE.
+        member _.LikeEscape = ""
         member _.FunctionName name = name
         member _.Json = Some PGliteJson.Instance
 

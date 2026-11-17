@@ -186,10 +186,10 @@ type QuerySemanticsSteps(w: World) =
     member _.ExplainRequiredNot() =
         w.Set("sql", (w.Repo.Explain(plasm { for o in tableOf<Order> do where (not (o.Total > 15m)) }) |> ok).Sql)
 
-    [<StepDefinition("the SQL negates it with NOT, so an index on the field can still be used")>]
-    member _.PlainNot() =
+    [<StepDefinition("the SQL writes the opposite comparison, so an index on the field can still be used")>]
+    member _.OppositeComparison() =
         let sql = w.Get<string> "sql"
-        check (sql.Contains "(NOT (" && not (sql.Contains "IS NOT TRUE")) $"expected a plain NOT: {sql}"
+        check (sql.Contains "\"t0\".\"total\" <= @p0" && not (sql.Contains "NOT")) $"expected total <= 15: {sql}"
 
     [<StepDefinition("I run a query comparing with DateTime.UtcNow twice, a moment apart")>]
     member _.Clock() =

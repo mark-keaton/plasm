@@ -83,7 +83,7 @@ type BulkSteps(w: World) =
     member _.SingleUpdate() =
         let cmd = w.CommandsSinceMark |> List.exactlyOne
         check (cmd.Sql.StartsWith "UPDATE \"orders\"") cmd.Sql
-        check (cmd.Sql.Contains "WHERE (\"orders\".\"status\" = @p") cmd.Sql
+        check (cmd.Sql.Contains "WHERE \"orders\".\"status\" = @p") cmd.Sql
 
     // Scenario: Bulk updates can compute from the current row
 
@@ -101,7 +101,7 @@ type BulkSteps(w: World) =
         task {
             let! totals = w.Get<OrderId list> "published" |> List.map totalOf |> System.Threading.Tasks.Task.WhenAll
             equal [| 20m; 30m |] totals "totals"
-            check ((w.CommandsSinceMark |> List.exactlyOne).Sql.Contains "\"total\" = (\"orders\".\"total\" + @p") "computed in SQL"
+            check ((w.CommandsSinceMark |> List.exactlyOne).Sql.Contains "\"total\" = \"orders\".\"total\" + @p") "computed in SQL"
         }
         |> unit
 
@@ -109,7 +109,7 @@ type BulkSteps(w: World) =
     member _.OnlyMentioned() =
         let sql = (w.CommandsSinceMark |> List.exactlyOne).Sql
         let set = sql.Substring(sql.IndexOf " SET ", sql.IndexOf " WHERE " - sql.IndexOf " SET ")
-        equal " SET \"total\" = (\"orders\".\"total\" + @p0), \"version\" = (\"orders\".\"version\" + @p1)" set "SET clause"
+        equal " SET \"total\" = \"orders\".\"total\" + @p0, \"version\" = \"orders\".\"version\" + @p1" set "SET clause"
 
     // Scenario: Bulk updates respect optimistic concurrency
 
@@ -329,7 +329,7 @@ type BulkSteps(w: World) =
     [<StepDefinition("its SQL can be inspected")>]
     member _.Inspected() =
         let plan: QueryPlan = w.Get "bulkPlan"
-        check (plan.Sql.StartsWith "UPDATE \"orders\" AS \"orders\" SET \"status\" = @p0") plan.Sql
+        check (plan.Sql.StartsWith "UPDATE \"orders\" SET \"status\" = @p0") plan.Sql
 
     [<StepDefinition("a transaction bulk-cancels the drafts and then fails")>]
     member _.TxBulk() =

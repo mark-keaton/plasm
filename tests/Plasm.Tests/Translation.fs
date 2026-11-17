@@ -45,7 +45,7 @@ let ``captured None value translates to IS NULL, not = NULL`` () =
 let ``= Some x is plain equality`` () =
     plasm { for o in tableOf<Order> do where (o.CancellationReason = Some "late") }
     |> sqlOf
-    |> contains "(\"t0\".\"cancellation_reason\" = @p0)"
+    |> contains "\"t0\".\"cancellation_reason\" = @p0"
 
 [<Fact>]
 let ``<> Some x on an option includes NULL rows via IS DISTINCT FROM`` () =
@@ -81,7 +81,7 @@ let ``Option.isNone and Option.isSome translate to null tests`` () =
 let ``List.contains translates to = ANY with one array parameter`` () =
     let ids = [ OrderId 1L; OrderId 2L; OrderId 3L ]
     let sql = plasm { for o in tableOf<Order> do where (List.contains o.Id ids) } |> sqlOf
-    contains "(\"t0\".\"id\" = ANY(@p0))" sql
+    contains "\"t0\".\"id\" = ANY(@p0)" sql
     notContains "@p1" sql
 
 [<Fact>]
@@ -98,7 +98,7 @@ let ``exists translates to a correlated EXISTS`` () =
         |> sqlOf
 
     contains "EXISTS (SELECT 1 FROM \"payments\" AS \"t1\" WHERE" sql
-    contains "(\"t1\".\"order_id\" = \"t0\".\"id\")" sql
+    contains "\"t1\".\"order_id\" = \"t0\".\"id\"" sql
 
 [<Fact>]
 let ``List.exists over an owned list translates to EXISTS`` () =
@@ -109,14 +109,15 @@ let ``List.exists over an owned list translates to EXISTS`` () =
 [<Fact>]
 let ``List.forall over an owned list translates to NOT EXISTS of the negation`` () =
     let sql = plasm { for o in tableOf<Order> do where (o.Lines |> List.forall (fun l -> l.UnitPrice > 5m)) } |> sqlOf
-    contains "(NOT EXISTS (" sql
+    contains "NOT EXISTS (" sql
 
 // -- Strings -----------------------------------------------------------------
 
 [<Fact>]
 let ``StartsWith escapes LIKE metacharacters`` () =
     let sql = plasm { for c in tableOf<Customer> do where (c.Name.StartsWith "50%_off\\") } |> sqlOf
-    contains "LIKE @p0 ESCAPE '\\'" sql
+    contains "LIKE @p0" sql
+    notContains "ESCAPE" sql
     notContains "50%" sql
 
 [<Fact>]
@@ -133,7 +134,7 @@ let ``ToLower translates to lower()`` () =
 
 [<Fact>]
 let ``option ordering matches F# (None first ascending, last descending)`` () =
-    plasm { for o in tableOf<Order> do orderBy o.CancellationReason } |> sqlOf |> contains "ASC NULLS FIRST"
+    plasm { for o in tableOf<Order> do orderBy o.CancellationReason } |> sqlOf |> contains "\"t0\".\"cancellation_reason\" NULLS FIRST"
     plasm { for o in tableOf<Order> do orderByDescending o.CancellationReason } |> sqlOf |> contains "DESC NULLS LAST"
 
 [<Fact>]
@@ -144,7 +145,7 @@ let ``pagination appends the primary key as tiebreaker`` () =
             take 10
     }
     |> sqlOf
-    |> contains "ORDER BY \"t0\".\"placed_at\" ASC, \"t0\".\"id\" ASC LIMIT @p0"
+    |> contains "ORDER BY \"t0\".\"placed_at\", \"t0\".\"id\" LIMIT @p0"
 
 [<Fact>]
 let ``pagination already ordered by key adds no tiebreaker`` () =
@@ -210,13 +211,13 @@ let ``captured strings never appear in the SQL text`` () =
     let name = "x'); DROP TABLE customers; --"
     let sql = plasm { for c in tableOf<Customer> do where (c.Name = name) } |> sqlOf
     notContains "DROP" sql
-    contains "(\"t0\".\"name\" = @p0)" sql
+    contains "\"t0\".\"name\" = @p0" sql
 
 [<Fact>]
 let ``captured expressions are evaluated once as parameters`` () =
     let threshold = 40m
     let sql = plasm { for o in tableOf<Order> do where (o.Total > threshold * 2m + 1m) } |> sqlOf
-    contains "(\"t0\".\"total\" > @p0)" sql
+    contains "\"t0\".\"total\" > @p0" sql
 
 [<Fact>]
 let ``SQL injection attempt is inert against a real database`` () =
@@ -310,25 +311,25 @@ let ``the test domain model is valid`` () =
 let ``x.Value on an option column compares the present value`` () =
     plasm { for o in tableOf<Order> do where (o.CancellationReason.Value = "late") }
     |> sqlOf
-    |> contains "(\"t0\".\"cancellation_reason\" = @p0)"
+    |> contains "\"t0\".\"cancellation_reason\" = @p0"
 
 [<Fact>]
 let ``Option.get on an option column compares the present value`` () =
     plasm { for o in tableOf<Order> do where (Option.get o.CancellationReason = "late") }
     |> sqlOf
-    |> contains "(\"t0\".\"cancellation_reason\" = @p0)"
+    |> contains "\"t0\".\"cancellation_reason\" = @p0"
 
 [<Fact>]
 let ``not, || and && translate`` () =
     let sql = plasm { for o in tableOf<Order> do where (not (o.Total > 1m) || (o.Status = Draft && o.Total < 5m)) } |> sqlOf
     // total cannot be NULL, so plain NOT (index-friendly) is exact.
-    contains "(NOT (\"t0\".\"total\" > @p0))" sql
+    contains "\"t0\".\"total\" <= @p0" sql
     contains " OR " sql
     contains " AND " sql
 
 [<Fact>]
 let ``string concatenation translates to ||`` () =
-    plasm { for c in tableOf<Customer> do where (c.Name + "!" = "Ada!") } |> sqlOf |> contains "(\"t0\".\"name\" || @p0)"
+    plasm { for c in tableOf<Customer> do where (c.Name + "!" = "Ada!") } |> sqlOf |> contains "\"t0\".\"name\" || @p0 = @p1"
 
 [<Fact>]
 let ``nested relationship predicates get distinct aliases`` () =

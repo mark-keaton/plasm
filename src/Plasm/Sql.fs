@@ -47,6 +47,9 @@ type ISqlDialect =
     /// The null-safe comparison operator: equality treating NULLs as equal
     /// (`IS NOT DISTINCT FROM`), or its negation when `negated`.
     abstract NullSafeComparison: negated: bool -> string
+    /// What follows a LIKE pattern so that a backslash escapes `%` and `_`:
+    /// `" ESCAPE '\\'"`, or "" where that is the dialect's default (PostgreSQL).
+    abstract LikeEscape: string
     /// The dialect's name for a function the core uses (char_length, btrim,
     /// lower, upper, COALESCE, ...); return the name unchanged if it is the same.
     abstract FunctionName: string -> string
@@ -260,6 +263,35 @@ module internal Sql =
     /// RETURNING every column of a table's fields.
     let returningFields (table: string) (fields: FieldMap seq) = readFields table fields
 
+    let private comparison (op: string) =
+        match op with
+        | "="
+        | "<>"
+        | "!="
+        | "<"
+        | "<="
+        | ">"
+        | ">=" -> true
+        | _ -> false
+
+    let private arithmetic (op: string) =
+        match op with
+        | "+"
+        | "-"
+        | "*"
+        | "/"
+        | "%"
+        | "||" -> true
+        | _ -> false
+
+    /// A value written into a statement as NULL rather than sent: an
+    /// assignment's NULL carries no user data.
+    let private isNullValue (e: Expr) =
+        match e with
+        | Param v
+        | Cast(Param v, _, _) -> isNull v || v :? DBNull
+        | _ -> false
+
     type private Renderer(d: ISqlDialect) =
         let sb = StringBuilder()
         let ps = ResizeArray<obj>()
@@ -274,6 +306,9 @@ module internal Sql =
             ps.Add v
             d.ParameterName(ps.Count - 1)
 
+        /// An expression where nothing around it binds tighter: a select
+        /// column, a condition, an argument. Parentheses are written only where
+        /// precedence needs them (readable-sql.feature).
         member r.Expr(e: Expr) : unit =
             let w (s: string) = sb.Append(s) |> ignore
 
@@ -285,40 +320,55 @@ module internal Sql =
             | Param v -> w (r.Param v)
             | ArrayParam v -> w (r.Param v)
             | Literal l -> w l
-            | Binary(op, a, b) ->
-                w "("
-                r.Expr a
+            | Binary(("AND" | "OR") as op, _, _) ->
+                let rec operands (x: Expr) =
+                    match x with
+                    | Binary(o, a, b) when o = op -> operands a @ operands b
+                    | Literal "TRUE" when op = "AND" -> []
+                    | Literal "FALSE" when op = "OR" -> []
+                    | x -> [ x ]
+
+                match operands e with
+                | [] -> w (if op = "AND" then "TRUE" else "FALSE")
+                | xs ->
+                    xs
+                    |> List.iteri (fun i x ->
+                        if i > 0 then w $" {op} "
+
+                        match x with
+                        // An OR inside an AND needs them; an AND inside an OR is
+                        // bracketed to be read at a glance.
+                        | Binary(("AND" | "OR"), _, _) -> r.Wrapped x
+                        | Binary(o, _, _) when not (comparison o) && not (arithmetic o) -> r.Wrapped x
+                        | x -> r.Expr x)
+            | Binary(op, a, b) when comparison op ->
+                r.Operand(a, true)
                 w $" {op} "
-                r.Expr b
-                w ")"
+                r.Operand(b, true)
+            | Binary(op, a, b) ->
+                r.Operand(a, false)
+                w $" {op} "
+                r.Operand(b, false)
             | Not a ->
-                w "(NOT "
-                r.Expr a
-                w ")"
+                w "NOT "
+                r.Operand(a, false)
             | IsNotTrue a ->
-                w "("
-                r.Expr a
-                w " IS NOT TRUE)"
+                r.Operand(a, false)
+                w " IS NOT TRUE"
             | IsNull a ->
-                w "("
-                r.Expr a
-                w " IS NULL)"
+                r.Operand(a, false)
+                w " IS NULL"
             | IsNotNull a ->
-                w "("
-                r.Expr a
-                w " IS NOT NULL)"
+                r.Operand(a, false)
+                w " IS NOT NULL"
             | NotDistinctFrom(a, b) ->
-                w "("
-                r.Expr a
+                r.Operand(a, false)
                 w $" {d.NullSafeComparison false} "
-                r.Expr b
-                w ")"
+                r.Operand(b, false)
             | DistinctFrom(a, b) ->
-                w "("
-                r.Expr a
+                r.Operand(a, false)
                 w $" {d.NullSafeComparison true} "
-                r.Expr b
-                w ")"
+                r.Operand(b, false)
             | AnyOf(a, values, cast) ->
                 let typed (p: string) array =
                     match cast with
@@ -328,14 +378,12 @@ module internal Sql =
                 if values.Length = 0 then
                     w "FALSE"
                 elif d.Capabilities.ArrayParameters then
-                    w "("
-                    r.Expr a
+                    r.Operand(a, true)
                     w " = ANY("
                     w (typed (r.Param values) true)
-                    w "))"
+                    w ")"
                 else
-                    w "("
-                    r.Expr a
+                    r.Operand(a, true)
                     w " IN ("
 
                     values
@@ -344,7 +392,7 @@ module internal Sql =
                         if i > 0 then w ", "
                         w (typed (r.Param v) false))
 
-                    w "))"
+                    w ")"
             | Cast(e, t, array) ->
                 w "CAST("
                 r.Expr e
@@ -354,11 +402,10 @@ module internal Sql =
                 r.Expr e
                 w " AS text)"
             | Like(a, p) ->
-                w "("
-                r.Expr a
+                r.Operand(a, true)
                 w " LIKE "
-                r.Expr p
-                w " ESCAPE '\\')"
+                r.Operand(p, true)
+                w d.LikeEscape
             | Func(name, args) ->
                 w (d.FunctionName name)
                 w "("
@@ -408,7 +455,14 @@ module internal Sql =
 
                 w ")"
             | Case(branches, otherwise) ->
-                w "(CASE"
+                // A CASE in another's ELSE is one CASE (if, elif, else).
+                let rec flat bs o =
+                    match o with
+                    | Case(more, o2) -> flat (bs @ more) o2
+                    | o -> bs, o
+
+                let branches, otherwise = flat branches otherwise
+                w "CASE"
 
                 for c, v in branches do
                     w " WHEN "
@@ -418,7 +472,7 @@ module internal Sql =
 
                 w " ELSE "
                 r.Expr otherwise
-                w " END)"
+                w " END"
             | Fragment parts ->
                 w "("
 
@@ -429,12 +483,38 @@ module internal Sql =
 
                 w ")"
 
+        /// An expression in parentheses.
+        member r.Wrapped(e: Expr) =
+            sb.Append("(") |> ignore
+            r.Expr e
+            sb.Append(")") |> ignore
+
+        /// An operand of an operator: bare when it binds tighter (a column, a
+        /// call, a CASE; an arithmetic operation inside a comparison), else in
+        /// parentheses.
+        member r.Operand(e: Expr, ofComparison: bool) =
+            match e with
+            | Column _
+            | Param _
+            | ArrayParam _
+            | Literal _
+            | Func _
+            | Cast _
+            | AsText _
+            | Aggregate _
+            | RowNumber _
+            | Case _
+            | Fragment _
+            | Exists _ -> r.Expr e
+            | Binary(op, _, _) when ofComparison && arithmetic op -> r.Expr e
+            | _ -> r.Wrapped e
+
         member r.Order(items: OrderItem list) =
             items
             |> List.iteri (fun i o ->
                 if i > 0 then sb.Append(", ") |> ignore
                 r.Expr o.Expr
-                sb.Append(if o.Desc then " DESC" else " ASC") |> ignore
+                if o.Desc then sb.Append(" DESC") |> ignore
 
                 match o.NullsFirst with
                 | Some true -> sb.Append(" NULLS FIRST") |> ignore
@@ -449,8 +529,12 @@ module internal Sql =
             |> List.iteri (fun i (e, alias) ->
                 if i > 0 then w ", "
                 r.Expr e
-                w " AS "
-                w (q alias))
+
+                match e with
+                | Column(_, n) when n = alias -> ()
+                | _ ->
+                    w " AS "
+                    w (q alias))
 
             if s.Columns.IsEmpty then w "1"
             w " FROM "
@@ -458,8 +542,10 @@ module internal Sql =
             match s.From with
             | Table(n, a) ->
                 w (q n)
-                w " AS "
-                w (q a)
+
+                if a <> n then
+                    w " AS "
+                    w (q a)
             | Subquery(inner, a) ->
                 w "("
                 r.Select inner
@@ -522,7 +608,7 @@ module internal Sql =
                 i.Values
                 |> List.iteri (fun n e ->
                     if n > 0 then w ", "
-                    r.Expr e)
+                    if isNullValue e then w "NULL" else r.Expr e)
 
                 w ")"
 
@@ -568,14 +654,14 @@ module internal Sql =
 
         member r.Update(u: Update) =
             let w (x: string) = sb.Append(x) |> ignore
-            w $"UPDATE {q u.Table} AS {q u.Table} SET "
+            w $"UPDATE {q u.Table} SET "
 
             u.Set
             |> List.iteri (fun n (c, e) ->
                 if n > 0 then w ", "
                 w (q c)
                 w " = "
-                r.Expr e)
+                if isNullValue e then w "NULL" else r.Expr e)
 
             if not u.Where.IsEmpty then
                 w " WHERE "
@@ -585,7 +671,7 @@ module internal Sql =
 
         member r.Delete(x: Delete) =
             let w (s: string) = sb.Append(s) |> ignore
-            w $"DELETE FROM {q x.Table} AS {q x.Table}"
+            w $"DELETE FROM {q x.Table}"
 
             if not x.Where.IsEmpty then
                 w " WHERE "

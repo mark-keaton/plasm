@@ -9,8 +9,8 @@ Feature: Database-specific SQL comes from the provider
 
   These scenarios use a test dialect that differs from PostgreSQL. Queries are
   only explained (translated, never executed), so no second database is needed.
-  Not everything is behind the dialect yet: LIMIT/OFFSET, LIKE ... ESCAPE,
-  the catalogue queries and the many-to-many link SQL are still PostgreSQL's
+  Not everything is behind the dialect yet: LIMIT/OFFSET, the catalogue
+  queries and the many-to-many link SQL are still PostgreSQL's
   (see docs/status.md).
 
   Background:

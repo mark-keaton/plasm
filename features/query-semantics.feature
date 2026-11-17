@@ -36,9 +36,9 @@ Feature: Queries keep their F# meaning
       When I keep Orders for which "for a given Customer and published" is false
       Then the result equals evaluating the predicate over the same Orders in F#
 
-    Scenario: Negating a comparison that cannot be absent stays a plain NOT
+    Scenario: Negating a comparison that cannot be absent is the opposite comparison
       When I explain a query that negates a comparison of a required field
-      Then the SQL negates it with NOT, so an index on the field can still be used
+      Then the SQL writes the opposite comparison, so an index on the field can still be used
 
   Rule: Captured values are read each time the query runs
 

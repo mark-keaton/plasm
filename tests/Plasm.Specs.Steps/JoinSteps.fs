@@ -120,7 +120,7 @@ type JoinSteps(w: World) =
         // own, from one more.
         let cmd = w.CommandsSinceMark |> List.filter (fun c -> c.Sql.Contains " JOIN ") |> List.exactlyOne
         check (w.CommandsSinceMark |> List.forall (fun c -> c = cmd || c.Sql.Contains "FROM \"order_lines\"")) "only the owned lines besides the join"
-        check (cmd.Sql.Contains "INNER JOIN \"customers\" AS \"j1\" ON (\"t0\".\"customer_id\" = \"j1\".\"id\")") cmd.Sql
+        check (cmd.Sql.Contains "INNER JOIN \"customers\" AS \"j1\" ON \"t0\".\"customer_id\" = \"j1\".\"id\"") cmd.Sql
 
     // Scenario: A left join represents a missing match as None
 
@@ -194,7 +194,7 @@ type JoinSteps(w: World) =
     [<StepDefinition("the filter is part of the executed SQL")>]
     member _.FilterInSql() =
         let cmd = w.QueryCommands |> List.exactlyOne
-        check (cmd.Sql.Contains "WHERE (\"j1\".\"name\" = @p0)") cmd.Sql
+        check (cmd.Sql.Contains "WHERE \"j1\".\"name\" = @p0") cmd.Sql
 
     [<StepDefinition("only matching rows are transferred")>]
     member _.OnlyMatching() =
@@ -210,7 +210,7 @@ type JoinSteps(w: World) =
         task {
             let! rows = run (plasm { for (o, c) in Joins.withOptionalCustomers do where c.IsNone })
             w.Set("kept", rows |> List.map (fun (o: Order, _) -> o))
-            check ((w.QueryCommands |> List.exactlyOne).Sql.Contains "(\"j1\".\"id\" IS NULL)") "anti-join in SQL"
+            check ((w.QueryCommands |> List.exactlyOne).Sql.Contains "\"j1\".\"id\" IS NULL") "anti-join in SQL"
         }
         |> unit
 
@@ -333,7 +333,7 @@ type JoinSteps(w: World) =
     [<StepDefinition("the ordering includes the key of every joined source")>]
     member _.OrderingHasKeys() =
         let sql: string = w.Get "pageSql"
-        check (sql.Contains "ORDER BY (CASE \"j1\".\"status\" WHEN 'pending' THEN 0 WHEN 'succeeded' THEN 1 WHEN 'failed' THEN 2 END) ASC, \"t0\".\"id\" ASC, \"j1\".\"id\" ASC") sql
+        check (sql.Contains "ORDER BY (CASE \"j1\".\"status\" WHEN 'pending' THEN 0 WHEN 'succeeded' THEN 1 WHEN 'failed' THEN 2 END), \"t0\".\"id\", \"j1\".\"id\"") sql
 
     [<StepDefinition("the pages are disjoint and together complete")>]
     member _.DisjointComplete() =
@@ -412,7 +412,7 @@ type JoinSteps(w: World) =
     member _.JoinsSingleCommand() =
         let cmd = w.QueryCommands |> List.exactlyOne
         check (cmd.Sql.Contains "INNER JOIN \"order_lines\" AS \"j1\"") cmd.Sql
-        check (cmd.Sql.Contains "INNER JOIN \"products\" AS \"j2\" ON (\"j1\".\"product_id\" = \"j2\".\"id\")") cmd.Sql
+        check (cmd.Sql.Contains "INNER JOIN \"products\" AS \"j2\" ON \"j1\".\"product_id\" = \"j2\".\"id\"") cmd.Sql
 
     // Scenario: Projections over joins retrieve only the requested columns
 
@@ -476,7 +476,7 @@ type JoinSteps(w: World) =
     [<StepDefinition("the plan shows the join and its condition")>]
     member _.PlanShowsJoin() =
         let plan: QueryPlan = w.Get "plan"
-        check (plan.Sql.Contains "INNER JOIN \"customers\" AS \"j1\" ON (\"t0\".\"customer_id\" = \"j1\".\"id\")") plan.Sql
+        check (plan.Sql.Contains "INNER JOIN \"customers\" AS \"j1\" ON \"t0\".\"customer_id\" = \"j1\".\"id\"") plan.Sql
 
     // Scenario: Unsupported join requests are explicit
 

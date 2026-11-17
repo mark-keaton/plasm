@@ -35,7 +35,7 @@ type World() =
     /// Order owns (one more command whenever Orders are read).
     member w.QueryCommands =
         w.CommandsSinceMark
-        |> List.filter (fun c -> not (c.Sql.StartsWith "SELECT" && c.Sql.Contains "FROM \"order_lines\" AS \"t0\" WHERE (\"t0\".\"order_id\""))
+        |> List.filter (fun c -> not (c.Sql.StartsWith "SELECT" && c.Sql.Contains "FROM \"order_lines\" AS \"t0\" WHERE \"t0\".\"order_id\""))
 
 [<AutoOpen>]
 module Support =

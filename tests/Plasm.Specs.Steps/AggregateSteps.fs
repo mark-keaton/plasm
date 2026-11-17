@@ -57,7 +57,7 @@ type AggregateSteps(w: World) =
 
     [<StepDefinition("the filter is part of the counting SQL")>]
     member _.CountFilter() =
-        check ((one w.CommandsSinceMark).Sql.Contains "WHERE (\"t0\".\"status\" = @p0)") "filter in SQL"
+        check ((one w.CommandsSinceMark).Sql.Contains "WHERE \"t0\".\"status\" = @p0") "filter in SQL"
 
     // Scenario: Counting a page counts the page
 
@@ -292,7 +292,7 @@ type AggregateSteps(w: World) =
     [<StepDefinition("the condition is applied by the database after grouping")>]
     member _.HavingInSql() =
         let cmd = one w.CommandsSinceMark
-        check (cmd.Sql.Contains "GROUP BY \"t0\".\"customer_id\" HAVING (COUNT(*) > @p0)") cmd.Sql
+        check (cmd.Sql.Contains "GROUP BY \"t0\".\"customer_id\" HAVING COUNT(*) > @p0") cmd.Sql
         equal 1 cmd.Rows "rows transferred"
 
     // Scenario: Grouping across a join

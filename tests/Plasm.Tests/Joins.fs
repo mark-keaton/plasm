@@ -18,7 +18,7 @@ let ``inner join renders an ON condition from both key selectors`` () =
             orderBy o.Id
     }
     |> sqlOf
-    |> contains "FROM \"orders\" AS \"t0\" INNER JOIN \"customers\" AS \"j1\" ON (\"t0\".\"customer_id\" = \"j1\".\"id\")"
+    |> contains "FROM \"orders\" AS \"t0\" INNER JOIN \"customers\" AS \"j1\" ON \"t0\".\"customer_id\" = \"j1\".\"id\""
 
 [<Fact>]
 let ``a joined query selects every column of every source`` () =
@@ -42,7 +42,7 @@ let ``composite keys compare pairwise`` () =
             orderBy l.Id
     }
     |> sqlOf
-    |> contains "ON ((\"t0\".\"order_id\" = \"j1\".\"order_id\") AND (\"t0\".\"unit_price\" = \"j1\".\"amount\"))"
+    |> contains "ON \"t0\".\"order_id\" = \"j1\".\"order_id\" AND \"t0\".\"unit_price\" = \"j1\".\"amount\""
 
 [<Fact>]
 let ``filters written before a join take the root record`` () =
@@ -55,7 +55,7 @@ let ``filters written before a join take the root record`` () =
         }
         |> sqlOf
 
-    contains "WHERE ((\"t0\".\"total\" > @p0) AND (\"j1\".\"name\" = @p1))" sql
+    contains "WHERE \"t0\".\"total\" > @p0 AND \"j1\".\"name\" = @p1" sql
 
 [<Fact>]
 let ``Option.forall over a left-joined source keeps unmatched rows`` () =
@@ -65,7 +65,7 @@ let ``Option.forall over a left-joined source keeps unmatched rows`` () =
             where (c |> Option.forall (fun c -> c.Name = "Ada"))
     }
     |> sqlOf
-    |> contains "WHERE ((\"j1\".\"id\" IS NULL) OR (\"j1\".\"name\" = @p0))"
+    |> contains "WHERE \"j1\".\"id\" IS NULL OR \"j1\".\"name\" = @p0"
 
 [<Fact>]
 let ``comparing a left-joined source with None tests its key`` () =
@@ -77,7 +77,7 @@ let ``comparing a left-joined source with None tests its key`` () =
         }
         |> sqlOf
 
-    contains "WHERE (\"j1\".\"id\" IS NOT NULL)" sql
+    contains "WHERE \"j1\".\"id\" IS NOT NULL" sql
 
 [<Fact>]
 let ``ordering by a left-joined column puts missing rows first, like F# options`` () =
@@ -87,7 +87,7 @@ let ``ordering by a left-joined column puts missing rows first, like F# options`
             orderBy (c |> Option.map (fun c -> c.Name))
     }
     |> sqlOf
-    |> contains "ORDER BY \"j1\".\"name\" ASC NULLS FIRST"
+    |> contains "ORDER BY \"j1\".\"name\" NULLS FIRST"
 
 [<Fact>]
 let ``a left-joined field equal to Some value compares the present value`` () =
@@ -97,7 +97,7 @@ let ``a left-joined field equal to Some value compares the present value`` () =
             where ((c |> Option.map (fun c -> c.Name)) = Some "Ada")
     }
     |> sqlOf
-    |> contains "WHERE (\"j1\".\"name\" = @p0)"
+    |> contains "WHERE \"j1\".\"name\" = @p0"
 
 [<Fact>]
 let ``projections over joins read only the projected columns`` () =
@@ -111,7 +111,7 @@ let ``projections over joins read only the projected columns`` () =
         |> projectionSql
 
     // Anonymous-record fields are ordered by name (Customer, Order).
-    contains "SELECT \"j1\".\"name\" AS \"c0\", \"t0\".\"id\" AS \"c1\" FROM" sql
+    contains "SELECT \"j1\".\"name\" AS \"Customer\", \"t0\".\"id\" AS \"Order\" FROM" sql
 
 [<Fact>]
 let ``Option.map over an optional field is rejected in favour of Option.bind`` () =
@@ -153,5 +153,5 @@ let ``relationship predicates work on the root of a joined query`` () =
         }
         |> projectionSql
 
-    contains "NOT EXISTS (SELECT 1 FROM \"payments\" AS \"t1\" WHERE ((\"t1\".\"order_id\" = \"t0\".\"id\")" sql
+    contains "NOT EXISTS (SELECT 1 FROM \"payments\" AS \"t1\" WHERE \"t1\".\"order_id\" = \"t0\".\"id\"" sql
     contains "SELECT \"t0\".\"id\" AS \"c0\", \"t0\".\"total\" AS \"c1\", \"j1\".\"email\" AS \"c2\"" sql
