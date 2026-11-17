@@ -92,7 +92,8 @@ payments counts). They did.
 
 ## Methodology
 
-- **Commands and rows:** for Plasm, `RepoOptions.OnCommand` (`CommandEvent.Rows`).
+- **Commands, round trips and rows:** for Plasm, `RepoOptions.OnCommand`
+  (`CommandEvent.RoundTrip`, `CommandEvent.Rows`).
   For EF, a `DbCommandInterceptor` captures each command. Its rows are counted
   by re-running the captured SQL as `select count(*) from (<sql>)` with the same
   parameters. The rows column counts rows, not bytes.
@@ -104,22 +105,28 @@ payments counts). They did.
 
 ## Results
 
-### Commands and rows transferred (`counts`)
+### Commands, round trips and rows transferred (`counts`)
 
-| Workload | Variant | Commands | Rows transferred |
-|---|---|---:|---:|
-| page 20 | Plasm | 3 | 280 |
-| page 20 | EF single query | 1 | 600 |
-| page 20 | EF split query | 3 | 280 |
-| page 100 | Plasm | 3 | 1,400 |
-| page 100 | EF single query | 1 | 3,000 |
-| page 100 | EF split query | 3 | 1,400 |
-| page 1000 | Plasm | 3 | 14,000 |
-| page 1000 | EF single query | 1 | 30,000 |
-| page 1000 | EF split query | 3 | 14,000 |
-| siblings | Plasm (either variant) | 3 | 21 |
-| siblings | EF single query | 1 | **100** (cartesian) |
-| siblings | EF split query | 3 | 21 |
+| Workload | Variant | Commands | Round trips | Rows transferred |
+|---|---|---:|---:|---:|
+| page 20 | Plasm | 3 | 2 | 280 |
+| page 20 | EF single query | 1 | 1 | 600 |
+| page 20 | EF split query | 3 | 3 | 280 |
+| page 100 | Plasm | 3 | 2 | 1,400 |
+| page 100 | EF single query | 1 | 1 | 3,000 |
+| page 100 | EF split query | 3 | 3 | 1,400 |
+| page 1000 | Plasm | 3 | 2 | 14,000 |
+| page 1000 | EF single query | 1 | 1 | 30,000 |
+| page 1000 | EF split query | 3 | 3 | 14,000 |
+| siblings | Plasm (either variant) | 3 | 3 | 21 |
+| siblings | EF single query | 1 | 1 | **100** (cartesian) |
+| siblings | EF split query | 3 | 3 | 21 |
+
+Plasm's page sends its lines and its payments together, after the orders they
+need (`round-trips.feature`, 2026-11-17): three commands in two round trips.
+The siblings workload is two queries, the second waiting for the first. These
+round trips were counted once, without a timing run; the times below predate
+them.
 
 Plasm and EF split query now read the same rows in the same number of commands.
 EF single query multiplies lines by succeeded payments per order (10 × 3 = 30

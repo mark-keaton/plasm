@@ -79,7 +79,7 @@ module RoundTripDomain =
 
 open RoundTripDomain
 
-/// Feature: A write is one round trip
+/// Feature: A write, and each level of loads, is one round trip
 [<Binding>]
 type RoundTripSteps(w: World) =
 

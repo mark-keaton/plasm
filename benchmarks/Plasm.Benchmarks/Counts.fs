@@ -1,4 +1,4 @@
-/// `counts` mode: commands, rows transferred, allocations and median time per
+/// `counts` mode: commands, round trips, rows transferred, allocations and median time per
 /// workload and variant, with an equivalence check of the returned graph.
 module Plasm.Benchmarks.Counts
 
@@ -17,6 +17,9 @@ type Measurement =
     { Workload: string
       Variant: string
       Commands: int
+      /// Plasm's from `CommandEvent.RoundTrip`; each EF query is a round
+      /// trip of its own (EF batches only SaveChanges).
+      RoundTrips: int
       Rows: int
       AllocatedKb: float
       MedianMs: float
@@ -78,6 +81,7 @@ let private plasmVariant workload variant (op: Plasm.Repo -> Task<Order list * P
             { Workload = workload
               Variant = variant
               Commands = events.Length
+              RoundTrips = events |> List.map (fun e -> e.RoundTrip) |> List.distinct |> List.length
               Rows = events |> List.sumBy (fun e -> e.Rows)
               AllocatedKb = kb
               MedianMs = ms
@@ -105,6 +109,7 @@ let private efVariant workload variant (op: string -> EfCapture -> Task<Shape>) 
             { Workload = workload
               Variant = variant
               Commands = capture.Commands.Count
+              RoundTrips = capture.Commands.Count
               Rows = rows
               AllocatedKb = kb
               MedianMs = ms
@@ -140,15 +145,16 @@ let all () =
 
 let print (results: Measurement list) =
     printfn ""
-    printfn "| Workload | Variant | Commands | Rows transferred | Allocated (KB) | Median (ms) | Orders/Lines/Payments |"
-    printfn "|---|---|---:|---:|---:|---:|---|"
+    printfn "| Workload | Variant | Commands | Round trips | Rows transferred | Allocated (KB) | Median (ms) | Orders/Lines/Payments |"
+    printfn "|---|---|---:|---:|---:|---:|---:|---|"
 
     for r in results do
         printfn
-            "| %s | %s | %d | %d | %.0f | %.2f | %d/%d/%d |"
+            "| %s | %s | %d | %d | %d | %.0f | %.2f | %d/%d/%d |"
             r.Workload
             r.Variant
             r.Commands
+            r.RoundTrips
             r.Rows
             r.AllocatedKb
             r.MedianMs

@@ -507,72 +507,82 @@ let private providerArray (f: FieldMap) (keys: obj seq) =
     ks |> Array.iteri (fun i k -> arr.SetValue(f.ScalarToDb k, i))
     arr
 
-/// Loads `nodes` into the field arrays `rows` (mutating the arrays, which are
-/// not yet visible to callers). Children are fully assembled — including their
-/// own nested loads — before being attached.
-let rec loadInto (s: Session) (rows: IReadOnlyList<obj[]>) (nodes: Planner.LoadNode list) : Task<unit> =
-    task {
-        for node in nodes do
-            let s = if node.Args.Length > 0 then { s with Args = node.Args } else s
-            let keys = HashSet<obj>()
+/// The loads of `nodes` into the field arrays `rows` (mutating the arrays,
+/// which are not yet visible to callers), as round trips: every node's
+/// commands travel together, then every child level's (round-trips.feature).
+/// Children are fully assembled — including their own nested loads — before
+/// being attached.
+let rec loads (s: Session) (rows: IReadOnlyList<obj[]>) (nodes: Planner.LoadNode list) : Round<unit> =
+    nodes |> List.map (load s rows) |> Round.all |> Round.map ignore
 
-            for r in rows do
-                match keyOf node.KeyField r.[node.KeyField.Index] with
-                | Some k -> keys.Add k |> ignore
-                | None -> ()
+and private load (s: Session) (rows: IReadOnlyList<obj[]>) (node: Planner.LoadNode) : Round<unit> =
+    let s = if node.Args.Length > 0 then { s with Args = node.Args } else s
+    let keys = HashSet<obj>()
 
-            // For many-to-many, (owner key, child row): one target row may
-            // belong to several owners and is materialised once. A plain list
-            // groups its rows by their own column instead, keeping no second
-            // buffer of them: at thousands of rows each such buffer is a
-            // large-object allocation, and those bring on gen2 collections
-            // (docs/benchmarks.md, "The page of 1,000").
-            let entries = ResizeArray<obj * obj[]>()
-            let mutable childRows = ResizeArray<obj[]>()
+    for r in rows do
+        match keyOf node.KeyField r.[node.KeyField.Index] with
+        | Some k -> keys.Add k |> ignore
+        | None -> ()
 
-            let batchSize =
-                match node.Strategy with
-                | LoadStrategy.BatchedByKeys n -> max 1 n
+    // For many-to-many, (owner key, child row): one target row may
+    // belong to several owners and is materialised once. A plain list
+    // groups its rows by their own column instead, keeping no second
+    // buffer of them: at thousands of rows each such buffer is a
+    // large-object allocation, and those bring on gen2 collections
+    // (docs/benchmarks.md, "The page of 1,000").
+    let entries = ResizeArray<obj * obj[]>()
 
-            match node.Through with
-            | None ->
-                for batch in Seq.chunkBySize batchSize keys do
-                    let select = node.Build(providerArray node.KeyField batch)
-                    let cmd = Sql.renderSelect s.Provider.Dialect select
-                    let! got = query s cmd (readEntity node.Target)
+    let batchSize =
+        match node.Strategy with
+        | LoadStrategy.BatchedByKeys n -> max 1 n
 
-                    if childRows.Count = 0 then
-                        childRows <- got
-                    else
-                        childRows.AddRange got
-            | Some _ ->
-                let read = readEntity node.Target
-                let ownerAt = node.Target.Fields |> Array.sumBy (fun f -> f.Parts.Length)
-                let ownerReader = columnReader node.KeyField.ProviderType
+    let commands =
+        [ for batch in Seq.chunkBySize batchSize keys -> Sql.renderSelect s.Provider.Dialect (node.Build(providerArray node.KeyField batch)) ]
+
+    let fetched: Round<ResizeArray<obj[]>> =
+        match node.Through with
+        | None ->
+            commands
+            |> List.map (fun cmd -> Round.rows s cmd (readEntity node.Target))
+            |> Round.all
+            |> Round.map (function
+                | [ one ] -> one
+                | gots ->
+                    let all = ResizeArray<obj[]>()
+
+                    for g in gots do
+                        all.AddRange g
+
+                    all)
+        | Some _ ->
+            let read = readEntity node.Target
+            let ownerAt = node.Target.Fields |> Array.sumBy (fun f -> f.Parts.Length)
+            let ownerReader = columnReader node.KeyField.ProviderType
+
+            commands
+            |> List.map (fun cmd ->
+                Round.rows s cmd (fun r ->
+                    let row = read r
+
+                    let owner =
+                        match node.KeyField.FromDb(ownerReader.Invoke(r, ownerAt)) with
+                        | Ok v -> v
+                        | Error m ->
+                            raise (
+                                MaterializationFailure
+                                    { Model = node.Parent.Name
+                                      Property = node.Assoc.Name
+                                      Value = "owner key"
+                                      Message = m }
+                            )
+
+                    owner, row))
+            |> Round.all
+            |> Round.map (fun gots ->
                 let canonical = Dictionary<obj, obj[]>()
+                let childRows = ResizeArray<obj[]>()
 
-                for batch in Seq.chunkBySize batchSize keys do
-                    let select = node.Build(providerArray node.KeyField batch)
-                    let cmd = Sql.renderSelect s.Provider.Dialect select
-
-                    let! got =
-                        query s cmd (fun r ->
-                            let row = read r
-
-                            let owner =
-                                match node.KeyField.FromDb(ownerReader.Invoke(r, ownerAt)) with
-                                | Ok v -> v
-                                | Error m ->
-                                    raise (
-                                        MaterializationFailure
-                                            { Model = node.Parent.Name
-                                              Property = node.Assoc.Name
-                                              Value = "owner key"
-                                              Message = m }
-                                    )
-
-                            owner, row)
-
+                for got in gots do
                     for owner, row in got do
                         let targetKey = row.[node.Target.Key.Index]
 
@@ -586,77 +596,81 @@ let rec loadInto (s: Session) (rows: IReadOnlyList<obj[]>) (nodes: Planner.LoadN
 
                         entries.Add(owner, row)
 
-            do! loadInto s childRows node.Children
+                childRows)
 
-            let groups = Dictionary<obj, ResizeArray<obj>>()
+    fetched
+    |> Round.bind (fun childRows -> loads s childRows node.Children |> Round.map (fun () -> attach rows node childRows entries))
 
-            let add (k: obj) (v: obj) =
+/// Places what a load read on each of `rows`.
+and private attach (rows: IReadOnlyList<obj[]>) (node: Planner.LoadNode) (childRows: ResizeArray<obj[]>) (entries: ResizeArray<obj * obj[]>) =
+    let groups = Dictionary<obj, ResizeArray<obj>>()
+
+    let add (k: obj) (v: obj) =
+        match groups.TryGetValue k with
+        | true, g -> g.Add v
+        | _ -> groups.[k] <- ResizeArray [ v ]
+
+    match node.Through with
+    | None ->
+        for cr in childRows do
+            match keyOf node.MatchField cr.[node.MatchField.Index] with
+            | Some k -> add k (node.Target.Shape.Construct cr)
+            | None -> ()
+    | Some _ ->
+        let built = Dictionary<obj[], obj>(HashIdentity.Reference)
+
+        for k, cr in entries do
+            match built.TryGetValue cr with
+            | true, v -> add k v
+            | _ ->
+                let v = node.Target.Shape.Construct cr
+                built.[cr] <- v
+                add k v
+
+    let a = node.Assoc
+
+    for r in rows do
+        let key = keyOf node.KeyField r.[node.KeyField.Index]
+
+        let found =
+            match key with
+            | Some k ->
                 match groups.TryGetValue k with
-                | true, g -> g.Add v
-                | _ -> groups.[k] <- ResizeArray [ v ]
+                | true, g -> g :> IReadOnlyList<obj>
+                | _ -> [||]
+            | None -> [||]
 
-            match node.Through with
-            | None ->
-                for cr in childRows do
-                    match keyOf node.MatchField cr.[node.MatchField.Index] with
-                    | Some k -> add k (node.Target.Shape.Construct cr)
-                    | None -> ()
-            | Some _ ->
-                let built = Dictionary<obj[], obj>(HashIdentity.Reference)
+        let payload =
+            match a.Cardinality with
+            | Many -> a.MakeList found
+            | OptionalOne ->
+                if found.Count > 1 then
+                    raise (
+                        MaterializationFailure
+                            { Model = node.Parent.Name
+                              Property = a.Name
+                              Value = $"{found.Count} rows"
+                              Message = $"the {node.Parent.Name} with key {key.Value} owns at most one {node.Target.Name}, and the database holds {found.Count} (is a unique constraint missing?)" }
+                    )
 
-                for k, cr in entries do
-                    match built.TryGetValue cr with
-                    | true, v -> add k v
-                    | _ ->
-                        let v = node.Target.Shape.Construct cr
-                        built.[cr] <- v
-                        add k v
+                if found.Count = 0 then
+                    null
+                else
+                    a.WrapSome found.[0]
+            | RequiredOne ->
+                if found.Count <> 1 then
+                    raise (
+                        MaterializationFailure
+                            { Model = node.Parent.Name
+                              Property = a.Name
+                              Value = string key
+                              Message =
+                                $"the {node.Parent.Name} with key {key} owns exactly one {node.Target.Name}, and the database holds {found.Count}" }
+                    )
 
-            let a = node.Assoc
+                found.[0]
 
-            for r in rows do
-                let key = keyOf node.KeyField r.[node.KeyField.Index]
-
-                let found =
-                    match key with
-                    | Some k ->
-                        match groups.TryGetValue k with
-                        | true, g -> g :> IReadOnlyList<obj>
-                        | _ -> [||]
-                    | None -> [||]
-
-                let payload =
-                    match a.Cardinality with
-                    | Many -> a.MakeList found
-                    | OptionalOne ->
-                        if found.Count > 1 then
-                            raise (
-                                MaterializationFailure
-                                    { Model = node.Parent.Name
-                                      Property = a.Name
-                                      Value = $"{found.Count} rows"
-                                      Message = $"the {node.Parent.Name} with key {key.Value} owns at most one {node.Target.Name}, and the database holds {found.Count} (is a unique constraint missing?)" }
-                            )
-
-                        if found.Count = 0 then
-                            null
-                        else
-                            a.WrapSome found.[0]
-                    | RequiredOne ->
-                        if found.Count <> 1 then
-                            raise (
-                                MaterializationFailure
-                                    { Model = node.Parent.Name
-                                      Property = a.Name
-                                      Value = string key
-                                      Message =
-                                        $"the {node.Parent.Name} with key {key} owns exactly one {node.Target.Name}, and the database holds {found.Count}" }
-                            )
-
-                        found.[0]
-
-                r.[a.Index] <- a.Ctors.Loaded payload
-    }
+        r.[a.Index] <- a.Ctors.Loaded payload
 
 let classifyOrRaise (s: Session) (ex: exn) =
     match s.Provider.Classify ex with
@@ -679,23 +693,21 @@ let guard (provider: IProvider) (body: unit -> Task<Result<'a, DbError>>) : Task
             | None -> return Err.rethrow ex
     }
 
+/// The root's rows, then every level of its loads, a round trip each.
 let readRoot (s: Session) (plan: Planner.Plan) : Task<obj list> =
-    task {
-        let cmd = Sql.renderSelect s.Provider.Dialect plan.Root
-        let! rows = query s cmd (readEntity plan.RootSchema)
-        do! loadInto s rows plan.Loads
-        return rows |> Seq.map plan.RootSchema.Shape.Construct |> List.ofSeq
-    }
+    Round.rows s (Sql.renderSelect s.Provider.Dialect plan.Root) (readEntity plan.RootSchema)
+    |> Round.bind (fun rows -> loads s rows plan.Loads |> Round.map (fun () -> rows |> Seq.map plan.RootSchema.Shape.Construct |> List.ofSeq))
+    |> Round.run s
 
 /// The lists a record owns or links, for records read as field values (a
 /// join's or hand-written SQL's rows): loaded as a query of the records loads
 /// them, one batched command per list (owned-collections.feature).
-let private loadOwned (s: Session) (model: Model) (schema: SchemaInfo) (rows: obj[] list) : Task<unit> =
+let private loadOwned (s: Session) (model: Model) (schema: SchemaInfo) (rows: obj[] list) : Round<unit> =
     if rows.IsEmpty || not (schema.Assocs |> Array.exists (fun a -> a.Owned || a.Linked)) then
-        Task.FromResult()
+        Done()
     else
         match Planner.planLoads s.Provider.Dialect model schema with
-        | Ok nodes -> loadInto s (ResizeArray rows) nodes
+        | Ok nodes -> loads s (ResizeArray rows) nodes
         | Error e -> invalidOp $"the lists {schema.Name} owns could not be planned: {e}"
 
 /// A whole record's field values from a projection row; null for a
@@ -748,7 +760,8 @@ let rec private build (shape: Translate.Shape) (row: obj[]) (entity: unit -> obj
             else
                 record
 
-let readProjection (s: Session) (model: Model) (select: Sql.Select) (shape: Translate.Shape) (label: string) : Task<obj list> =
+/// A projection's rows, then what the records in them own, a round trip later.
+let private projection (s: Session) (model: Model) (select: Sql.Select) (shape: Translate.Shape) (label: string) : Round<obj list> =
     let leaves = ResizeArray<int * Type * (obj -> Result<obj, string>) * string>()
     let entities = ResizeArray<int * SchemaInfo * bool>()
 
@@ -769,39 +782,37 @@ let readProjection (s: Session) (model: Model) (select: Sql.Select) (shape: Tran
 
     collect shape
 
-    task {
-        let cmd = Sql.renderSelect s.Provider.Dialect select
+    let read (r: DbDataReader) =
+        let values = Array.zeroCreate<obj> select.Columns.Length
 
-        let! rows =
-            query s cmd (fun r ->
-                let values = Array.zeroCreate<obj> select.Columns.Length
+        for i, t, convert, l in leaves do
+            let raw = (columnReader t).Invoke(r, i)
 
-                for i, t, convert, l in leaves do
-                    let raw = (columnReader t).Invoke(r, i)
+            match convert raw with
+            | Ok v -> values.[i] <- v
+            | Error msg ->
+                raise (
+                    MaterializationFailure
+                        { Model = label
+                          Property = l
+                          Value = describe raw
+                          Message = msg }
+                )
 
-                    match convert raw with
-                    | Ok v -> values.[i] <- v
-                    | Error msg ->
-                        raise (
-                            MaterializationFailure
-                                { Model = label
-                                  Property = l
-                                  Value = describe raw
-                                  Message = msg }
-                        )
+        values
 
-                values)
-
+    Round.rows s (Sql.renderSelect s.Provider.Dialect select) read
+    |> Round.bind (fun rows ->
         // Each whole record's values, by record position then row; then what
         // the records own, loaded for all rows at once.
         let records =
             [| for start, schema, optional in entities -> [| for row in rows -> entityValues start schema optional row |] |]
 
-        for n in 0 .. entities.Count - 1 do
-            let _, schema, _ = entities.[n]
-            do! loadOwned s model schema (records.[n] |> Array.filter (fun v -> not (isNull v)) |> List.ofArray)
-
-        return
+        [ for n in 0 .. entities.Count - 1 do
+              let _, schema, _ = entities.[n]
+              loadOwned s model schema (records.[n] |> Array.filter (fun v -> not (isNull v)) |> List.ofArray) ]
+        |> Round.all
+        |> Round.map (fun _ ->
             rows
             |> Seq.mapi (fun i row ->
                 let mutable next = 0
@@ -810,125 +821,129 @@ let readProjection (s: Session) (model: Model) (select: Sql.Select) (shape: Tran
                     let v = records.[next].[i]
                     next <- next + 1
                     v))
-            |> List.ofSeq
-    }
+            |> List.ofSeq))
+
+let readProjection (s: Session) (model: Model) (select: Sql.Select) (shape: Translate.Shape) (label: string) : Task<obj list> =
+    Round.run s (projection s model select shape label)
 
 /// One load (loads.feature): reads what its query finds for the
 /// `parents` rows, in batches of their values, and its own levels over those;
 /// returns each parent row's list.
-let rec private readLevel (s: Session) (model: Model) (batchSize: int) (parents: IReadOnlyList<obj[]>) (l: Planner.IncludingLevel) : Task<obj[] -> obj> =
-    task {
-        let parts = l.Parts
-        let valueOf (r: obj[]) = keyOf parts.OuterField r.[parts.OuterField.Index]
-        let keys = HashSet<obj>()
+let rec private level (s: Session) (model: Model) (batchSize: int) (parents: IReadOnlyList<obj[]>) (l: Planner.IncludingLevel) : Round<obj[] -> obj> =
+    let parts = l.Parts
+    let valueOf (r: obj[]) = keyOf parts.OuterField r.[parts.OuterField.Index]
+    let keys = HashSet<obj>()
 
-        for r in parents do
-            valueOf r |> Option.iter (keys.Add >> ignore)
+    for r in parents do
+        valueOf r |> Option.iter (keys.Add >> ignore)
 
-        let groups = Dictionary<obj, ResizeArray<obj>>()
+    let groups = Dictionary<obj, ResizeArray<obj>>()
 
-        let add (key: obj option) (child: obj) =
-            match key with
-            | Some k ->
-                match groups.TryGetValue k with
-                | true, g -> g.Add child
-                | _ -> groups.[k] <- ResizeArray [ child ]
-            | None -> ()
+    let add (key: obj option) (child: obj) =
+        match key with
+        | Some k ->
+            match groups.TryGetValue k with
+            | true, g -> g.Add child
+            | _ -> groups.[k] <- ResizeArray [ child ]
+        | None -> ()
 
+    let batches = Seq.chunkBySize batchSize keys |> List.ofSeq
+
+    let found: Round<unit> =
         match parts.Projected with
         | Some shape ->
             // Each row is (the selected value, the matching column's value).
-            for batch in Seq.chunkBySize batchSize keys do
-                let select = parts.Build(providerArray parts.MatchField batch)
-                let! got = readProjection s model select shape parts.Target.Name
-
-                for row in got do
-                    let value, key = unbox<obj * obj> row
-                    add (keyOf parts.MatchField key) value
+            batches
+            |> List.map (fun batch -> projection s model (parts.Build(providerArray parts.MatchField batch)) shape parts.Target.Name)
+            |> Round.all
+            |> Round.map (fun gots ->
+                for got in gots do
+                    for row in got do
+                        let value, key = unbox<obj * obj> row
+                        add (keyOf parts.MatchField key) value)
         | None ->
-            let mutable childRows = ResizeArray<obj[]>()
+            batches
+            |> List.map (fun batch -> Round.rows s (Sql.renderSelect s.Provider.Dialect (parts.Build(providerArray parts.MatchField batch))) (readEntity parts.Target))
+            |> Round.all
+            |> Round.bind (fun gots ->
+                let childRows =
+                    match gots with
+                    | [ one ] -> one
+                    | _ ->
+                        let all = ResizeArray<obj[]>()
 
-            for batch in Seq.chunkBySize batchSize keys do
-                let cmd = Sql.renderSelect s.Provider.Dialect (parts.Build(providerArray parts.MatchField batch))
-                let! got = query s cmd (readEntity parts.Target)
+                        for g in gots do
+                            all.AddRange g
 
-                if childRows.Count = 0 then childRows <- got else childRows.AddRange got
+                        all
 
-            do! loadInto s childRows l.Children
+                // What the records own and the loads of their own query: the
+                // next level, together.
+                Round.both (loads s childRows l.Children) (l.Nested |> List.map (level s model batchSize childRows) |> Round.all)
+                |> Round.map (fun ((), lists) ->
+                    let element =
+                        match parts.Return with
+                        | Some r -> fun (cr: obj[]) -> r.Build (parts.Target.Shape.Construct cr) [| for f in lists -> f cr |]
+                        | None -> fun (cr: obj[]) -> parts.Target.Shape.Construct cr
 
-            let lists = ResizeArray<obj[] -> obj>()
+                    for cr in childRows do
+                        add (keyOf parts.MatchField cr.[parts.MatchField.Index]) (element cr)))
 
-            for n in l.Nested do
-                let! f = readLevel s model batchSize childRows n
-                lists.Add f
+    // A list of the items, or for a let! of referredBy an option of the
+    // one. The tie is the inner key, which proves at most one
+    // only as far as the database keeps it: a second is an error, as for
+    // an owned optional record, never a choice.
+    let outer = parts.Outer.Root.Name
+    let none = ResizeArray<obj>()
 
-            let element =
-                match parts.Return with
-                | Some r -> fun (cr: obj[]) -> r.Build (parts.Target.Shape.Construct cr) [| for f in lists -> f cr |]
-                | None -> fun (cr: obj[]) -> parts.Target.Shape.Construct cr
+    let some =
+        lazy (FSharp.Reflection.FSharpType.GetUnionCases(parts.HeldType) |> Array.find (fun c -> c.Name = "Some"))
 
-            for cr in childRows do
-                add (keyOf parts.MatchField cr.[parts.MatchField.Index]) (element cr)
+    let hold (key: obj) (items: ResizeArray<obj>) : obj =
+        if parts.One then
+            if items.Count > 1 then
+                raise (
+                    MaterializationFailure
+                        { Model = outer
+                          Property = parts.OuterField.Name
+                          Value = $"{items.Count} rows"
+                          Message =
+                            $"a let! of referredBy found {items.Count} {parts.Target.Name}s for one {outer} (its {parts.OuterField.Name} is {key}) where its tie on {parts.Target.Name}.{parts.MatchField.Name} proves at most one; the database holds more than the model says (is a unique constraint missing?)" }
+                )
 
-        // A list of the items, or for a let! of referredBy an option of the
-        // one. The tie is the inner key, which proves at most one
-        // only as far as the database keeps it: a second is an error, as for
-        // an owned optional record, never a choice.
-        let outer = parts.Outer.Root.Name
-        let none = ResizeArray<obj>()
-
-        let some =
-            lazy (FSharp.Reflection.FSharpType.GetUnionCases(parts.HeldType) |> Array.find (fun c -> c.Name = "Some"))
-
-        let hold (key: obj) (items: ResizeArray<obj>) : obj =
-            if parts.One then
-                if items.Count > 1 then
-                    raise (
-                        MaterializationFailure
-                            { Model = outer
-                              Property = parts.OuterField.Name
-                              Value = $"{items.Count} rows"
-                              Message =
-                                $"a let! of referredBy found {items.Count} {parts.Target.Name}s for one {outer} (its {parts.OuterField.Name} is {key}) where its tie on {parts.Target.Name}.{parts.MatchField.Name} proves at most one; the database holds more than the model says (is a unique constraint missing?)" }
-                    )
-
-                if items.Count = 0 then
-                    null
-                else
-                    FSharp.Reflection.FSharpValue.MakeUnion(some.Value, [| items.[0] |])
+            if items.Count = 0 then
+                null
             else
-                Reflection.makeList parts.ElementType (items :> obj seq)
+                FSharp.Reflection.FSharpValue.MakeUnion(some.Value, [| items.[0] |])
+        else
+            Reflection.makeList parts.ElementType (items :> obj seq)
 
-        return
-            fun (r: obj[]) ->
-                match valueOf r with
-                | Some k ->
-                    match groups.TryGetValue k with
-                    | true, g -> hold k g
-                    | _ -> hold k none
-                | None -> hold null none
-    }
+    found
+    |> Round.map (fun () ->
+        fun (r: obj[]) ->
+            match valueOf r with
+            | Some k ->
+                match groups.TryGetValue k with
+                | true, g -> hold k g
+                | _ -> hold k none
+            | None -> hold null none)
 
 /// A query that binds loads (loads.feature): the outer records, each in the
-/// row its `return` builds from it and what each load found for it.
+/// row its `return` builds from it and what each load found for it. What the
+/// outer records own and every load bound on them travel together, then the
+/// next level's (round-trips.feature).
 let readIncluding (s: Session) (model: Model) (p: Planner.Including) : Task<obj list> =
-    task {
-        let outerSchema = p.Outer.RootSchema
-        let! rows = query s (Sql.renderSelect s.Provider.Dialect p.Outer.Root) (readEntity outerSchema)
-        do! loadInto s rows p.Outer.Loads
+    let outerSchema = p.Outer.RootSchema
 
-        let batchSize =
-            match p.Strategy with
-            | LoadStrategy.BatchedByKeys n -> max 1 n
+    let batchSize =
+        match p.Strategy with
+        | LoadStrategy.BatchedByKeys n -> max 1 n
 
-        let lists = ResizeArray<obj[] -> obj>()
-
-        for l in p.Levels do
-            let! f = readLevel s model batchSize rows l
-            lists.Add f
-
-        return [ for r in rows -> p.Return.Build (outerSchema.Shape.Construct r) [| for f in lists -> f r |] ]
-    }
+    Round.rows s (Sql.renderSelect s.Provider.Dialect p.Outer.Root) (readEntity outerSchema)
+    |> Round.bind (fun rows ->
+        Round.both (loads s rows p.Outer.Loads) (p.Levels |> List.map (level s model batchSize rows) |> Round.all)
+        |> Round.map (fun ((), lists) -> [ for r in rows -> p.Return.Build (outerSchema.Shape.Construct r) [| for f in lists -> f r |] ]))
+    |> Round.run s
 
 // ---------------------------------------------------------------------------
 // Hand-written SQL
@@ -1126,7 +1141,7 @@ let rawRecords (s: Session) (model: Model) (t: Type) (cmd: Sql.Command) : Task<o
         match model.TrySchema t with
         | Some schema when schema.Assocs |> Array.exists (fun a -> a.Owned || a.Linked) ->
             let values = rows |> Seq.map (fun v -> v :?> obj[]) |> List.ofSeq
-            do! loadOwned s model schema values
+            do! Round.run s (loadOwned s model schema values)
             return values |> List.map schema.Shape.Construct
         | _ -> return List.ofSeq rows
     }

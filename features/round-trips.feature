@@ -1,16 +1,22 @@
-# Executable acceptance specification (Reqnroll): what one write sends travels
-# to the database together. Written before the implementation.
+# Executable acceptance specification (Reqnroll): what one write sends, and
+# what one level of loads reads, travels to the database together. Written
+# before the implementation.
 @implemented
-Feature: A write is one round trip
+Feature: A write, and each level of loads, is one round trip
   As an F# application developer whose database is across a network
-  I want the statements of a write of an aggregate sent together
-  So that a write waits for the network once, however many statements it sends
+  I want a write of an aggregate, and the loads of one level, sent together
+  So that a write or a read waits for the network once per level, however many
+  statements it sends
 
   A write of a record sends its own statement and every statement of what it
   owns and links as one round trip. An insert whose key the database generates
   is two: the record, then what it owns, which needs the key. Each record is
   its own statement, so that a broken constraint names its record
-  (`Lines[1].UnitPrice`), which one INSERT of several rows could not.
+  (`Lines[1].UnitPrice`), which one INSERT of several rows could not. Loads
+  that need only the keys of the records read before them travel together:
+  what a record owns and links, and the loads a query binds with `let!` and
+  `and!`. A load of what a load read waits for those records, so each level
+  is one round trip.
 
   The statements are the ones Plasm sends one at a time, and each is reported
   on its own, with the round trip it travelled in. Every statement's result is
@@ -22,6 +28,7 @@ Feature: A write is one round trip
 
   # Order = { Id: OrderId (generated); ...; Version: int; Lines: OrderLine list }
   # Sheet = { Id: SheetId (assigned); Name: string; Rows: SheetRow list }
+  # Card = { Id: CardId; Title: string; Comments: Comment list; Labels: Label list (linked) }
   Background:
     Given a configured relational database
     And mappings for Customers, Orders, OrderLines, Products, and Payments
@@ -63,6 +70,24 @@ Feature: A write is one round trip
       When I change its first Line's quantity and list the other Order's Line second
       Then the write is refused because Lines[1].Id does not belong to the Order
       And no Line has quantity 5
+
+  Rule: The loads of one level are one round trip
+
+    Scenario: A Card's comments and labels are read together
+      Given a Card with two comments and two labels
+      When I read the Cards with what they own and link
+      Then the read took 2 round trips
+      And the Card reads with its two comments and two labels
+
+    Scenario: Loads bound with let! and and! are read together
+      Given an Order with three Lines and two Payments
+      When I read the Orders binding their Payments with let! and their Customer with and!
+      Then the read took 2 round trips
+
+    Scenario: A load of what a load read waits for its records
+      Given an Order with three Lines and two Payments
+      When I read the Customers binding their Orders, each binding its Payments
+      Then the read took 3 round trips
 
   Rule: A provider that cannot send statements together sends them one at a time
 
