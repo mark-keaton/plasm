@@ -379,7 +379,11 @@ let unsupported (c: ProviderCapabilities) (s: CsState) : string option =
     | [] -> None
     | missing -> Some(String.concat "; " missing)
 
-let rec write (model: Model) (sess: Session) (s: CsState) : Task<Result<obj, Failure>> =
+let rec write (model: Model) (sess: Session) (s: CsState) : Task<Result<obj, Failure>> = writeWithin model sess [] s
+
+/// A write whose update or delete also requires `scope`: an owned child's
+/// owner, so that one command both checks and writes it.
+and private writeWithin (model: Model) (sess: Session) (scope: Sql.Expr list) (s: CsState) : Task<Result<obj, Failure>> =
     task {
       match unsupported sess.Provider.Dialect.Capabilities s with
       | Some op -> return Error(Unsupported op)
@@ -388,8 +392,8 @@ let rec write (model: Model) (sess: Session) (s: CsState) : Task<Result<obj, Fai
 
         match s.Action with
         | ChangeAction.Insert -> return! insert model sess schema s
-        | ChangeAction.Update -> return! update model sess schema s
-        | ChangeAction.Delete -> return! delete model sess schema s
+        | ChangeAction.Update -> return! update model sess schema scope s
+        | ChangeAction.Delete -> return! delete model sess schema scope s
     }
 
 and private insert model sess schema s =
@@ -433,7 +437,7 @@ and private insert model sess schema s =
                 return Ok(schema.Shape.Construct row)
     }
 
-and private update model sess schema s =
+and private update model sess schema (scope: Sql.Expr list) s =
     task {
         let key = (keyValue schema s).Value
         let version = versionValue schema s
@@ -450,15 +454,15 @@ and private update model sess schema s =
                 [ Sql.Binary("=", Sql.Column(schema.Table, vf.Column), Sql.Param(box v)) ]
             | _ -> [], []
 
-        let where = keyFilter schema key :: versionWhere @ originalWhere schema s
+        let where = keyFilter schema key :: scope @ versionWhere @ originalWhere schema s
 
         let! row =
             // Nothing to write on the row itself (relationship-only changes without
             // a version to bump). Re-read only when the full record is unknown.
             if sets.IsEmpty && (versionSet.IsEmpty || (s.Children.IsEmpty && s.Links.IsEmpty)) then
                 match s.Data with
-                | Some d -> Task.FromResult(Ok(Some(schema.Shape.Deconstruct d)))
-                | None ->
+                | Some d when scope.IsEmpty -> Task.FromResult(Ok(Some(schema.Shape.Deconstruct d)))
+                | _ ->
                     guarded sess schema s (fun () ->
                         task {
                             let select =
@@ -501,7 +505,7 @@ and private update model sess schema s =
             | Ok written -> return Ok(finish schema s (Array.copy row) written)
     }
 
-and private delete model sess schema s =
+and private delete model sess schema (scope: Sql.Expr list) s =
     task {
         let key = (keyValue schema s).Value
 
@@ -522,7 +526,7 @@ and private delete model sess schema s =
             Sql.renderDelete
                 sess.Provider.Dialect
                 { Table = schema.Table
-                  Where = keyFilter schema key :: versionWhere @ originalWhere schema s
+                  Where = keyFilter schema key :: scope @ versionWhere @ originalWhere schema s
                   Returning = [] }
 
         let! n = guarded sess schema s (fun () -> execute sess cmd)
@@ -678,29 +682,44 @@ and private writeChildList model sess (schema: SchemaInfo) (s: CsState) (parentK
                                     | ChangeAction.Insert -> return! write model sess (setField target child a.ForeignKey parentKey)
                                     | ChangeAction.Update
                                     | ChangeAction.Delete ->
-                                        // The child must belong to this parent.
+                                        // The child must belong to this parent. Its own write
+                                        // says so (the owner in its WHERE); only when it writes
+                                        // nothing does a read tell another parent's child from
+                                        // a stale one. A child deleted with what it owns is
+                                        // checked first, so nothing under it is written.
                                         let childKey = (keyValue target child).Value
 
-                                        let ownerCheck =
-                                            { Sql.select (Sql.Table(target.Table, target.Table)) with
-                                                Columns = [ Sql.Literal "1", "one" ]
-                                                Where = [ keyFilter target childKey; ownedBy ] }
+                                        let owned () =
+                                            task {
+                                                let ownerCheck =
+                                                    { Sql.select (Sql.Table(target.Table, target.Table)) with
+                                                        Columns = [ Sql.Literal "1", "one" ]
+                                                        Where = [ keyFilter target childKey; ownedBy ] }
 
-                                        let! owned = query sess (Sql.renderSelect sess.Provider.Dialect ownerCheck) ignore
+                                                let! rows = query sess (Sql.renderSelect sess.Provider.Dialect ownerCheck) ignore
+                                                return rows.Count > 0
+                                            }
 
-                                        if owned.Count = 0 then
-                                            return
-                                                Error(
-                                                    Invalid(
-                                                        Cs.addError
-                                                            child
-                                                            target.Key.Name
-                                                            FieldErrorKind.NotOwned
-                                                            $"{target.Name} {childKey} does not belong to this {schema.Name}"
-                                                    )
+                                        let notOwned () =
+                                            Error(
+                                                Invalid(
+                                                    Cs.addError
+                                                        child
+                                                        target.Key.Name
+                                                        FieldErrorKind.NotOwned
+                                                        $"{target.Name} {childKey} does not belong to this {schema.Name}"
                                                 )
+                                            )
+
+                                        if child.Action = ChangeAction.Delete && not (child.Children.IsEmpty && child.Links.IsEmpty) then
+                                            let! isOwned = owned ()
+                                            if not isOwned then return notOwned () else return! write model sess child
                                         else
-                                            return! write model sess child
+                                            match! writeWithin model sess [ ownedBy ] child with
+                                            | Error(Stale _) as stale ->
+                                                let! isOwned = owned ()
+                                                return if isOwned then stale else notOwned ()
+                                            | other -> return other
                                 }
 
                             match r with

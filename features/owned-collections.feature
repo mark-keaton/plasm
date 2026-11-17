@@ -53,6 +53,12 @@ Feature: An owned collection is a plain list, loaded and written with its owner
       Then the invoice_lines table holds "pen" 3 and "pad" 4 for that Invoice
       And the pen line kept its key
 
+    Scenario: A line that belongs to the Invoice is changed with one command
+      Given an Invoice "INV-1" with the lines "pen" 2 and "ink" 5
+      When I read it, then change only the pen to 3
+      Then the pen line's change is one command, which itself says the line belongs to the Invoice
+      And the invoice_lines table holds "pen" 3 and "ink" 5 for that Invoice
+
     Scenario: A line of another Invoice is refused, not copied
       Given Invoices "INV-1", "INV-2" and "INV-3", each with one line
       When I read them, then add the line of "INV-2" to "INV-1"

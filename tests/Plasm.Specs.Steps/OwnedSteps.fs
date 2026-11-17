@@ -209,6 +209,24 @@ type OwnedSteps(w: World) =
         }
         |> unit
 
+    [<StepDefinition("I read it, then change only the pen to 3")>]
+    member _.ChangePen() =
+        task {
+            let! read = readOne ()
+            let pen = read.Lines |> List.find (fun l -> l.Item = "pen")
+            let others = read.Lines |> List.filter (fun l -> l.Item <> "pen")
+            w.MarkCommands()
+            let! r = repo().Transact(read |> edit (fun i -> { i with Lines = { pen with Amount = 3m } :: others }))
+            ok r |> ignore
+        }
+        |> unit
+
+    [<StepDefinition("the pen line's change is one command, which itself says the line belongs to the Invoice")>]
+    member _.OnePenCommand() =
+        let lines = w.CommandsSinceMark |> List.map (fun e -> e.Sql) |> List.filter (fun q -> q.Contains "invoice_lines")
+        equal 1 lines.Length $"commands on invoice_lines: %A{lines}"
+        check (lines.[0].StartsWith "UPDATE" && lines.[0].Contains "\"invoice\" = ") lines.[0]
+
     [<StepDefinition("the pen line kept its key")>]
     member _.PenKept() =
         task {
