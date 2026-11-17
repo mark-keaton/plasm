@@ -336,6 +336,55 @@ type QuerySemanticsSteps(w: World) =
             (sql.Contains "ORDER BY (CASE \"t0\".\"status\" WHEN 'draft' THEN 0 WHEN 'published' THEN 1 WHEN 'cancelled' THEN 2 END)")
             $"the ordering is not by declaration position: {sql}"
 
+    // -- String functions ----------------------------------------------------
+
+    /// Names padded on both sides with each kind of whitespace .NET trims.
+    static member PaddedNames =
+        [ " Ada "
+          "\tBob\n"
+          "\u00A0Cy\u00A0"
+          "\u2003\u3000Dee\u2028\u0085"
+          "\r\v\fEve\u202F\u205F"
+          "Fay" ]
+
+    [<StepDefinition("Customers whose names are padded with spaces, tabs, line breaks and Unicode spaces")>]
+    member _.Padded() =
+        task {
+            for i, name in List.indexed QuerySemanticsSteps.PaddedNames do
+                let! _ = Seed.customer w.Db name $"padded{i}@example.com"
+                ()
+        }
+        |> unit
+
+    [<StepDefinition("^I read the Customers' names through (Trim|TrimStart|TrimEnd)$")>]
+    member _.Trimmed(f: string) =
+        task {
+            let! r =
+                match f with
+                | "Trim" -> w.Repo.All(plasm { for c in tableOf<Customer> do orderBy c.Email; select (c.Name, c.Name.Trim()) })
+                | "TrimStart" -> w.Repo.All(plasm { for c in tableOf<Customer> do orderBy c.Email; select (c.Name, c.Name.TrimStart()) })
+                | _ -> w.Repo.All(plasm { for c in tableOf<Customer> do orderBy c.Email; select (c.Name, c.Name.TrimEnd()) })
+
+            match r with
+            | Ok rows -> w.Set("trimmed", rows)
+            | Error e -> failwithf "the read failed: %A" e
+        }
+        |> unit
+
+    [<StepDefinition("^each name read equals (Trim|TrimStart|TrimEnd) of the stored name in F#$")>]
+    member _.TrimmedAre(f: string) =
+        let rows = w.Get<(string * string) list> "trimmed"
+        equal QuerySemanticsSteps.PaddedNames.Length rows.Length "names read"
+
+        for stored, read in rows do
+            let expected =
+                match f with
+                | "Trim" -> stored.Trim()
+                | "TrimStart" -> stored.TrimStart()
+                | _ -> stored.TrimEnd()
+
+            equal expected read $"{f} of %A{stored}"
+
     [<StepDefinition("^I read the Customers whose name (=|<>) a captured null string$")>]
     member _.CapturedNull(op: string) =
         task {

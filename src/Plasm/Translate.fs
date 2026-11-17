@@ -331,6 +331,11 @@ let rec isStable (e: Expr) =
     | Coerce(x, _) -> isStable x
     | _ -> false
 
+/// Every character .NET's `Trim` removes (`Char.IsWhiteSpace`), for the SQL
+/// trims (query-semantics.feature).
+let private dotnetWhiteSpace: obj =
+    box (String([| for c in 0 .. 0xFFFF do if Char.IsWhiteSpace(char c) then yield char c |]))
+
 /// Evaluates a closed expression (captured values, literals, constructors).
 let rec private evalDirect (e: Expr) : obj option =
     match e with
@@ -774,7 +779,10 @@ let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
             | "ToLowerInvariant" -> Sql.Func("lower", [ scalar ctx s ])
             | "ToUpper"
             | "ToUpperInvariant" -> Sql.Func("upper", [ scalar ctx s ])
-            | "Trim" -> Sql.Func("btrim", [ scalar ctx s ])
+            // .NET trims every Char.IsWhiteSpace character, not only spaces.
+            | "Trim" -> Sql.Func("btrim", [ scalar ctx s; Sql.Param dotnetWhiteSpace ])
+            | "TrimStart" -> Sql.Func("ltrim", [ scalar ctx s; Sql.Param dotnetWhiteSpace ])
+            | "TrimEnd" -> Sql.Func("rtrim", [ scalar ctx s; Sql.Param dotnetWhiteSpace ])
             | n -> fail e $"string method '{n}' has no SQL translation"
         | PropertyGet(Some s, p, []) when s.Type = typeof<string> && p.Name = "Length" -> Sql.Func("char_length", [ scalar ctx s ])
         | Call(None, mi, args) when isAggCall mi -> aggregate ctx e mi args

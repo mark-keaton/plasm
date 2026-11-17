@@ -161,3 +161,20 @@ Feature: Queries keep their F# meaning
       Given Orders for several Customers
       When I read the Orders by id with skip 1, then take 2
       Then the second and third Orders by id are read, as F# pages them
+
+  Rule: String functions trim what .NET trims
+
+    `Trim`, `TrimStart` and `TrimEnd` remove every character .NET counts as
+    whitespace (`Char.IsWhiteSpace`): tabs, line breaks, a no-break space and
+    the other Unicode spaces, not only the space character.
+
+    Scenario Outline: <function> trims as .NET does
+      Given Customers whose names are padded with spaces, tabs, line breaks and Unicode spaces
+      When I read the Customers' names through <function>
+      Then each name read equals <function> of the stored name in F#
+
+      Examples:
+        | function  |
+        | Trim      |
+        | TrimStart |
+        | TrimEnd   |
