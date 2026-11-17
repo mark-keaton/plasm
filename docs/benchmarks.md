@@ -125,6 +125,28 @@ Plasm and EF split query now read the same rows in the same number of commands.
 EF single query multiplies lines by succeeded payments per order (10 × 3 = 30
 rows per order), and in the siblings case the full 10 × 10 cross product.
 
+### Time and allocations with `let!` loads (BenchmarkDotNet and `counts`, 2026-11-17, commit 52ea296)
+
+The page's payments are bound with `let!` (`loads.feature`). The machine was
+otherwise idle. BenchmarkDotNet, mean of 10 iterations after 3 warm-ups:
+
+| Page of | Plasm | EF single query | EF split query |
+|---:|---|---|---|
+| 20 | 1.37 ms, 254 KB | 2.75 ms (2.0×), 502 KB | 3.83 ms (2.8×), 240 KB |
+| 100 | 2.38 ms, 863 KB | 14.44 ms (6.1×), 2,209 KB | 11.00 ms (4.6×), 808 KB |
+| 1,000 | 17.22 ms (±1.45), 7,790 KB | 76.40 ms (4.5×), 21,408 KB | 24.16 ms (1.4×), 7,669 KB |
+
+| Siblings | Mean | Allocated |
+|---|---:|---:|
+| Plasm, query built per call | 649 µs | 526 KB |
+| Plasm, prepared | 415 µs | 71 KB |
+| EF single query | 437 µs | 128 KB |
+| EF split query | 488 µs | 91 KB |
+
+`counts` agrees (Plasm 2.0, 4.2, 13.8 ms; EF split 4.8, 14.5, 22.6 ms), with
+the commands and rows of the table above unchanged: binding the payments with
+`let!` sends the same three commands as `including` did.
+
 ### Time and allocations with `including` (`counts`, 2026-11-16)
 
 Measured when the payments were written with `including`, since replaced by a
