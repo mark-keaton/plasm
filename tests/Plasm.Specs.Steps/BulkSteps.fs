@@ -109,7 +109,7 @@ type BulkSteps(w: World) =
     member _.OnlyMentioned() =
         let sql = (w.CommandsSinceMark |> List.exactlyOne).Sql
         let set = sql.Substring(sql.IndexOf " SET ", sql.IndexOf " WHERE " - sql.IndexOf " SET ")
-        equal " SET \"total\" = \"orders\".\"total\" + @p0, \"version\" = \"orders\".\"version\" + @p1" set "SET clause"
+        equal " SET \"total\" = \"orders\".\"total\" + @p0, \"version\" = \"orders\".\"version\" + 1" set "SET clause"
 
     // Scenario: Bulk updates respect optimistic concurrency
 

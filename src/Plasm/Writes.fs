@@ -450,7 +450,7 @@ and private update model sess schema (scope: Sql.Expr list) s =
         let versionSet, versionWhere =
             match schema.Version, version with
             | Some vf, Some v ->
-                [ vf.Column, Sql.Binary("+", Sql.Column(schema.Table, vf.Column), Sql.Param(box 1)) ],
+                [ vf.Column, Sql.Binary("+", Sql.Column(schema.Table, vf.Column), Sql.Literal "1") ],
                 [ Sql.Binary("=", Sql.Column(schema.Table, vf.Column), Sql.Param(box v)) ]
             | _ -> [], []
 

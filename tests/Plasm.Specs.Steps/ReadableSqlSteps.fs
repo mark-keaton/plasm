@@ -125,3 +125,78 @@ type ReadableSqlSteps(w: World) =
     member _.Delete(expected: string) =
         let deletes = w.Get<string list> "readableWrites" |> List.filter (fun q -> q.StartsWith "DELETE" && q.Contains "\"orders\"")
         equal [ expected ] deletes "the delete of the Order"
+
+    // -- Nothing the result does not need ------------------------------------------
+
+    [<StepDefinition("^I read the one Customer named \"Ada\"$")>]
+    member _.One() =
+        task {
+            w.MarkCommands()
+            let! r = w.Repo.One(plasm { for c in tableOf<Customer> do where (c.Name = "Ada") })
+            ok r |> ignore
+            w.Set("readableCommands", w.CommandsSinceMark |> List.map (fun e -> e.Sql))
+        }
+        |> unit
+
+    [<StepDefinition("^I ask whether a Customer is named \"Ada\"$")>]
+    member _.Exists() =
+        task {
+            w.MarkCommands()
+            let! r = w.Repo.Exists(plasm { for c in tableOf<Customer> do where (c.Name = "Ada") })
+            ok r |> ignore
+            w.Set("readableCommands", w.CommandsSinceMark |> List.map (fun e -> e.Sql))
+        }
+        |> unit
+
+    [<StepDefinition("the command is:")>]
+    member _.CommandIs(expected: string) =
+        equal [ expected.Trim() ] (w.Get<string list> "readableCommands") "commands"
+
+    [<StepDefinition("I explain a page of the Customers by email")>]
+    member _.UniquePage() =
+        explain (w.Repo.Explain(plasm { for c in tableOf<Customer> do orderBy c.Email; take 10 }))
+
+    [<StepDefinition("I explain a page of the Orders joined with their Customers, by Order id")>]
+    member _.JoinedPage() =
+        explain (
+            w.Repo.Explain(
+                plasm {
+                    for o in tableOf<Order> do
+                    join c in tableOf<Customer> on (o.CustomerId = Some c.Id)
+                    orderBy o.Id
+                    take 10
+                }
+            )
+        )
+
+    [<StepDefinition("^the SQL ends \"(.*)\"$")>]
+    member _.SqlEnds(tail: string) =
+        let sql = (plan ()).Sql
+        check (sql.EndsWith tail) sql
+
+    [<StepDefinition("I explain the Orders binding the Customer each refers to")>]
+    member _.ByKey() =
+        explain (
+            w.Repo.Explain(
+                plasm {
+                    for o in tableOf<Order> do
+                    let! customer = referredBy<Customer> o
+                    return {| Order = o; Customer = customer |}
+                }
+            )
+        )
+
+    [<StepDefinition("the Customers load's SQL is:")>]
+    member _.CustomersLoad(expected: string) =
+        let load = (plan ()).Loads |> List.find (fun l -> l.Target = "Customer")
+        equal (expected.Trim()) load.Sql "the Customers load's SQL"
+
+    [<StepDefinition("^the update sets (\".*)$")>]
+    member _.UpdateSets(text: string) =
+        let update = w.Get<string list> "readableWrites" |> List.find (fun q -> q.StartsWith "UPDATE")
+        check (update.Contains text) update
+
+    [<StepDefinition("I explain the Orders all of whose lines cost more than 5")>]
+    member _.ForAll() =
+        explain (w.Repo.Explain(plasm { for o in tableOf<Order> do where (o.Lines |> List.forall (fun l -> l.UnitPrice > 5m)) }))
+

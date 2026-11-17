@@ -267,7 +267,7 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "changes"
                 "The order is read with its lines. The update sets only what differs from the record read, here the total, and requires the version the caller saw. The line left out is checked to belong to the order, then deleted. Cancelling writes the status and its reason, the two columns of the case."
-                [ "SET \"total\" = @p0, \"version\" = \"orders\".\"version\" + @p1"
+                [ "SET \"total\" = @p0, \"version\" = \"orders\".\"version\" + 1"
                   "\"orders\".\"version\" = @p"
                   "DELETE FROM \"order_lines\""
                   "SET \"status\" = @p0, \"status_reason\" = @p1" ]
@@ -374,7 +374,7 @@ let run (connectionString: string) (outputPath: string) =
             capture
                 "bulk"
                 "One UPDATE changes every matching draft. Only the assigned field is in the SET clause, as its two columns, and the version is incremented. The upsert is one INSERT; a row whose SKU already exists is updated from the incoming row (excluded) instead, and both kinds come back through RETURNING."
-                [ "SET \"status\" = @p0, \"status_reason\" = @p1, \"version\" = \"orders\".\"version\" + @p2"
+                [ "SET \"status\" = @p0, \"status_reason\" = @p1, \"version\" = \"orders\".\"version\" + 1"
                   "\"orders\".\"placed_at\" < @p"
                   "ON CONFLICT (\"sku\") DO UPDATE"
                   "\"name\" = \"excluded\".\"name\"" ]

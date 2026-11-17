@@ -131,7 +131,10 @@ type internal QueryDef =
       Distinct: bool
       /// The row `return` builds from the record and its loads
       /// (loads.feature); None when the query binds no loads.
-      Return: ReturnDef option }
+      Return: ReturnDef option
+      /// `repo.One`'s own limit (readable-sql.feature): any two rows tell a
+      /// second match, so they need no order, and the 2 is Plasm's, not a value.
+      ReadsTwo: bool }
 
     member d.Paged =
         d.Limit.IsSome || d.Offset.IsSome || d.LimitArg.IsSome || d.OffsetArg.IsSome
@@ -152,7 +155,8 @@ type internal QueryDef =
           Problems = []
           Includings = []
           Distinct = false
-          Return = None }
+          Return = None
+          ReadsTwo = false }
 
 /// Something that can describe a query for display: a `Repo`.
 type internal IQueryDescriber =
@@ -852,21 +856,23 @@ module TieQueries =
 module internal OneRow =
 
     /// At most two rows (enough to detect a second match), never more than the
-    /// query's own limit, ordered by key when the query has no ordering.
+    /// query's own limit. Any two rows tell a second match, so no order is
+    /// added, except to a query that skips, whose skip needs one.
     let limit (model: Model) (d: QueryDef) : QueryDef =
-        let limited =
-            match d.Limit, d.LimitArg with
-            | Some n, _ when n <= 2 -> d
-            | _, Some _ -> d // a prepared take: checked on the rows returned
-            | _ -> { d with Limit = Some 2; Template = None }
+        match d.Limit, d.LimitArg with
+        | Some n, _ when n <= 2 -> d
+        | _, Some _ -> d // a prepared take: checked on the rows returned
+        | _ ->
+            let limited = { d with Limit = Some 2; Template = None; ReadsTwo = true }
+            let skips = limited.Offset.IsSome || limited.OffsetArg.IsSome
 
-        if not (obj.ReferenceEquals(limited, d)) && limited.Orders.IsEmpty then
-            match model.TrySchema limited.Root with
-            | Some s ->
-                let v = Quotations.Var("x", limited.Root)
-                let key = Quotations.Expr.Lambda(v, Quotations.Expr.PropertyGet(Quotations.Expr.Var v, s.Shape.Fields.[s.Key.Index]))
-                { limited with Orders = [ key, SortDirection.Ascending ] }
-            | None -> limited
-        else
-            limited
+            if skips && limited.Orders.IsEmpty then
+                match model.TrySchema limited.Root with
+                | Some s ->
+                    let v = Quotations.Var("x", limited.Root)
+                    let key = Quotations.Expr.Lambda(v, Quotations.Expr.PropertyGet(Quotations.Expr.Var v, s.Shape.Fields.[s.Key.Index]))
+                    { limited with Orders = [ key, SortDirection.Ascending ] }
+                | None -> limited
+            else
+                limited
 

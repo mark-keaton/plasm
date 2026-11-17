@@ -1322,13 +1322,18 @@ and relationship ctx (whole: Expr) (pv: Var) (body: Expr) (assoc: Expr) (all: bo
                           Optional = false }
                     ) }
 
-        let pred = predicate inner body
-
+        // For all, no row may fail it: F#'s `not` of it, which is the opposite
+        // comparison where nothing can be NULL and IS NOT TRUE where it can.
         let condition =
             if all then
-                Sql.Not(Sql.Func("COALESCE", [ pred; Sql.Literal "FALSE" ]))
+                let notOf =
+                    match <@ not true @> with
+                    | Call(None, mi, _) -> mi
+                    | _ -> failwith "unreachable"
+
+                predicate inner (Expr.Call(notOf, [ body ]))
             else
-                pred
+                predicate inner body
 
         let sub =
             { Sql.select (Sql.Table(target.Table, alias)) with
@@ -1496,14 +1501,36 @@ let private appendKey (orders: Sql.OrderItem list) (key: Sql.Expr) =
               Desc = false
               NullsFirst = None } ]
 
-/// Ensures a deterministic order for pagination: the primary key is appended as
-/// a final tiebreaker unless already present.
-let stableOrder (alias: string) (s: SchemaInfo) (orders: Sql.OrderItem list) =
-    appendKey orders (Sql.Column(alias, s.Key.Column))
+/// Whether an ordering already tells a source's rows apart: it orders by the
+/// key, or by a column that is unique and never NULL (readable-sql.feature).
+let private tellsApart (alias: string) (s: SchemaInfo) (orders: Sql.OrderItem list) =
+    orders
+    |> List.exists (fun o ->
+        o.Expr = Sql.Column(alias, s.Key.Column)
+        || s.Fields |> Array.exists (fun f -> f.Unique && not f.IsOption && f.Parts.Length = 1 && o.Expr = Sql.Column(alias, f.Column)))
 
-/// Over joined rows, a row is identified by the keys of every source.
-let private stableOrderOver (space: Binding list) orders =
-    space |> List.fold (fun os b -> appendKey os (keyOf b)) orders
+/// Ensures a deterministic order for pagination: the primary key is appended as
+/// a final tiebreaker unless the ordering already tells the rows apart.
+let stableOrder (alias: string) (s: SchemaInfo) (orders: Sql.OrderItem list) =
+    if tellsApart alias s orders then orders else appendKey orders (Sql.Column(alias, s.Key.Column))
+
+/// Over joined rows, a row is identified by the keys of every source, but a
+/// source joined on its own key has at most one row for each row before it,
+/// so it needs no tiebreaker of its own.
+let private stableOrderOver (space: Binding list) (joins: Sql.Join list) orders =
+    space
+    |> List.fold
+        (fun os b ->
+            let byOwnKey =
+                joins
+                |> List.exists (fun j ->
+                    j.Alias = b.Alias
+                    && (match j.On with
+                        | Sql.Binary("=", x, y) -> x = keyOf b || y = keyOf b
+                        | _ -> false))
+
+            if byOwnKey || tellsApart b.Alias b.Schema os then os else appendKey os (keyOf b))
+        orders
 
 let wrap f =
     try
@@ -1582,6 +1609,8 @@ let private limitExprs (def: QueryDef) =
     let limit =
         match def.LimitArg with
         | Some i -> Some(fromArg i)
+        // repo.One's 2 is Plasm's own, written (readable-sql.feature).
+        | None when def.ReadsTwo -> Some(Sql.Literal "2")
         | None -> def.Limit |> Option.map Sql.count
 
     let offset =
@@ -1606,11 +1635,11 @@ let rootSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Selec
         let ctx = newCtxWith model vol
         let wheres, orders = translateBody ctx def "t0" schema
 
-        if def.Paged && orders.IsEmpty then
+        if def.Paged && orders.IsEmpty && not def.ReadsTwo then
             invalid
                 $"take/skip on {schema.Name} requires an explicit ordering; pages are not stable without one (the primary key is appended as a tiebreaker to any ordering you give)"
 
-        let orders = if def.Paged then stableOrder "t0" schema orders else orders
+        let orders = if def.Paged && not def.ReadsTwo then stableOrder "t0" schema orders else orders
         let limit, offset = limitExprs def
 
         { Sql.select (Sql.Table(schema.Table, "t0")) with
@@ -1705,14 +1734,14 @@ let private core (model: Model) (vol: bool ref) (def: QueryDef) : Core =
 
             o)
 
-    if def.Paged && orders.IsEmpty then
+    if def.Paged && orders.IsEmpty && not def.ReadsTwo then
         invalid
             $"take/skip on {schema.Name} requires an explicit ordering; pages are not stable without one (the key of every source is appended as a tiebreaker)"
 
     let orders =
-        if not def.Paged then orders
+        if not def.Paged || def.ReadsTwo then orders
         elif grouped then groups |> List.fold (fun os g -> appendKey os g) orders
-        else stableOrderOver space orders
+        else stableOrderOver space joins orders
 
     let limit, offset = limitExprs def
 
@@ -1750,11 +1779,11 @@ let existsSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Sel
         if def.Paged || c.Grouped then
             { Sql.select (Sql.Subquery(c.Select one, "q")) with
                 Columns = one
-                Limit = Some(Sql.count 1) }
+                Limit = Some(Sql.Literal "1") }
         else
             { c.Select one with
                 OrderBy = []
-                Limit = Some(Sql.count 1) })
+                Limit = Some(Sql.Literal "1") })
 
 // ---------------------------------------------------------------------------
 // Projections (and joined queries)
@@ -2379,7 +2408,8 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
             if not innerDef.Paged then
                 { filtered with
                     Columns = entityColumns "t0" target
-                    OrderBy = ranked }
+                    // By the key, each record has at most one: nothing to order.
+                    OrderBy = if matchField.Name = target.Key.Name then [] else ranked }
             else
                 // Per outer value: number each one's rows in the inner order.
                 let plain =
@@ -2388,18 +2418,9 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
 
                 let numbered = { filtered with Columns = plain @ [ Sql.RowNumber(matchColumn, ranked), "__rn" ] }
 
-                // The outer query reads the numbered rows' columns of the same names.
-                let rec outer (x: Sql.Expr) =
-                    match x with
-                    | Sql.Column("t0", n) -> Sql.Column("ranked", n)
-                    | Sql.Func(f, xs) -> Sql.Func(f, List.map outer xs)
-                    | Sql.Binary(op, a, b) -> Sql.Binary(op, outer a, outer b)
-                    | Sql.Cast(a, t, arr) -> Sql.Cast(outer a, t, arr)
-                    | Sql.AsText a -> Sql.AsText(outer a)
-                    | Sql.Case(bs, o) -> Sql.Case(bs |> List.map (fun (c, v) -> outer c, outer v), outer o)
-                    | x -> x
-
-                page numbered (entityColumns "ranked" target) (ranked |> List.map (fun o -> { o with Expr = outer o.Expr }))
+                // Each record's rows keep their order by number; the records'
+                // rows need no order among each other.
+                page numbered (entityColumns "ranked" target) [ { Expr = Sql.Column("ranked", "__rn"); Desc = false; NullsFirst = None } ]
 
         { Outer = { def with Includings = [] }
           OuterField = outerField
@@ -2469,7 +2490,7 @@ let private assignments (ctx: Ctx) (schema: SchemaInfo) (row: Var) (body: Expr) 
 
     let version =
         match schema.Version with
-        | Some v -> [ v.Column, Sql.Binary("+", Sql.Column(schema.Table, v.Column), Sql.Param(box 1)) ]
+        | Some v -> [ v.Column, Sql.Binary("+", Sql.Column(schema.Table, v.Column), Sql.Literal "1") ]
         | None -> []
 
     sets @ version

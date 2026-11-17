@@ -445,7 +445,7 @@ type EleganceSteps(w: World) =
     member _.OnlyExplicit() =
         let update = w.CommandsSinceMark |> List.find (fun c -> c.Sql.StartsWith "UPDATE")
         let setClause = update.Sql.Substring(update.Sql.IndexOf " SET ", update.Sql.IndexOf " WHERE " - update.Sql.IndexOf " SET ")
-        equal " SET \"status\" = @p0, \"version\" = \"orders\".\"version\" + @p1" setClause "SET clause"
+        equal " SET \"status\" = @p0, \"version\" = \"orders\".\"version\" + 1" setClause "SET clause"
 
     // Scenario: Duplicate child identities are rejected
 

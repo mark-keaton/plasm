@@ -216,11 +216,10 @@ window.PLASM_SQL = {
     "commands": [
       {
         "parameters": [
-          "@p0 = 2",
-          "@p1 = 2"
+          "@p0 = 2"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022id\u0022 = @p0\nORDER BY \u0022t0\u0022.\u0022id\u0022\nLIMIT @p1"
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022id\u0022 = @p0\nLIMIT 2"
       },
       {
         "parameters": [
@@ -232,12 +231,11 @@ window.PLASM_SQL = {
       {
         "parameters": [
           "@p0 = 9.99",
-          "@p1 = 1",
-          "@p2 = 2",
-          "@p3 = 1"
+          "@p1 = 2",
+          "@p2 = 1"
         ],
         "rows": 1,
-        "sql": "UPDATE \u0022orders\u0022\nSET \u0022total\u0022 = @p0, \u0022version\u0022 = \u0022orders\u0022.\u0022version\u0022 \u002B @p1\nWHERE \u0022orders\u0022.\u0022id\u0022 = @p2 AND \u0022orders\u0022.\u0022version\u0022 = @p3\nRETURNING \u0022id\u0022, \u0022customer_id\u0022, \u0022status\u0022, \u0022status_reason\u0022, \u0022total\u0022, \u0022placed_at\u0022, \u0022version\u0022"
+        "sql": "UPDATE \u0022orders\u0022\nSET \u0022total\u0022 = @p0, \u0022version\u0022 = \u0022orders\u0022.\u0022version\u0022 \u002B 1\nWHERE \u0022orders\u0022.\u0022id\u0022 = @p1 AND \u0022orders\u0022.\u0022version\u0022 = @p2\nRETURNING \u0022id\u0022, \u0022customer_id\u0022, \u0022status\u0022, \u0022status_reason\u0022, \u0022total\u0022, \u0022placed_at\u0022, \u0022version\u0022"
       },
       {
         "parameters": [
@@ -253,11 +251,10 @@ window.PLASM_SQL = {
       },
       {
         "parameters": [
-          "@p0 = 2",
-          "@p1 = 2"
+          "@p0 = 2"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022id\u0022 = @p0\nORDER BY \u0022t0\u0022.\u0022id\u0022\nLIMIT @p1"
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022id\u0022 = @p0\nLIMIT 2"
       },
       {
         "parameters": [
@@ -270,17 +267,16 @@ window.PLASM_SQL = {
         "parameters": [
           "@p0 = cancelled",
           "@p1 = changed my mind",
-          "@p2 = 1",
-          "@p3 = 2",
-          "@p4 = 2"
+          "@p2 = 2",
+          "@p3 = 2"
         ],
         "rows": 1,
-        "sql": "UPDATE \u0022orders\u0022\nSET \u0022status\u0022 = @p0, \u0022status_reason\u0022 = @p1, \u0022version\u0022 = \u0022orders\u0022.\u0022version\u0022 \u002B @p2\nWHERE \u0022orders\u0022.\u0022id\u0022 = @p3 AND \u0022orders\u0022.\u0022version\u0022 = @p4\nRETURNING \u0022id\u0022, \u0022customer_id\u0022, \u0022status\u0022, \u0022status_reason\u0022, \u0022total\u0022, \u0022placed_at\u0022, \u0022version\u0022"
+        "sql": "UPDATE \u0022orders\u0022\nSET \u0022status\u0022 = @p0, \u0022status_reason\u0022 = @p1, \u0022version\u0022 = \u0022orders\u0022.\u0022version\u0022 \u002B 1\nWHERE \u0022orders\u0022.\u0022id\u0022 = @p2 AND \u0022orders\u0022.\u0022version\u0022 = @p3\nRETURNING \u0022id\u0022, \u0022customer_id\u0022, \u0022status\u0022, \u0022status_reason\u0022, \u0022total\u0022, \u0022placed_at\u0022, \u0022version\u0022"
       }
     ],
     "empty": null,
     "marks": [
-      "SET \u0022total\u0022 = @p0, \u0022version\u0022 = \u0022orders\u0022.\u0022version\u0022 \u002B @p1",
+      "SET \u0022total\u0022 = @p0, \u0022version\u0022 = \u0022orders\u0022.\u0022version\u0022 \u002B 1",
       "\u0022orders\u0022.\u0022version\u0022 = @p",
       "DELETE FROM \u0022order_lines\u0022",
       "SET \u0022status\u0022 = @p0, \u0022status_reason\u0022 = @p1"
@@ -299,11 +295,10 @@ window.PLASM_SQL = {
       },
       {
         "parameters": [
-          "@p0 = 1",
-          "@p1 = 2"
+          "@p0 = 1"
         ],
         "rows": 1,
-        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022id\u0022 = @p0\nORDER BY \u0022t0\u0022.\u0022id\u0022\nLIMIT @p1"
+        "sql": "SELECT\n    \u0022t0\u0022.\u0022id\u0022,\n    \u0022t0\u0022.\u0022customer_id\u0022,\n    \u0022t0\u0022.\u0022status\u0022,\n    \u0022t0\u0022.\u0022status_reason\u0022,\n    \u0022t0\u0022.\u0022total\u0022,\n    \u0022t0\u0022.\u0022placed_at\u0022,\n    \u0022t0\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022t0\u0022\nWHERE \u0022t0\u0022.\u0022id\u0022 = @p0\nLIMIT 2"
       },
       {
         "parameters": [
@@ -317,11 +312,10 @@ window.PLASM_SQL = {
           "@p0 = cancelled",
           "@p1 = too late",
           "@p2 = 1",
-          "@p3 = 1",
-          "@p4 = 1"
+          "@p3 = 1"
         ],
         "rows": 0,
-        "sql": "UPDATE \u0022orders\u0022\nSET \u0022status\u0022 = @p0, \u0022status_reason\u0022 = @p1, \u0022version\u0022 = \u0022orders\u0022.\u0022version\u0022 \u002B @p2\nWHERE \u0022orders\u0022.\u0022id\u0022 = @p3 AND \u0022orders\u0022.\u0022version\u0022 = @p4\nRETURNING \u0022id\u0022, \u0022customer_id\u0022, \u0022status\u0022, \u0022status_reason\u0022, \u0022total\u0022, \u0022placed_at\u0022, \u0022version\u0022"
+        "sql": "UPDATE \u0022orders\u0022\nSET \u0022status\u0022 = @p0, \u0022status_reason\u0022 = @p1, \u0022version\u0022 = \u0022orders\u0022.\u0022version\u0022 \u002B 1\nWHERE \u0022orders\u0022.\u0022id\u0022 = @p2 AND \u0022orders\u0022.\u0022version\u0022 = @p3\nRETURNING \u0022id\u0022, \u0022customer_id\u0022, \u0022status\u0022, \u0022status_reason\u0022, \u0022total\u0022, \u0022placed_at\u0022, \u0022version\u0022"
       }
     ],
     "empty": "isLucky o.Total: no command was sent; translation failed first.",
@@ -437,12 +431,11 @@ window.PLASM_SQL = {
         "parameters": [
           "@p0 = cancelled",
           "@p1 = expired",
-          "@p2 = 1",
-          "@p3 = draft",
-          "@p4 = 11/14/2026 10:00:00"
+          "@p2 = draft",
+          "@p3 = 11/14/2026 10:00:00"
         ],
         "rows": 1,
-        "sql": "UPDATE \u0022orders\u0022\nSET \u0022status\u0022 = @p0, \u0022status_reason\u0022 = @p1, \u0022version\u0022 = \u0022orders\u0022.\u0022version\u0022 \u002B @p2\nWHERE \u0022orders\u0022.\u0022status\u0022 = @p3 AND \u0022orders\u0022.\u0022placed_at\u0022 \u003C @p4"
+        "sql": "UPDATE \u0022orders\u0022\nSET \u0022status\u0022 = @p0, \u0022status_reason\u0022 = @p1, \u0022version\u0022 = \u0022orders\u0022.\u0022version\u0022 \u002B 1\nWHERE \u0022orders\u0022.\u0022status\u0022 = @p2 AND \u0022orders\u0022.\u0022placed_at\u0022 \u003C @p3"
       },
       {
         "parameters": [
@@ -457,7 +450,7 @@ window.PLASM_SQL = {
     ],
     "empty": null,
     "marks": [
-      "SET \u0022status\u0022 = @p0, \u0022status_reason\u0022 = @p1, \u0022version\u0022 = \u0022orders\u0022.\u0022version\u0022 \u002B @p2",
+      "SET \u0022status\u0022 = @p0, \u0022status_reason\u0022 = @p1, \u0022version\u0022 = \u0022orders\u0022.\u0022version\u0022 \u002B 1",
       "\u0022orders\u0022.\u0022placed_at\u0022 \u003C @p",
       "ON CONFLICT (\u0022sku\u0022) DO UPDATE",
       "\u0022name\u0022 = \u0022excluded\u0022.\u0022name\u0022"
@@ -533,7 +526,7 @@ window.PLASM_SQL = {
           "@p0 = [1, 2]"
         ],
         "rows": 3,
-        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022, \u0022t0\u0022.\u0022name\u0022, \u0022j\u0022.\u0022article_id\u0022 AS \u0022__owner\u0022\nFROM \u0022tags\u0022 AS \u0022t0\u0022\nINNER JOIN \u0022article_tags\u0022 AS \u0022j\u0022 ON \u0022j\u0022.\u0022tag_id\u0022 = \u0022t0\u0022.\u0022id\u0022\nWHERE \u0022j\u0022.\u0022article_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022name\u0022, \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022, \u0022t0\u0022.\u0022name\u0022, \u0022j\u0022.\u0022article_id\u0022 AS \u0022__owner\u0022\nFROM \u0022tags\u0022 AS \u0022t0\u0022\nINNER JOIN \u0022article_tags\u0022 AS \u0022j\u0022 ON \u0022j\u0022.\u0022tag_id\u0022 = \u0022t0\u0022.\u0022id\u0022\nWHERE \u0022j\u0022.\u0022article_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022name\u0022"
       },
       {
         "parameters": [
@@ -578,7 +571,7 @@ window.PLASM_SQL = {
           "@p0 = [1]"
         ],
         "rows": 2,
-        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022, \u0022t0\u0022.\u0022name\u0022, \u0022j\u0022.\u0022article_id\u0022 AS \u0022__owner\u0022\nFROM \u0022tags\u0022 AS \u0022t0\u0022\nINNER JOIN \u0022article_tags\u0022 AS \u0022j\u0022 ON \u0022j\u0022.\u0022tag_id\u0022 = \u0022t0\u0022.\u0022id\u0022\nWHERE \u0022j\u0022.\u0022article_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022name\u0022, \u0022t0\u0022.\u0022id\u0022"
+        "sql": "SELECT \u0022t0\u0022.\u0022id\u0022, \u0022t0\u0022.\u0022name\u0022, \u0022j\u0022.\u0022article_id\u0022 AS \u0022__owner\u0022\nFROM \u0022tags\u0022 AS \u0022t0\u0022\nINNER JOIN \u0022article_tags\u0022 AS \u0022j\u0022 ON \u0022j\u0022.\u0022tag_id\u0022 = \u0022t0\u0022.\u0022id\u0022\nWHERE \u0022j\u0022.\u0022article_id\u0022 = ANY(@p0)\nORDER BY \u0022t0\u0022.\u0022name\u0022"
       }
     ],
     "empty": null,
