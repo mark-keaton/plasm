@@ -9,44 +9,9 @@ using HotChocolate.Resolvers;
 using HotChocolate.Types.Pagination;
 using Kanban;
 using Kanban.Data;
-using Npgsql;
 using Plasm.HotChocolate;
 
-// Started by a scenario (KANBAN_EXIT_WITH_STDIN=1): exit when the test
-// process that holds this host's standard input goes, so no host outlives a
-// test run that died.
-if (Environment.GetEnvironmentVariable("KANBAN_EXIT_WITH_STDIN") == "1")
-    _ = Task.Run(() =>
-    {
-        Console.In.ReadToEnd();
-        Environment.Exit(0);
-    });
-
-var builder = WebApplication.CreateBuilder(args);
-var connectionString = builder.Configuration.GetConnectionString("Kanban")
-    ?? throw new InvalidOperationException("Set the connection string 'Kanban' (ConnectionStrings:Kanban).");
-
-// KANBAN_SQL=1 writes each command's SQL to standard output, one line each.
-Action<string>? onSql = Environment.GetEnvironmentVariable("KANBAN_SQL") == "1"
-    ? sql => Console.WriteLine("SQL: " + sql.Replace('\n', ' '))
-    : null;
-var dataSource = NpgsqlDataSource.Create(connectionString);
-// Opening checks every query, the tables, and every declared card field.
-var kanban = await KanbanData.OpenAsync(dataSource, onSql!, CancellationToken.None);
-builder.Services.AddSingleton(kanban);
-builder.Services
-    .AddGraphQLServer()
-    .AddQueryType<Query>()
-    .AddTypeExtension<Boards>()
-    .AddTypeExtension<BoardCards>()
-    .AddDataLoader<BoardCardsLoader>()
-    .AddPlasmFiltering()
-    .AddPlasmSorting()
-    .AddPlasmUnion<StageView>();
-
-var app = builder.Build();
-app.MapGraphQL();
-app.Run();
+namespace Kanban.Host;
 
 public class Query
 {
@@ -117,5 +82,3 @@ static class Paging
 public class CardFilter() : PlasmFilterInputType<Card>("CardFilterInput", CardFields.all);
 public class CardSort() : PlasmSortInputType<Card>("CardSortInput", CardFields.all);
 
-/// Visible to the scenarios, which start this program.
-public partial class Program;

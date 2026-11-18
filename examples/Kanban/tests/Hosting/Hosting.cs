@@ -1,5 +1,5 @@
 // A Kanban host run as its own process, and a database for it: shared by the
-// scenarios of the C# and GraphQL hosts, which talk to the host over HTTP.
+// scenarios of Host.CSharp and Host, which talk to the host over HTTP.
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;

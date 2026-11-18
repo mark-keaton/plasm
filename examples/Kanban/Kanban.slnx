@@ -4,12 +4,12 @@
     <Project Path="src/Server/Server.fsproj" />
     <Project Path="src/Data/Kanban.Data.fsproj" />
     <Project Path="src/Host.CSharp/Kanban.Host.CSharp.csproj" />
-    <Project Path="src/Host.GraphQL/Kanban.Host.GraphQL.csproj" />
+    <Project Path="src/Host/Kanban.Host.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Kanban.Specs.Steps/Kanban.Specs.Steps.fsproj" />
     <Project Path="tests/Kanban.Specs/Kanban.Specs.csproj" />
     <Project Path="tests/Kanban.CSharpHost.Specs/Kanban.CSharpHost.Specs.csproj" />
-    <Project Path="tests/Kanban.GraphQLHost.Specs/Kanban.GraphQLHost.Specs.csproj" />
+    <Project Path="tests/Kanban.Host.Specs/Kanban.Host.Specs.csproj" />
   </Folder>
 </Solution>

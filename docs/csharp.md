@@ -15,6 +15,10 @@ proves it with a second host beside its F# one:
   instead of the built host, such as its native binary; the commands are in
   Kanban's README.
 
+`src/Host` is the other C# host: what an application would write around the
+same facade (cookie sign-in, REST, GraphQL), on the runtime. Its review guide
+is docs/kanban-host.md.
+
 The host was written before its first 9 scenarios. Red was shown by running
 them against a stub host that served only `GET /boards`: all 9 failed, each
 on the endpoint the stub lacked (`creating board alpha: expected 201 but was

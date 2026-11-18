@@ -4,8 +4,8 @@ A GraphQL client chooses a request's conditions and order. With
 Plasm.HotChocolate, the database does both: Plasm builds them onto the
 application's query from fields the application declared, once, in F#.
 Built against Hot Chocolate 16.7.6 (`HotChocolate.Data`,
-`HotChocolate.AspNetCore` for a host); `examples/Kanban/src/Host.GraphQL` is a
-host over Kanban's cards.
+`HotChocolate.AspNetCore` for a host); Kanban's host, `examples/Kanban/src/Host`
+(docs/kanban-host.md), serves Kanban's cards with it.
 
 Plasm.HotChocolate is for the runtime, not for a native binary: Hot Chocolate
 16.7.6 itself does not start natively (its DataLoader interceptor's

@@ -21,9 +21,11 @@ src/Server   Service.fs    the API: parse input, run a workflow, map the outcome
              Host.fs       ASP.NET Core: services, cookie authentication, start-up,
                            the pipeline
 src/Client   App.fs      the Elmish application
-src/Host.CSharp          the same data served by C# minimal APIs (docs/csharp.md)
+src/Host.CSharp          the same data served by C# minimal APIs, natively (docs/csharp.md)
+src/Host                 a C# application over the same data: cookie sign-in, REST
+                         and GraphQL, on the runtime (docs/kanban-host.md)
 features/    the acceptance scenarios (Reqnroll), run against real PostgreSQL;
-             features/csharp/ the C# host's
+             features/csharp/ Host.CSharp's, features/host/ Host's
 ```
 
 There is one model, declared once. The records Plasm reads and writes are the
@@ -64,6 +66,7 @@ The scenarios need Docker (or `PLASM_TEST_PG`, as the library's tests do):
 ```
 dotnet test --project tests/Kanban.Specs
 dotnet test --project tests/Kanban.CSharpHost.Specs
+dotnet test --project tests/Kanban.Host.Specs
 ```
 
 The C# host's scenarios start the host as its own process and talk to it

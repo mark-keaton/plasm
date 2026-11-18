@@ -10,7 +10,7 @@ Feature: Kanban's cards over GraphQL, filtered and ordered by the database
   (docs/hotchocolate.md).
 
   Background:
-    Given the GraphQL host serves a migrated database
+    Given the host serves a migrated database
     And board "alpha" has the cards:
       | title          | stage   | assignee | version | created              |
       | Write the spec | backlog |          | 1       | 2026-11-18T09:00:00Z |

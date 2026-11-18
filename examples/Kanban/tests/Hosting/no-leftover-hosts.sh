@@ -10,7 +10,7 @@ failed=0
 
 hosts() { pgrep -f "$here/tests/$1/bin/.*Kanban\.Host" | wc -l | tr -d ' '; }
 
-for specs in Kanban.CSharpHost.Specs Kanban.GraphQLHost.Specs; do
+for specs in Kanban.CSharpHost.Specs Kanban.Host.Specs; do
   dotnet build "tests/$specs" -v q > /dev/null 2>&1 || { echo "$specs did not build"; exit 1; }
   before=$(hosts "$specs")
   dotnet test --project "tests/$specs" --no-build > /dev/null 2>&1
