@@ -274,6 +274,37 @@ refuse its union by name, assembly and step. It prints the
 native binary's size. `PLASM_AOT_TRACE=1` adds the stack trace of a step that
 throws (to standard error, not compared).
 
+On Linux, in a container on the same machine, with PostgreSQL in a second
+container on a network of their own:
+
+```sh
+tests/Plasm.Aot/run-linux.sh       # linux-arm64
+tests/Plasm.Aot/run-linux.sh x64   # linux-x64, under emulation on an arm64 machine
+```
+
+It builds an image of the .NET SDK with clang and zlib
+(`tests/Plasm.Aot/linux/Dockerfile`), copies the repository's files to a
+temporary directory the container builds in, so nothing lands in the working
+tree, and runs `run.sh` there, every condition the same. Packages are kept in
+a Docker volume between runs. Verified, all three with every step identical
+to the runtime, no IL warning naming Plasm, 292 getters marked and the
+unpatched binary refusing its union:
+
+| Target | Where | Binary | Whole run |
+|---|---|---:|---:|
+| osx-arm64 | Apple M4 Max | 24 MB | about 40 s |
+| linux-arm64 | Ubuntu 26.04 container, .NET SDK 11.0.100 | 27 MB | 58 s |
+| linux-x64 | the same, emulated on arm64 | 26 MB | 162 s, packages restored |
+
+Kanban's native spike passes on both Linux targets too. Nothing in Plasm or
+its targets changed for Linux: the field-getter step finds and copies the
+same assemblies, and paths are matched as they are written. The check sets
+`InvariantGlobalization`, so it needs no ICU. Two traps of the copy are
+handled in the script: macOS's `tar` writes `._` files for extended
+attributes (a `._Plasm.Aot.fsproj` MSBuild takes for a second project), and
+the emulated container's `tar` cannot open files at all, so the copy is made
+on the host.
+
 What it does today (native binary 24 MB, Plasm.dll kept whole; 292 F# field
 getters marked):
 
