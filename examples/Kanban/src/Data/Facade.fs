@@ -199,6 +199,21 @@ type CreateBoardOutcome =
     interface IUnion with
         member this.Value = this.value
 
+/// An account, as a host signing someone in reads it: the name, and the
+/// hash the host made of the password when the account was registered.
+type AccountView = { Name: string; PasswordHash: string }
+
+/// Registering an account: the account, or why not.
+[<Struct; Union>]
+type RegisterOutcome =
+    val private value: obj
+    new(account: AccountView) = { value = box account }
+    new(invalid: Invalid) = { value = box invalid }
+    member this.Value = this.value
+
+    interface IUnion with
+        member this.Value = this.value
+
 /// The database could not be reached or failed; the inner exception, when
 /// there is one, is the provider's.
 type KanbanUnavailableException(message: string, inner: exn) =
@@ -488,6 +503,43 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
         match field "assignee" Person.create assignee with
         | Error problems -> Task.FromResult(ChangeOutcome(View.invalid problems))
         | Ok who -> change card version (Card.start who (clock ())) cancellationToken
+
+    /// Registers `name` with `password`, if the domain accepts both (Person,
+    /// Password) and no account has the name; `hash` is the host's, given the
+    /// password, and only what it returns is stored.
+    member _.RegisterAsync(name: string, password: string, hash: Func<string, string>, cancellationToken: CancellationToken) : Task<RegisterOutcome> =
+        task {
+            match field "name" Person.create name, field "password" Password.create password with
+            | Ok name, Ok password ->
+                let account: Account =
+                    { Id = AccountId(newId ())
+                      Name = name
+                      PasswordHash = hash.Invoke password.Value }
+
+                match! transact Guid.Empty (Tx.insert account) cancellationToken with
+                | Ok stored -> return RegisterOutcome { Name = stored.Name.Value; PasswordHash = stored.PasswordHash }
+                | Error(Fields problems) -> return RegisterOutcome(View.invalid problems)
+                | Error other -> return unavailable "Registering stopped" other null
+            | n, p ->
+                let problems (r: Result<_, (string * string) list>) = match r with Error e -> e | Ok _ -> []
+                return RegisterOutcome(View.invalid (problems n @ problems p))
+        }
+
+    /// The account named `name`; Missing when there is none, or when no
+    /// account could have the name.
+    member _.AccountAsync(name: string, cancellationToken: CancellationToken) : Task<Found<AccountView>> =
+        task {
+            let missing = Found<AccountView> { What = "account" }
+
+            match Person.create name with
+            | Error _ -> return missing
+            | Ok name ->
+                let! found = repo.One(Queries.accountNamed name, cancellationToken = cancellationToken)
+
+                match read "Reading an account failed" found with
+                | None -> return missing
+                | Some account -> return Found { Name = account.Name.Value; PasswordHash = account.PasswordHash }
+        }
 
     member _.RenameAsync(card: Guid, version: int, title: string, cancellationToken: CancellationToken) : Task<ChangeOutcome> =
         match field "title" Title.create title with
