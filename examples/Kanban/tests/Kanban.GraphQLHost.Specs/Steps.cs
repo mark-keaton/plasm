@@ -95,7 +95,7 @@ public sealed class Steps : IAsyncDisposable
         ?? throw new Exception("no cards in the answer: " + body);
 
     [Then("the cards are {string}")]
-    public void CardsAre(string expected) => Equal(expected, string.Join(", ", Titles()), "the cards");
+    public void CardsAre(string expected) => Equal(expected, string.Join(", ", Titles()), "the cards in " + body);
 
     void Orders(string sql, string ordering)
     {
@@ -111,6 +111,13 @@ public sealed class Steps : IAsyncDisposable
         var sql = Reads().Single();
         if (!sql.Contains(" WHERE ")) throw new Exception("no WHERE in " + sql);
         Orders(sql, ordering);
+    }
+
+    [Then("the cards' SQL searches the title with LIKE")]
+    public void Like()
+    {
+        var sql = Reads().Single();
+        if (!sql.Contains("\"c\".\"title\" LIKE @p")) throw new Exception("the title is not searched with LIKE: " + sql);
     }
 
     [Then("the cards' SQL has no WHERE and orders by {string}, then reads a page")]

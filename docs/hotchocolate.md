@@ -7,13 +7,22 @@ Built against Hot Chocolate 16.7.6 (`HotChocolate.Data`,
 `HotChocolate.AspNetCore` for a host); `examples/Kanban/src/Host.GraphQL` is a
 host over Kanban's cards.
 
+Plasm.HotChocolate is for the runtime, not for a native binary: Hot Chocolate
+16.7.6 itself does not start natively (its DataLoader interceptor's
+constructor is trimmed away, by its reflection-based and its source-generated
+setup alike). Core Plasm, `BuildQuery` and the declared fields among it, stays
+native, with no IL warning naming Plasm (`tests/Plasm.Aot`). So the split is:
+a native host calls the application's facade directly (Kanban's
+`Host.CSharp`), a GraphQL host runs on the runtime, and both stand on the same
+F# data library.
+
 ## The two parts
 
 **In Plasm** (`src/Plasm/BuildQuery.fs`, `features/build-query.feature`), for
 any program that builds a query at run time (a GraphQL layer, a report
 builder); an application writes its queries with `plasm { }`, not with these:
 
-- `QueryField.equal`, `ordered`, `equalVia` and `orderedVia` declare a field
+- `QueryField.equal`, `ordered`, `text`, `equalVia` and `orderedVia` declare a field
   a caller may filter, and perhaps order, by: a name, a quotation reading it
   from the record, the operators it takes, the type of the value a caller
   gives and, when that differs from the field's own type, how one is made
@@ -69,15 +78,16 @@ Kanban.Data declares what a client may filter and order cards by:
 [<RequireQualifiedAccess>]
 module CardFields =
     let all: QueryField<Card> list =
-        [ QueryField.orderedVia "title" <@ fun (c: Card) -> c.Title @> title "x"
+        [ QueryField.text "title" <@ fun (c: Card) -> c.Title.Value @>
           QueryField.ordered "created" <@ fun (c: Card) -> c.Created @>
           QueryField.ordered "version" <@ fun (c: Card) -> c.Version @>
           QueryField.equalVia "stage" <@ fun (c: Card) -> kind c @> stage "backlog" ]
 ```
 
-`title` is given as a string and made a `Title` by `Title.create`; `stage` is
-given as `backlog`, `doing` or `done` and compared with Kanban's own
-`kind c`. `KanbanData.OpenAsync` checks them after the repository starts, and
+`title` is searched as the text of the card's `Title`: `Title.Value` is
+marked `[<ReflectedDefinition>]`, so Plasm reads its body, the wrapper's own
+field, as the title column (scalar-conventions.feature); `stage` is given as
+`backlog`, `doing` or `done` and compared with Kanban's own `kind c`. `KanbanData.OpenAsync` checks them after the repository starts, and
 `KanbanData.CardsAsync(refine, ct)` runs the cards query as `refine` makes it.
 The host, in C#:
 
@@ -121,8 +131,11 @@ as for a C# host (csharp.md): the package exposes no domain record.
 Done by the database:
 
 - **The where**: `eq`, `neq`, `gt`, `gte`, `lt` and `lte` on each field as
-  declared, and `and` and `or` of them, as the SQL's WHERE, every value a
-  parameter.
+  declared, `contains`, `startsWith` and `endsWith` on a text field (as
+  `LIKE`), and `and` and `or` of them, as the SQL's WHERE, every value a
+  parameter. A text field may read a wrapper's text (`c.Title.Value`) when the
+  wrapper's member is marked `[<ReflectedDefinition>]`; unmarked, Plasm
+  refuses it and says to mark it.
 - **The order**: each orderable field, ascending or descending, in the order
   given, as the SQL's ORDER BY.
 - **The page**: offset paging's `skip` and `take` as the SQL's OFFSET and
@@ -148,9 +161,6 @@ Not done by the database, yet:
   `ranked`), but Plasm plans that only for a load read from a `let!`
   quotation, and a query built at run time cannot be put inside one: the
   entry for adding a load from a built query is not public yet.
-- **Text operators** (`contains`, `startsWith`) on a scalar Plasm reads
-  through a create function, such as `Title`: Plasm reads it as its column but
-  cannot reach the text inside.
 
 ## Refused before any SQL
 

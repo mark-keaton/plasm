@@ -42,6 +42,9 @@ type Title =
     private
     | Title of string
 
+    /// Marked so that a query reads it as the title column (a search of a
+    /// card's title).
+    [<ReflectedDefinition>]
     member t.Value =
         let (Title v) = t
         v

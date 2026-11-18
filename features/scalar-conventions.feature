@@ -53,6 +53,31 @@ Feature: Domain scalars are stored by convention
       When I build a model of a record with a field of a type with a create function in a member and in its module
       Then the model is refused for that field, saying the type has more than one create function
 
+  Rule: A wrapper's value is read as its column, through a member Plasm can read
+
+    # Title.Value is `let (Title v) = t in v`, marked [<ReflectedDefinition>]:
+    # Plasm reads its body, the wrapper's own field, which is the column; the
+    # text operators of the value are then the column's. Code.Text is the same
+    # member unmarked, which Plasm cannot see into.
+    Scenario: A wrapper's value is searched as its column's text
+      Given Tickets in a model built with no scalar mappings
+      And Tickets titled "Write the spec" and "Ship it"
+      When I keep the Tickets whose title's value contains "spec"
+      Then only the Ticket titled "Write the spec" is returned
+      And the query's SQL reads 'WHERE "t"."title" LIKE @p0'
+
+    Scenario: A wrapper's value is compared and started with as its column
+      Given Tickets in a model built with no scalar mappings
+      And Tickets titled "Write the spec" and "Ship it"
+      When I keep the Tickets whose title's value starts with "Ship" or is "Write the spec"
+      Then the Tickets titled "Write the spec" and "Ship it" are returned
+      And the query's SQL reads 'WHERE "t"."title" LIKE @p0 OR "t"."title" = @p1'
+
+    Scenario: A member Plasm cannot read is refused, saying how to make it readable
+      Given Tickets in a model built with no scalar mappings
+      When I explain the Tickets whose code's text is "T-1"
+      Then the query is refused with "Code.Text is a member Plasm cannot read: mark it [<ReflectedDefinition>]"
+
   Rule: Fieldless unions need no mapping
 
     Scenario: A fieldless union is stored as its case name in snake case

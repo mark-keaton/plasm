@@ -44,6 +44,9 @@ type BuildQuerySteps(w: World) =
     [<StepDefinition("the Order's status declared as a field given as text")>]
     member this.OrderStatus() = w.Set("orderStatus", QueryField.equalVia "status" <@ fun (o: Order) -> o.Status @> status "draft")
 
+    [<StepDefinition("the Customer's name declared as a text field")>]
+    member this.CustomerNameText() = w.Set("customerNameText", QueryField.text "name" <@ fun (c: Customer) -> c.Name @>)
+
     [<StepDefinition("the Customer's name declared as a field read through its hash code, compared and ordered")>]
     member this.CustomerNameHash() =
         w.Set("customerNameHash", QueryField.ordered "nameHash" <@ fun (c: Customer) -> c.Name.GetHashCode() @>)
@@ -68,6 +71,13 @@ type BuildQuerySteps(w: World) =
                 )
 
             Query.from tableOf<Order> |> BuildQuery.where (c.ToExpr()))
+
+    [<StepDefinition("I build the Customers whose name contains \"da\" or starts with \"Gr\"")>]
+    member this.BuildText() =
+        build (fun () ->
+            let name = this.Field<Customer> "customerNameText"
+            let c = QueryCondition.Or(name.Condition(QueryOperator.Contains, box "da"), name.Condition(QueryOperator.StartsWith, box "Gr"))
+            Query.from tableOf<Customer> |> BuildQuery.where (c.ToExpr()))
 
     [<StepDefinition("I build the Orders by total descending, skipping 5 and taking 10")>]
     member this.BuildPage() =
@@ -113,6 +123,10 @@ type BuildQuerySteps(w: World) =
     [<StepDefinition("the built query's SQL is the SQL of the Customers whose name is \"Ada\", written")>]
     member this.SameAsAda() =
         equal (sqlOf (w.Repo.Explain(plasm { for c in tableOf<Customer> do where (c.Name = "Ada") }))) (sqlOf (w.Repo.Explain(this.Built<Customer>()))) "SQL"
+
+    [<StepDefinition("the built query's SQL is the SQL of the Customers whose name contains \"da\" or starts with \"Gr\", written")>]
+    member this.SameAsText() =
+        equal (sqlOf (w.Repo.Explain(plasm { for c in tableOf<Customer> do where (c.Name.Contains "da" || c.Name.StartsWith "Gr") }))) (sqlOf (w.Repo.Explain(this.Built<Customer>()))) "SQL"
 
     [<StepDefinition("the built query's SQL is the SQL of the same Orders, written")>]
     member this.SameAsOrders() =

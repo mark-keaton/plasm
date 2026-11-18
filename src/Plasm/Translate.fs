@@ -792,6 +792,21 @@ let private escapeLike (s: string) =
 // Expressions
 // ---------------------------------------------------------------------------
 
+/// `p` is the field of a single-case union of one field: a wrapper.
+let private isWrapperField (t: Type) (p: Reflection.PropertyInfo) =
+    FSharpType.IsUnion(t, true)
+    && (match FSharpType.GetUnionCases(t, true) with
+        | [| case |] ->
+            match case.GetFields() with
+            | [| field |] -> field.Name = p.Name && field.DeclaringType = p.DeclaringType
+            | _ -> false
+        | _ -> false)
+
+/// A property declared by the application, not by .NET or FSharp.Core.
+let private isApplicationMember (p: Reflection.PropertyInfo) =
+    let a = p.DeclaringType.Assembly
+    a <> typeof<obj>.Assembly && a <> typeof<list<int>>.Assembly && not (a.GetName().Name.StartsWith "System")
+
 let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
     if not (isRowDependent ctx e) && mentionsArg e then
         argParam ctx e
@@ -881,9 +896,16 @@ let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
             | "TrimEnd" -> Sql.Func("rtrim", [ scalar ctx s; Sql.Param dotnetWhiteSpace ])
             | n -> fail e $"string method '{n}' has no SQL translation"
         | PropertyGet(Some s, p, []) when s.Type = typeof<string> && p.Name = "Length" -> Sql.Func("char_length", [ scalar ctx s ])
+        // A wrapper's own field (the body of its [<ReflectedDefinition>] Value,
+        // `let (Title v) = t in v`) is what the wrapper stores: its column
+        // (scalar-conventions.feature).
+        | PropertyGet(Some w, p, []) when isWrapperField w.Type p -> scalar ctx w
         | Call(None, mi, args) when isAggCall mi -> aggregate ctx e mi args
         | Call(None, mi, [ sql; args ]) when isRawCall mi -> fragment ctx e sql args
         | _ when e.Type = typeof<bool> -> predicate ctx e
+        // A member of the application's own type that Plasm cannot see into.
+        | PropertyGet(Some _, p, []) when isApplicationMember p ->
+            fail e $"{p.DeclaringType.Name}.{p.Name} is a member Plasm cannot read: mark it [<ReflectedDefinition>] so that a query reads its body"
         | _ -> fail e $"{show e} cannot be translated to SQL, and it will not be evaluated in application memory"
 
 /// A value a CASE chooses. A constant that is an identifier (a fieldless

@@ -280,11 +280,9 @@ type private Stopped =
 /// What a program building queries at run time (a GraphQL host) may filter
 /// and order cards by: each field once, a quotation over the domain's Card,
 /// checked when KanbanData opens. Values are given as text and numbers; a
-/// title through Title.create, a stage as backlog, doing or done.
+/// title searched as its text (Title.Value), a stage as backlog, doing or done.
 [<RequireQualifiedAccess>]
 module CardFields =
-
-    let private title (text: string) = Title.create text |> Result.mapError (fun e -> "a title " + e)
 
     let private stage (text: string) =
         match text with
@@ -297,7 +295,7 @@ module CardFields =
     let created = QueryField.ordered "created" <@ fun (c: Card) -> c.Created @>
 
     let all: QueryField<Card> list =
-        [ QueryField.orderedVia "title" <@ fun (c: Card) -> c.Title @> title "x"
+        [ QueryField.text "title" <@ fun (c: Card) -> c.Title.Value @>
           created
           QueryField.ordered "version" <@ fun (c: Card) -> c.Version @>
           QueryField.equalVia "stage" <@ fun (c: Card) -> kind c @> stage "backlog" ]

@@ -30,6 +30,9 @@ module internal Names =
         | QueryOperator.GreaterThanOrEqual -> DefaultFilterOperations.GreaterThanOrEquals
         | QueryOperator.LessThan -> DefaultFilterOperations.LowerThan
         | QueryOperator.LessThanOrEqual -> DefaultFilterOperations.LowerThanOrEquals
+        | QueryOperator.Contains -> DefaultFilterOperations.Contains
+        | QueryOperator.StartsWith -> DefaultFilterOperations.StartsWith
+        | QueryOperator.EndsWith -> DefaultFilterOperations.EndsWith
 
     let pascal (s: string) = if s = "" then s else string (Char.ToUpperInvariant s.[0]) + s.Substring 1
 

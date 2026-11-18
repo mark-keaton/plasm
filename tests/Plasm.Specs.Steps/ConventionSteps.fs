@@ -10,13 +10,21 @@ module Conventions =
 
     type TicketId = TicketId of int64
 
-    type Code = Code of string
+    type Code =
+        | Code of string
+
+        /// Not marked [<ReflectedDefinition>]: a query cannot read it.
+        member c.Text =
+            let (Code v) = c
+            v
 
     /// A validated text: 1 to 20 characters.
     type Title =
         private
         | Title of string
 
+        /// Marked, so a query reads it as the column.
+        [<ReflectedDefinition>]
         member t.Value =
             let (Title v) = t
             v
@@ -184,6 +192,56 @@ type ConventionSteps(w: World) =
             return ()
         }
         |> unit
+
+    [<StepDefinition("Tickets titled \"(.*)\" and \"(.*)\"")>]
+    member _.Titled(a: string, b: string) =
+        task {
+            for text in [ a; b ] do
+                let! _ = insert { ticket text Normal None with Title = title text }
+                ()
+        }
+        |> unit
+
+    [<StepDefinition("I keep the Tickets whose title's value contains \"(.*)\"")>]
+    member _.Contains(text: string) =
+        let q = plasm { for t in tableOf<Ticket> do where (t.Title.Value.Contains text) }
+        task {
+            let! r = repo().All q
+            w.Set("kept", ok r)
+            w.Set("keptSql", match repo().Explain q with Ok p -> p.Sql | Error e -> string e)
+        }
+        |> unit
+
+    [<StepDefinition("I keep the Tickets whose title's value starts with \"(.*)\" or is \"(.*)\"")>]
+    member _.StartsOrIs(start: string, whole: string) =
+        let q = plasm { for t in tableOf<Ticket> do where (t.Title.Value.StartsWith start || t.Title.Value = whole); orderBy t.Id }
+        task {
+            let! r = repo().All q
+            w.Set("kept", ok r)
+            w.Set("keptSql", match repo().Explain q with Ok p -> p.Sql | Error e -> string e)
+        }
+        |> unit
+
+    [<StepDefinition("only the Ticket titled \"(.*)\" is returned")>]
+    member _.OnlyTitled(text: string) = equal [ text ] (w.Get<Ticket list> "kept" |> List.map (fun t -> t.Title.Value)) "titles kept"
+
+    [<StepDefinition("the Tickets titled \"(.*)\" and \"(.*)\" are returned")>]
+    member _.BothTitled(a: string, b: string) = equal [ a; b ] (w.Get<Ticket list> "kept" |> List.map (fun t -> t.Title.Value)) "titles kept"
+
+    [<StepDefinition("the query's SQL reads '(.*)'")>]
+    member _.SqlReads(text: string) =
+        let sql = (w.Get<string> "keptSql").Replace("\n", " ")
+        check (sql.Contains text) $"the SQL does not read {text}: {sql}"
+
+    [<StepDefinition("I explain the Tickets whose code's text is \"(.*)\"")>]
+    member _.ExplainCodeText(text: string) =
+        w.Set("explained", repo().Explain(plasm { for t in tableOf<Ticket> do where (t.Code.Text = text) }))
+
+    [<StepDefinition("the query is refused with \"(.*)\"")>]
+    member _.RefusedWith(text: string) =
+        match w.Get<Result<QueryPlan, TranslationError>> "explained" with
+        | Ok _ -> failwith "the query was translated"
+        | Error e -> check ((string e).Contains text) $"refusal: expected it to contain {text} but was {e}"
 
     [<StepDefinition("I keep the Tickets whose code is \"(.*)\"")>]
     member _.KeepCode(code: string) =

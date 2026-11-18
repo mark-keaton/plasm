@@ -29,6 +29,14 @@ Feature: Kanban's cards over GraphQL, filtered and ordered by the database
       Then the cards are "Build it, Write the spec"
       And the cards' SQL has a WHERE and orders by 'ORDER BY "c"."title", "c"."id"', then reads a page
 
+    # A card's title is a Title, read through Title.create; its Value is
+    # marked [<ReflectedDefinition>], so Plasm reads it as the title column.
+    Scenario: Cards whose title contains a word, by the database
+      When I ask for '{ cards(where: { title: { contains: "it" } }, order: [{ title: ASC }]) { items { title } } }'
+      Then the cards are "Build it, Ship it, Write the spec"
+      And the cards' SQL has a WHERE and orders by 'ORDER BY "c"."title", "c"."id"', then reads a page
+      And the cards' SQL searches the title with LIKE
+
     Scenario: No where and no order read the first page, oldest first
       When I ask for '{ cards { items { title } } }'
       Then the cards are "Write the spec, Build it, Ship it"
@@ -96,7 +104,7 @@ Feature: Kanban's cards over GraphQL, filtered and ordered by the database
   Rule: What the declarations do not allow is refused before any SQL
 
     Scenario: An operator no field was declared with is not in the schema
-      When I ask for '{ cards(where: { title: { contains: "it" } }) { items { title } } }'
+      When I ask for '{ cards(where: { version: { contains: "2" } }) { items { title } } }'
       Then the answer is the error "The specified input object field `contains` does not exist."
       And no cards' SQL was sent
 

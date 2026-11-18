@@ -25,6 +25,9 @@ type PlasmRequest =
         | "gte" -> QueryOperator.GreaterThanOrEqual
         | "lt" -> QueryOperator.LessThan
         | "lte" -> QueryOperator.LessThanOrEqual
+        | "contains" -> QueryOperator.Contains
+        | "startsWith" -> QueryOperator.StartsWith
+        | "endsWith" -> QueryOperator.EndsWith
         | other -> raise (GraphQLException $"{other} is no operator Plasm declared")
 
     static member private Condition(fields: IReadOnlyDictionary<string, QueryField<'T>>, input: IDictionary<string, obj>) : QueryCondition<'T> option =

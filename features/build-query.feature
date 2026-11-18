@@ -45,6 +45,11 @@ Feature: A program builds a query at run time from declared fields
       When I build the Orders by total descending, skipping 5 and taking 10
       Then the built query's SQL is the SQL of the Orders by total descending, skipping 5 and taking 10, written
 
+    Scenario: A text field is searched as the written query searches it
+      Given the Customer's name declared as a text field
+      When I build the Customers whose name contains "da" or starts with "Gr"
+      Then the built query's SQL is the SQL of the Customers whose name contains "da" or starts with "Gr", written
+
     Scenario: A built query reads the rows the written query reads
       Given the Customer's name declared as a field compared for equality
       And Customers named "Ada" and "Grace"

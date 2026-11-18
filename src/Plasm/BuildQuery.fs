@@ -16,6 +16,9 @@ type QueryOperator =
     | GreaterThanOrEqual
     | LessThan
     | LessThanOrEqual
+    | Contains
+    | StartsWith
+    | EndsWith
 
 module internal Built =
     /// The record's variable, named as a person would name it (c for Card).
@@ -124,6 +127,7 @@ module QueryField =
         | QueryOperator.GreaterThanOrEqual -> <@ %field >= %v @>
         | QueryOperator.LessThan -> <@ %field < %v @>
         | QueryOperator.LessThanOrEqual -> <@ %field <= %v @>
+        | other -> raise (ArgumentException $"{other} is not a comparison")
 
     let private ordering (read: Expr<'T -> 'V>) =
         Some(fun (q: Query<'T>) descending -> QueryOps.order q read.Raw (if descending then SortDirection.Descending else SortDirection.Ascending))
@@ -138,6 +142,13 @@ module QueryField =
           QueryOperator.LessThan
           QueryOperator.LessThanOrEqual ]
 
+    let private searched =
+        [ QueryOperator.Equal
+          QueryOperator.NotEqual
+          QueryOperator.Contains
+          QueryOperator.StartsWith
+          QueryOperator.EndsWith ]
+
     /// The value the check builds a plain field's conditions with.
     let private sampleOf<'V> () : obj = if typeof<'V> = typeof<string> then box "" else box Unchecked.defaultof<'V>
 
@@ -148,6 +159,22 @@ module QueryField =
     /// A field compared and ordered by, given as its own type.
     let ordered (name: string) (read: Expr<'T -> 'V>) : QueryField<'T> when 'V: comparison =
         QueryField<'T>(name, all, typeof<'V>, sampleOf<'V> (), comparison read (given<'T, 'V> name), ordering read)
+
+    /// A text field: compared, ordered by, and searched (Contains,
+    /// StartsWith, EndsWith).
+    let text (name: string) (read: Expr<'T -> string>) : QueryField<'T> =
+        let make = given<'T, string> name
+
+        let condition (op: QueryOperator) (raw: obj) (x: Var) : Expr<bool> =
+            let field, v = Built.over read x, value (make raw)
+
+            match op with
+            | QueryOperator.Contains -> <@ (%field).Contains(%v) @>
+            | QueryOperator.StartsWith -> <@ (%field).StartsWith(%v) @>
+            | QueryOperator.EndsWith -> <@ (%field).EndsWith(%v) @>
+            | _ -> comparison read make op raw x
+
+        QueryField<'T>(name, searched, typeof<string>, box "", condition, ordering read)
 
     /// A field compared for equality, given as 'I and made a 'V by `convert`
     /// (Error says why it cannot be); `sample` is an 'I the check uses.
