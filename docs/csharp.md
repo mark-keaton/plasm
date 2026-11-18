@@ -141,12 +141,20 @@ System.Text.Json writes a union-shaped type as its case alone, so each case
 of `StageView` has a constant `Kind` property, written first. Its source
 generator accepts a union-shaped type only if it could read the JSON back,
 which the host never does: it refuses `StageView` (SYSLIB1227: every case is
-a JSON object) unless the type names a classifier. Four attributes satisfy
-it, with no converter: the built-in `JsonUnionTypeStructuralClassifier` on
-`StageView`, `JsonRequired` on each case's fields, `CLIMutable` on the case
-records (a required property needs a setter, and an F# record has none) and
-`JsonUnmappedMemberHandling.Disallow` on `InBacklog`, which has no field to
-require. So the case records have setters C# could call.
+a JSON object) unless the type names a classifier. `StageByKind`, in
+Kanban.Data, is one: it reads ahead for `kind` and names the case, and
+`[<JsonUnion(TypeClassifier = typeof<StageByKind>)>]` puts it on the type.
+The case records stay plain F# records, read through their constructors, so
+C# can neither make an empty one (`new InProgress()` is CS7036) nor change
+one (CS0200). It works natively, reading each case back as itself, with no
+IL warning of its own.
+
+The built-in `JsonUnionTypeStructuralClassifier`, which tells cases apart by
+their properties, was tried first and needs more of the records: it refuses
+a case whose properties another case also has (`InBacklog`'s `kind` is in
+every case), unless each case's fields are `JsonRequired`, which needs
+setters (`[<CLIMutable>]`, and with it `new InProgress()` with a null
+assignee), and the backlog case refuses unmapped members.
 
 So the views are what a C# host serialises: records of plain types, which
 both modes write the same and a native binary needs no reflection for. A

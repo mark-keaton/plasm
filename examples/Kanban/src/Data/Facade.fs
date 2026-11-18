@@ -15,6 +15,7 @@ namespace Kanban.Data
 open System
 open System.Data
 open System.Runtime.CompilerServices
+open System.Text.Json
 open System.Text.Json.Serialization
 open System.Threading
 open System.Threading.Tasks
@@ -34,47 +35,66 @@ type CommentView =
 /// has. JSON is written as the case alone, so each says its kind.
 /// A class, not a record: a backlog card's stage has no facts, and a record
 /// needs a field.
-[<JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)>]
 [<Sealed>]
 type InBacklog() =
     [<JsonPropertyOrder(-1)>]
     member _.Kind = "backlog"
 
-[<CLIMutable>]
 type InProgress =
-    { [<property: JsonRequired>]
-      Assignee: string
-      [<property: JsonRequired>]
+    { Assignee: string
       Since: DateTimeOffset }
 
     [<JsonPropertyOrder(-1)>]
     member _.Kind = "doing"
 
-[<CLIMutable>]
 type WasShipped =
-    { [<property: JsonRequired>]
-      At: DateTimeOffset }
+    { At: DateTimeOffset }
 
     [<JsonPropertyOrder(-1)>]
     member _.Kind = "shipped"
 
-[<CLIMutable>]
 type WasDropped =
-    { [<property: JsonRequired>]
-      Reason: string
-      [<property: JsonRequired>]
+    { Reason: string
       At: DateTimeOffset }
 
     [<JsonPropertyOrder(-1)>]
     member _.Kind = "dropped"
 
-/// System.Text.Json's source generator accepts a union-shaped type only if
-/// it could read one back, which a C# host never does: its structural
-/// classifier tells the cases apart by their properties, given that each
-/// case's own fields are required (which needs setters: CLIMutable) and the
-/// backlog case, which has none, refuses any other.
-[<Struct; Union; JsonUnion(TypeClassifier = typeof<JsonUnionTypeStructuralClassifier>)>]
-type StageView =
+/// Which case of StageView a JSON object is, by its "kind". System.Text.Json's
+/// source generator accepts a union-shaped type only if it could read the
+/// JSON back, which a C# host never does; deciding by kind asks nothing of
+/// the case records.
+type StageByKind() =
+    inherit JsonTypeClassifierFactory()
+
+    override _.CanClassify(context) = context.DeclaringType = typeof<StageView>
+
+    override _.CreateJsonClassifier(_, _) =
+        JsonTypeClassifier(fun reader ->
+            // A copy: the classifier only looks ahead.
+            let mutable r = reader
+            let mutable found: Type = null
+
+            if r.TokenType = JsonTokenType.StartObject then
+                let depth = r.CurrentDepth
+
+                while isNull found && r.Read() && r.CurrentDepth > depth do
+                    if r.TokenType = JsonTokenType.PropertyName && r.ValueTextEquals "kind" then
+                        r.Read() |> ignore
+
+                        found <-
+                            match r.GetString() with
+                            | "backlog" -> typeof<InBacklog>
+                            | "doing" -> typeof<InProgress>
+                            | "shipped" -> typeof<WasShipped>
+                            | "dropped" -> typeof<WasDropped>
+                            | _ -> null
+                    elif r.TokenType = JsonTokenType.StartObject || r.TokenType = JsonTokenType.StartArray then
+                        r.Skip()
+
+            found)
+
+and [<Struct; Union; JsonUnion(TypeClassifier = typeof<StageByKind>)>] StageView =
     val private value: obj
     new(backlog: InBacklog) = { value = box backlog }
     new(doing: InProgress) = { value = box doing }
