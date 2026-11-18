@@ -220,9 +220,9 @@ let private isLoadsBody (e: Expr) =
     match e with
     | QuoteTyped x
     | QuoteRaw x ->
-        FSharpType.IsFunction x.Type
-        && (let r = snd (FSharpType.GetFunctionElements x.Type)
-            r.IsGenericType && r.GetGenericTypeDefinition() = typedefof<Loads<_>>)
+        match Reflection.functionResult x.Type with
+        | Some r -> r.IsGenericType && r.GetGenericTypeDefinition() = typedefof<Loads<_>>
+        | None -> false
     | _ -> false
 
 /// True when `normalize` would change something (avoids rebuilding trees).
@@ -794,7 +794,7 @@ let private escapeLike (s: string) =
 
 /// `p` is the field of a single-case union of one field: a wrapper.
 let private isWrapperField (t: Type) (p: Reflection.PropertyInfo) =
-    FSharpType.IsUnion(t, true)
+    Shape.isUnion t
     && (match FSharpType.GetUnionCases(t, true) with
         | [| case |] ->
             match case.GetFields() with
@@ -2220,8 +2220,9 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
                     let ctor = Shape.tuple e.Type
                     Build(ctor, parts |> List.map (fun p -> fieldName <- None; shape ctx p))
                 | NewRecord(t, parts) ->
-                    let ctor = FSharpValue.PreComputeRecordConstructor(t, true)
-                    let names = FSharpType.GetRecordFields(t, true) |> Array.map (fun f -> f.Name) |> List.ofArray
+                    let record = Shape.record t
+                    let ctor = record.Construct
+                    let names = record.Fields |> Array.map (fun f -> f.Name) |> List.ofArray
 
                     Build(
                         ctor,
@@ -2331,7 +2332,7 @@ let returnShape (def: QueryDef) : ReturnShape option =
             | NewRecord(t, args) -> t, args
             | _ -> invalid "return builds a record or an anonymous record, naming each field, as in return {| Order = o; Payments = payments |}"
 
-        let names = FSharpType.GetRecordFields(t, true) |> Array.map (fun p -> p.Name) |> List.ofArray
+        let names = (Shape.record t).Fields |> Array.map (fun p -> p.Name) |> List.ofArray
         let loadOf (v: Var) = r.Names |> List.tryFindIndex ((=) (Some v))
 
         let isQuery (t: Type) =
@@ -2343,7 +2344,7 @@ let returnShape (def: QueryDef) : ReturnShape option =
                 || d = typedefof<OneProjection<_>>)
 
         let example =
-            match FSharpType.GetRecordFields(r.Root.Type, true) |> Array.tryHead with
+            match (Shape.record r.Root.Type).Fields |> Array.tryHead with
             | Some p -> $"{r.Root.Name}.{p.Name}"
             | None -> $"{r.Root.Name}.Field"
 
@@ -2379,7 +2380,7 @@ let returnShape (def: QueryDef) : ReturnShape option =
             | [ a; b ] -> invalid $"{label} is returned twice, in {a} and {b}: return each load once"
             | many -> invalid $"""{label} is returned {many.Length} times, in {String.concat ", " many}: return each load once""")
 
-        let make = FSharpValue.PreComputeRecordConstructor(t, true)
+        let make = (Shape.record t).Construct
 
         Some
             { Type = t
@@ -2639,7 +2640,7 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
           ElementType =
             match shape, selected with
             | Some r, _ -> r.Type
-            | None, Some select -> snd (FSharpType.GetFunctionElements select.Type)
+            | None, Some select -> (Reflection.functionResult select.Type).Value
             | None, None -> target.Type
           Nested = nested
           One = including.One

@@ -144,11 +144,19 @@ module internal Shape =
                   Unwrap = unwrap })
           Tag = tag }
 
+    // FSharp.Reflection answers each of these by reading the type's
+    // CompilationMapping attribute anew, which a native binary instantiates
+    // from metadata on every call (docs/aot.md): asked once per type.
+    let private recordTypes = ConcurrentDictionary<Type, bool>()
+    let private unionTypes = ConcurrentDictionary<Type, bool>()
+    let private recordOf = Func<Type, bool>(fun t -> FSharpType.IsRecord(t, true))
+    let private unionOf = Func<Type, bool>(fun t -> FSharpType.IsUnion(t, true))
+
     /// An F# record.
-    let isRecord (t: Type) = FSharpType.IsRecord(t, true)
+    let isRecord (t: Type) = recordTypes.GetOrAdd(t, recordOf)
 
     /// An F# union, FSharp.Core's own (option, list, Result) included.
-    let isUnion (t: Type) = FSharpType.IsUnion(t, true)
+    let isUnion (t: Type) = unionTypes.GetOrAdd(t, unionOf)
 
     let record (t: Type) : RecordShape = records.GetOrAdd(t, reflectedRecord)
 

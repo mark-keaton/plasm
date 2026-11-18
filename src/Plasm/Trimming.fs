@@ -52,21 +52,12 @@ let private FSharpCoreInternals =
 
 // What a model is built from: the domain's records, unions and create functions.
 [<assembly: UnconditionalSuppressMessage("Trimming", "IL2055", Scope = "type", Target = "T:Plasm.ModelModule", Justification = NoValueTypeInstantiation)>]
-[<assembly: UnconditionalSuppressMessage("Trimming", "IL2062", Scope = "type", Target = "T:Plasm.ModelModule", Justification = Rooted)>]
-[<assembly: UnconditionalSuppressMessage("Trimming", "IL2067", Scope = "type", Target = "T:Plasm.ModelModule", Justification = Rooted)>]
-[<assembly: UnconditionalSuppressMessage("Trimming", "IL2072", Scope = "type", Target = "T:Plasm.ModelModule", Justification = Rooted)>]
-[<assembly: UnconditionalSuppressMessage("Trimming", "IL2077", Scope = "type", Target = "T:Plasm.ModelModule", Justification = Rooted)>]
 [<assembly: UnconditionalSuppressMessage("AOT", "IL3050", Scope = "type", Target = "T:Plasm.ModelModule", Justification = NoValueTypeInstantiation)>]
 [<assembly: UnconditionalSuppressMessage("Trimming", "IL2026", Scope = "type", Target = "T:Plasm.Conventions", Justification = Rooted)>]
 [<assembly: UnconditionalSuppressMessage("Trimming", "IL2055", Scope = "type", Target = "T:Plasm.Conventions", Justification = NoValueTypeInstantiation)>]
-[<assembly: UnconditionalSuppressMessage("Trimming", "IL2067", Scope = "type", Target = "T:Plasm.Conventions", Justification = Rooted)>]
 [<assembly: UnconditionalSuppressMessage("Trimming", "IL2070", Scope = "type", Target = "T:Plasm.Conventions", Justification = Rooted)>]
 [<assembly: UnconditionalSuppressMessage("Trimming", "IL2075", Scope = "type", Target = "T:Plasm.Conventions", Justification = Rooted)>]
 [<assembly: UnconditionalSuppressMessage("AOT", "IL3050", Scope = "type", Target = "T:Plasm.Conventions", Justification = NoValueTypeInstantiation)>]
-[<assembly: UnconditionalSuppressMessage("Trimming", "IL2062", Scope = "type", Target = "T:Plasm.Derive", Justification = Rooted)>]
-[<assembly: UnconditionalSuppressMessage("Trimming", "IL2067", Scope = "type", Target = "T:Plasm.Derive", Justification = Rooted)>]
-[<assembly: UnconditionalSuppressMessage("Trimming", "IL2067", Scope = "type", Target = "T:Plasm.Scalar", Justification = Rooted)>]
-[<assembly: UnconditionalSuppressMessage("Trimming", "IL2087", Scope = "type", Target = "T:Plasm.Scalar", Justification = Rooted)>]
 
 // The shapes of F# types: records, unions, options, lists, tuples.
 [<assembly: UnconditionalSuppressMessage("Trimming", "IL2055", Scope = "type", Target = "T:Plasm.Shape", Justification = NoValueTypeInstantiation)>]
