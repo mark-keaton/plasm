@@ -19,6 +19,7 @@
     <Compile Include="Model.fs" />
     <Compile Include="Sql.fs" />
     <Compile Include="Query.fs" />
+    <Compile Include="BuildQuery.fs" />
     <Compile Include="Translate.fs" />
     <Compile Include="Plan.fs" />
     <Compile Include="Changeset.fs" />

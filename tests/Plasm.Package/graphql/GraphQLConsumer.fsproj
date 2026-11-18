@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- An application that takes Plasm.HotChocolate from its package alone
+       (tests/Plasm.Package/run.sh): one GraphQL request answered in process,
+       with the SQL Plasm would send for it. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Plasm.HotChocolate" Version="$(PlasmVersion)" />
+    <PackageReference Include="Plasm.Postgres" Version="$(PlasmVersion)" />
+  </ItemGroup>
+</Project>

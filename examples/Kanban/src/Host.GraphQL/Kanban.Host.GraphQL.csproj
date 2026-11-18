@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!-- Kanban's cards over GraphQL (Hot Chocolate), answered by Plasm: the
+       where and order a request gives are done by the database, built from
+       the fields Kanban.Data declares (docs/hotchocolate.md). -->
+  <PropertyGroup>
+    <AssemblyName>Kanban.Host.GraphQL</AssemblyName>
+    <RootNamespace>Kanban.Host.GraphQL</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Data/Kanban.Data.fsproj" />
+    <ProjectReference Include="../../../../src/Plasm.HotChocolate/Plasm.HotChocolate.fsproj" />
+    <PackageReference Include="HotChocolate.AspNetCore" />
+  </ItemGroup>
+</Project>

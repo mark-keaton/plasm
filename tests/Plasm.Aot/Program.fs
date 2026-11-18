@@ -334,6 +334,12 @@ let main argv =
                 let d (x: decimal option) = match x with Some v -> v.ToString(Globalization.CultureInfo.InvariantCulture) | None -> "-"
                 let o = match owner with Some(CustomerId n) -> string n | None -> "-"
                 o + ": " + d lo + ".." + d hi + ", avg " + d avg + ", " + string sizes + " sizes"))
+        step "a query built at run time from declared fields, checked" (fun () ->
+            let title = QueryField.ordered "title" <@ fun (t: Ticket) -> t.Title @>
+            let doing = QueryField.equalVia "doing" <@ fun (t: Ticket) -> t.Stage.IsDoing @> (fun (s: string) -> Ok(s = "yes")) "yes"
+            repo.CheckFields [ title; doing ]
+            let c = QueryCondition.Or(title.Condition(QueryOperator.Equal, box "plan"), doing.Condition(QueryOperator.Equal, box "yes"))
+            all (title.OrderBy(Query.from tableOf<Ticket> |> BuildQuery.where (c.ToExpr()), true)) ticket)
         step "a count" (fun () ->
             match repo.Count(Queries.ticketsOf ada.Id).Result with
             | Ok n -> string n

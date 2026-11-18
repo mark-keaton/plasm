@@ -513,6 +513,42 @@ type Repo internal (model: Model, provider: IProvider, ?options: RepoOptions) =
     /// non-optional fields over nullable columns, and NOT NULL columns the
     /// model cannot write. An empty list means none was found. Reads only the
     /// catalogue; it does not create or migrate anything.
+    /// Translates every declared field with each operator it takes, and its
+    /// ordering, once (build-query.feature): what a program building queries
+    /// from them can combine. Raises PlasmStartupException naming each one
+    /// Plasm cannot translate, as Start does for a query.
+    member this.CheckFields(fields: QueryField<'T> seq) : unit =
+        let record = typeof<'T>.Name
+        let all = Query<'T>(QueryDef.Empty typeof<'T>)
+
+        let translated (what: string) (build: unit -> Query<'T>) =
+            let problem error =
+                Some(StartupProblem.Query { Query = $"{record}.{what}"; Error = error })
+
+            try
+                match this.Explain(build ()) with
+                | Ok _ -> None
+                | Error e -> problem e
+            with :? ArgumentException as e ->
+                problem (TranslationError.InvalidQuery e.Message)
+
+        let problems =
+            [ for f in fields do
+                  for op in f.Operators do
+                      match translated $"{f.Name} {op}" (fun () -> QueryOps.where all (f.Condition(op, f.Sample).ToExpr()).Raw) with
+                      | Some p -> yield p
+                      | None -> ()
+
+                  if f.Orderable then
+                      match translated $"{f.Name} ordering" (fun () -> f.OrderBy(all, false)) with
+                      | Some p -> yield p
+                      | None -> () ]
+
+        if not problems.IsEmpty then
+            let what = if problems.Length = 1 then "declared field Plasm cannot translate" else "declared fields Plasm cannot translate"
+            let lines = $"Plasm did not start: {problems.Length} {what}" :: [ for p in problems -> $"  - {p}" ]
+            raise (PlasmStartupException(problems, String.concat Environment.NewLine lines))
+
     member _.CheckSchema(?cancellationToken: CancellationToken) : Task<Result<SchemaIssue list, DbError>> =
         let ct = defaultArg cancellationToken CancellationToken.None
 

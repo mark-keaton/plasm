@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The GraphQL host's scenarios (features/graphql/*.feature), with C#
+       steps. Each scenario starts the host as its own process and talks to it
+       over HTTP: the built host by default, or the program
+       KANBAN_GRAPHQL_HOST names. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ReqnrollFeatureFiles Include="../../features/graphql/*.feature" />
+    <None Include="../../features/graphql/*.feature" Link="Features/%(Filename)%(Extension)" />
+    <Compile Include="../Hosting/Hosting.cs" Link="Hosting.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Reqnroll.xunit.v3" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The host is run, not called: its output is located by its assembly. -->
+    <ProjectReference Include="../../src/Host.GraphQL/Kanban.Host.GraphQL.csproj" />
+    <!-- Only for the F# server's migrations; its ASP.NET Core packages come
+         from the shared framework, as for Kanban.Specs. -->
+    <ProjectReference Include="../../src/Server/Server.fsproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>

@@ -269,6 +269,28 @@ type private Stopped =
     | StaleCopy of Guid
     | Fields of (string * string) list
 
+/// What a program building queries at run time (a GraphQL host) may filter
+/// and order cards by: each field once, a quotation over the domain's Card,
+/// checked when KanbanData opens. Values are given as text and numbers; a
+/// title through Title.create, a stage as backlog, doing or done.
+[<RequireQualifiedAccess>]
+module CardFields =
+
+    let private title (text: string) = Title.create text |> Result.mapError (fun e -> "a title " + e)
+
+    let private stage (text: string) =
+        match text with
+        | "backlog" -> Ok StageKind.Backlog
+        | "doing" -> Ok StageKind.Doing
+        | "done" -> Ok StageKind.Done
+        | other -> Error $"no stage is \"{other}\": backlog, doing or done"
+
+    let all: QueryField<Card> list =
+        [ QueryField.orderedVia "title" <@ fun (c: Card) -> c.Title @> title "x"
+          QueryField.ordered "created" <@ fun (c: Card) -> c.Created @>
+          QueryField.ordered "version" <@ fun (c: Card) -> c.Version @>
+          QueryField.equalVia "stage" <@ fun (c: Card) -> kind c @> stage "backlog" ]
+
 [<Sealed>]
 type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit -> Guid) =
 
@@ -321,14 +343,30 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
     /// the tables first: a query or table that would fail raises
     /// PlasmStartupException here, before anything is served.
     static member OpenAsync(dataSource: NpgsqlDataSource, cancellationToken: CancellationToken) : Task<KanbanData> =
-        task {
-            let! repo =
-                Repo.Start(model, PostgresProvider dataSource, typeof<Refusal>.Assembly, RepoOptions.Default, cancellationToken)
+        KanbanData.OpenAsync(dataSource, null, cancellationToken)
 
+    /// As OpenAsync, `onSql` given the SQL of each command sent (a log).
+    static member OpenAsync(dataSource: NpgsqlDataSource, onSql: Action<string>, cancellationToken: CancellationToken) : Task<KanbanData> =
+        task {
+            let options =
+                if isNull onSql then RepoOptions.Default
+                else { RepoOptions.Default with OnCommand = Some(fun e -> onSql.Invoke e.Sql) }
+
+            let! repo = Repo.Start(model, PostgresProvider dataSource, typeof<Refusal>.Assembly, options, cancellationToken)
+
+            repo.CheckFields CardFields.all
             return KanbanData(repo, (fun () -> DateTimeOffset.UtcNow), Guid.CreateVersion7)
         }
 
     /// Every board with its card counts and newest titles, by name.
+    /// Every card, as `refine` makes the query (a GraphQL request's where and
+    /// order, built from CardFields.all), each with its comments and labels.
+    member _.CardsAsync(refine: Func<Query<Card>, Query<Card>>, cancellationToken: CancellationToken) : Task<CardView[]> =
+        task {
+            let! cards = repo.All(refine.Invoke(Query.from tableOf<Card>), cancellationToken = cancellationToken)
+            return read "Reading cards failed" cards |> List.map View.card |> Array.ofList
+        }
+
     member _.BoardsAsync(cancellationToken: CancellationToken) : Task<BoardSummary[]> =
         task {
             let! boards = repo.All(Queries.boardsWithCards, cancellationToken = cancellationToken)

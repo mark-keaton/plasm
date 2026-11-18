@@ -15,8 +15,8 @@ work="$(mktemp -d "${TMPDIR:-/tmp}/plasm-package.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 feed="$work/feed"; app="$work/app"; export NUGET_PACKAGES="$work/packages"
 
-echo "pack: Plasm.Annotations, Plasm, Plasm.Postgres into a local feed, built first and packed without building, as CI packs"
-for p in Plasm.Annotations Plasm Plasm.Postgres; do
+echo "pack: Plasm.Annotations, Plasm, Plasm.Postgres, Plasm.HotChocolate into a local feed, built first and packed without building, as CI packs"
+for p in Plasm.Annotations Plasm Plasm.Postgres Plasm.HotChocolate; do
   dotnet build "$repo/src/$p" -c Release -v q > "$work/build-$p.log" 2>&1 || { cat "$work/build-$p.log"; exit 1; }
   dotnet pack "$repo/src/$p" -c Release --no-build -o "$feed" -v q > "$work/pack-$p.log" 2>&1 || { cat "$work/pack-$p.log"; exit 1; }
 done
@@ -70,4 +70,14 @@ if ! grep -q "^model: built" "$work/native.txt"; then echo "the native binary di
 echo "--- native, without Plasm's step"; cat "$work/without.txt"
 if ! grep -q "TicketId.TicketId has fields that this native binary cannot see" "$work/without.txt"; then echo "without the step, the binary did not refuse its union by name"; failed=1; fi
 if diff -u "$work/jit.txt" "$work/native.txt"; then echo "native binary prints what the runtime prints"; else echo "native binary differs from the runtime"; failed=1; fi
+
+# A GraphQL application on Plasm.HotChocolate, from the same feed.
+gql="$work/graphql"
+mkdir -p "$gql"
+cp "$here/graphql/GraphQLConsumer.fsproj" "$here/graphql/Program.fs" "$app/nuget.config" "$gql/"
+dotnet build "$gql" -c Release -p:PlasmVersion="$version" -o "$work/gql-out" -v q > "$work/gql-build.log" 2>&1 || { cat "$work/gql-build.log"; exit 1; }
+dotnet "$work/gql-out/GraphQLConsumer.dll" > "$work/gql.txt" 2>&1 || true
+echo "--- GraphQL consumer"; cat "$work/gql.txt"
+expected='{"data":{"sql":"SELECT \"t\".\"id\", \"t\".\"title\", \"t\".\"points\" FROM \"tickets\" AS \"t\" WHERE \"t\".\"points\" > @p0 ORDER BY \"t\".\"points\" DESC"}}'
+if [ "$(cat "$work/gql.txt")" = "$expected" ]; then echo "the GraphQL consumer's where and order are Plasm's SQL"; else echo "the GraphQL consumer answered otherwise"; failed=1; fi
 exit $failed

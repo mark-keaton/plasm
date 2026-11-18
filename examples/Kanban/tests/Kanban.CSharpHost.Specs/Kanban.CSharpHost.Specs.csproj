@@ -13,6 +13,7 @@
   <ItemGroup>
     <ReqnrollFeatureFiles Include="../../features/csharp/*.feature" />
     <None Include="../../features/csharp/*.feature" Link="Features/%(Filename)%(Extension)" />
+    <Compile Include="../Hosting/Hosting.cs" Link="Hosting.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
