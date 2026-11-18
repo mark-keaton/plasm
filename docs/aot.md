@@ -250,6 +250,10 @@ MB over the slim builder, and is not done: Plasm's reflection over its own
 internals would then rest on the paths the check runs, and function comes
 before size.
 
+Once warm, a native binary runs a prepared query as fast as the runtime does,
+but translates a query built per call 5 to 7 times more slowly
+(docs/benchmarks.md, "Steady state").
+
 ### On AWS Lambda
 
 A function is a process started cold, so what it pays before its first

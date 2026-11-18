@@ -15,6 +15,7 @@ dotnet run -c Release -- counts    # commands, rows, allocations, median time, E
 dotnet run -c Release -- bench     # BenchmarkDotNet (time + allocations)
 dotnet run -c Release -- profile   # planning cost, raw-driver floor, per-command time
 dotnet run -c Release -- spread    # page of 1,000 three ways, interleaved: min/median/p90 and GC
+benchmarks/Plasm.Steady/run.sh     # steady state, native binary against the runtime (about 5 minutes)
 ```
 
 A PostgreSQL 18.4 container is started by Testcontainers (Docker required), or
@@ -293,6 +294,79 @@ The database evaluates the parent filter, sort and limit once per collection,
 and the results can differ if the data changes between commands. Plasm's key
 lists cannot drift that way, though it still needs `ReadConsistency.Snapshot`
 to see one database state across commands.
+
+### Steady state: a native binary against the runtime (2026-11-18)
+
+`benchmarks/Plasm.Steady/run.sh` runs one program, `benchmarks/Plasm.Steady`,
+under the runtime (Release, tiered compilation and PGO as shipped) and as a
+native binary, against one PostgreSQL 18.4 in Docker seeded with the dataset
+above (the schema and seed are read from `Database.fs` and `Workloads.fs`).
+
+- **Method.** A plain stopwatch loop compiled into both, not BenchmarkDotNet:
+  each operation runs 2,000 times to warm up, then (after a second's pause so
+  that tiered compilation finishes, and 200 more) 5,000 times, each timed on
+  its own; the table gives the median and the 95th percentile, and the bytes
+  allocated per operation (`GC.GetTotalAllocatedBytes(true)` across the timed
+  loop, all threads). The runtime and the native binary run twice each,
+  alternating; the table is the second pair, the first agreeing within the
+  noise below. The key changes with each run of an operation.
+- **Npgsql alone.** Every read has a twin sending the SQL Plasm sends (read
+  from `repo.Explain`) through Npgsql, reading every column as an object and
+  building nothing; the insert's twin sends the same statements written by
+  hand, the lines as one batch. What the twin does not do is Plasm's share.
+- **Limits.** One machine (the environment above), loopback, a busy machine
+  (load average about 7 on 16 cores; other sessions were building), so a
+  median moves by up to 30% between two runs of the same binary; p95s move
+  more. One connection at a time: no concurrency, so nothing here says how
+  either scales across cores.
+
+Medians and p95 in microseconds, bytes per operation:
+
+| Operation | Runtime median | Native median | Runtime p95 | Native p95 | Runtime bytes | Native bytes |
+|---|---|---|---|---|---|---|
+| Read by key, the query built per call | 199 | 250 | 291 | 297 | 37,159 | 79,891 |
+| Read by key, prepared | 159 | 175 | 191 | 226 | 18,584 | 25,431 |
+| List of 111 rows (`StartsWith`), one query value | 210 | 204 | 256 | 245 | 68,385 | 68,394 |
+| An order with its lines and its payments (`let!`), built per call | 470 | 994 | 618 | 1,599 | 273,627 | 451,144 |
+| The same, prepared | 365 | 365 | 436 | 445 | 127,075 | 128,021 |
+| An order with its lines, prepared | 333 | 358 | 394 | 424 | 87,734 | 99,912 |
+| Insert of an order with three lines, in a transaction | 1,118 | 1,137 | 1,914 | 3,460 | 64,997 | 65,609 |
+| Translation only (`repo.Explain`), read by key built per call | 14.9 | 90.1 | 17.0 | 98.0 | 30,361 | 73,685 |
+| Translation only, the order with lines and payments built per call | 85.2 | 507.2 | 92.3 | 572.5 | 156,056 | 332,971 |
+| Building the query value only, read by key | 8.0 | 48.3 | 8.4 | 53.8 | 18,648 | 44,876 |
+| Building the query value only, the order with lines and payments | 33.3 | 182.4 | 36.3 | 195.0 | 72,632 | 141,076 |
+| Npgsql alone: read by key | 127 | 125 | 158 | 160 | 2,848 | 2,849 |
+| Npgsql alone: list of 111 rows | 160 | 162 | 190 | 204 | 15,064 | 15,080 |
+| Npgsql alone: order, lines and payments | 383 | 374 | 477 | 450 | 11,337 | 11,335 |
+| Npgsql alone: order and lines | 254 | 251 | 327 | 307 | 7,336 | 7,331 |
+| Npgsql alone: insert of an order with three lines | 1,161 | 1,048 | 3,264 | 2,400 | 9,123 | 9,117 |
+
+What it shows:
+
+- **A query translated once runs as fast natively as under the runtime.**
+  Prepared queries, the list (one query value, planned once and reused) and
+  the insert are within the noise of each other; Npgsql alone is the same in
+  both, so the driver is no slower natively either.
+- **A query built per call is where a native binary is slower**, by 5 to 7
+  times in the work before anything is sent: 15 µs against 90 µs for a read
+  by key, 85 µs against 507 µs for an order with two loads, so that read as a
+  whole takes twice as long (994 µs against 470 µs) and allocates 65% more.
+  Both halves of that work are slower: building the query value, where
+  FSharp.Core decodes the quotations the builder takes as
+  `[<ReflectedDefinition>]` arguments (8 against 48 µs, 33 against 182 µs),
+  and Plasm's translation of them (7 against 42 µs, 52 against 325 µs). Both
+  resolve types and members by reflection over each quotation; this is a split
+  of the time, not a sampling profile, and it does not say which reflection
+  calls cost most.
+- **An order read with its lines** is 7% slower natively (333 against 358 µs,
+  14% more allocated), inside the noise but slower natively in five of the six
+  pairs across three runs: rows are made into records by reflection in both, natively
+  without the runtime's generated code.
+
+For a long-running native host, then: prepare the queries a request runs, as
+Plasm's start-up check already encourages (a prepared query is a value it
+checks); a query built per request pays its translation on every call, and
+natively pays it several times over.
 
 ## Interpretation
 

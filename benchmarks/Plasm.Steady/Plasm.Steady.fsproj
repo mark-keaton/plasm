@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Steady-state time per operation, the same program under the runtime and
+       as a native binary (run.sh, docs/benchmarks.md): Plasm and the same SQL
+       through Npgsql alone, over the benchmark domain. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104;IL3053</WarningsNotAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../tests/Plasm.TestDomain/Domain.fs" Link="Domain.fs" />
+    <Compile Include="Steady.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Plasm/Plasm.fsproj" />
+    <ProjectReference Include="../../src/Plasm.Postgres/Plasm.Postgres.fsproj" />
+  </ItemGroup>
+  <Import Project="../../src/Plasm/build/Plasm.Repository.targets" />
+</Project>
