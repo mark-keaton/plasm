@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!-- A C# host over Kanban's F# domain and data code: minimal APIs on the
+       slim builder, calling one F# type (Kanban.Data.KanbanData). -->
+  <PropertyGroup>
+    <AssemblyName>Kanban.Host.CSharp</AssemblyName>
+    <RootNamespace>Kanban.Host.CSharp</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- FSharp.Core's two summary warnings, which no F# library can quiet for
+         its users (docs/aot.md). -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104;IL3053</WarningsNotAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Data/Kanban.Data.fsproj" />
+  </ItemGroup>
+  <!-- Plasm's targets, from this repository rather than the package. -->
+  <Import Project="../../../../src/Plasm/build/Plasm.Repository.targets" />
+</Project>

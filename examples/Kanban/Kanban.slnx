@@ -2,9 +2,12 @@
   <Folder Name="/src/">
     <Project Path="src/Shared/Shared.fsproj" />
     <Project Path="src/Server/Server.fsproj" />
+    <Project Path="src/Data/Kanban.Data.fsproj" />
+    <Project Path="src/Host.CSharp/Kanban.Host.CSharp.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Kanban.Specs.Steps/Kanban.Specs.Steps.fsproj" />
     <Project Path="tests/Kanban.Specs/Kanban.Specs.csproj" />
+    <Project Path="tests/Kanban.CSharpHost.Specs/Kanban.CSharpHost.Specs.csproj" />
   </Folder>
 </Solution>

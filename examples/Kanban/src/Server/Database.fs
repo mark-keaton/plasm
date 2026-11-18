@@ -28,7 +28,8 @@ let migrate (connectionString: string) : Result<unit, string> =
 /// the data source for as long as the call lasts.
 ///
 /// Starting it is the start-up check: Plasm translates every query value in
-/// this assembly (`Workflows.Queries`; all of them are values) and compares
+/// Kanban.Data, the library that holds them (`Workflows.Queries`; all of them
+/// are values), and compares
 /// `Db.model` with the tables. Both are left at their default, which is to
 /// raise `PlasmStartupException` listing every problem, so the application
 /// does not serve with a query or a table that would fail on first use.
@@ -39,7 +40,7 @@ let start (dataSource: NpgsqlDataSource) (log: ILogger) : Task<Repo> =
                 Some(fun command ->
                     log.LogDebug("{Milliseconds:0.0} ms, {Rows} rows: {Sql}", command.Duration.TotalMilliseconds, command.Rows, command.Sql)) }
 
-    Repo.Start(Db.model, PostgresProvider dataSource, queriesIn = typeof<Marker>.Assembly, options = options)
+    Repo.Start(Db.model, PostgresProvider dataSource, queriesIn = typeof<Workflows.Refusal>.Assembly, options = options)
 
 /// Every difference between the tables and `Db.model` that would make a read
 /// or a write fail; empty when they fit. Start-up has already checked this

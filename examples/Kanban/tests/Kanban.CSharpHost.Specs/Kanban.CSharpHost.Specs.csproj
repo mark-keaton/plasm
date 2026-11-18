@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The C# host's scenarios (features/csharp/*.feature), with C# steps.
+       Each scenario starts the host as its own process and talks to it over
+       HTTP: the built host by default, or the program KANBAN_CSHARP_HOST
+       names (a native binary of it). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ReqnrollFeatureFiles Include="../../features/csharp/*.feature" />
+    <None Include="../../features/csharp/*.feature" Link="Features/%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Reqnroll.xunit.v3" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The host is run, not called: its output is located by its assembly. -->
+    <ProjectReference Include="../../src/Host.CSharp/Kanban.Host.CSharp.csproj" />
+    <!-- Only for the F# server's migrations (Kanban.Server.Database.migrate); its
+         ASP.NET Core packages come from the shared framework, as for Kanban.Specs. -->
+    <ProjectReference Include="../../src/Server/Server.fsproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>

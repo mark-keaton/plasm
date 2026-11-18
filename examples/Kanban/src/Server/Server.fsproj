@@ -4,8 +4,6 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Db.fs" />
-    <Compile Include="Workflows.fs" />
     <Compile Include="Service.fs" />
     <Compile Include="Database.fs" />
     <Compile Include="Host.fs" />
@@ -14,6 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Shared/Shared.fsproj" />
+    <ProjectReference Include="../Data/Kanban.Data.fsproj" />
     <ProjectReference Include="../../../../src/Plasm/Plasm.fsproj" />
     <ProjectReference Include="../../../../src/Plasm.Postgres/Plasm.Postgres.fsproj" />
     <PackageReference Include="Giraffe" />

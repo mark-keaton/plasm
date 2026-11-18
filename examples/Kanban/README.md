@@ -13,14 +13,17 @@ src/Shared   Domain.fs   types and rules, and on each stored record the few
                          storage facts its types cannot say; references
                          FSharp.Core and Plasm's attribute classes
              Api.fs      the contract between server and browser
-src/Server   Db.fs         which records are stored, and the server's own Account
+src/Data     Db.fs         which records are stored, and the server's own Account
              Workflows.fs  queries and transactions, as values
-             Service.fs    the API: parse input, run a workflow, map the outcome
+             Facade.fs     KanbanData, the one type a C# host calls
+src/Server   Service.fs    the API: parse input, run a workflow, map the outcome
              Database.fs   migrations (DbUp), and the repository, checked as it starts
              Host.fs       ASP.NET Core: services, cookie authentication, start-up,
                            the pipeline
 src/Client   App.fs      the Elmish application
-features/    the acceptance scenarios (Reqnroll), run against real PostgreSQL
+src/Host.CSharp          the same data served by C# minimal APIs (docs/csharp.md)
+features/    the acceptance scenarios (Reqnroll), run against real PostgreSQL;
+             features/csharp/ the C# host's
 ```
 
 There is one model, declared once. The records Plasm reads and writes are the
@@ -37,7 +40,7 @@ the same constructors and puts a refusal into words with the same
 `DomainError.describe`. The only thing it takes from Plasm is attribute
 classes, which Fable compiles from source like the domain itself.
 
-On the server, `Db.fs` lists the stored records to build the model.
+In `src/Data`, `Db.fs` lists the stored records to build the model.
 `Workflows.fs` describes
 each change as read, decide, write, where "decide" is a function from
 `Domain.fs` and what is read and written is a `Card`: a write is
@@ -60,7 +63,20 @@ The scenarios need Docker (or `PLASM_TEST_PG`, as the library's tests do):
 
 ```
 dotnet test --project tests/Kanban.Specs
+dotnet test --project tests/Kanban.CSharpHost.Specs
 ```
+
+The C# host's scenarios start the host as its own process and talk to it
+over HTTP. To run them against its native binary instead, publish it and
+name the binary in `KANBAN_CSHARP_HOST`:
+
+```
+dotnet publish src/Host.CSharp -c Release -r osx-arm64 -o artifacts/host-native
+KANBAN_CSHARP_HOST=$PWD/artifacts/host-native/Kanban.Host.CSharp dotnet test --project tests/Kanban.CSharpHost.Specs
+```
+
+(`osx-arm64` is the machine's runtime identifier: `linux-x64`, `win-x64`
+and so on elsewhere.)
 
 ## What the scenarios show
 
