@@ -3,7 +3,6 @@
     <Project Path="src/Plasm/Plasm.fsproj" />
     <Project Path="src/Plasm.Annotations/Plasm.Annotations.fsproj" />
     <Project Path="src/Plasm.Postgres/Plasm.Postgres.fsproj" />
-    <Project Path="src/Plasm.Build/Plasm.Build.fsproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Plasm.TestDomain/Plasm.TestDomain.fsproj" />

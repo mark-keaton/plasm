@@ -7,8 +7,6 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <!-- IL warnings are made errors last, once the binary works (docs/aot.md). -->
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <!-- The build step is a plain program run during the build, not part of the binary. -->
-    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.fs" />
@@ -17,17 +15,7 @@
     <ProjectReference Include="../Plasm.Aot.Domain/Plasm.Aot.Domain.fsproj" />
     <ProjectReference Include="../../src/Plasm/Plasm.fsproj" />
     <ProjectReference Include="../../src/Plasm.Postgres/Plasm.Postgres.fsproj" />
-    <!-- So that a restore of this project restores the build step too; it is
-         built and run by the target below, not referenced. -->
-    <ProjectReference Include="../../src/Plasm.Build/Plasm.Build.fsproj" ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
+  <!-- Plasm's targets, from this repository rather than the package. -->
   <Import Project="../../src/Plasm/build/Plasm.targets" />
-  <!-- Plasm's build step from this repository, not the package: built here,
-       as a plain program in its own output folder whatever this build's
-       output, runtime or publish settings, and run from there. -->
-  <Target Name="PlasmBuildTool" BeforeTargets="PlasmShapes">
-    <MSBuild Projects="../../src/Plasm.Build/Plasm.Build.fsproj" Targets="Build" Properties="Configuration=$(Configuration)" RemoveProperties="OutputPath;OutDir;RuntimeIdentifier;SelfContained;PublishAot;_PublishingToolOutput">
-      <Output TaskParameter="TargetOutputs" PropertyName="PlasmBuildTool" />
-    </MSBuild>
-  </Target>
 </Project>

@@ -1,34 +1,17 @@
 <Project>
-  <!-- Plasm's build step (docs/aot.md): before an application compiles, writes
-       the shapes of its domain's F# records and unions as F# and compiles them
-       first, so that a native binary needs no reflection over them. -->
-  <PropertyGroup>
-    <PlasmShapes Condition="'$(PlasmShapes)' == '' and '$(OutputType)' == 'Exe'">true</PlasmShapes>
-    <PlasmBuildTool Condition="'$(PlasmBuildTool)' == ''">$(MSBuildThisFileDirectory)../tools/Plasm.Build.dll</PlasmBuildTool>
-  </PropertyGroup>
-
-  <Target Name="PlasmShapes" AfterTargets="ResolveAssemblyReferences" BeforeTargets="BeforeCompile" Condition="'$(PlasmShapes)' == 'true'">
-    <PropertyGroup>
-      <_PlasmShapesFile>$(IntermediateOutputPath)Plasm.Shapes.g.fs</_PlasmShapesFile>
-      <_PlasmReferences>$(IntermediateOutputPath)Plasm.Shapes.references</_PlasmReferences>
-    </PropertyGroup>
-    <WriteLinesToFile File="$(_PlasmReferences)" Lines="@(ReferencePath)" Overwrite="true" WriteOnlyWhenDifferent="true" />
-    <Exec Command="dotnet &quot;$(PlasmBuildTool)&quot; &quot;$(_PlasmShapesFile)&quot; &quot;$(_PlasmReferences)&quot;" />
-    <ReadLinesFromFile File="$(IntermediateOutputPath)Plasm.Shapes.g.domain">
-      <Output TaskParameter="Lines" ItemName="_PlasmDomain" />
-    </ReadLinesFromFile>
-    <!-- First, so that its registrations run before the application's code. -->
+  <!-- Plasm in a native binary (docs/aot.md): reflection reads an application's
+       records and unions, and a query names its functions, so the
+       application's assembly and those of its project references are kept
+       whole when a publish trims. Plasm's own assemblies keep what queries
+       name through the descriptor in Plasm.dll. Nothing changes for a build
+       that does not trim. -->
+  <Target Name="PlasmRoots" AfterTargets="ResolveReferences">
     <ItemGroup>
-      <_PlasmCompile Include="@(Compile)" />
-      <Compile Remove="@(Compile)" />
-      <Compile Include="$(_PlasmShapesFile)" />
-      <Compile Include="@(_PlasmCompile)" />
-      <FileWrites Include="$(_PlasmShapesFile);$(_PlasmReferences);$(IntermediateOutputPath)Plasm.Shapes.g.domain" />
-      <!-- Kept whole in a native binary: queries name the application's and
-           the domain's members (a [<ReflectedDefinition>] function, a field)
-           by reflection, and nothing else may refer to them. -->
+      <_PlasmOwn Include="Plasm;Plasm.Annotations;Plasm.Postgres;Plasm.PGlite" />
+      <_PlasmReferenced Include="@(ReferencePath->'%(Filename)')" Condition="'%(ReferencePath.ReferenceSourceTarget)' == 'ProjectReference'" />
+      <_PlasmReferenced Remove="@(_PlasmOwn)" />
       <TrimmerRootAssembly Include="$(AssemblyName)" />
-      <TrimmerRootAssembly Include="@(_PlasmDomain)" />
+      <TrimmerRootAssembly Include="@(_PlasmReferenced)" />
     </ItemGroup>
   </Target>
 </Project>

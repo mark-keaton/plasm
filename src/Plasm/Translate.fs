@@ -189,7 +189,7 @@ let private reflectedBody (m: Reflection.MethodBase) =
                     Expr.TryGetReflectedDefinition m
                 // A native binary has no metadata tokens, by which FSharp.Core
                 // finds a definition (docs/aot.md): found by name instead.
-                with :? InvalidOperationException when Shape.generatedOnly ->
+                with :? InvalidOperationException ->
                     Definitions.tryFind m
         )
 
