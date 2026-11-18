@@ -188,19 +188,9 @@ let private reflectedBody (m: Reflection.MethodBase) =
                 try
                     Expr.TryGetReflectedDefinition m
                 // A native binary has no metadata tokens, by which FSharp.Core
-                // finds a definition (docs/aot.md).
+                // finds a definition (docs/aot.md): found by name instead.
                 with :? InvalidOperationException when Shape.generatedOnly ->
-                    if m.IsDefined(typeof<ReflectedDefinitionAttribute>, false) then
-                        raise (
-                            TranslationFailure(
-                                TranslationError.UnsupportedExpression(
-                                    m.DeclaringType.Name + "." + m.Name,
-                                    "a [<ReflectedDefinition>] member or function cannot be read in a native binary yet (docs/aot.md)"
-                                )
-                            )
-                        )
-
-                    None
+                    Definitions.tryFind m
         )
 
 /// The quoted body of a query that binds loads (loads.feature): read by its

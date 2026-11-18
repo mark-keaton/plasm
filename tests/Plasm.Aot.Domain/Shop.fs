@@ -11,3 +11,7 @@ type Customer =
       Name: string
       [<Unique>]
       Email: string }
+
+    /// The domain's own word, readable in a query.
+    [<ReflectedDefinition>]
+    member c.AtExample = c.Email.EndsWith "@example.com"

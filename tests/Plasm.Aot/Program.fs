@@ -31,6 +31,10 @@ let step (name: string) (f: unit -> string) =
         if Environment.GetEnvironmentVariable "PLASM_AOT_TRACE" = "1" then
             Console.Error.WriteLine(i.StackTrace)
 
+/// The application's own word, readable in a query.
+[<ReflectedDefinition>]
+let named (name: string) (c: Customer) = c.Name = name
+
 let customer (c: Customer) =
     let (CustomerId id) = c.Id
     "Customer " + string id + " " + c.Name + " <" + c.Email + ">"
@@ -66,11 +70,16 @@ let main argv =
                 customer c
             | Error e -> "failed: " + e.Display)
 
+        let read (q: Query<Customer>) =
+            match repo.All(q).Result with
+            | Ok cs -> String.Join("; ", cs |> List.map customer)
+            | Error e -> "failed: " + string e
+
         step "read by typed id" (fun () ->
             let id = ada.Value.Id
+            read (plasm { for c in tableOf<Customer> do where (c.Id = id) }))
 
-            match repo.All(plasm { for c in tableOf<Customer> do where (c.Id = id) }).Result with
-            | Ok cs -> String.Join("; ", cs |> List.map customer)
-            | Error e -> "failed: " + string e)
+        step "read by a reflected member" (fun () -> read (plasm { for c in tableOf<Customer> do where c.AtExample }))
+        step "read by a reflected function" (fun () -> read (plasm { for c in tableOf<Customer> do where (named "Ada" c) }))
 
         0

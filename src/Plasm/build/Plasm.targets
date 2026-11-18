@@ -14,13 +14,21 @@
     </PropertyGroup>
     <WriteLinesToFile File="$(_PlasmReferences)" Lines="@(ReferencePath)" Overwrite="true" WriteOnlyWhenDifferent="true" />
     <Exec Command="dotnet &quot;$(PlasmBuildTool)&quot; &quot;$(_PlasmShapesFile)&quot; &quot;$(_PlasmReferences)&quot;" />
+    <ReadLinesFromFile File="$(IntermediateOutputPath)Plasm.Shapes.g.domain">
+      <Output TaskParameter="Lines" ItemName="_PlasmDomain" />
+    </ReadLinesFromFile>
     <!-- First, so that its registrations run before the application's code. -->
     <ItemGroup>
       <_PlasmCompile Include="@(Compile)" />
       <Compile Remove="@(Compile)" />
       <Compile Include="$(_PlasmShapesFile)" />
       <Compile Include="@(_PlasmCompile)" />
-      <FileWrites Include="$(_PlasmShapesFile);$(_PlasmReferences)" />
+      <FileWrites Include="$(_PlasmShapesFile);$(_PlasmReferences);$(IntermediateOutputPath)Plasm.Shapes.g.domain" />
+      <!-- Kept whole in a native binary: queries name the application's and
+           the domain's members (a [<ReflectedDefinition>] function, a field)
+           by reflection, and nothing else may refer to them. -->
+      <TrimmerRootAssembly Include="$(AssemblyName)" />
+      <TrimmerRootAssembly Include="@(_PlasmDomain)" />
     </ItemGroup>
   </Target>
 </Project>

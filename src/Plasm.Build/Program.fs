@@ -279,6 +279,10 @@ let main argv =
 
         let text = emit domain (domain |> List.collect shapes)
 
+        // The domain assemblies, for the build to keep whole in a native binary:
+        // a query names their members by reflection.
+        File.WriteAllLines(Path.ChangeExtension(output, ".domain"), domain |> List.map (fun a -> a.GetName().Name))
+
         // Written only when it changes, so the compiler's own up-to-date check holds.
         if not (File.Exists output) || File.ReadAllText output <> text then
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath output)) |> ignore

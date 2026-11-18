@@ -13,6 +13,13 @@
     <type fullname="Microsoft.FSharp.Collections.ArrayModule" preserve="methods" />
     <type fullname="Microsoft.FSharp.Core.FSharpOption`1" preserve="all" />
     <type fullname="Microsoft.FSharp.Collections.FSharpList`1" preserve="all" />
+    <!-- The decoder of [<ReflectedDefinition>] bodies, which Plasm calls by
+         name in a native binary (Definitions in src/Plasm/Shapes.fs). -->
+    <type fullname="Microsoft.FSharp.Quotations.PatternsModule" preserve="all">
+      <type name="BindingEnv" preserve="all" />
+      <type name="SimpleUnpickle" preserve="all" />
+    </type>
+    <type fullname="Microsoft.FSharp.Core.FSharpFunc`2" preserve="methods" />
   </assembly>
   <assembly fullname="System.Private.CoreLib">
     <type fullname="System.String" preserve="methods" />

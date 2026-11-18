@@ -239,6 +239,106 @@ module internal Shape =
         | true, s -> s
         | _ -> lists.GetOrAdd(element, orMissing "held in a list" element reflectedList)
 
+/// The [<ReflectedDefinition>] bodies of an assembly, found by the member's
+/// declaring type, name and parameter types (docs/aot.md). FSharp.Core finds
+/// them by metadata token, and a native binary has none; this decodes the same
+/// resource with FSharp.Core's own decoder, and keys it without tokens.
+module internal Definitions =
+    open Microsoft.FSharp.Quotations
+
+    let private flags = BindingFlags.Static ||| BindingFlags.Public ||| BindingFlags.NonPublic
+    let private core = typeof<Expr>.Assembly
+
+    /// FSharp.Core's versions this decoder is verified against (docs/aot.md).
+    let verified = [ "8.0.0.0"; "11.0.0.0" ]
+
+    /// A part of FSharp.Core's decoder, or an error naming FSharp.Core's
+    /// version: it is FSharp.Core's own, not public, and may change.
+    let private part (what: string) (found: 'a) : 'a =
+        if isNull (box found) then
+            let versions = String.concat ", " verified
+
+            invalidOp
+                $"FSharp.Core {core.GetName().Version} has no {what}, which Plasm uses to read a [<ReflectedDefinition>] in a native binary; it is verified with FSharp.Core {versions} (docs/aot.md)"
+
+        found
+
+    type private Decoder =
+        { Reader: obj
+          Unpickle: MethodInfo
+          Env: Type
+          Subst: MethodInfo }
+
+    let private decoder =
+        lazy
+            (let patterns = part "PatternsModule" (core.GetType "Microsoft.FSharp.Quotations.PatternsModule")
+
+             { Reader = (part "u_ReflectedDefinitions" (patterns.GetMethod("get_u_ReflectedDefinitions", flags))).Invoke(null, [||])
+               Unpickle =
+                 part
+                     "SimpleUnpickle.unpickleObj"
+                     ((part "SimpleUnpickle" (core.GetType "Microsoft.FSharp.Quotations.PatternsModule+SimpleUnpickle")).GetMethod("unpickleObj", flags))
+               Env = part "BindingEnv" (core.GetType "Microsoft.FSharp.Quotations.PatternsModule+BindingEnv")
+               Subst = part "mkTyparSubst" (patterns.GetMethod("mkTyparSubst", flags)) })
+
+    /// Whether this FSharp.Core's decoder is all there (a test pins it).
+    let check () = decoder.Force() |> ignore
+
+    let private key (m: MethodBase) =
+        m.DeclaringType.FullName + "::" + m.Name + "(" + String.Join(",", m.GetParameters() |> Array.map (fun p -> p.ParameterType.FullName)) + ")"
+
+    /// Each definition of an assembly, by key: its builder, taking FSharp.Core's
+    /// binding environment.
+    let private decode (a: Assembly) : Collections.Generic.Dictionary<string, obj> =
+        let d = decoder.Value
+        let found = Collections.Generic.Dictionary<string, obj>()
+
+        let mappings =
+            a.GetCustomAttributes(typeof<CompilationMappingAttribute>, false)
+            |> Array.choose (function
+                | :? CompilationMappingAttribute as m when not (isNull m.ResourceName) -> Some(m.ResourceName, m.TypeDefinitions)
+                | _ -> None)
+
+        let listType = (part "u_ReflectedDefinitions's type" (d.Reader.GetType().BaseType)).GetGenericArguments().[1]
+
+        for name in a.GetManifestResourceNames() do
+            if name.StartsWith("ReflectedDefinitions", StringComparison.Ordinal) then
+                use stream = part ("the resource " + name) (a.GetManifestResourceStream name)
+                use bytes = new IO.MemoryStream()
+                stream.CopyTo bytes
+
+                let referenced =
+                    mappings |> Array.tryPick (fun (n, ts) -> if n = name then Some ts else None) |> Option.defaultValue [||]
+
+                let entries = d.Unpickle.MakeGenericMethod(listType).Invoke(null, [| a; referenced; d.Reader; bytes.ToArray() |])
+
+                for entry in entries :?> Collections.IEnumerable do
+                    let pair = entry :?> ITuple
+                    found.[key (pair.[0] :?> MethodBase)] <- pair.[1]
+
+        found
+
+    let private assemblies = ConcurrentDictionary<Assembly, Collections.Generic.Dictionary<string, obj>>()
+
+    let private carries (a: Assembly) =
+        a.GetManifestResourceNames() |> Array.exists (fun n -> n.StartsWith("ReflectedDefinitions", StringComparison.Ordinal))
+
+    /// The body of `m`, if it has one.
+    let tryFind (m: MethodBase) : Expr option =
+        if isNull m.DeclaringType || not (carries m.DeclaringType.Assembly) then None else
+
+        match assemblies.GetOrAdd(m.DeclaringType.Assembly, decode).TryGetValue(key m) with
+        | true, builder ->
+            let d = decoder.Value
+            let typeArgs = Array.append (m.DeclaringType.GetGenericArguments()) (if m.IsGenericMethod then m.GetGenericArguments() else [||])
+            let subst = d.Subst.Invoke(null, [| typeArgs |])
+            let vars = (part "Map.Empty" (typeof<Map<int, Var>>.GetProperty("Empty", flags))).GetValue null
+            let ctor = part "BindingEnv's constructor" (d.Env.GetConstructors(BindingFlags.Instance ||| BindingFlags.Public ||| BindingFlags.NonPublic) |> Array.tryHead |> Option.toObj)
+            let binding = ctor.Invoke [| vars; 0; subst |]
+            let invoke = part "FSharpFunc.Invoke" (typedefof<FSharpFunc<_, _>>.MakeGenericType(d.Env, typeof<Expr>).GetMethod "Invoke")
+            Some(invoke.Invoke(builder, [| binding |]) :?> Expr)
+        | _ -> None
+
 /// Where the code Plasm's build step generates (docs/aot.md) registers the
 /// shapes of the application's F# types, before a model is built. Not for
 /// hand-written code: the record is the only place a shape is stated.
