@@ -50,6 +50,11 @@ declarations and nothing of Hot Chocolate).
   Plasm does.
 - `AddPlasmUnion<'U>()` shows a type of C#'s union shape as a GraphQL union
   (below).
+- `PlasmRequest.Page(context, query, defaultTake)` pages a query as the
+  field's offset paging (`skip`, `take`) asks, reading one row more than the
+  page; `PlasmRequest.Segment(context, rows, defaultTake, total)` makes the
+  `CollectionSegment` Hot Chocolate shows, running `total` only when the
+  request selects `totalCount`.
 
 ## A host
 
@@ -81,10 +86,15 @@ builder.Services
 
 public class Query
 {
+    [UseOffsetPaging(DefaultPageSize = Paging.Default, MaxPageSize = Paging.Most, IncludeTotalCount = true)]
     [UseFiltering(typeof(CardFilter))]
     [UseSorting(typeof(CardSort))]
-    public Task<CardView[]> Cards(IResolverContext context, [Service] KanbanData kanban, CancellationToken ct) =>
-        kanban.CardsAsync(query => PlasmRequest.Apply(context, CardFields.all, query), ct);
+    public async Task<CollectionSegment<CardView>> Cards(IResolverContext context, [Service] KanbanData kanban, CancellationToken ct)
+    {
+        Plasm.Query<Card> Filtered(Plasm.Query<Card> query) => PlasmRequest.Apply(context, CardFields.all, query, CardFields.created);
+        var rows = await kanban.CardsAsync(query => PlasmRequest.Page(context, Filtered(query), Paging.Default), ct);
+        return await PlasmRequest.Segment(context, rows, Paging.Default, () => kanban.CountCardsAsync(Filtered, ct));
+    }
 }
 
 public class CardFilter() : PlasmFilterInputType<Card>("CardFilterInput", CardFields.all);
@@ -103,10 +113,18 @@ Done by the database:
   parameter.
 - **The order**: each orderable field, ascending or descending, in the order
   given, as the SQL's ORDER BY.
+- **The page**: offset paging's `skip` and `take` as the SQL's OFFSET and
+  LIMIT, parameters both, one row more than the page so that `hasNextPage`
+  needs no count; Plasm orders a page by the key after the request's order,
+  so the same page holds the same rows each time it is read. Plasm reads no
+  page without an order: `Apply`'s fourth argument names the declared field
+  a page is ordered by when the request gives none (Kanban's `created`).
+- **The total**, when the request selects `totalCount`: a COUNT under the
+  request's where, not run otherwise. Hot Chocolate refuses a `take` over the
+  field's `MaxPageSize` before the resolver runs.
 
 Not done by the database, yet:
 
-- **Paging.** A request reads every row its where selects.
 - **Field selection.** Every column of the record is read, and its owned and
   linked lists are loaded (a card's comments and labels, one command each for
   all the cards read), whatever the request selects; Hot Chocolate picks the

@@ -4,6 +4,7 @@
 // the database does both; C# writes no query.
 using HotChocolate.Data;
 using HotChocolate.Resolvers;
+using HotChocolate.Types.Pagination;
 using Kanban;
 using Kanban.Data;
 using Npgsql;
@@ -34,10 +35,24 @@ app.Run();
 
 public class Query
 {
+    /// A page of cards: the where, the order and the page are the database's,
+    /// and the total is counted only when a request asks for it.
+    [UseOffsetPaging(DefaultPageSize = Paging.Default, MaxPageSize = Paging.Most, IncludeTotalCount = true)]
     [UseFiltering(typeof(CardFilter))]
     [UseSorting(typeof(CardSort))]
-    public Task<CardView[]> Cards(IResolverContext context, [Service] KanbanData kanban, CancellationToken ct) =>
-        kanban.CardsAsync(query => PlasmRequest.Apply(context, CardFields.all, query), ct);
+    public async Task<CollectionSegment<CardView>> Cards(IResolverContext context, [Service] KanbanData kanban, CancellationToken ct)
+    {
+        Plasm.Query<Card> Filtered(Plasm.Query<Card> query) => PlasmRequest.Apply(context, CardFields.all, query, CardFields.created);
+        var rows = await kanban.CardsAsync(query => PlasmRequest.Page(context, Filtered(query), Paging.Default), ct);
+        return await PlasmRequest.Segment(context, rows, Paging.Default, () => kanban.CountCardsAsync(Filtered, ct));
+    }
+}
+
+/// A page's size when a request does not say, and the most it may say.
+static class Paging
+{
+    public const int Default = 10;
+    public const int Most = 50;
 }
 
 /// The filter and sort inputs, generated from Kanban's declared card fields.

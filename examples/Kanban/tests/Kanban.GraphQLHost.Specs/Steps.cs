@@ -84,28 +84,61 @@ public sealed class Steps : IAsyncDisposable
     }
 
     List<string> Titles() =>
-        JsonNode.Parse(body)!["data"]?["cards"]?.AsArray().Select(c => (string)c!["title"]!).ToList()
+        JsonNode.Parse(body)!["data"]?["cards"]?["items"]?.AsArray().Select(c => (string)c!["title"]!).ToList()
         ?? throw new Exception("no cards in the answer: " + body);
 
     [Then("the cards are {string}")]
     public void CardsAre(string expected) => Equal(expected, string.Join(", ", Titles()), "the cards");
 
-    [Then("there are {int} cards")]
-    public void Count(int n) => Equal(n, Titles().Count, "how many cards");
-
-    [Then("the cards' SQL has a WHERE and ends with {string}")]
-    public void SqlWhereOrder(string ending)
+    void Orders(string sql, string ordering)
     {
-        var sql = CardsSql().Single();
-        if (!sql.Contains(" WHERE ")) throw new Exception("no WHERE in " + sql);
-        if (!sql.EndsWith(ending)) throw new Exception($"the SQL does not end with {ending}: {sql}");
+        if (!sql.EndsWith(ordering + " LIMIT @p0") && !sql.Contains(ordering + " LIMIT @p"))
+            throw new Exception($"the SQL does not order by {ordering} and then read a page: {sql}");
     }
 
-    [Then("the cards' SQL has no WHERE and no ORDER BY")]
-    public void SqlPlain()
+    List<string> Reads() => CardsSql().Where(l => !l.StartsWith("SELECT COUNT(")).ToList();
+
+    [Then("the cards' SQL has a WHERE and orders by {string}, then reads a page")]
+    public void SqlWhereOrder(string ordering)
     {
-        var sql = CardsSql().Single();
-        if (sql.Contains(" WHERE ") || sql.Contains("ORDER BY")) throw new Exception("the SQL filters or orders: " + sql);
+        var sql = Reads().Single();
+        if (!sql.Contains(" WHERE ")) throw new Exception("no WHERE in " + sql);
+        Orders(sql, ordering);
+    }
+
+    [Then("the cards' SQL has no WHERE and orders by {string}, then reads a page")]
+    public void SqlPlain(string ordering)
+    {
+        var sql = Reads().Single();
+        if (sql.Contains(" WHERE ")) throw new Exception("the SQL filters: " + sql);
+        Orders(sql, ordering);
+    }
+
+    JsonNode? PageInfo() => JsonNode.Parse(body)!["data"]?["cards"]?["pageInfo"];
+
+    [Then("the page has a next page and a previous page")]
+    public void BothSides() => Equal((true, true), ((bool)PageInfo()!["hasNextPage"]!, (bool)PageInfo()!["hasPreviousPage"]!), "next and previous");
+
+    [Then("the page has no next page and a previous page")]
+    public void LastPage() => Equal((false, true), ((bool)PageInfo()!["hasNextPage"]!, (bool)PageInfo()!["hasPreviousPage"]!), "next and previous");
+
+    [Then("the total is {int}")]
+    public void Total(int n) => Equal(n, (int)JsonNode.Parse(body)!["data"]!["cards"]!["totalCount"]!, "the total");
+
+    [Then("the database counted the cards under a WHERE")]
+    public void Counted()
+    {
+        var count = CardsSql().Single(l => l.StartsWith("SELECT COUNT("));
+        if (!count.Contains(" WHERE ")) throw new Exception("the count does not filter: " + count);
+    }
+
+    [Then("the database counted nothing")]
+    public void NotCounted() => Equal(0, CardsSql().Count(l => l.StartsWith("SELECT COUNT(")), "counts sent");
+
+    [Then("the answer is an error")]
+    public void AnError()
+    {
+        if (JsonNode.Parse(body)!["errors"] is null) throw new Exception("no error in " + body);
     }
 
     [Then("the answer's JSON is {}")]

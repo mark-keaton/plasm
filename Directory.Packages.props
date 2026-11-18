@@ -5,6 +5,7 @@
     <!-- Plasm.HotChocolate is built against this version (docs/hotchocolate.md). -->
     <PackageVersion Include="HotChocolate.Data" Version="16.7.6" />
     <PackageVersion Include="HotChocolate.AspNetCore" Version="16.7.6" />
+    <PackageVersion Include="HotChocolate.Types.OffsetPagination" Version="16.7.6" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
     <PackageVersion Include="Reqnroll" Version="3.3.4" />
     <PackageVersion Include="Reqnroll.xunit.v3" Version="3.3.4" />

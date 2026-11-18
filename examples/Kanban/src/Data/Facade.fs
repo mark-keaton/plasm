@@ -285,9 +285,12 @@ module CardFields =
         | "done" -> Ok StageKind.Done
         | other -> Error $"no stage is \"{other}\": backlog, doing or done"
 
+    /// Oldest first: the order of a page whose request names none.
+    let created = QueryField.ordered "created" <@ fun (c: Card) -> c.Created @>
+
     let all: QueryField<Card> list =
         [ QueryField.orderedVia "title" <@ fun (c: Card) -> c.Title @> title "x"
-          QueryField.ordered "created" <@ fun (c: Card) -> c.Created @>
+          created
           QueryField.ordered "version" <@ fun (c: Card) -> c.Version @>
           QueryField.equalVia "stage" <@ fun (c: Card) -> kind c @> stage "backlog" ]
 
@@ -365,6 +368,13 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
         task {
             let! cards = repo.All(refine.Invoke(Query.from tableOf<Card>), cancellationToken = cancellationToken)
             return read "Reading cards failed" cards |> List.map View.card |> Array.ofList
+        }
+
+    /// How many cards the query `refine` makes reads.
+    member _.CountCardsAsync(refine: Func<Query<Card>, Query<Card>>, cancellationToken: CancellationToken) : Task<int> =
+        task {
+            let! n = repo.Count(refine.Invoke(Query.from tableOf<Card>), cancellationToken = cancellationToken)
+            return int (read "Counting cards failed" n)
         }
 
     member _.BoardsAsync(cancellationToken: CancellationToken) : Task<BoardSummary[]> =

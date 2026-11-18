@@ -6,6 +6,8 @@ open HotChocolate
 open HotChocolate.Data.Filters
 open HotChocolate.Data.Sorting
 open HotChocolate.Resolvers
+open HotChocolate.Types.Pagination
+open System.Threading.Tasks
 open Plasm
 
 /// What a GraphQL request asks of a query: its where and order, read from
@@ -55,6 +57,12 @@ type PlasmRequest =
     /// `query` with the request's where and order, from the fields declared:
     /// the field's `where` and `order` arguments, as Hot Chocolate coerced them.
     static member Apply(context: IResolverContext, fields: QueryField<'T> seq, query: Query<'T>) : Query<'T> =
+        PlasmRequest.Apply(context, fields, query, Unchecked.defaultof<QueryField<'T>>)
+
+    /// As Apply, ordered by `orderWhenNone`, ascending, when the request gives
+    /// no order: Plasm refuses a page without one, since its rows would not be
+    /// the same from one read to the next.
+    static member Apply(context: IResolverContext, fields: QueryField<'T> seq, query: Query<'T>, orderWhenNone: QueryField<'T>) : Query<'T> =
         let byName = Dictionary<string, QueryField<'T>>()
         for f in fields do byName.[f.Name] <- f
 
@@ -78,18 +86,55 @@ type PlasmRequest =
                 | None -> query
             | _ -> query
 
-        match argument "order" with
-        | :? System.Collections.IEnumerable as orders ->
-            [ for o in orders do
-                  match o with
-                  | :? IDictionary<string, obj> as entries ->
-                      for KeyValue(name, direction) in entries do
-                          if not (isNull direction) then yield name, direction
-                  | _ -> () ]
+        let ordering =
+            match argument "order" with
+            | :? System.Collections.IEnumerable as orders ->
+                [ for o in orders do
+                      match o with
+                      | :? IDictionary<string, obj> as entries ->
+                          for KeyValue(name, direction) in entries do
+                              if not (isNull direction) then yield name, direction
+                      | _ -> () ]
+            | _ -> []
+
+        match ordering with
+        | [] when not (isNull (box orderWhenNone)) -> orderWhenNone.OrderBy(filtered, false)
+        | _ ->
+            ordering
             |> List.fold
                 (fun q (name, direction) ->
                     match byName.TryGetValue name with
                     | true, f -> f.OrderBy(q, (string direction).ToUpperInvariant() = "DESC")
                     | _ -> raise (GraphQLException $"{typeof<'T>.Name} declares no field {name} to order by"))
                 filtered
-        | _ -> filtered
+
+    static member private Count(context: IResolverContext, name: string) : int option =
+        if context.Selection.Field.Arguments.ContainsField name then
+            match context.ArgumentValue<obj> name with
+            | :? int as n -> Some n
+            | _ -> None
+        else
+            None
+
+    /// `query` paged as the field's skip and take arguments say (offset
+    /// paging), `defaultTake` when the request gives no take: one row more
+    /// than the page, so that Segment knows whether another page follows.
+    static member Page(context: IResolverContext, query: Query<'T>, defaultTake: int) : Query<'T> =
+        let skip = defaultArg (PlasmRequest.Count(context, "skip")) 0
+        let take = defaultArg (PlasmRequest.Count(context, "take")) defaultTake
+        let skipped = if skip > 0 then query |> BuildQuery.skip skip else query
+        skipped |> BuildQuery.take (take + 1)
+
+    /// The page of `rows` (read from a query Page made) as offset paging
+    /// shows it; `total` is run only when the request selects totalCount.
+    static member Segment(context: IResolverContext, rows: IReadOnlyList<'R>, defaultTake: int, total: Func<Task<int>>) : Task<CollectionSegment<'R>> =
+        task {
+            let skip = defaultArg (PlasmRequest.Count(context, "skip")) 0
+            let take = defaultArg (PlasmRequest.Count(context, "take")) defaultTake
+            let items = rows |> Seq.truncate take |> Array.ofSeq :> IReadOnlyList<'R>
+
+            let counted = context.IsSelected "totalCount"
+
+            let! n = if counted then total.Invoke() else Task.FromResult 0
+            return CollectionSegment<'R>(items, CollectionSegmentInfo(rows.Count > take, skip > 0), n)
+        }

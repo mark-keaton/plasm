@@ -11,5 +11,6 @@
   <ItemGroup>
     <ProjectReference Include="../Plasm/Plasm.fsproj" />
     <PackageReference Include="HotChocolate.Data" />
+    <PackageReference Include="HotChocolate.Types.OffsetPagination" />
   </ItemGroup>
 </Project>
