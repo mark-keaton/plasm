@@ -236,10 +236,25 @@ before size.
 A function is a process started cold, so what it pays before its first
 answer matters, and its package's size with it:
 
+- **Publish inside Amazon Linux 2023**, the image Lambda's `provided.al2023`
+  runs (`public.ecr.aws/amazonlinux/amazonlinux:2023` with
+  `dnf install clang gcc zlib-devel` and the SDK from `dotnet-install`): a
+  native binary needs the glibc it was linked against, and one published in
+  the .NET SDK image needs GLIBC_2.38 and 2.43, where Amazon Linux 2023 has
+  2.34, so it does not start. `run-linux.sh` proves Linux, not Lambda's Linux.
 - **Plasm takes any data source**, `PostgresProvider(dataSource)`, so a
-  function can build its own (pooling, TLS, Npgsql's slim builder); with the
-  slim builder the check needs only `EnableArrays()`, for a captured list, and
-  prints the same as with `NpgsqlDataSource.Create` (`-p:PlasmAotSlim=true`).
+  function can build its own (pooling, TLS, Npgsql's slim builder). With the
+  slim builder, enable what is used: arrays for a captured list, transport
+  security for a TLS connection, without which the first connection throws:
+
+  ```fsharp
+  let provider =
+      PostgresProvider(NpgsqlSlimDataSourceBuilder(connectionString).EnableArrays().EnableTransportSecurity().Build())
+  ```
+
+  The check, over a local connection without TLS, prints the same with
+  `EnableArrays()` alone as with `NpgsqlDataSource.Create`
+  (`-p:PlasmAotSlim=true`).
 - **Check the queries in a test, not at each cold start**, when there are
   many: natively the check costs about half a millisecond a query (16 queries
   9 ms, of which the first query gets back 2). Start the function with
@@ -296,7 +311,11 @@ unpatched binary refusing its union:
 | linux-arm64 | Ubuntu 26.04 container, .NET SDK 11.0.100 | 27 MB | 58 s |
 | linux-x64 | the same, emulated on arm64 | 26 MB | 162 s, packages restored |
 
-Kanban's native spike passes on both Linux targets too. Nothing in Plasm or
+Kanban's native spike passes on both Linux targets too, and a function
+published inside Amazon Linux 2023 ran on Lambda (arm64, `provided.al2023`)
+against Aurora PostgreSQL 18.3: five queries correct, 176 ms of Lambda
+start-up then 823 ms to ready (the secret, a TLS connection, the model, the
+query check, the first read), 28 ms an invocation warm, a 12.7 MB package. Nothing in Plasm or
 its targets changed for Linux: the field-getter step finds and copies the
 same assemblies, and paths are matched as they are written. The check sets
 `InvariantGlobalization`, so it needs no ICU. Two traps of the copy are
