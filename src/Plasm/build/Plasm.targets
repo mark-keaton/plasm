@@ -30,7 +30,9 @@
     <PlasmFieldGettersTool Condition="'$(PlasmFieldGettersTool)' == ''">$(MSBuildThisFileDirectory)../tools/Plasm.FieldGetters.dll</PlasmFieldGettersTool>
   </PropertyGroup>
 
-  <Target Name="PlasmFieldGetters" AfterTargets="ComputeIlcCompileInputs" BeforeTargets="WriteIlcRspFileForCompilation" Condition="'$(PublishAot)' == 'true'">
+  <!-- PlasmFieldGetters=false leaves it out: only for the native check's test
+       of the refusal that follows (tests/Plasm.Aot.Unpatched). -->
+  <Target Name="PlasmFieldGetters" AfterTargets="ComputeIlcCompileInputs" BeforeTargets="WriteIlcRspFileForCompilation" Condition="'$(PublishAot)' == 'true' and '$(PlasmFieldGetters)' != 'false'">
     <PropertyGroup>
       <_PlasmAotCopies>$(IntermediateOutputPath)plasm-aot/</_PlasmAotCopies>
     </PropertyGroup>

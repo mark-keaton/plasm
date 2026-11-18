@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The refusal the native check pins (docs/aot.md): a native binary
+       published without Plasm's step for F# union fields, which must refuse
+       its union rather than read it wrong. Run by tests/Plasm.Aot/run.sh. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- The step this program is about: left out on purpose. -->
+    <PlasmFieldGetters>false</PlasmFieldGetters>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Plasm/Plasm.fsproj" />
+  </ItemGroup>
+  <Import Project="../../src/Plasm/build/Plasm.Repository.targets" />
+</Project>

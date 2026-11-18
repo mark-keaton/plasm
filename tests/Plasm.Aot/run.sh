@@ -54,4 +54,22 @@ if diff -u "$work/jit.txt" "$work/native.txt"; then
 else
   echo "native binary differs from the runtime"; failed=1
 fi
+# A native binary published without the step for F# union fields refuses
+# its union, naming it, its assembly and the step (tests/Plasm.Aot.Unpatched).
+echo "--- unpatched: publishing without Plasm's step for F# union fields"
+unpatched="$here/../Plasm.Aot.Unpatched"
+dotnet publish "$unpatched" -c Release -r "$rid" -v q -o "$work/unpatched" > "$work/unpatched-publish.log" 2>&1 || { cat "$work/unpatched-publish.log"; exit 1; }
+set +e
+"$work/unpatched/Plasm.Aot.Unpatched" > "$work/unpatched.txt" 2>&1
+code=$?
+set -e
+cat "$work/unpatched.txt"
+if [ "$code" -eq 0 ]; then
+  echo "the unpatched binary built its model"; failed=1
+elif ! grep -q "UnpatchedId.UnpatchedId has fields that this native binary cannot see: its assembly Plasm.Aot.Unpatched was compiled without Plasm's build step" "$work/unpatched.txt"; then
+  echo "the unpatched binary did not refuse its union by name, assembly and step"; failed=1
+else
+  echo "the unpatched binary refuses its union by name, assembly and step"
+fi
+
 exit $failed

@@ -170,7 +170,9 @@ string) when it is set, and otherwise starts `postgres:18.4` in Docker for the
 run. It takes about 40 seconds on an Apple M4 Max, most of it the native
 publish. The solution builds its projects but does not run it, and neither
 does the acceptance suite. It fails when a step throws under the runtime, when
-the two differ, or when the publish marked no getters. It prints the
+the two differ, or when the publish marked no getters. A second step publishes
+a tiny program without Plasm's step for F# union fields and requires it to
+refuse its union by name, assembly and step. It prints the
 native binary's size. `PLASM_AOT_TRACE=1` adds the stack trace of a step that
 throws (to standard error, not compared).
 
@@ -207,4 +209,5 @@ getters marked):
 | A captured `Guid list` (`List.contains`) | ✓ | ✓ |
 | An option of a value type compared with `Some` | ✓ | ✓ |
 | A prepared argument of a value type in `Some` | ✓ | ✓ |
+| A binary published without the step for F# union fields refuses its union, naming it, its assembly and the step (`tests/Plasm.Aot.Unpatched`, `PlasmFieldGetters=false`) | | ✓ |
 | No IL warning naming Plasm | | not yet |

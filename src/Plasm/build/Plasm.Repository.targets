@@ -12,7 +12,7 @@
     <ProjectReference Include="$(MSBuildThisFileDirectory)../../Plasm.FieldGetters/Plasm.FieldGetters.fsproj" ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
   <Import Project="Plasm.targets" />
-  <Target Name="PlasmFieldGettersTool" BeforeTargets="PlasmFieldGetters" Condition="'$(PublishAot)' == 'true'">
+  <Target Name="PlasmFieldGettersTool" BeforeTargets="PlasmFieldGetters" Condition="'$(PublishAot)' == 'true' and '$(PlasmFieldGetters)' != 'false'">
     <MSBuild Projects="$(MSBuildThisFileDirectory)../../Plasm.FieldGetters/Plasm.FieldGetters.fsproj" Targets="Build" Properties="Configuration=$(Configuration)" RemoveProperties="OutputPath;OutDir;RuntimeIdentifier;SelfContained;PublishAot;_PublishingToolOutput">
       <Output TaskParameter="TargetOutputs" PropertyName="PlasmFieldGettersTool" />
     </MSBuild>
