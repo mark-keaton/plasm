@@ -4,6 +4,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <PublishAot>true</PublishAot>
+    <DefineConstants Condition="'$(PlasmAotSlim)' == 'true'">$(DefineConstants);PLASM_AOT_SLIM</DefineConstants>
     <InvariantGlobalization>true</InvariantGlobalization>
     <!-- IL warnings are made errors last, once the binary works (docs/aot.md). -->
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>

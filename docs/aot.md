@@ -178,6 +178,51 @@ it itself:
 
     <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104;IL3053</WarningsNotAsErrors>
 
+## Cold start and size
+
+`tests/Plasm.Aot/coldstart.sh` runs the check program's `coldstart` mode as
+fresh processes: build the model, start the repository, run one prepared
+query, then it and another again, each phase timed. Medians of 11 runs on
+osx-arm64 (Apple silicon) against PostgreSQL on localhost, so the connection
+figures are a floor; 16 query values; milliseconds:
+
+| Phase | runtime, queries checked | runtime, not checked | native, checked | native, not checked |
+|---|---:|---:|---:|---:|
+| Process start to `main` | 20.9 | 20.8 | 8.5 | 8.4 |
+| Npgsql's first connection | 84.2 | 83.5 | 12.0 | 12.0 |
+| Model build | 48.2 | 48.7 | 3.4 | 3.4 |
+| `Repo.Start` | 92.7 | 2.1 | 9.0 | 0.1 |
+| First prepared query (opens Plasm's pool) | 71.1 | 134.6 | 10.5 | 12.3 |
+| The same query again | 1.4 | 1.7 | 0.6 | 0.6 |
+| Another query | 1.6 | 4.0 | 0.6 | 0.6 |
+| Whole process, measured outside it | 333 | 306 | 48 | 40 |
+
+With `SCHEMA=1` the schema check costs 12 to 16 ms natively, its pool's
+first connection included. Natively the query check is about half a
+millisecond a query, of which the first query gets back about two by being
+translated already.
+
+Sizes of native binaries, osx-arm64, Npgsql 10.0.3, FSharp.Core 8.0.403:
+
+| Program | Size |
+|---|---:|
+| F# hello world | 1.2 MB |
+| ... with one quotation | 3.6 MB |
+| Npgsql alone, `NpgsqlDataSource.Create` | 9.4 MB |
+| Npgsql alone, `NpgsqlSlimDataSourceBuilder` | 5.1 MB |
+| One record through Plasm, either builder | 25.0 MB |
+| ... without Plasm.dll kept whole: full builder, slim builder | 15.8 MB, 11.5 MB |
+| The check program, either builder | 25.5 MB |
+| ... without Plasm.dll kept whole: full builder, slim builder | 20.0 MB, 15.8 MB |
+
+Keeping Plasm.dll whole costs about 13.5 MB and hides what the slim builder
+saves; without it the check's queries fail (`Arg.Value` is what a quotation
+names), so the descriptor is to keep what a query can name instead. Keeping
+the scalar types whole costs about 1.5 MB. An application chooses its builder
+by passing its own data source, `PostgresProvider(dataSource)`; with the slim
+builder the check needs only `EnableArrays()` and prints what it prints with
+`NpgsqlDataSource.Create` (`-p:PlasmAotSlim=true`).
+
 ## The check
 
 `tests/Plasm.Aot` is a program over a small domain (`tests/Plasm.Aot.Domain`,

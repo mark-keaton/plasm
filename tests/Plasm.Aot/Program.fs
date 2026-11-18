@@ -87,13 +87,64 @@ let refusal (e: DbError) =
     | DbError.Materialization m -> "materialization: " + m.Message
     | DbError.MoreThanOneRow -> "more than one row"
 
+/// The provider: over Npgsql's slim data source builder when compiled with
+/// PlasmAotSlim=true (only what Plasm's types need enabled), else connect.
+let dataSource (cs: string) : NpgsqlDataSource =
+#if PLASM_AOT_SLIM
+    NpgsqlSlimDataSourceBuilder(cs).EnableArrays().Build()
+#else
+    NpgsqlDataSource.Create cs
+#endif
+
+let provider (cs: string) : IProvider = PostgresProvider(dataSource cs) :> IProvider
+
+/// Cold start (tests/Plasm.Aot/coldstart.sh): the phases of a process that
+/// builds its model, starts a repository and runs one prepared query, timed to
+/// stderr as "phase ms" lines. The schema is the check's, created beforehand.
+let coldStart (cs: string) (queries: StartupCheck) (schemaCheck: bool) =
+    let sinceStart = (DateTime.Now - Diagnostics.Process.GetCurrentProcess().StartTime).TotalMilliseconds
+    let clock = Diagnostics.Stopwatch.StartNew()
+    let mutable last = 0.0
+    let mark (phase: string) =
+        let now = clock.Elapsed.TotalMilliseconds
+        Console.Error.WriteLine(phase + " " + (now - last).ToString("F1", Globalization.CultureInfo.InvariantCulture))
+        last <- now
+    Console.Error.WriteLine("to main " + sinceStart.ToString("F1", Globalization.CultureInfo.InvariantCulture))
+    do
+        use ds = dataSource cs
+        use conn = ds.OpenConnection()
+        use cmd = conn.CreateCommand()
+        cmd.CommandText <- "select 1"
+        cmd.ExecuteScalar() |> ignore
+    mark "npgsql first connection"
+    let m = Model.buildOrFail [] [ typeof<Customer>; typeof<Ticket> ]
+    mark "model build"
+    let repo = Repo.Start(m, provider cs, typeof<Ticket>.Assembly, { RepoOptions.Unchecked with Queries = queries }).Result
+    mark "repo start"
+    if schemaCheck then
+        repo.CheckSchema().Result |> ignore
+        mark "schema check"
+    let first = repo.All(Queries.ticketById (TicketId 1L)).Result
+    mark "first prepared query"
+    let again = repo.All(Queries.ticketById (TicketId 1L)).Result
+    mark "same query again"
+    let other = repo.All(Queries.withOpenNotes).Result
+    mark "another query"
+    Console.Error.WriteLine("total " + (sinceStart + clock.Elapsed.TotalMilliseconds).ToString("F1", Globalization.CultureInfo.InvariantCulture))
+    match first, again, other with
+    | Ok _, Ok _, Ok _ -> 0
+    | _ -> 1
+
 [<EntryPoint>]
 let main argv =
     let cs = argv.[0]
+    if argv.Length > 1 && argv.[1] = "coldstart" then
+        let queries = if argv.[2] = "check" then StartupCheck.Crash else StartupCheck.Ignore
+        exit (coldStart cs queries (argv.Length > 3 && argv.[3] = "schema"))
 
     do
-        use conn = new NpgsqlConnection(cs)
-        conn.Open()
+        use ds = dataSource cs
+        use conn = ds.OpenConnection()
         use cmd = conn.CreateCommand()
         cmd.CommandText <- schema
         cmd.ExecuteNonQuery() |> ignore
@@ -112,14 +163,14 @@ let main argv =
 
         // Every query value of the application translated as it starts.
         step "start, checking every query" (fun () ->
-            let r = Repo.Start(m, Postgres.connect cs, typeof<Ticket>.Assembly, { RepoOptions.Unchecked with Queries = StartupCheck.Crash }).Result
+            let r = Repo.Start(m, provider cs, typeof<Ticket>.Assembly, { RepoOptions.Unchecked with Queries = StartupCheck.Crash }).Result
             repo <- Some r
             "started")
 
         let repo =
             match repo with
             | Some r -> r
-            | None -> Repo.Start(m, Postgres.connect cs, typeof<Ticket>.Assembly, RepoOptions.Unchecked).Result
+            | None -> Repo.Start(m, provider cs, typeof<Ticket>.Assembly, RepoOptions.Unchecked).Result
 
         let all (q: Query<'T>) (show: 'T -> string) =
             match repo.All(q).Result with
