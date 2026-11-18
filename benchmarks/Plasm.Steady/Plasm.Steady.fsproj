@@ -5,7 +5,10 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
-    <PublishAot>true</PublishAot>
+    <!-- Not PublishAot here: set in a project, it also writes the native
+         binary's feature switches (IsDynamicCodeSupported false among them)
+         into the runtime build's configuration, which then is not the runtime
+         as shipped. run.sh passes it to the publish alone. -->
     <InvariantGlobalization>true</InvariantGlobalization>
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <TieredPGO>true</TieredPGO>

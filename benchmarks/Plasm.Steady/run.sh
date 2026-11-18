@@ -34,10 +34,15 @@ echo "database: $(docker exec "$pg" psql -tA -U postgres -c 'select count(*) fro
 
 rid=$(dotnet --info | sed -n 's/^ *RID: *//p' | head -1)
 dotnet build "$here" -c Release -v q -o "$work/jit" > "$work/build.log" 2>&1 || { cat "$work/build.log"; exit 1; }
-dotnet publish "$here" -c Release -r "$rid" -v q -o "$work/native" > "$work/publish.log" 2>&1 || { tail -20 "$work/publish.log"; exit 1; }
+dotnet publish "$here" -c Release -r "$rid" -p:PublishAot=true -v q -o "$work/native" > "$work/publish.log" 2>&1 || { tail -20 "$work/publish.log"; exit 1; }
 for run in 1 2; do
   dotnet "$work/jit/Plasm.Steady.dll" "$cs" > "$work/jit-$run.txt"
   "$work/native/Plasm.Steady" "$cs" > "$work/native-$run.txt"
+done
+# Each run says what it ran as: the runtime with dynamic code, or a native binary.
+for run in 1 2; do
+  grep -qx "mode	runtime" "$work/jit-$run.txt" || { echo "the runtime run did not run as the runtime: $(head -1 "$work/jit-$run.txt")"; exit 1; }
+  grep -qx "mode	native" "$work/native-$run.txt" || { echo "the native run did not run natively: $(head -1 "$work/native-$run.txt")"; exit 1; }
 done
 python3 - "$work" <<'PY'
 import sys

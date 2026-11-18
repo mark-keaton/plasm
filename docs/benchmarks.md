@@ -308,60 +308,70 @@ above (the schema and seed are read from `Database.fs` and `Workloads.fs`).
   its own; the table gives the median and the 95th percentile, and the bytes
   allocated per operation (`GC.GetTotalAllocatedBytes(true)` across the timed
   loop, all threads). The runtime and the native binary run twice each,
-  alternating; the table is the second pair, the first agreeing within the
-  noise below. The key changes with each run of an operation.
+  alternating, and each run must say it ran as the runtime with dynamic code,
+  or natively; the table gives each cell's lower median and p95 of the two
+  runs, and the second run's bytes. The key changes with each run of an
+  operation.
+- **Corrected 2026-11-18.** The first version of this table measured its
+  runtime column with dynamic code off: `PublishAot` in the project wrote the
+  native binary's feature switches (`IsDynamicCodeSupported: false` among
+  them) into the runtime build's configuration too, so the runtime took
+  Plasm's and FSharp.Core's reflection paths for building records. The project
+  no longer sets it; `run.sh` passes it to the publish alone. The times moved
+  by less than the noise; the runtime's bytes fell where rows are made into
+  records (the list of 111 rows from 68,385 to 43,508 bytes).
 - **Npgsql alone.** Every read has a twin sending the SQL Plasm sends (read
   from `repo.Explain`) through Npgsql, reading every column as an object and
   building nothing; the insert's twin sends the same statements written by
   hand, the lines as one batch. What the twin does not do is Plasm's share.
 - **Limits.** One machine (the environment above), loopback, a busy machine
-  (load average about 7 on 16 cores; other sessions were building), so a
-  median moves by up to 30% between two runs of the same binary; p95s move
-  more. One connection at a time: no concurrency, so nothing here says how
+  (load average 8 to 20 on 16 cores during the corrected run; other sessions
+  were building and measuring), so a median moves by up to 30% between two
+  runs of the same binary; p95s move more. One connection at a time: no concurrency, so nothing here says how
   either scales across cores.
 
 Medians and p95 in microseconds, bytes per operation:
 
 | Operation | Runtime median | Native median | Runtime p95 | Native p95 | Runtime bytes | Native bytes |
 |---|---|---|---|---|---|---|
-| Read by key, the query built per call | 199 | 250 | 291 | 297 | 37,159 | 79,891 |
-| Read by key, prepared | 159 | 175 | 191 | 226 | 18,584 | 25,431 |
-| List of 111 rows (`StartsWith`), one query value | 210 | 204 | 256 | 245 | 68,385 | 68,394 |
-| An order with its lines and its payments (`let!`), built per call | 470 | 994 | 618 | 1,599 | 273,627 | 451,144 |
-| The same, prepared | 365 | 365 | 436 | 445 | 127,075 | 128,021 |
-| An order with its lines, prepared | 333 | 358 | 394 | 424 | 87,734 | 99,912 |
-| Insert of an order with three lines, in a transaction | 1,118 | 1,137 | 1,914 | 3,460 | 64,997 | 65,609 |
-| Translation only (`repo.Explain`), read by key built per call | 14.9 | 90.1 | 17.0 | 98.0 | 30,361 | 73,685 |
-| Translation only, the order with lines and payments built per call | 85.2 | 507.2 | 92.3 | 572.5 | 156,056 | 332,971 |
-| Building the query value only, read by key | 8.0 | 48.3 | 8.4 | 53.8 | 18,648 | 44,876 |
-| Building the query value only, the order with lines and payments | 33.3 | 182.4 | 36.3 | 195.0 | 72,632 | 141,076 |
-| Npgsql alone: read by key | 127 | 125 | 158 | 160 | 2,848 | 2,849 |
-| Npgsql alone: list of 111 rows | 160 | 162 | 190 | 204 | 15,064 | 15,080 |
-| Npgsql alone: order, lines and payments | 383 | 374 | 477 | 450 | 11,337 | 11,335 |
-| Npgsql alone: order and lines | 254 | 251 | 327 | 307 | 7,336 | 7,331 |
-| Npgsql alone: insert of an order with three lines | 1,161 | 1,048 | 3,264 | 2,400 | 9,123 | 9,117 |
+| Read by key, the query built per call | 216 | 273 | 428 | 816 | 36,845 | 79,897 |
+| Read by key, prepared | 163 | 185 | 245 | 400 | 23,372 | 25,439 |
+| List of 111 rows (`StartsWith`), one query value | 175 | 212 | 240 | 452 | 43,508 | 68,396 |
+| An order with its lines and its payments (`let!`), built per call | 574 | 979 | 1,407 | 1,917 | 265,218 | 450,679 |
+| The same, prepared | 395 | 376 | 974 | 624 | 115,661 | 128,023 |
+| An order with its lines, prepared | 339 | 379 | 604 | 921 | 85,109 | 99,907 |
+| Insert of an order with three lines, in a transaction | 1,405 | 1,298 | 3,769 | 2,480 | 58,636 | 65,612 |
+| Translation only (`repo.Explain`), read by key built per call | 14.6 | 85.9 | 18.0 | 101 | 30,224 | 73,607 |
+| Translation only, the order with lines and payments built per call | 130 | 475 | 338 | 1,227 | 159,053 | 332,787 |
+| Building the query value only, read by key | 7.9 | 48.2 | 9.7 | 87.2 | 18,656 | 44,828 |
+| Building the query value only, the order with lines and payments | 33.2 | 171 | 95.2 | 312 | 72,632 | 140,927 |
+| Npgsql alone: read by key | 136 | 134 | 286 | 198 | 2,845 | 2,848 |
+| Npgsql alone: list of 111 rows | 162 | 165 | 286 | 210 | 15,071 | 15,077 |
+| Npgsql alone: order, lines and payments | 392 | 404 | 727 | 702 | 11,335 | 11,334 |
+| Npgsql alone: order and lines | 277 | 271 | 539 | 465 | 7,336 | 7,333 |
+| Npgsql alone: insert of an order with three lines | 1,289 | 1,167 | 2,198 | 2,316 | 9,124 | 9,123 |
 
 What it shows:
 
-- **A query translated once runs as fast natively as under the runtime.**
-  Prepared queries, the list (one query value, planned once and reused) and
-  the insert are within the noise of each other; Npgsql alone is the same in
-  both, so the driver is no slower natively either.
-- **A query built per call is where a native binary is slower**, by 5 to 7
-  times in the work before anything is sent: 15 µs against 90 µs for a read
-  by key, 85 µs against 507 µs for an order with two loads, so that read as a
-  whole takes twice as long (994 µs against 470 µs) and allocates 65% more.
-  Both halves of that work are slower: building the query value, where
+- **Npgsql alone is the same in both**, every operation: the driver is no
+  slower natively.
+- **A query translated once runs close to the runtime natively**, slower by
+  what making rows into records costs: the runtime makes them with generated
+  code, a native binary by reflection. A prepared read by key is 13% slower
+  natively (163 against 185 µs), an order with its lines 12% (339 against
+  379 µs), and the list of 111 rows 21% (175 against 212 µs), where it also
+  allocates 57% more (43,508 against 68,396 bytes): the difference grows with
+  the rows read. A prepared order with its lines and payments and the insert
+  are within the noise of each other.
+- **A query built per call is where a native binary is slowest**, by 3.5 to 6
+  times in the work before anything is sent: 15 µs against 86 µs for a read
+  by key, 130 µs against 475 µs for an order with two loads, so that read as
+  a whole takes 1.7 times as long (574 µs against 979 µs) and allocates 70%
+  more. Both halves of that work are slower: building the query value, where
   FSharp.Core decodes the quotations the builder takes as
-  `[<ReflectedDefinition>]` arguments (8 against 48 µs, 33 against 182 µs),
-  and Plasm's translation of them (7 against 42 µs, 52 against 325 µs). Both
-  resolve types and members by reflection over each quotation; this is a split
-  of the time, not a sampling profile, and it does not say which reflection
-  calls cost most.
-- **An order read with its lines** is 7% slower natively (333 against 358 µs,
-  14% more allocated), inside the noise but slower natively in five of the six
-  pairs across three runs: rows are made into records by reflection in both, natively
-  without the runtime's generated code.
+  `[<ReflectedDefinition>]` arguments (8 against 48 µs, 33 against 171 µs),
+  and Plasm's translation of them (7 against 38 µs, 97 against 304 µs). Both
+  resolve types and members by reflection over each quotation.
 
 For a long-running native host, then: prepare the queries a request runs, as
 Plasm's start-up check already encourages (a prepared query is a value it
