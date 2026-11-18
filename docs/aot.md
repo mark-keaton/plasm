@@ -6,44 +6,26 @@ check below covers a small program, and grows a step at a time.
 
 ## How a native binary reads F# types
 
-Plasm reads an application's records and unions by reflection, under the
-runtime and in a native binary alike, through one interface
-(`src/Plasm/Shapes.fs`). Nothing is generated and the application writes
-nothing for it.
+Plasm reads an application's records and unions through FSharp.Reflection,
+under the runtime and in a native binary alike (`src/Plasm/Shapes.fs`).
+Nothing is generated and the application writes nothing for it.
 
-- **Records** are read through FSharp.Reflection everywhere: a native binary
-  keeps what it reads of a record.
-- **Unions** are read through FSharp.Reflection where it sees their fields
-  (the runtime, `dotnet run` of a project published natively, F# Interactive,
-  the koans, the browser), and in a native binary published with Plasm's
-  targets, which keep the attributes it reads (see the workaround below).
-  Where a native binary has lost them, FSharp.Reflection finds no fields, and
-  Plasm reads a union by its compiled structure: its cases and tags from the compiler's
-  `Tags` class (or, for one case, its one `NewX` method or static property),
-  each case built by `NewX` (or, without fields, read from its static
-  property), each field read through the property its `NewX` parameter names
-  (`_radius` is `radius`, `item1` is `Item1`) on the case's class, or on the
-  union for one case or a struct. A probe decides which, once: whether
-  FSharp.Reflection sees the field of a one-case union of Plasm's own. The
-  check below asserts which reader each run used.
-- **The compiled layout is the F# compiler's**, so it is pinned: a unit test
-  (`tests/Plasm.Tests/Shapes.fs`) reads, by structure and by FSharp.Reflection,
-  a union of every layout the compiler produces (one case with one field and
-  with several, fieldless unions of two to nine cases, mixed cases, named and
-  unnamed fields, struct unions, `[<RequireQualifiedAccess>]`, generic unions,
-  a private representation, cases needing backticks, `UseNullAsTrueValue`,
-  `option` and `Result`) and every union of the test domain, the koan shop and
-  Kanban's domain, and requires the same cases, tags, fields, privacy and
-  values. A layout the structural reader does not understand is an error naming
-  the type when the model is built, never a shape guessed.
-  `PLASM_SHAPES=structure` makes the runtime read by structure too; the unit
-  and acceptance suites pass so.
+- **Records** keep what FSharp.Reflection reads of them in a native binary.
+- **Unions** do too once Plasm's build step has run (see the workaround
+  below): without it a native binary loses the attributes on a union case's
+  fields, and FSharp.Reflection sees the case without them. Plasm refuses such
+  a union when it is first read (when the model is built, for a stored one),
+  naming it and its assembly and the step that was not applied, rather than
+  build its cases wrong.
 - **Options and lists of value types** (`int64 option`, `DateOnly option`,
   `Guid list`) are written out in Plasm for the provider's own value types: a
   native binary has no code for one made at run time. Of a reference type
   (`CustomerId option`, a fieldless union, a record) they are made by
   reflection. An option or a list of the application's own struct is an error
   naming it when the model is built.
+- **A typed id** (a one-case union of one field) is wrapped and unwrapped
+  without an array per value: by code compiled once under the runtime, by
+  method invokers in a native binary.
 
 ## How a native binary keeps what Plasm reads
 
@@ -154,7 +136,7 @@ those getters itself: the reproduction's native run then shows the fields
 without it.
 
 With it, a native binary reads unions through FSharp.Reflection as the runtime
-does; the check asserts that, and that the publish marked getters.
+does; the check asserts that the publish marked getters.
 
 ## Trimming warnings
 
@@ -188,8 +170,7 @@ string) when it is set, and otherwise starts `postgres:18.4` in Docker for the
 run. It takes about 40 seconds on an Apple M4 Max, most of it the native
 publish. The solution builds its projects but does not run it, and neither
 does the acceptance suite. It fails when a step throws under the runtime, when
-the two differ, when a run did not read unions through FSharp.Reflection, or
-when the publish marked no getters. It prints the
+the two differ, or when the publish marked no getters. It prints the
 native binary's size. `PLASM_AOT_TRACE=1` adds the stack trace of a step that
 throws (to standard error, not compared).
 
@@ -199,7 +180,6 @@ getters marked):
 | Step | Runtime | Native |
 |---|---|---|
 | The publish marked F# field getters `SpecialName` (more than none) | needs nothing | ✓ |
-| Unions read through FSharp.Reflection | ✓ | ✓ |
 | Build the model of a record with a typed id and a unique field | ✓ | ✓ |
 | Insert one | ✓ | ✓ |
 | Read it by its typed id | ✓ | ✓ |

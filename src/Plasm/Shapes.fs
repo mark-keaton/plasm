@@ -47,45 +47,12 @@ type ListShape =
       Make: obj seq -> obj
       Items: obj -> obj seq }
 
-/// How Plasm reads an F# union here (docs/aot.md).
-[<RequireQualifiedAccess>]
-type internal UnionReader =
-    /// FSharp.Reflection: the runtime, F# Interactive, the browser.
-    | FSharpReflection
-    /// The union's compiled structure (its Tags class, its NewX methods, its
-    /// case properties): a native binary, which keeps no attributes on a
-    /// union's members, so FSharp.Reflection finds no fields there.
-    | CompiledStructure
-
-/// The shapes of F# types, read by reflection (docs/aot.md). A union is read
-/// through FSharp.Reflection where its attributes are kept, else by its
-/// compiled structure; a record through FSharp.Reflection everywhere.
+/// The shapes of F# types, read through FSharp.Reflection (docs/aot.md), in a
+/// native binary as under the runtime: there Plasm's build step keeps the
+/// attributes FSharp.Reflection reads of a union's fields.
 module internal Shape =
     let private all = BindingFlags.Public ||| BindingFlags.NonPublic ||| BindingFlags.Static ||| BindingFlags.Instance
     let private dynamicCode = RuntimeFeature.IsDynamicCodeSupported
-
-    type private Probe = Probe of int
-
-    /// Whether FSharp.Reflection sees a union's fields here: decided once.
-    let private probed =
-        lazy
-            (if (FSharpType.GetUnionCases(typeof<Probe>, true)).[0].GetFields().Length = 1 then
-                 UnionReader.FSharpReflection
-             else
-                 UnionReader.CompiledStructure)
-
-    /// For tests: PLASM_SHAPES=structure reads unions by their compiled
-    /// structure under the runtime too.
-    let mutable internal forced =
-        match Environment.GetEnvironmentVariable "PLASM_SHAPES" with
-        | "structure" -> Some UnionReader.CompiledStructure
-        | _ -> None
-
-    /// The reader in use (the native check asserts it).
-    let reader () =
-        match forced with
-        | Some r -> r
-        | None -> probed.Value
 
     let private records = ConcurrentDictionary<Type, RecordShape>()
     let private unions = ConcurrentDictionary<Type, UnionShape>()
@@ -123,25 +90,43 @@ module internal Shape =
           Construct = if dynamicCode then compileConstructor t else FSharpValue.PreComputeRecordConstructor(t, true)
           Deconstruct = if dynamicCode then compileReader t fields else FSharpValue.PreComputeRecordReader(t, true) }
 
-    /// A one-field case's constructor and field reader, compiled when first
-    /// used (by a typed id). A case of several has its field on its own class.
+    /// A one-field case's constructor and field reader (a typed id's), with
+    /// no array per value: compiled when first used where code can be made at
+    /// run time, else through method invokers. A case of several has its field
+    /// on its own class.
     let private wrapping (t: Type) (c: UnionCaseInfo) : (obj -> obj) * (obj -> obj) =
         match c.GetFields() with
         | [| field |] ->
-            let compiled =
-                lazy
-                    (let v = X.Parameter(typeof<obj>, "v")
-                     let ctor = FSharpValue.PreComputeUnionConstructorInfo(c, true)
-                     let wrap = X.Lambda<Func<obj, obj>>(X.Convert(X.Call(ctor, X.Convert(v, field.PropertyType)), typeof<obj>), v).Compile()
-                     let unwrap = X.Lambda<Func<obj, obj>>(X.Convert(X.Property(X.Convert(v, field.DeclaringType), field), typeof<obj>), v).Compile()
-                     wrap, unwrap)
+            let ctor = lazy (FSharpValue.PreComputeUnionConstructorInfo(c, true))
 
-            (fun f -> (fst compiled.Value).Invoke f), (fun v -> (snd compiled.Value).Invoke v)
+            if dynamicCode then
+                let compiled =
+                    lazy
+                        (let v = X.Parameter(typeof<obj>, "v")
+                         let wrap = X.Lambda<Func<obj, obj>>(X.Convert(X.Call(ctor.Value, X.Convert(v, field.PropertyType)), typeof<obj>), v).Compile()
+                         let unwrap = X.Lambda<Func<obj, obj>>(X.Convert(X.Property(X.Convert(v, field.DeclaringType), field), typeof<obj>), v).Compile()
+                         wrap, unwrap)
+
+                (fun f -> (fst compiled.Value).Invoke f), (fun v -> (snd compiled.Value).Invoke v)
+            else
+                let invokers = lazy (MethodInvoker.Create ctor.Value, MethodInvoker.Create(field.GetGetMethod true))
+                (fun f -> (fst invokers.Value).Invoke(null, f)), (fun v -> (snd invokers.Value).Invoke v)
         | _ -> (fun _ -> invalidOp $"{t.Name}.{c.Name} has no one field to wrap"), (fun _ -> invalidOp $"{t.Name}.{c.Name} has no one field")
 
-    /// A union through FSharp.Reflection.
+    /// A union through FSharp.Reflection. A case built from fields (its NewX
+    /// takes them) that FSharp.Reflection sees without any is a native binary
+    /// that lost their attributes: its assembly was not given Plasm's build
+    /// step (docs/aot.md), and reading on would build the case wrong.
     let internal reflectedUnion (t: Type) : UnionShape =
         let tag = FSharpValue.PreComputeUnionTagReader(t, true)
+
+        for c in FSharpType.GetUnionCases(t, true) do
+            if c.GetFields().Length = 0 then
+                match t.GetMethod("New" + c.Name, BindingFlags.Static ||| BindingFlags.Public ||| BindingFlags.NonPublic) with
+                | m when not (isNull m) && m.GetParameters().Length > 0 ->
+                    invalidOp
+                        $"{t.FullName}.{c.Name} has fields that this native binary cannot see: its assembly {t.Assembly.GetName().Name} was compiled without Plasm's build step for F# union fields. Publish with Plasm's targets (Plasm.targets, which a reference to Plasm brings), see docs/aot.md"
+                | _ -> ()
 
         { Type = t
           Private = not (FSharpType.IsUnion(t, false))
@@ -159,132 +144,6 @@ module internal Shape =
                   Unwrap = unwrap })
           Tag = tag }
 
-    /// A union by its compiled structure: its cases and tags from its Tags
-    /// class (or, for one case, from its one NewX method or static property);
-    /// each case built by its NewX method (with fields) or read from its
-    /// static property (without); its fields from NewX's parameters, read
-    /// through the properties of that name on the case's class (or on the
-    /// union, for one case or a struct). Anything else is an error naming the
-    /// type, never a shape guessed.
-    let internal structuralUnion (t: Type) : UnionShape =
-        let fail (why: string) : 'a =
-            invalidOp $"{t.FullName} is a union whose compiled layout Plasm cannot read ({why}), and a native binary reads a union only by its layout (docs/aot.md)"
-
-        let isUnionValue (ty: Type) = ty = t
-
-        let named =
-            match t.GetNestedType("Tags", all) with
-            | null ->
-                let news = t.GetMethods all |> Array.filter (fun m -> m.IsStatic && m.Name.StartsWith "New" && isUnionValue m.ReturnType)
-
-                let statics =
-                    t.GetProperties all
-                    |> Array.filter (fun p ->
-                        let g = p.GetGetMethod true
-                        not (isNull g) && g.IsStatic && isUnionValue p.PropertyType)
-
-                // One NewX is the case; without one, one static property is (a
-                // union's own static members may return it too).
-                match news, statics with
-                | [| m |], _ -> [ m.Name.Substring 3, 0 ]
-                | [||], [| p |] -> [ p.Name, 0 ]
-                | _ -> fail "it has no Tags class, and not one case"
-            | tags ->
-                [ for f in tags.GetFields all do
-                      if f.IsLiteral && f.FieldType = typeof<int> then
-                          f.Name, unbox<int> (f.GetRawConstantValue()) ]
-                |> List.sortBy snd
-
-        if named.IsEmpty then fail "it has no cases"
-
-        // A generic union's case classes are generic definitions: closed over
-        // the union's own type arguments.
-        let caseClasses =
-            t.GetNestedTypes all
-            |> Array.map (fun n -> if n.IsGenericTypeDefinition && t.IsGenericType then n.MakeGenericType(t.GetGenericArguments()) else n)
-            |> Array.filter (fun n -> n.IsSubclassOf t)
-
-        // NewX builds a case with fields (FSharp.Core's own: X).
-        let builder (name: string) =
-            [ "New" + name; name ]
-            |> List.tryPick (fun n ->
-                match t.GetMethod(n, all) with
-                | m when not (isNull m) && m.IsStatic && isUnionValue m.ReturnType && m.GetParameters().Length > 0 -> Some m
-                | _ -> None)
-
-        let case (name: string, tag: int) : UnionCaseShape =
-            match builder name with
-            | Some m ->
-                let ps = m.GetParameters()
-
-                // A named field is compiled _name; an unnamed one item, item1.
-                let property (p: ParameterInfo) =
-                    if p.Name.StartsWith "_" then p.Name.Substring 1
-                    elif p.Name.StartsWith "item" then "I" + p.Name.Substring 1
-                    else p.Name
-
-                let holder =
-                    caseClasses
-                    |> Array.tryFind (fun n -> n.Name = name || n.Name = "_" + name)
-                    |> Option.defaultValue t
-
-                // FSharp.Core's own fields are named as their parameters, capitalised.
-                let props =
-                    ps
-                    |> Array.map (fun p ->
-                        match holder.GetProperty(property p, all) with
-                        | null ->
-                            match holder.GetProperties all |> Array.filter (fun q -> String.Equals(q.Name, property p, StringComparison.OrdinalIgnoreCase)) with
-                            | [| q |] -> q
-                            | _ -> fail $"no property {property p} for the case {name}"
-                        | prop -> prop)
-
-                let getters = props |> Array.map (fun p -> MethodInvoker.Create(p.GetGetMethod true))
-                let read (v: obj) = getters |> Array.map (fun g -> g.Invoke v)
-                let builds = MethodInvoker.Create m
-                let make (vs: obj[]) = m.Invoke(null, vs)
-
-                { Name = name
-                  Tag = tag
-                  Fields = Array.map2 (fun (p: ParameterInfo) (prop: PropertyInfo) -> prop.Name, p.ParameterType) ps props
-                  Make = make
-                  Read = read
-                  // A typed id's: no array per value.
-                  Wrap = fun f -> builds.Invoke(null, f)
-                  Unwrap = fun v -> getters.[0].Invoke v }
-            | _ ->
-                match t.GetProperty(name, all) with
-                | p when not (isNull p) && not (isNull (p.GetGetMethod true)) && (p.GetGetMethod true).IsStatic && isUnionValue p.PropertyType ->
-                    let value = lazy (p.GetValue null)
-
-                    { Name = name
-                      Tag = tag
-                      Fields = [||]
-                      Make = fun _ -> value.Value
-                      Read = fun _ -> [||]
-                      Wrap = fun _ -> invalidOp $"{t.Name}.{name} has no field"
-                      Unwrap = fun _ -> invalidOp $"{t.Name}.{name} has no field" }
-                | _ -> fail $"no NewX method or static property for the case {name}"
-
-        let cases = named |> List.map case |> Array.ofList
-
-        // With UseNullAsTrueValue, one case is null and the tag is GetTag's.
-        let tag =
-            match t.GetMethod("GetTag", BindingFlags.Static ||| BindingFlags.Public ||| BindingFlags.NonPublic, [| t |]) with
-            | null ->
-                match t.GetProperty("Tag", BindingFlags.Instance ||| BindingFlags.Public ||| BindingFlags.NonPublic) with
-                | null when cases.Length = 1 -> fun (_: obj) -> 0
-                | null -> fail "it has no Tag"
-                | p -> fun (v: obj) -> unbox<int> (p.GetValue v)
-            | getTag -> fun (v: obj) -> unbox<int> (getTag.Invoke(null, [| v |]))
-
-        { Type = t
-          Private = not (FSharpType.IsUnion(t, false))
-          Cases = cases
-          Tag = tag }
-
-    let private isFSharpCore (t: Type) = t.Assembly = typeof<option<int>>.Assembly
-
     /// An F# record.
     let isRecord (t: Type) = FSharpType.IsRecord(t, true)
 
@@ -293,13 +152,7 @@ module internal Shape =
 
     let record (t: Type) : RecordShape = records.GetOrAdd(t, reflectedRecord)
 
-    let union (t: Type) : UnionShape =
-        unions.GetOrAdd(
-            t,
-            fun t ->
-                // FSharp.Core's unions keep what FSharp.Reflection reads.
-                if reader () = UnionReader.FSharpReflection || isFSharpCore t then reflectedUnion t else structuralUnion t
-        )
+    let union (t: Type) : UnionShape = unions.GetOrAdd(t, reflectedUnion)
 
     let private optionOf<'T> () : Type * OptionShape =
         typeof<'T>,

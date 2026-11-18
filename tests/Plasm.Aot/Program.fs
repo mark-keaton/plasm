@@ -98,14 +98,6 @@ let main argv =
         cmd.CommandText <- schema
         cmd.ExecuteNonQuery() |> ignore
 
-    // Which reader read the unions: not compared, but asserted by run.sh.
-    say (
-        "reader: "
-        + match Shape.reader () with
-          | UnionReader.FSharpReflection -> "FSharpReflection"
-          | UnionReader.CompiledStructure -> "CompiledStructure"
-    )
-
     let mutable model = None
 
     step "model" (fun () ->

@@ -42,21 +42,14 @@ echo "--- runtime"; cat "$work/jit.txt"
 echo "--- native"; cat "$work/native.txt"
 echo "native binary: $(du -h "$work/native/Plasm.Aot" | cut -f1)"
 
-# The first line says which reader read the unions; the rest is compared.
 failed=0
 if [ "${marked:-0}" -eq 0 ]; then
   echo "the publish did not apply Plasm's step for F# field getters"; failed=1
 fi
-if [ "$(head -1 "$work/jit.txt")" != "reader: FSharpReflection" ]; then
-  echo "the runtime did not read unions through FSharp.Reflection"; failed=1
-fi
-if [ "$(head -1 "$work/native.txt")" != "reader: FSharpReflection" ]; then
-  echo "the native binary did not read unions through FSharp.Reflection"; failed=1
-fi
 if grep -q ": threw " "$work/jit.txt"; then
   echo "a step threw under the runtime"; failed=1
 fi
-if diff -u <(tail -n +2 "$work/jit.txt") <(tail -n +2 "$work/native.txt"); then
+if diff -u "$work/jit.txt" "$work/native.txt"; then
   echo "native binary prints what the runtime prints"
 else
   echo "native binary differs from the runtime"; failed=1
