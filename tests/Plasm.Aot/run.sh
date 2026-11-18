@@ -30,11 +30,17 @@ rid=$(dotnet --info | sed -n 's/^ *RID: *//p' | head -1)
 echo "runtime: building"
 dotnet build "$here" -c Release -v q -o "$work/jit" > "$work/build.log" 2>&1 || { cat "$work/build.log"; exit 1; }
 echo "native: publishing for $rid (about a minute)"
-dotnet publish "$here" -c Release -r "$rid" -v m -p:PlasmAotReport=high -o "$work/native" > "$work/publish.log" 2>&1 || { cat "$work/publish.log"; exit 1; }
+dotnet publish "$here" -c Release -r "$rid" -p:PublishAot=true -v m -p:PlasmAotReport=high -o "$work/native" > "$work/publish.log" 2>&1 || { cat "$work/publish.log"; exit 1; }
 echo "native: $(grep -c 'warning IL' "$work/publish.log" || true) IL warnings"
 marked=$(sed -n 's/.*Plasm: \([0-9]*\) F# field getters marked.*/\1/p' "$work/publish.log" | head -1)
 echo "native: ${marked:-no} F# field getters marked SpecialName"
 
+jit_mode=$(dotnet "$work/jit/Plasm.Aot.dll" mode)
+native_mode=$("$work/native/Plasm.Aot" mode)
+echo "runtime: $jit_mode; native: $native_mode"
+if [ "$jit_mode" != "dynamic code on" ] || [ "$native_mode" != "dynamic code off" ]; then
+  echo "the runtime run is not the runtime as shipped, or the native run is not native"; exit 1
+fi
 dotnet "$work/jit/Plasm.Aot.dll" "$cs" > "$work/jit.txt" 2>&1 || true
 "$work/native/Plasm.Aot" "$cs" > "$work/native.txt" 2>&1 || true
 

@@ -187,3 +187,11 @@ let refusedWithValues () =
         for t in tableOf<Ticket> do
             where (labelled t.Title 1.5m "s" 2L 1.0 'x' true = "")
     }
+
+/// Why a change was refused, carrying a value of each structured kind, so the
+/// rejection's message shows them the same natively (docs/aot.md).
+type Refusal =
+    { Reason: string
+      Stage: Stage
+      Points: int64 option
+      Sizes: int list }

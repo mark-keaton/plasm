@@ -67,6 +67,10 @@ let private FSharpCoreInternals =
 [<assembly: UnconditionalSuppressMessage("Trimming", "IL2077", Scope = "type", Target = "T:Plasm.Shape", Justification = Kept)>]
 [<assembly: UnconditionalSuppressMessage("AOT", "IL3050", Scope = "type", Target = "T:Plasm.Shape", Justification = RuntimeOnly)>]
 [<assembly: UnconditionalSuppressMessage("Trimming", "IL2067", Scope = "type", Target = "T:Plasm.Reflection", Justification = Rooted)>]
+// Reflection.Shown writes a value in a message: the application's records,
+// unions and tuples (rooted) or a framework type, whose ToString is kept.
+[<assembly: UnconditionalSuppressMessage("Trimming", "IL2072", Scope = "type", Target = "T:Plasm.Reflection", Justification = Rooted)>]
+[<assembly: UnconditionalSuppressMessage("Trimming", "IL2075", Scope = "type", Target = "T:Plasm.Reflection", Justification = Rooted)>]
 
 // FSharp.Core's decoder of [<ReflectedDefinition>] bodies.
 [<assembly: UnconditionalSuppressMessage("Trimming", "IL2026", Scope = "type", Target = "T:Plasm.Definitions", Justification = FSharpCoreInternals)>]

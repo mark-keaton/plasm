@@ -17,6 +17,7 @@
     <Compile Include="Batch2.fs" />
     <Compile Include="ConventionCost.fs" />
     <Compile Include="TrimDescriptor.fs" />
+    <Compile Include="Shown.fs" />
     <Compile Include="UnreadableQueries.fs" />
     <Compile Include="Tuples.fs" />
     <Compile Include="QuerySurface.fs" />

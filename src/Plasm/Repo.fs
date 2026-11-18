@@ -25,7 +25,7 @@ module internal QueryDisplay =
                 $"{value [||] (b.Resolve args)}  ({label})"
             else
                 $"<{label}>"
-        | v -> sprintf "%A" v
+        | v -> Reflection.Shown.value v
 
     let indent (prefix: string) (text: string) =
         text.Split('\n') |> Array.map (fun l -> prefix + l) |> String.concat "\n"

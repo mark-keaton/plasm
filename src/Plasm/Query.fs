@@ -238,7 +238,7 @@ type Query<'T> internal (def: QueryDef) =
     member _.FilterCount = def.Wheres.Length
 
     override _.ToString() =
-        $"Query<{typeof<'T>.Name}>(filters={def.Wheres.Length}, orderings={def.Orders.Length}, limit=%A{def.Limit}, offset=%A{def.Offset})"
+        $"Query<{typeof<'T>.Name}>(filters={def.Wheres.Length}, orderings={def.Orders.Length}, limit={Reflection.Shown.typed typeof<int option> (box def.Limit)}, offset={Reflection.Shown.typed typeof<int option> (box def.Offset)})"
 
 /// A query whose result rows are projected to `'R`. Only the columns used by the
 /// projection are retrieved and no entity is materialised.

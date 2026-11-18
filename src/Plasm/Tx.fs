@@ -46,14 +46,14 @@ type TransactionError<'E> =
       /// Attempts made (more than one only with a retry policy).
       Attempts: int }
 
-    /// What failed, in words, then where (F# Interactive and %A show this):
+    /// What failed, in words, then where (F# Interactive shows this):
     /// `Customer: Email has already been taken (customers_email_key), at Shop.fs:12 (insert Customer)`.
     member e.Display =
         let reason =
             match e.Failure with
             // Boxed: F#'s printf has no native code for a value type it
             // captures (docs/aot.md), and over obj it prints the same.
-            | TxFailure.Rejected r -> $"rejected: %A{box r}"
+            | TxFailure.Rejected r -> $"rejected: {Reflection.Shown.typed typeof<'E> (box r)}"
             | TxFailure.InvalidChanges(entity, errors) ->
                 let named (f: FieldError) =
                     match f.Kind with

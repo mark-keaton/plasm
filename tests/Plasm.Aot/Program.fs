@@ -137,6 +137,12 @@ let coldStart (cs: string) (queries: StartupCheck) (schemaCheck: bool) =
 
 [<EntryPoint>]
 let main argv =
+    // run.sh asks each run what it ran as: the runtime as shipped generates
+    // code, a native binary cannot (docs/aot.md).
+    if argv.[0] = "mode" then
+        Console.WriteLine(if Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported then "dynamic code on" else "dynamic code off")
+        exit 0
+
     let cs = argv.[0]
     if argv.Length > 1 && argv.[1] = "coldstart" then
         let queries = if argv.[2] = "check" then StartupCheck.Crash else StartupCheck.Ignore
@@ -372,6 +378,34 @@ let main argv =
             match repo.Transact(missing).Result with
             | Ok t -> ticket t
             | Error e -> "failed: " + e.Display)
+
+        step "a rejection carrying a record, a union with fields, an option and a list" (fun () ->
+            let refusal: Queries.Refusal =
+                { Reason = "busy"
+                  Stage = Doing("ada", DateTimeOffset(2026, 11, 17, 9, 0, 0, TimeSpan.Zero))
+                  Points = Some 3L
+                  Sizes = [ 1; 2 ] }
+
+            match repo.Transact(Tx.fail refusal: Tx<unit, Queries.Refusal>).Result with
+            | Ok() -> "committed"
+            | Error e -> "failed: " + e.Display)
+
+        step "a rejection carrying a union case" (fun () ->
+            match repo.Transact(Tx.fail (Done(DateTimeOffset(2026, 11, 18, 9, 0, 0, TimeSpan.Zero))): Tx<unit, Stage>).Result with
+            | Ok() -> "committed"
+            | Error e -> "failed: " + e.Display)
+
+        step "a stored value the domain does not know is named in the error" (fun () ->
+            do
+                use ds = dataSource cs
+                use conn = ds.OpenConnection()
+                use cmd = conn.CreateCommand()
+                cmd.CommandText <- "update tickets set priority = 'urgent' where id = 2"
+                cmd.ExecuteNonQuery() |> ignore
+
+            match repo.All(Queries.ticketById (TicketId 2L)).Result with
+            | Ok ts -> tickets ts
+            | Error e -> "failed: " + refusal e)
 
         step "insert what is missing" (fun () ->
             let people = [ { ada with Id = CustomerId 0L }; { Id = CustomerId 0L; Name = "Bob"; Email = "bob@example.com" } ]

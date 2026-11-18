@@ -129,7 +129,7 @@ type internal Changeset<'T>(state: CsState) =
         let errors =
             if this.IsValid then "" else $""", errors=[{this.Errors |> List.map error |> String.concat "; "}]"""
 
-        $"Changeset<{typeof<'T>.Name}>(action=%A{state.Action}, changes=%A{this.Changes |> List.map fst}, valid={this.IsValid}{errors})"
+        $"Changeset<{typeof<'T>.Name}>(action={Reflection.Shown.value (box state.Action)}, changes={Reflection.Shown.value (box (this.Changes |> List.map fst))}, valid={Reflection.Shown.value (box this.IsValid)}{errors})"
 
 module internal Cs =
     let emptyState t data action =

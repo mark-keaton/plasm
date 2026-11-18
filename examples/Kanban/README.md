@@ -67,7 +67,9 @@ dotnet test --project tests/Kanban.CSharpHost.Specs
 ```
 
 The C# host's scenarios start the host as its own process and talk to it
-over HTTP. To run them against its native binary instead, publish it and
+over HTTP. Its project sets `PublishAot`, as a native application's does, so
+its run under `dotnet` has code generation off too and takes the native
+binary's paths (docs/aot.md, "Where code cannot be made at run time"). To run them against its native binary instead, publish it and
 name the binary in `KANBAN_CSHARP_HOST`:
 
 ```

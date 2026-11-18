@@ -12,7 +12,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 rid=$(dotnet --info | sed -n 's/^ *RID: *//p' | head -1)
 dotnet build "$here" -c Release -v q -o "$work/jit" > "$work/build.log" 2>&1 || { cat "$work/build.log"; exit 1; }
-dotnet publish "$here" -c Release -r "$rid" -v q -o "$work/native" > "$work/publish.log" 2>&1 || { cat "$work/publish.log"; exit 1; }
+dotnet publish "$here" -c Release -r "$rid" -p:PublishAot=true -v q -o "$work/native" > "$work/publish.log" 2>&1 || { cat "$work/publish.log"; exit 1; }
 "$work/native/Plasm.Aot" "$cs" > /dev/null 2>&1 || true   # creates the check's schema and rows
 
 for kind in runtime native; do

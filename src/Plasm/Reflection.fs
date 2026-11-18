@@ -96,6 +96,113 @@ let rec fsharpTypeName (t: Type) : string =
 and private inner (t: Type) =
     if FSharpType.IsTuple t then $"({fsharpTypeName t})" else fsharpTypeName t
 
+/// A value as a message shows it, the same under the runtime and in a native
+/// binary: no printf, no %A, nothing that depends on making code at run time
+/// (docs/aot.md). Numbers, characters, text and booleans in F#'s literal form
+/// (1uy, 2L, 1.0, 1.0f, 15M, 'x', "s", true); dates, times, Guids and enums in
+/// one invariant form each; records, unions (options among them), tuples,
+/// lists and arrays as F# writes them, on one line, read through Shape; any
+/// other type, its own ToString where it has one, else its F# type name.
+/// Bounded: three levels deep, ten items a
+/// list or record, and 200 characters, each cut marked "...".
+module Shown =
+    open System.Globalization
+
+    let private depth = 3
+    let private items = 10
+    let private length = 200
+    let private inv = CultureInfo.InvariantCulture
+
+    let private floating (text: string) =
+        if text.Contains "." || text.Contains "E" || text.Contains "e" || text = "NaN" || text.Contains "Infinity" then text
+        else text + ".0"
+
+    let private literal (v: obj) : string option =
+        match v with
+        | :? string as s -> Some("\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"")
+        | :? char as c -> Some("'" + string c + "'")
+        | :? bool as b -> Some(if b then "true" else "false")
+        | :? byte as n -> Some(n.ToString inv + "uy")
+        | :? sbyte as n -> Some(n.ToString inv + "y")
+        | :? int16 as n -> Some(n.ToString inv + "s")
+        | :? uint16 as n -> Some(n.ToString inv + "us")
+        | :? int as n -> Some(n.ToString inv)
+        | :? uint32 as n -> Some(n.ToString inv + "u")
+        | :? int64 as n -> Some(n.ToString inv + "L")
+        | :? uint64 as n -> Some(n.ToString inv + "UL")
+        | :? float as n -> Some(if Double.IsNaN n then "nan" elif Double.IsPositiveInfinity n then "infinity" elif Double.IsNegativeInfinity n then "-infinity" else floating (n.ToString("R", inv)))
+        | :? float32 as n -> Some((if Single.IsNaN n then "nan" else floating (n.ToString("R", inv))) + "f")
+        | :? decimal as n -> Some(n.ToString inv + "M")
+        | :? DateTimeOffset as d -> Some(d.ToString("yyyy-MM-dd'T'HH:mm:ss.FFFFFFFzzz", inv))
+        | :? DateTime as d -> Some(d.ToString("yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK", inv))
+        | :? DateOnly as d -> Some(d.ToString("yyyy-MM-dd", inv))
+        | :? TimeOnly as t -> Some(t.ToString("HH:mm:ss.FFFFFFF", inv))
+        | :? TimeSpan as t -> Some(t.ToString("c", inv))
+        | :? Guid as g -> Some(g.ToString "D")
+        | :? Enum as e -> Some(e.ToString())
+        | _ -> None
+
+    let private cut (all: string seq) =
+        let shown = all |> Seq.truncate (items + 1) |> List.ofSeq
+        if shown.Length > items then List.truncate items shown @ [ "..." ] else shown
+
+    /// An item of a list or array: its element type, from its declared type.
+    let private element (t: Type) =
+        if t.IsArray then t.GetElementType()
+        elif t.IsGenericType then t.GetGenericArguments().[0]
+        else typeof<obj>
+
+    /// `v`, declared as `declared` (which tells a None, null at run time).
+    let rec private shown (level: int) (declared: Type) (v: obj) : string =
+        match v with
+        | null when declared.IsGenericType && declared.GetGenericTypeDefinition() = typedefof<option<_>> -> "None"
+        | null when declared = typeof<unit> -> "()"
+        | null -> "null"
+        | _ ->
+            match literal v with
+            | Some text -> text
+            | None when level >= depth -> "..."
+            | None ->
+                let t = v.GetType()
+                let inner = shown (level + 1)
+                let each (items: obj seq) = cut (Seq.map (inner (element t)) items)
+
+                if t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<list<_>> then
+                    "[" + String.concat "; " (each (v :?> Collections.IEnumerable |> Seq.cast<obj>)) + "]"
+                elif t.IsArray then
+                    "[|" + String.concat "; " (each (v :?> Collections.IEnumerable |> Seq.cast<obj>)) + "|]"
+                elif FSharpType.IsTuple t then
+                    let parts = [ for p in t.GetProperties() do if p.Name.StartsWith "Item" then yield inner p.PropertyType (p.GetValue v) ]
+                    "(" + String.concat ", " parts + ")"
+                elif Shape.isRecord t then
+                    let r = Shape.record t
+                    let values = r.Deconstruct v
+                    let fields = Seq.map2 (fun (p: PropertyInfo) x -> p.Name + " = " + inner p.PropertyType x) r.Fields values
+                    "{ " + String.concat "; " (cut fields) + " }"
+                elif Shape.isUnion t then
+                    let u = Shape.union t
+                    let case = u.Cases |> Array.find (fun c -> c.Tag = u.Tag v)
+                    let fields = Array.map2 (fun (_, ft) x -> inner ft x) case.Fields (case.Read v)
+
+                    match fields with
+                    | [||] -> case.Name
+                    | [| one |] when one.Contains " " && not (one.StartsWith "(" || one.StartsWith "[" || one.StartsWith "{" || one.StartsWith "\"") ->
+                        case.Name + " (" + one + ")"
+                    | [| one |] -> case.Name + " " + one
+                    | many -> case.Name + " (" + String.concat ", " many + ")"
+                elif t.GetMethod("ToString", Type.EmptyTypes).DeclaringType <> typeof<obj> then
+                    v.ToString()
+                else
+                    fsharpTypeName t
+
+    /// `v`, declared as `declared`, as a message shows it.
+    let typed (declared: Type) (v: obj) : string =
+        let text = shown 0 declared v
+        if text.Length > length then text.Substring(0, length) + "..." else text
+
+    /// `v` as a message shows it (a null as null: use `typed` to show a None).
+    let value (v: obj) : string = typed typeof<obj> v
+
 let private numeric =
     HashSet<Type> [ typeof<byte>; typeof<sbyte>; typeof<int16>; typeof<uint16>; typeof<int>; typeof<uint32>; typeof<int64>; typeof<uint64>; typeof<decimal>; typeof<float32>; typeof<float> ]
 

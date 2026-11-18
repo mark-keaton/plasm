@@ -388,6 +388,54 @@ Apple M4 Max (78 to 100 ms in four runs, as MSBuild's performance summary
 times the target); the two publishes, with and without it, differ by less
 than the publishes vary between runs.
 
+## Where code cannot be made at run time
+
+A native binary cannot make code at run time (`RuntimeFeature
+.IsDynamicCodeSupported` is false), and Plasm takes another path there, the
+same result by reflection:
+
+- **Records** are made and read through FSharp.Reflection's constructor and
+  reader, where the runtime compiles its own (Shape.record).
+- **A union case of one field** (a typed id) is wrapped and unwrapped through
+  method invokers, where the runtime compiles both.
+- **A list** is made from its own Empty and Cons; an option or a list of a
+  value type is refused unless the provider writes it out, since its code
+  cannot be made.
+- **A tuple** a quotation builds is made uninitialised and its fields set.
+- **A column** is read as the database returns it and converted, where the
+  runtime reads it as its type.
+
+What a query sends and what it returns are the same either way; the native
+check compares them. The cost is where rows are made into records: a
+prepared read is 12 to 21% slower natively, growing with the rows read
+(benchmarks.md, "Steady state": a list of 111 rows 175 against 212 µs, and 57%
+more allocated).
+
+How Plasm writes a value in a message does not depend on it. One formatter
+(Reflection.Shown) writes every value a message shows, a refused query's
+captured values, a transaction's rejection, a command's parameters, without
+printf or %A: numbers, characters, text and booleans in F#'s literal form
+(`1uy`, `2L`, `1.0`, `1.0f`, `15M`, `'x'`, `"s"`, `true`), a decimal literal
+as its value rather than its construction; dates, times, Guids and enums in
+one invariant form each (`2026-11-18T09:00:00+00:00`, `2026-11-18`,
+`09:30:00`); records, unions, options, tuples, lists and arrays as F# writes
+them, on one line, read through Shape (`{ Id = CardId 3; Title = "x" }`,
+`Doing ("ada", 2026-11-18T09:00:00+00:00)`, `Some 3`, `[1; 2]`); any other
+type, its own ToString where it has one, else its F# type name. It stops at
+three levels (an option counts as one), ten items a list or record and 200
+characters, each cut marked `...`. Until 2026-11-18 a refused query's values
+went through `%A` under the runtime and through ToString natively, so the same
+refusal read `2L` in one and `2` in the other; the check did not see it, its
+runtime run having had code generation switched off too (below).
+
+An application with `PublishAot` in its project file runs with code
+generation off under `dotnet run` and `dotnet test` as well: the property
+writes the native binary's feature switches into the runtime build's
+configuration. Plasm then takes the native binary's paths there too, so its
+tests exercise what the native binary will do. That is .NET's design, not
+Plasm's; Kanban's native C# host, the Lambda-shaped function and the package
+check's consumer have it in their projects, as an application would.
+
 ## The check
 
 `tests/Plasm.Aot` is a program over a small domain (`tests/Plasm.Aot.Domain`,
@@ -399,6 +447,10 @@ print:
 ```sh
 tests/Plasm.Aot/run.sh
 ```
+
+Its runtime run is the runtime as shipped: the project does not set
+`PublishAot`, the scripts pass it to the publish alone, and `run.sh` fails
+unless the runtime run reports code generation on and the native binary off.
 
 It runs from a clean clone. It uses `PLASM_TEST_PG` (an admin connection
 string) when it is set, and otherwise starts `postgres:18.4` in Docker for the

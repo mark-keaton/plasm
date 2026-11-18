@@ -108,10 +108,9 @@ let newCtx model = newCtxWith model (ref false)
 // Compact expression printer for error messages
 // ---------------------------------------------------------------------------
 
-/// F#'s printf, behind %A and a quotation's ToString, cannot run in a native
-/// binary (docs/aot.md): there `show` describes without it.
-let private printfWorks = Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported
-
+/// Shows an expression in a message the same under the runtime and in a
+/// native binary: values through Reflection.Shown, never printf or a
+/// quotation's ToString, which differ between the two (docs/aot.md).
 let rec show (e: Expr) : string =
     match e with
     | Var v -> v.Name
@@ -119,11 +118,12 @@ let rec show (e: Expr) : string =
         // A captured local function: show its source name, not the closure type.
         let n = v.GetType().Name
         if n.Contains "@" then n.Substring(0, n.IndexOf '@') else n
-    | Value(v, _) when isNull v -> "None"
-    | Value(v, _) when printfWorks -> sprintf "%A" v
-    | Value(:? string as v, _) -> "\"" + v + "\""
-    | Value(v, _) when v.GetType().IsPrimitive || (v :? decimal) -> string v
-    | Value(_, t) -> "a " + Reflection.fsharpTypeName t
+    | Value(v, t) -> Reflection.Shown.typed t v
+    // A decimal literal: F# quotes it as the decimal's construction.
+    | Call(None, mi, [ Value(lo, _); Value(mid, _); Value(hi, _); Value(neg, _); Value(scale, _) ]) when
+        mi.Name = "MakeDecimal" && mi.DeclaringType.Name = "IntrinsicFunctions"
+        ->
+        Reflection.Shown.value (box (Decimal(unbox<int> lo, unbox<int> mid, unbox<int> hi, unbox<bool> neg, unbox<byte> scale)))
     | ValueWithName(_, _, n) -> n
     | PropertyGet(Some o, p, []) -> $"{show o}.{p.Name}"
     | PropertyGet(None, p, []) -> p.Name
@@ -162,7 +162,6 @@ let rec show (e: Expr) : string =
     | NewTuple args -> $"""({args |> List.map show |> String.concat ", "})"""
     | Application(f, x) -> $"{show f} {show x}"
     | Let(v, a, b) -> $"let {v.Name} = {show a} in {show b}"
-    | _ when printfWorks -> string e
     | _ -> "an expression of type " + Reflection.fsharpTypeName e.Type
 
 let private fail (e: Expr) reason =
