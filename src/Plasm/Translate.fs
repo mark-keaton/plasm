@@ -190,7 +190,19 @@ let private reflectedBody (m: Reflection.MethodBase) =
                 // A native binary has no metadata tokens, by which FSharp.Core
                 // finds a definition (docs/aot.md): found by name instead.
                 with :? InvalidOperationException ->
-                    Definitions.tryFind m
+                    try
+                        Definitions.tryFind m
+                    with ex ->
+                        let rec innermost (e: exn) = if isNull e.InnerException then e else innermost e.InnerException
+
+                        raise (
+                            TranslationFailure(
+                                TranslationError.UnsupportedExpression(
+                                    m.DeclaringType.Name + "." + m.Name,
+                                    $"its [<ReflectedDefinition>] body could not be read in this native binary ({innermost(ex).Message}); a body that reads a union case's field cannot be read there yet (docs/aot.md)"
+                                )
+                            )
+                        )
         )
 
 /// The quoted body of a query that binds loads (loads.feature): read by its

@@ -1,12 +1,15 @@
 <!-- What a native binary keeps for the queries Plasm translates (docs/aot.md):
-     a query is a quotation, read back at run time, and every method it names
-     must survive trimming. These are the members the translator recognises
-     (src/Plasm/Translate.fs); a unit test fails when it recognises one that
-     is not kept here. -->
+     a query is a quotation, read back at run time, and every type and method
+     it names must survive trimming, the ones the translator recognises and
+     the ones a quotation names around them (Plasm's own builder, a prepared
+     query's argument, a scalar's members). Unit tests fail when the
+     translator names a type not kept here, or a scalar type Plasm maps is
+     not kept whole (tests/Plasm.Tests/TrimDescriptor.fs). -->
 <linker>
   <assembly fullname="FSharp.Core">
     <type fullname="Microsoft.FSharp.Core.Operators" preserve="methods" />
     <type fullname="Microsoft.FSharp.Core.LanguagePrimitives/IntrinsicFunctions" preserve="methods" />
+    <type fullname="Microsoft.FSharp.Core.LanguagePrimitives/HashCompare" preserve="methods" />
     <type fullname="Microsoft.FSharp.Core.OptionModule" preserve="methods" />
     <type fullname="Microsoft.FSharp.Collections.ListModule" preserve="methods" />
     <type fullname="Microsoft.FSharp.Collections.SeqModule" preserve="methods" />
@@ -22,12 +25,25 @@
     <type fullname="Microsoft.FSharp.Core.FSharpFunc`2" preserve="methods" />
   </assembly>
   <assembly fullname="System.Private.CoreLib">
-    <type fullname="System.String" preserve="methods" />
+    <!-- The scalar types Plasm maps (Scalar.builtIn), whose members a query
+         may call. -->
+    <type fullname="System.Int16" preserve="all" />
+    <type fullname="System.Int32" preserve="all" />
+    <type fullname="System.Int64" preserve="all" />
+    <type fullname="System.String" preserve="all" />
+    <type fullname="System.Boolean" preserve="all" />
+    <type fullname="System.Decimal" preserve="all" />
+    <type fullname="System.Double" preserve="all" />
+    <type fullname="System.Single" preserve="all" />
+    <type fullname="System.Guid" preserve="all" />
+    <type fullname="System.DateTime" preserve="all" />
+    <type fullname="System.DateTimeOffset" preserve="all" />
+    <type fullname="System.DateOnly" preserve="all" />
+    <type fullname="System.TimeOnly" preserve="all" />
+    <type fullname="System.TimeSpan" preserve="all" />
+    <type fullname="System.Byte" preserve="all" />
   </assembly>
-  <assembly fullname="Plasm">
-    <type fullname="Plasm.Agg" preserve="methods" />
-    <type fullname="Plasm.Raw" preserve="methods" />
-    <type fullname="Plasm.TieQueries" preserve="methods" />
-    <type fullname="Plasm.QueryBuilderInstance" preserve="methods" />
-  </assembly>
+  <!-- Plasm whole: its builder, its query functions and a prepared query's
+       arguments are named by quotations that nothing else calls. -->
+  <assembly fullname="Plasm" preserve="all" />
 </linker>

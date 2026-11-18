@@ -56,12 +56,26 @@ Reflection reads only what a native binary keeps:
   than a project needs a `TrimmerRootAssembly` of its own. The targets change
   nothing in a build that does not trim. Today `tests/Plasm.Aot` imports them;
   in the package (not done yet) they would come with Plasm.
-- **What queries name** in FSharp.Core and the framework (its operators and
-  modules, `String`'s methods) and Plasm's own query functions are kept by a
-  trimming descriptor embedded in Plasm.dll (`src/Plasm/ILLink.Descriptors.xml`):
-  the members the translator recognises. A unit test
-  (`tests/Plasm.Tests/TrimDescriptor.fs`) fails when the translator names a
-  type the descriptor does not keep.
+- **What queries name** outside the application is kept by a trimming
+  descriptor embedded in Plasm.dll (`src/Plasm/ILLink.Descriptors.xml`): a
+  query is a quotation, and FSharp.Core reads every member it names back by
+  reflection, members nothing compiled calls among them (a prepared query's
+  `Arg.Value`, Plasm's builder inside `Query.prepare`). It keeps Plasm.dll
+  whole; whole, every scalar type Plasm maps (`Scalar.builtIn`: the integers,
+  `String`, `Boolean`, `Decimal`, `Double`, `Single`, `Guid`, `DateTime`,
+  `DateTimeOffset`, `DateOnly`, `TimeOnly`, `TimeSpan`, `Byte`), since a query
+  may call their members; and FSharp.Core's operators and modules the
+  translator recognises. Unit tests (`tests/Plasm.Tests/TrimDescriptor.fs`)
+  fail when the translator names a type the descriptor does not keep, when a
+  scalar type Plasm maps is not kept whole, or when Plasm is not.
+- **When something is missing**, FSharp.Core fails as it reads the quotation,
+  before Plasm sees it, and names no member: a `TypeInitializationException`
+  from the module that holds the query, its innermost exception
+  `Could not bind to method`, `Failed to bind property` or
+  `Not a valid F# union case index`. `Repo.Start` with `queriesIn` reads every
+  query value, and reports one whose module cannot be read, or whose
+  definition cannot be, as a problem naming the query and the reason, rather
+  than letting it escape from the application's module.
 
 FSharp.Core's `SpecificCall` compares metadata tokens, which a native binary
 does not have; Plasm matches FSharp.Core's operators by name instead.
@@ -79,6 +93,22 @@ FSharp.Core's lookup fails for want of tokens. Being internal, it may change
 in a FSharp.Core release: it is verified with FSharp.Core 8.0.0.0 (8.0.403,
 the version Plasm references) and 11.0.0.0, a unit test pins it, and a
 FSharp.Core without it fails with its version and the part that is missing.
+
+## Known: a quotation that reads a union case's field
+
+A query, or a `[<ReflectedDefinition>]` it uses, that reads a union case's
+field (Kanban's `Card.Assignee`: `match c.Stage with Doing(who, _) -> Some who`)
+cannot be read in a native binary yet. FSharp.Core's quotation decoder takes a
+case's field from `UnionCaseInfo.GetFields()`, which is empty there, and fails
+with `Not a valid F# union case index`. Plasm reports it at start-up and when
+the query runs, naming the query or member.
+
+The cause: the F# compiler emits a union case field's getter without the
+`SpecialName` flag a record field's getter has, and a native binary keeps no
+attributes on a property whose getter lacks it, so FSharp.Reflection finds no
+fields. Marking those getters `SpecialName` in the compiled assembly, and
+nothing else, makes the attributes, FSharp.Reflection and FSharp.Core's decoder
+work in a native binary (shown in a spike). What to do about it is not decided.
 
 ## Trimming warnings
 
@@ -112,11 +142,12 @@ string) when it is set, and otherwise starts `postgres:18.4` in Docker for the
 run. It takes about 40 seconds on an Apple M4 Max, most of it the native
 publish. The solution builds its projects but does not run it, and neither
 does the acceptance suite. It fails when a step throws under the runtime, when
-the two differ, or when a run did not use the reader it should. It prints the
+the two differ, or when a run did not use the reader it should; until the
+known rows below are solved, it fails on them. It prints the
 native binary's size. `PLASM_AOT_TRACE=1` adds the stack trace of a step that
 throws (to standard error, not compared).
 
-What it does today (native binary 17 MB):
+What it does today (native binary 24 MB, Plasm.dll kept whole):
 
 | Step | Runtime | Native |
 |---|---|---|
@@ -130,4 +161,14 @@ What it does today (native binary 17 MB):
 | Read it by its case | ✓ | ✓ |
 | Select a row record the application declares | ✓ | ✓ |
 | An API contract (a record of functions) beside them, which nothing stores | ✓ | ✓ |
+| Start, checking every query value of the application | ✓ | known: two read a case's field |
+| A prepared query by typed id | ✓ | ✓ |
+| A prepared query through a reflected member over a case's field | ✓ | known |
+| `List.exists` over owned rows, and over a JSON list | ✓ | ✓ |
+| Loads bound with `let!` and `and!`, with `take` | ✓ | ✓ |
+| A join selecting a record, through a reflected member over a case's field | ✓ | known |
+| A prepared page, and a count | ✓ | ✓ |
+| Read, decide and update in one transaction, adding an owned row | ✓ | ✓ |
+| Insert what is missing (`Bulk.insertMissing`) | ✓ | ✓ |
+| A broken constraint's message | ✓ | ✓ |
 | No IL warning naming Plasm | | not yet |

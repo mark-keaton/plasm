@@ -37,6 +37,16 @@ let private kept =
     |> Seq.collect (names "")
     |> Set.ofSeq
 
+/// The assemblies the descriptor keeps whole.
+let private wholes =
+    use stream = typeof<Plasm.Repo>.Assembly.GetManifestResourceStream "ILLink.Descriptors.xml"
+    let doc = XDocument.Load stream
+
+    doc.Descendants(XName.Get "assembly")
+    |> Seq.filter (fun a -> match a.Attribute(XName.Get "preserve") with null -> false | p -> p.Value = "all")
+    |> Seq.map (fun a -> a.Attribute(XName.Get "fullname").Value)
+    |> Set.ofSeq
+
 let private translator = File.ReadAllText(Path.Combine(repository, "src", "Plasm", "Translate.fs"))
 
 [<Fact>]
@@ -47,7 +57,7 @@ let ``every type the translator names by its full name is kept`` () =
         |> Seq.filter (fun n -> Char.IsUpper(n.Split('.') |> Array.last |> Seq.head))
         |> Set.ofSeq
 
-    let missing = named |> Set.filter (fun n -> not (kept.Contains n))
+    let missing = named |> Set.filter (fun n -> not (kept.Contains n) && not (wholes |> Set.exists (fun a -> n.StartsWith(a + "."))))
     Assert.True(missing.IsEmpty, $"""Translate.fs names types the trimming descriptor does not keep: {String.Join(", ", missing)}""")
 
 [<Fact>]
@@ -62,6 +72,25 @@ let ``every module the translator names by its own name is kept`` () =
 
     let missing = named |> Set.filter (keeps >> not)
     Assert.True(missing.IsEmpty, $"""Translate.fs names modules the trimming descriptor does not keep: {String.Join(", ", missing)}""")
+
+[<Fact>]
+let ``every scalar type Plasm maps is kept whole, since a query may call its members`` () =
+    use stream = typeof<Plasm.Repo>.Assembly.GetManifestResourceStream "ILLink.Descriptors.xml"
+    let doc = XDocument.Load stream
+
+    let whole =
+        doc.Descendants(XName.Get "type")
+        |> Seq.filter (fun t -> match t.Attribute(XName.Get "preserve") with null -> false | p -> p.Value = "all")
+        |> Seq.choose (fun t -> match t.Attribute(XName.Get "fullname") with null -> None | n -> Some n.Value)
+        |> Set.ofSeq
+
+    // byte[] is kept with Byte.
+    let scalars = Plasm.Scalar.builtIn |> Set.map (fun n -> if n = "System.Byte[]" then "System.Byte" else n)
+    let missing = scalars - whole
+    Assert.True(missing.IsEmpty, $"""scalar types the descriptor does not keep whole: {String.Join(", ", missing)}""")
+
+[<Fact>]
+let ``Plasm is kept whole, since quotations name its builder and its arguments`` () = Assert.Contains("Plasm", wholes)
 
 [<Fact>]
 let ``the string methods the translator reads are kept`` () =

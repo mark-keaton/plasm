@@ -364,15 +364,35 @@ type Repo internal (model: Model, provider: IProvider, ?options: RepoOptions) =
 
                 for p in t.GetProperties flags do
                     if p.GetIndexParameters().Length = 0 && isQuery p.PropertyType then
-                        match p.GetValue null with
-                        | :? ICheckable as q ->
+                        // Reading the value runs its module's initialisation; where that
+                        // fails (in a native binary, a quotation naming a member it does
+                        // not keep, docs/aot.md), the query is a problem, not a crash.
+                        let value =
+                            try
+                                Ok(p.GetValue null)
+                            with ex ->
+                                let rec innermost (e: exn) = if isNull e.InnerException then e else innermost e.InnerException
+                                Error(innermost ex)
+
+                        match value with
+                        | Error e ->
+                            found <- found + 1
+
+                            let native =
+                                if Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported then ""
+                                else "; in a native binary this is a quotation naming a member the binary does not keep (docs/aot.md)"
+
+                            problems.Add
+                                { Query = name p.Name
+                                  Error = TranslationError.UnsupportedExpression(name p.Name, $"it could not be read: {e.GetType().Name}: {e.Message}{native}") }
+                        | Ok(:? ICheckable as q) ->
                             found <- found + 1
 
                             match translates q with
                             | Error e -> problems.Add { Query = name p.Name; Error = e }
                             | Ok() -> ()
                         // A function that builds a query each call is not a value Plasm can check.
-                        | _ -> functions.Add(name p.Name)
+                        | Ok _ -> functions.Add(name p.Name)
 
                 for m in t.GetMethods flags do
                     if not m.IsSpecialName && m.GetParameters().Length > 0 && isQuery m.ReturnType then
