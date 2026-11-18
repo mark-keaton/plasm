@@ -118,6 +118,13 @@ that only a quotation names needs that instantiation's compiled code.
   `LanguagePrimitives` (an aggregate's `GenericZero`), and the scalar types
   Plasm maps, is kept by the descriptor.
 
+- A message formats a value with F#'s printf only over `obj` (`%A{box r}`, a
+  transaction's rejection): printf has no native code for a value type it
+  captures, as an `int` rejection, and over `obj` it prints the same; an
+  expression's values are described without printf natively (`Translate.show`).
+  A key is compared with its type's zero made uninitialised, not by a
+  constructor.
+
 The check has a row for each kind with a value type in it: a nested query
 ordered by a date, a grouping by an int, tuple and record selects with an int,
 an aggregate over decimal, a captured `Guid list`, an option of a value type
@@ -361,5 +368,7 @@ getters marked):
 | A load that joins and groups is refused, the same natively | ✓ | ✓ |
 | A load of the record a row refers to (`referredBy`) | ✓ | ✓ |
 | Every aggregate, selected in a five-tuple | ✓ | ✓ |
+| A refused query's message, naming literal values of each kind | ✓ | ✓ |
+| A transaction rejected with an `int` | ✓ | ✓ |
 | A binary published without the step for F# union fields refuses its union, naming it, its assembly and the step (`tests/Plasm.Aot.Unpatched`, `PlasmFieldGetters=false`) | | ✓ |
 | The publish has no IL warning naming Plasm | | ✓ |

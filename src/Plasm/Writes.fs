@@ -61,7 +61,7 @@ let private unsavedKey (schema: SchemaInfo) (key: obj) =
     |> List.forall (fun v ->
         isNull v
         || v = box DBNull.Value
-        || (v.GetType().IsValueType && v.Equals(Activator.CreateInstance(v.GetType()))))
+        || (v.GetType().IsValueType && v.Equals(Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(v.GetType()))))
 
 let rec private owned (model: Model) (s: CsState) : CsState =
     let schema = schemaOf model s.Type

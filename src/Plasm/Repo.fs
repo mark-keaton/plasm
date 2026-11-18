@@ -459,7 +459,7 @@ type Repo internal (model: Model, provider: IProvider, ?options: RepoOptions) =
             let report =
                 match options.OnProblem with
                 | Some f -> f
-                | None -> fun p -> eprintfn "Plasm: %s" (string p)
+                | None -> fun p -> Console.Error.WriteLine("Plasm: " + string p)
 
             if options.Queries = StartupCheck.Warn then
                 for p in queries @ functions do

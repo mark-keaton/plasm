@@ -177,7 +177,7 @@ module internal Values =
             | :? DBNull -> "0"
             | v -> string (Oid.ofType (v.GetType()) v))
         |> String.concat ","
-        |> sprintf "[%s]"
+        |> fun items -> "[" + items + "]"
 
     let private timestampFormats =
         [| "yyyy-MM-dd HH:mm:ss.FFFFFFzzz"; "yyyy-MM-dd HH:mm:ss.FFFFFFzz" |]

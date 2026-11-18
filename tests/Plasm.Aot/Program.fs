@@ -302,6 +302,7 @@ let main argv =
             selected Queries.customersWithTickets2 (fun r ->
                 r.Name + ": " + String.Join(", ", r.Ordered) + "; sizes " + String.Join(", ", r.Sizes |> List.sort)))
         step "a load that joins and groups is refused" (fun () -> selected (Queries.refusedLoad ()) (fun r -> r.Name))
+        step "a refused query's message shows its values" (fun () -> all (Queries.refusedWithValues ()) ticket)
         step "a load of the record a row refers to" (fun () ->
             selected Queries.ticketsWithOwners (fun r -> r.Title + " by " + defaultArg r.Owner "nobody"))
         step "every aggregate" (fun () ->
@@ -332,6 +333,13 @@ let main argv =
                 }
 
             match repo.Transact(finish).Result with
+            | Ok t -> ticket t
+            | Error e -> "failed: " + e.Display)
+
+        step "a rejection carrying a value type" (fun () ->
+            let missing: Tx<Ticket, int> = Tx.one (Queries.ticketById (TicketId 404L)) |> Tx.orReject 404
+
+            match repo.Transact(missing).Result with
             | Ok t -> ticket t
             | Error e -> "failed: " + e.Display)
 

@@ -51,7 +51,9 @@ type TransactionError<'E> =
     member e.Display =
         let reason =
             match e.Failure with
-            | TxFailure.Rejected r -> $"rejected: %A{r}"
+            // Boxed: F#'s printf has no native code for a value type it
+            // captures (docs/aot.md), and over obj it prints the same.
+            | TxFailure.Rejected r -> $"rejected: %A{box r}"
             | TxFailure.InvalidChanges(entity, errors) ->
                 let named (f: FieldError) =
                     match f.Kind with

@@ -170,3 +170,16 @@ let priceRanges =
             groupBy t.Owner
             select (t.Owner, Agg.min t.Price, Agg.max t.Price, Agg.avg t.Price, Agg.countDistinct t.Size)
     }
+
+/// A function of the application a query cannot translate (not a
+/// [<ReflectedDefinition>]), so the refusal names it with its arguments.
+let labelled (title: string) (price: decimal) (tag: string) (n: int64) (weight: float) (mark: char) (flag: bool) =
+    title + string price + tag + string n + string weight + string mark + string flag
+
+/// A query Plasm refuses, its message naming literal values of each kind:
+/// the message reads the same natively (docs/aot.md).
+let refusedWithValues () =
+    plasm {
+        for t in tableOf<Ticket> do
+            where (labelled t.Title 1.5m "s" 2L 1.0 'x' true = "")
+    }
