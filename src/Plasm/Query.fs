@@ -880,7 +880,7 @@ module internal OneRow =
                 match model.TrySchema limited.Root with
                 | Some s ->
                     let v = Quotations.Var("x", limited.Root)
-                    let key = Quotations.Expr.Lambda(v, Quotations.Expr.PropertyGet(Quotations.Expr.Var v, s.Shape.Fields.[s.Key.Index]))
+                    let key = Quotations.Expr.Lambda(v, Reflection.Quoted.propertyGet (Quotations.Expr.Var v) s.Shape.Fields.[s.Key.Index])
                     { limited with Orders = [ key, SortDirection.Ascending ] }
                 | None -> limited
             else

@@ -83,7 +83,7 @@ module internal Planner =
                   | Some o -> o
                   | None ->
                       let v = Quotations.Var("x", target.Type)
-                      Quotations.Expr.Lambda(v, Quotations.Expr.PropertyGet(Quotations.Expr.Var v, target.Shape.Fields.[target.Key.Index]))
+                      Quotations.Expr.Lambda(v, Reflection.Quoted.propertyGet (Quotations.Expr.Var v) target.Shape.Fields.[target.Key.Index])
 
               let def = { QueryDef.Empty target.Type with Orders = [ order, SortDirection.Ascending ] }
               let strategy = LoadStrategy.BatchedByKeys caps.MaxKeysPerCommand

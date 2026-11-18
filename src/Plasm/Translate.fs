@@ -263,7 +263,7 @@ let rec normalize (e: Expr) : Expr =
         normalize (applyReflected (reflectedBody mi).Value (Option.toList target @ args))
     | ExprShape.ShapeVar _ -> e
     | ExprShape.ShapeLambda(v, b) -> Expr.Lambda(v, normalize b)
-    | ExprShape.ShapeCombination(o, args) -> ExprShape.RebuildShapeCombination(o, List.map normalize args)
+    | ExprShape.ShapeCombination(o, args) -> Reflection.Quoted.rebuild e o (List.map normalize args)
 
 /// `referring<T> o` and `referredBy<T> o` (referring.feature): the marker
 /// condition `Refers(x, o)` or `ReferredBy(x, o)` as the equality the model
@@ -325,8 +325,8 @@ let expandTie (model: Model) (mi: Reflection.MethodInfo) (inner: Expr) (outer: E
             invalid $"{op}<{target.Name}> needs one field of {holder.Name} referring to {keyed.Name}: {holder.Name} has {many.Length} fields holding {article keyType.Name} {keyType.Name}, {names}; Plasm does not pick one, so {byHand}"
 
     let key, held = (if referring then outer else inner), (if referring then inner else outer)
-    let keyExpr = Expr.PropertyGet(key, keyed.Type.GetProperty keyed.Key.Name)
-    let heldExpr = Expr.PropertyGet(held, holder.Type.GetProperty field.Name)
+    let keyExpr = Reflection.Quoted.propertyGet key (keyed.Type.GetProperty keyed.Key.Name)
+    let heldExpr = Reflection.Quoted.propertyGet held (holder.Type.GetProperty field.Name)
 
     let keyExpr =
         if field.IsOption then
@@ -343,7 +343,7 @@ let rec expandTies (model: Model) (e: Expr) : Expr =
     | Call(None, mi, [ a; b ]) when Ties.isMarker mi -> expandTie model mi a b
     | ExprShape.ShapeVar _ -> e
     | ExprShape.ShapeLambda(v, b) -> Expr.Lambda(v, expandTies model b)
-    | ExprShape.ShapeCombination(o, args) -> ExprShape.RebuildShapeCombination(o, List.map (expandTies model) args)
+    | ExprShape.ShapeCombination(o, args) -> Reflection.Quoted.rebuild e o (List.map (expandTies model) args)
 
 let isAggCall (mi: Reflection.MethodInfo) = mi.DeclaringType.FullName = "Plasm.Agg"
 let isRawCall (mi: Reflection.MethodInfo) = mi.DeclaringType.FullName = "Plasm.Raw"
@@ -985,7 +985,7 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
         | Call(None, mi, [ Lambda(x, body); (RowField ctx (b, f) as field) ]) when
             f.IsOption && f.Value.IsSome && (isOptionModule mi "Exists" || isOptionModule mi "ForAll")
             ->
-            let value = Expr.PropertyGet(field, field.Type.GetProperty "Value")
+            let value = Reflection.Quoted.propertyGet field (field.Type.GetProperty "Value")
             let inner = predicate ctx (body.Substitute(fun v -> if v = x then Some value else None))
 
             if mi.Name = "Exists" then

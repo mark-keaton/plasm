@@ -122,6 +122,64 @@ let exactly (target: Type) (v: obj) : Result<obj, string> =
         else
             refuse ()
 
+/// A property read or a method call on an instance, as `Expr.PropertyGet` and
+/// `Expr.Call` make it. Each of those asks FSharp.Reflection whether the
+/// member's type is a union, which reads the type's attributes anew, and a
+/// native binary instantiates an attribute from metadata on every read
+/// (docs/aot.md). So each member's expression is made once, over variables,
+/// and made again by putting the instance and arguments in their place, which
+/// checks nothing. An instance or argument the member does not take goes to
+/// FSharp.Core, which refuses it as before.
+///
+/// That `Expr.Substitute` does not check again is FSharp.Core's behaviour, not
+/// its contract: were it to check, this would be as slow as before, not wrong.
+/// Each dictionary holds one entry per member a query names, which the
+/// compiled program bounds (F# Interactive adds those of its redefinitions).
+module Quoted =
+    open Microsoft.FSharp.Quotations
+
+    let private gets = ConcurrentDictionary<PropertyInfo, Var * Expr>()
+    let private calls = ConcurrentDictionary<MethodInfo, Var[] * Type[] * Expr>()
+
+    let private made =
+        Func<PropertyInfo, Var * Expr>(fun p ->
+            let v = Var("x", p.DeclaringType)
+            v, Expr.PropertyGet(Expr.Var v, p))
+
+    let private madeCall =
+        Func<MethodInfo, Var[] * Type[] * Expr>(fun m ->
+            let types = Array.append [| m.DeclaringType |] (m.GetParameters() |> Array.map (fun p -> p.ParameterType))
+            let vars = types |> Array.mapi (fun i t -> Var("a" + string i, t))
+            vars, types, Expr.Call(Expr.Var vars.[0], m, [ for v in vars.[1..] -> Expr.Var v ]))
+
+    /// `target.P`, for a property without arguments.
+    let propertyGet (target: Expr) (p: PropertyInfo) : Expr =
+        if not (p.DeclaringType.IsAssignableFrom target.Type) then
+            Expr.PropertyGet(target, p)
+        else
+            let v, body = gets.GetOrAdd(p, made)
+            body.Substitute(fun x -> if x = v then Some target else None)
+
+    /// `target.M(args)`.
+    let call (target: Expr) (m: MethodInfo) (args: Expr list) : Expr =
+        let vars, types, body = calls.GetOrAdd(m, madeCall)
+        let given = Array.ofList (target :: args)
+
+        if given.Length <> types.Length || not (Array.forall2 (fun (t: Type) (e: Expr) -> t.IsAssignableFrom e.Type) types given) then
+            Expr.Call(target, m, args)
+        else
+            body.Substitute(fun x ->
+                match Array.IndexOf(vars, x) with
+                | -1 -> None
+                | i -> Some given.[i])
+
+    /// `ExprShape.RebuildShapeCombination`, for the node `e` it was taken from.
+    let rebuild (e: Expr) (shape: obj) (args: Expr list) : Expr =
+        match e, args with
+        | Patterns.PropertyGet(Some _, p, []), [ target ] -> propertyGet target p
+        | Patterns.Call(Some _, m, _), target :: rest -> call target m rest
+        | _ -> ExprShape.RebuildShapeCombination(shape, args)
+
 /// Types defined in F# Interactive live in one generated module per submission
 /// (FSI_0004.Domain+Customer). Re-evaluating a definition creates a new,
 /// unrelated type with the same name.
