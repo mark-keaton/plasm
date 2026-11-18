@@ -2416,8 +2416,8 @@ namespace Plasm.Koans.Browser.Specs.Features
       await testRunner.ThenAsync("under Given the definition of repo is labelled \"Plasm\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 367
-      await testRunner.AndAsync("under Given the definition of repo includes \"let repo = Repo(Db.model, Postgres.c" +
-                        "onnect connectionString)\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
+      await testRunner.AndAsync("under Given the definition of repo includes \"let! repo = Repo.Start(Db.model, Pos" +
+                        "tgres.connect connectionString, queriesIn = typeof<Order>.Assembly)\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
