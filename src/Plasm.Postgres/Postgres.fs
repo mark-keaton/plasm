@@ -165,13 +165,11 @@ type PostgresProvider(dataSource: NpgsqlDataSource, ?options: PostgresOptions) =
 
         member _.Classify ex = Classify.classify ex
 
+        // REPEATABLE READ alone gives the snapshot; Plasm sends only SELECTs
+        // in it. No SET, which a pooler in transaction mode may pin on.
         member _.BeginSnapshot(conn, ct) =
             task {
                 let! tx = conn.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct)
-                use cmd = conn.CreateCommand()
-                cmd.Transaction <- tx
-                cmd.CommandText <- "SET TRANSACTION READ ONLY"
-                let! _ = cmd.ExecuteNonQueryAsync(ct)
                 return Some tx
             }
 

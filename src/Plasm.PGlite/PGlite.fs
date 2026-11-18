@@ -849,7 +849,6 @@ type PGliteProvider(bridge: IPGliteBridge, ?options: PGliteOptions) =
         member _.BeginSnapshot(conn, _) =
             task {
                 let tx = conn.BeginTransaction(IsolationLevel.RepeatableRead)
-                Values.throwIfError (bridge.Execute "SET TRANSACTION READ ONLY")
                 return Some tx
             }
 

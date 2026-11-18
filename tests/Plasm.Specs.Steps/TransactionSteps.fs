@@ -8,6 +8,34 @@ open Plasm
 open Plasm.TestDomain.Domain
 open Plasm.TestDomain.Database
 
+/// What Npgsql reports sending, from its own log: the isolation level of each
+/// transaction it began, and the text of each command it executed (a SET sent
+/// by a provider reaches the server without passing Plasm's OnCommand).
+type NpgsqlSent() =
+    let begun = Collections.Concurrent.ConcurrentQueue<string>()
+    let commands = Collections.Concurrent.ConcurrentQueue<string>()
+
+    let logger =
+        { new Microsoft.Extensions.Logging.ILogger with
+            member _.IsEnabled _ = true
+            member _.BeginScope _ = null
+
+            member _.Log(_, eventId, state, _, _) =
+                match box state with
+                | :? Collections.Generic.IReadOnlyList<Collections.Generic.KeyValuePair<string, obj>> as values ->
+                    for kv in values do
+                        if kv.Key = "IsolationLevel" then begun.Enqueue(string kv.Value)
+                        elif kv.Key = "CommandText" && eventId.Name = "CommandExecutionCompleted" then commands.Enqueue(string kv.Value)
+                | _ -> () }
+
+    member _.Begun = List.ofSeq begun
+    member _.Commands = List.ofSeq commands
+
+    interface Microsoft.Extensions.Logging.ILoggerFactory with
+        member _.CreateLogger _ = logger
+        member _.AddProvider _ = ()
+        member _.Dispose() = ()
+
 /// A provider whose dialect cannot read a consistent snapshot (to test rejection).
 type LimitedProvider(inner: IProvider) =
     let dialect =
@@ -261,6 +289,34 @@ type TransactionSteps(w: World) =
 
     [<StepDefinition("the guarantee is not silently weakened")>]
     member _.NotWeakened() = equal 0 w.CommandsSinceMark.Length "no reads without the guarantee"
+
+    // Scenario: A snapshot read sends no SET, so a pooler need not pin its connection
+
+    [<StepDefinition("I read it as a consistent snapshot, watching what Npgsql sends")>]
+    member _.SnapshotWatched() =
+        task {
+            let sent = new NpgsqlSent()
+            let b = NpgsqlDataSourceBuilder(w.Db.ConnectionString)
+            b.UseLoggerFactory(sent) |> ignore
+            use ds = b.Build()
+            let repo = Repo(w.Db.Model, Plasm.Postgres.PostgresProvider(ds), RepoOptions.Default)
+            let! r = repo.All(Query.from (tableOf<Order>), ReadConsistency.Snapshot)
+            ok r |> ignore
+            w.Set("sent", sent)
+        }
+        |> unit
+
+    [<StepDefinition("the read begins one transaction at REPEATABLE READ")>]
+    member _.BeganRepeatableRead() =
+        equal [ "RepeatableRead" ] (w.Get<NpgsqlSent> "sent").Begun "isolation levels of the transactions begun"
+
+    [<StepDefinition("no command Npgsql sends is a SET")>]
+    member _.NoSet() =
+        let sent = w.Get<NpgsqlSent> "sent"
+        let commands = sent.Commands
+        check (not commands.IsEmpty) "Npgsql reported no commands"
+        let sets = commands |> List.filter (fun c -> c.TrimStart().StartsWith("SET", StringComparison.OrdinalIgnoreCase))
+        equal [] sets "SET commands"
 
     // Scenario: Non-transactional effects are not presented as rollback-safe
 

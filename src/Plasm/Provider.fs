@@ -46,8 +46,8 @@ type IProvider =
     /// Maps a provider exception to a classified failure; None if the exception
     /// is not a database failure.
     abstract Classify: exn -> DbFailure option
-    /// Begins a read-only transaction giving one snapshot for several commands,
-    /// or None if the provider cannot.
+    /// Begins a transaction giving one snapshot for several reads (Plasm sends
+    /// only SELECTs in it), or None if the provider cannot.
     abstract BeginSnapshot: DbConnection * CancellationToken -> Task<DbTransaction option>
     abstract BeginTransaction: DbConnection * IsolationLevel * CancellationToken -> Task<DbTransaction>
 

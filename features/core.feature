@@ -252,6 +252,15 @@ Feature: Predictable functional persistence for F#
       * Or the request is rejected as unsupported
       And the guarantee is not silently weakened
 
+    # A pooler in transaction mode, such as PgBouncer or RDS Proxy, may pin a
+    # client to one server connection when it sees a SET. A snapshot needs
+    # none: REPEATABLE READ alone gives it, and Plasm sends only SELECTs in it.
+    Scenario: A snapshot read sends no SET, so a pooler need not pin its connection
+      Given a relationship graph is loaded through multiple queries
+      When I read it as a consistent snapshot, watching what Npgsql sends
+      Then the read begins one transaction at REPEATABLE READ
+      And no command Npgsql sends is a SET
+
     Scenario: Non-transactional effects are not presented as rollback-safe
       Given a transaction plan includes sending an external message
       When that effect cannot participate in the database transaction

@@ -285,6 +285,38 @@ answer matters, and its package's size with it:
   pools (its own to set up the schema, then Plasm's), so its first query pays a
   second connection an application does not.
 
+### Behind a connection pooler
+
+A function usually reaches PostgreSQL through a pooler in transaction mode
+(PgBouncer, RDS Proxy), which hands each transaction whichever server
+connection is free, so nothing may rest on the session. What Plasm sends
+rests on none:
+
+- **No prepared statement is kept on the server.** Plasm never prepares a
+  command, and Npgsql's automatic preparation is off unless the connection
+  string turns it on; every statement is sent unnamed. A prepared query is
+  planned once in the process, not on the server.
+- **A batch is one implicit transaction.** Statements Plasm sends together
+  (a write's owned rows, loads bound with `let!` and `and!`) are one `DbBatch`,
+  which Npgsql ends with one sync, so a pooler keeps it on one connection.
+- **No session state.** No advisory locks, `SET`, temporary tables, cursors,
+  `LISTEN` or `set_config`; a snapshot read is a REPEATABLE READ transaction
+  alone (`core.feature`). Keys a query reads by are an array parameter, so a
+  statement's text grows with the query, not the data.
+
+Npgsql itself resets a pooled connection on reuse with `DISCARD ALL`, which
+RDS Proxy pins a connection on and a pooler in transaction mode has no use
+for. Set `No Reset On Close=true` in the connection string behind one; Plasm
+leaves the connection string to the application.
+
+Measured with the check under the runtime, straight to PostgreSQL 18.4 and
+through PgBouncer 1.24.1 in transaction mode with `max_prepared_statements=0`
+and two server connections: the output is the same line for line, the server
+log shows every statement unnamed, and `No Reset On Close=true` takes
+`DISCARD ALL` from 32 a run to 0. RDS Proxy itself was not tested, and whether
+it pins on a key a column's default takes from a sequence (`nextval` run by
+the server, not sent) is unknown.
+
 ## The check
 
 `tests/Plasm.Aot` is a program over a small domain (`tests/Plasm.Aot.Domain`,
