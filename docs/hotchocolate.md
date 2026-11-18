@@ -50,6 +50,11 @@ declarations and nothing of Hot Chocolate).
   Plasm does.
 - `AddPlasmUnion<'U>()` shows a type of C#'s union shape as a GraphQL union
   (below).
+- `PlasmRequest.Refinement(context, fields, orderWhenNone)` is the request's
+  where and order as a function of a query, read from the context at once,
+  for a DataLoader's batch, which runs after the resolver and must not keep
+  its context; `PlasmRequest.BatchKey(context)` names the field and its where
+  and order, so that requests with the same arguments share a batch.
 - `PlasmRequest.Page(context, query, defaultTake)` pages a query as the
   field's offset paging (`skip`, `take`) asks, reading one row more than the
   page; `PlasmRequest.Segment(context, rows, defaultTake, total)` makes the
@@ -101,6 +106,13 @@ public class CardFilter() : PlasmFilterInputType<Card>("CardFilterInput", CardFi
 public class CardSort() : PlasmSortInputType<Card>("CardSortInput", CardFields.all);
 ```
 
+A board's cards with their own where and order are a field of `BoardNode`,
+answered by a batch DataLoader keyed by board and argument set
+(`BoardCardsLoader` in the host): one query per argument set for every board
+in the batch, `Kanban.Data`'s `CardsOfBoardsAsync` writing the boards' keys as
+one array parameter (`WHERE "c"."board" = ANY(@p0)`) and the request's where
+and order built on it, its rows grouped by board in the query's order.
+
 The GraphQL types are the application's views of plain types (`CardView`),
 as for a C# host (csharp.md): the package exposes no domain record.
 
@@ -129,7 +141,13 @@ Not done by the database, yet:
   linked lists are loaded (a card's comments and labels, one command each for
   all the cards read), whatever the request selects; Hot Chocolate picks the
   selected fields from the views.
-- **A nested collection's own where and order.**
+- **A nested collection's page.** A board's cards field takes a where and
+  an order, done by the database for every board in one command, but no
+  `take` per board. SQL can do it in the same command (Plasm's own loads do:
+  `ROW_NUMBER() OVER (PARTITION BY` the parent key in a derived table named
+  `ranked`), but Plasm plans that only for a load read from a `let!`
+  quotation, and a query built at run time cannot be put inside one: the
+  entry for adding a load from a built query is not public yet.
 - **Text operators** (`contains`, `startsWith`) on a scalar Plasm reads
   through a create function, such as `Title`: Plasm reads it as its column but
   cannot reach the text inside.

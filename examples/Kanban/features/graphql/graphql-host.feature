@@ -67,6 +67,26 @@ Feature: Kanban's cards over GraphQL, filtered and ordered by the database
       Then the answer is an error
       And no cards' SQL was sent
 
+  Rule: A board's cards, with their own where and order, are read in one command for every board
+
+    # Each board's cards field is answered by one batch: every board's cards
+    # in one query, the boards' keys as one array parameter, with the
+    # request's where and order on it; a field asked twice with different
+    # arguments is one query each.
+    Scenario: The backlog of each board, by title, in one command
+      Given board "beta" has the cards:
+        | title  | stage   | assignee | version | created              |
+        | Plan   | backlog |          | 1       | 2026-11-18T12:00:00Z |
+        | Review | doing   | Grace    | 1       | 2026-11-18T13:00:00Z |
+      When I ask for '{ boards { slug cards(where: { stage: { eq: "backlog" } }, order: [{ title: ASC }]) { title } } }'
+      Then each board's cards are "alpha: Ship it, Write the spec; beta: Plan"
+      And the cards were read in 1 command, for every board at once
+
+    Scenario: A board's cards asked for twice, with different wheres, are read in a command each
+      When I ask for '{ boards { slug backlog: cards(where: { stage: { eq: "backlog" } }) { title } doing: cards(where: { stage: { eq: "doing" } }) { title } } }'
+      Then the board "alpha" has backlog "Write the spec, Ship it" and doing "Build it"
+      And the cards were read in 2 commands, for every board at once
+
   Rule: The answer is the application's view
 
     Scenario: A card's stage is a GraphQL union over its cases

@@ -63,6 +63,12 @@ type PlasmRequest =
     /// no order: Plasm refuses a page without one, since its rows would not be
     /// the same from one read to the next.
     static member Apply(context: IResolverContext, fields: QueryField<'T> seq, query: Query<'T>, orderWhenNone: QueryField<'T>) : Query<'T> =
+        PlasmRequest.Refinement(context, fields, orderWhenNone).Invoke query
+
+    /// The request's where and order as a function of the query, read from the
+    /// context now: for a DataLoader's batch, which runs after the resolver
+    /// and must not keep its context. `orderWhenNone` may be null.
+    static member Refinement(context: IResolverContext, fields: QueryField<'T> seq, orderWhenNone: QueryField<'T>) : Func<Query<'T>, Query<'T>> =
         let byName = Dictionary<string, QueryField<'T>>()
         for f in fields do byName.[f.Name] <- f
 
@@ -78,13 +84,10 @@ type PlasmRequest =
         let argument (name: string) =
             if context.Selection.Field.Arguments.ContainsField name then context.ArgumentValue<obj> name else null
 
-        let filtered =
+        let condition =
             match argument "where" with
-            | :? IDictionary<string, obj> as input ->
-                match PlasmRequest.Condition(byName, input) with
-                | Some c -> query |> BuildQuery.where (c.ToExpr())
-                | None -> query
-            | _ -> query
+            | :? IDictionary<string, obj> as input -> PlasmRequest.Condition(byName, input)
+            | _ -> None
 
         let ordering =
             match argument "order" with
@@ -93,20 +96,33 @@ type PlasmRequest =
                       match o with
                       | :? IDictionary<string, obj> as entries ->
                           for KeyValue(name, direction) in entries do
-                              if not (isNull direction) then yield name, direction
+                              if not (isNull direction) then
+                                  match byName.TryGetValue name with
+                                  | true, f -> yield f, (string direction).ToUpperInvariant() = "DESC"
+                                  | _ -> raise (GraphQLException $"{typeof<'T>.Name} declares no field {name} to order by")
                       | _ -> () ]
             | _ -> []
 
-        match ordering with
-        | [] when not (isNull (box orderWhenNone)) -> orderWhenNone.OrderBy(filtered, false)
-        | _ ->
-            ordering
-            |> List.fold
-                (fun q (name, direction) ->
-                    match byName.TryGetValue name with
-                    | true, f -> f.OrderBy(q, (string direction).ToUpperInvariant() = "DESC")
-                    | _ -> raise (GraphQLException $"{typeof<'T>.Name} declares no field {name} to order by"))
-                filtered
+        let ordering =
+            match ordering with
+            | [] when not (isNull (box orderWhenNone)) -> [ orderWhenNone, false ]
+            | given -> given
+
+        Func<Query<'T>, Query<'T>>(fun query ->
+            let filtered =
+                match condition with
+                | Some c -> query |> BuildQuery.where (c.ToExpr())
+                | None -> query
+
+            ordering |> List.fold (fun q (f, descending) -> f.OrderBy(q, descending)) filtered)
+
+    /// A name for the DataLoader of this field with these arguments: fields
+    /// asked for with the same where and order share one batch.
+    static member BatchKey(context: IResolverContext) : string =
+        let literal (name: string) =
+            if context.Selection.Field.Arguments.ContainsField name then string (context.ArgumentLiteral<HotChocolate.Language.IValueNode> name) else ""
+
+        context.Selection.Field.Coordinate.ToString() + "|" + literal "where" + "|" + literal "order"
 
     static member private Count(context: IResolverContext, name: string) : int option =
         if context.Selection.Field.Arguments.ContainsField name then

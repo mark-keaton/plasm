@@ -13,6 +13,7 @@
 namespace Kanban.Data
 
 open System
+open System.Collections.Generic
 open System.Data
 open System.Runtime.CompilerServices
 open System.Text.Json
@@ -118,6 +119,13 @@ type BoardView =
       Name: string
       WipLimit: int
       Cards: CardView[] }
+
+/// A board, for a caller that reads its cards apart (a GraphQL field).
+type BoardNode =
+    { Id: Guid
+      Slug: string
+      Name: string
+      WipLimit: int }
 
 type BoardSummary =
     { Slug: string
@@ -370,6 +378,38 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
             return read "Reading cards failed" cards |> List.map View.card |> Array.ofList
         }
 
+    /// Every board, by name.
+    member _.BoardNodesAsync(cancellationToken: CancellationToken) : Task<BoardNode[]> =
+        task {
+            let! boards = repo.All(plasm { for b in tableOf<Board> do orderBy b.Name }, cancellationToken = cancellationToken)
+
+            return
+                read "Listing boards failed" boards
+                |> List.map (fun b ->
+                    let (BoardId id) = b.Id
+                    { Id = id; Slug = b.Slug.Value; Name = b.Name.Value; WipLimit = b.WipLimit.Value })
+                |> Array.ofList
+        }
+
+    /// The cards of every board in `boards`, as `refine` makes the query, in
+    /// one query for them all; each board's in the query's order.
+    member _.CardsOfBoardsAsync(boards: Guid seq, refine: Func<Query<Card>, Query<Card>>, cancellationToken: CancellationToken) : Task<IReadOnlyDictionary<Guid, CardView[]>> =
+        task {
+            let ids = [ for id in boards -> BoardId id ]
+            let query = plasm { for c in tableOf<Card> do where (List.contains c.Board ids) }
+            let! cards = repo.All(refine.Invoke query, cancellationToken = cancellationToken)
+            let byBoard = Dictionary<Guid, ResizeArray<CardView>>()
+
+            for id in boards do
+                byBoard.[id] <- ResizeArray()
+
+            for c in read "Reading boards' cards failed" cards do
+                let (BoardId board) = c.Board
+                byBoard.[board].Add(View.card c)
+
+            return Dictionary(byBoard |> Seq.map (fun kv -> KeyValuePair(kv.Key, kv.Value.ToArray()))) :> IReadOnlyDictionary<_, _>
+        }
+
     /// How many cards the query `refine` makes reads.
     member _.CountCardsAsync(refine: Func<Query<Card>, Query<Card>>, cancellationToken: CancellationToken) : Task<int> =
         task {
@@ -421,7 +461,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
             match parsed with
             | Error problems -> return CreateBoardOutcome(View.invalid problems)
             | Ok(slug, name, limit) ->
-                let board = { Id = BoardId(newId ()); Slug = slug; Name = name; WipLimit = limit }
+                let board: Board = { Id = BoardId(newId ()); Slug = slug; Name = name; WipLimit = limit }
 
                 match! transact Guid.Empty (createBoard board []) cancellationToken with
                 | Ok stored -> return CreateBoardOutcome(View.summary [] { Board = stored; Newest = []; Blocked = [] })

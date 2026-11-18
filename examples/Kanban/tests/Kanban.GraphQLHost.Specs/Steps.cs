@@ -69,6 +69,12 @@ public sealed class Steps : IAsyncDisposable
                 await c.ExecuteNonQueryAsync();
             }
         }
+    }
+
+    /// The host starts at the first request, after every row a scenario adds.
+    async Task Started()
+    {
+        if (host is not null) return;
         host = await HostProcess.Start(typeof(Program).Assembly.Location, "KANBAN_GRAPHQL_HOST", connectionString, "/graphql?sdl",
             new Dictionary<string, string> { ["KANBAN_SQL"] = "1" });
         http = new HttpClient { BaseAddress = host.Address };
@@ -77,6 +83,7 @@ public sealed class Steps : IAsyncDisposable
     [When("I ask for {string}")]
     public async Task Ask(string query)
     {
+        await Started();
         mark = host!.Lines.Length - 1;
         using var content = new StringContent(JsonSerializer.Serialize(new { query }), Encoding.UTF8, "application/json");
         using var answer = await http.PostAsync("/graphql", content);
@@ -134,6 +141,30 @@ public sealed class Steps : IAsyncDisposable
 
     [Then("the database counted nothing")]
     public void NotCounted() => Equal(0, CardsSql().Count(l => l.StartsWith("SELECT COUNT(")), "counts sent");
+
+    IEnumerable<JsonNode> Boards() => JsonNode.Parse(body)!["data"]?["boards"]?.AsArray().Select(b => b!) ?? throw new Exception("no boards in " + body);
+
+    static string Titles(JsonNode? cards) => string.Join(", ", cards!.AsArray().Select(c => (string)c!["title"]!));
+
+    [Then("each board's cards are {string}")]
+    public void BoardsCards(string expected) =>
+        Equal(expected, string.Join("; ", Boards().Select(b => $"{b["slug"]}: {Titles(b["cards"])}")), "each board's cards");
+
+    [Then("the board {string} has backlog {string} and doing {string}")]
+    public void BacklogDoing(string slug, string backlog, string doing)
+    {
+        var board = Boards().Single(b => (string)b["slug"]! == slug);
+        Equal((backlog, doing), (Titles(board["backlog"]), Titles(board["doing"])), $"{slug}'s cards");
+    }
+
+    [Then("the cards were read in {int} command(s), for every board at once")]
+    public void ReadOnce(int n)
+    {
+        var reads = Reads();
+        Equal(n, reads.Count, "commands reading cards: " + string.Join(" | ", reads));
+        foreach (var sql in reads)
+            if (!sql.Contains("\"board\" = ANY(")) throw new Exception("not every board at once: " + sql);
+    }
 
     [Then("the answer is an error")]
     public void AnError()
