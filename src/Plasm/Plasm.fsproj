@@ -40,6 +40,36 @@
   <ItemGroup>
     <ProjectReference Include="../Plasm.Annotations/Plasm.Annotations.fsproj" />
   </ItemGroup>
+  <!-- What the package carries for a native binary (docs/aot.md): the targets,
+       imported by an application that references Plasm (build/) or a package
+       that does (buildTransitive/), and the field-getter tool they run
+       (tools/, beside them as build/Plasm.targets expects). In this
+       repository, build/Plasm.Repository.targets builds and runs the tool
+       instead. -->
+  <PropertyGroup>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PlasmPackFieldGetters</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="build/Plasm.targets" Pack="true" PackagePath="build/;buildTransitive/" />
+  </ItemGroup>
+  <Target Name="PlasmPackFieldGetters">
+    <PropertyGroup>
+      <_PlasmTool>$(MSBuildThisFileDirectory)../Plasm.FieldGetters/Plasm.FieldGetters.fsproj</_PlasmTool>
+    </PropertyGroup>
+    <!-- Built even under pack's no-build (as CI packs, after the solution's
+         build, where it is up to date): NoBuild is the package's, not the tool's. -->
+    <MSBuild Projects="$(_PlasmTool)" Targets="Restore" Properties="Configuration=$(Configuration);_PlasmToolRestore=true" RemoveProperties="NoBuild" />
+    <MSBuild Projects="$(_PlasmTool)" Targets="Build" Properties="Configuration=$(Configuration)" RemoveProperties="OutputPath;OutDir;RuntimeIdentifier;SelfContained;PublishAot;NoBuild">
+      <Output TaskParameter="TargetOutputs" ItemName="_PlasmToolAssembly" />
+    </MSBuild>
+    <PropertyGroup>
+      <_PlasmToolDirectory>@(_PlasmToolAssembly->'%(RootDir)%(Directory)')</_PlasmToolDirectory>
+    </PropertyGroup>
+    <ItemGroup>
+      <_PlasmToolFile Include="$(_PlasmToolDirectory)*.dll;$(_PlasmToolDirectory)Plasm.FieldGetters.runtimeconfig.json;$(_PlasmToolDirectory)Plasm.FieldGetters.deps.json" />
+      <TfmSpecificPackageFile Include="@(_PlasmToolFile)" PackagePath="tools/" />
+    </ItemGroup>
+  </Target>
   <ItemGroup>
     <InternalsVisibleTo Include="Plasm.Postgres" />
     <InternalsVisibleTo Include="Plasm.Tests" />

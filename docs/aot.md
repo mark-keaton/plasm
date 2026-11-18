@@ -40,8 +40,8 @@ Reflection reads only what a native binary keeps:
   nothing in a build that does not trim. In this repository a project imports
   `src/Plasm/build/Plasm.Repository.targets`, and only it: it imports
   `Plasm.targets` and builds the tool `Plasm.targets` runs from the
-  repository. Today `tests/Plasm.Aot` does; in the package (not done yet)
-  `Plasm.targets` would come with Plasm, and the tool in its `tools/` folder.
+  repository, as `tests/Plasm.Aot` does. An application that takes Plasm
+  from its packages gets both from the package (below).
 - **What queries name** outside the application is kept by a trimming
   descriptor embedded in Plasm.dll (`src/Plasm/ILLink.Descriptors.xml`): a
   query is a quotation, and FSharp.Core reads every member it names back by
@@ -316,6 +316,35 @@ log shows every statement unnamed, and `No Reset On Close=true` takes
 `DISCARD ALL` from 32 a run to 0. RDS Proxy itself was not tested, and whether
 it pins on a key a column's default takes from a sequence (`nextval` run by
 the server, not sent) is unknown.
+
+## From the packages
+
+An application that references Plasm's packages needs nothing else for a
+native binary: no import, no property, no tool to install. Plasm's package
+carries `Plasm.targets` twice, in `build/` for an application that references
+Plasm and in `buildTransitive/` for one that references only Plasm.Postgres,
+and the field-getter tool in `tools/` beside them (its assembly, its runtime
+configuration and FSharp.Core), built when Plasm is packed. The build runs the
+tool with `dotnet`, on the SDK's own runtime.
+
+`tests/Plasm.Package/run.sh` checks it. It packs Plasm.Annotations, Plasm and
+Plasm.Postgres into a local feed as CI does (built, then packed with
+`--no-build`), copies a small application
+(`tests/Plasm.Package/consumer`, a typed id and a union with fields) to a
+temporary folder outside the repository with a package cache of its own,
+restores Plasm's packages only from that feed, and builds and publishes it.
+The native binary must print what the runtime prints (the typed id's case
+field, the model built, a query over the union translated), and the same
+publish without the step (`-p:PlasmFieldGetters=false`) must refuse the
+typed id by name. Before the package carried the targets and the tool, the
+native binary failed at its first record (`The record type
+'Consumer.Program+Ticket' is invalid. Required constructor is not defined`:
+nothing kept the application's assembly whole).
+
+The step costs about 0.1 s of a native publish that takes about 16 s on an
+Apple M4 Max (78 to 100 ms in four runs, as MSBuild's performance summary
+times the target); the two publishes, with and without it, differ by less
+than the publishes vary between runs.
 
 ## The check
 
