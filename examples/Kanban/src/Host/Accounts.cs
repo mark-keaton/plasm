@@ -14,15 +14,21 @@ public static class Accounts
     record Credentials(string Name, string Password);
     record SignedIn(string Name);
 
-    /// ASP.NET Core Identity's hasher: PBKDF2, a salt per password.
-    static readonly PasswordHasher<AccountView> Hasher = new();
+    /// ASP.NET Core Identity's hasher: PBKDF2, a salt per password. Its
+    /// methods take the user the password is for, which this hasher does not
+    /// read; Anyone stands for every user.
+    sealed class User;
+    static readonly User Anyone = new();
+    static readonly PasswordHasher<User> Hasher = new();
+
+    static string Hash(string password) => Hasher.HashPassword(Anyone, password);
 
     /// Checked when no account has the name, so that answer takes as long as
     /// a wrong password's.
-    static readonly string NobodysHash = Hasher.HashPassword(null!, "no account has this password");
+    static readonly string NobodysHash = Hash("no account has this password");
 
     static bool Fits(string hash, string password) =>
-        Hasher.VerifyHashedPassword(null!, hash, password) != PasswordVerificationResult.Failed;
+        Hasher.VerifyHashedPassword(Anyone, hash, password) != PasswordVerificationResult.Failed;
 
     /// The person signed in, as the facade's actor.
     public static string Actor(this ClaimsPrincipal user) =>
@@ -54,7 +60,7 @@ public static class Accounts
         var account = app.MapGroup("/account");
 
         account.MapPost("/register", async (Credentials input, HttpContext http, KanbanData kanban, CancellationToken ct) =>
-            await kanban.RegisterAsync(input.Name ?? "", input.Password ?? "", password => Hasher.HashPassword(null!, password), ct) switch
+            await kanban.RegisterAsync(input.Name, input.Password, Hash, ct) switch
             {
                 AccountView registered => await SignedInAs(http, registered.Name),
                 Invalid invalid => await NobodyThen(http, Outcomes.Of(invalid)),
@@ -62,8 +68,8 @@ public static class Accounts
 
         account.MapPost("/signin", async (Credentials input, HttpContext http, KanbanData kanban, CancellationToken ct) =>
         {
-            var password = input.Password ?? "";
-            return await kanban.AccountAsync(input.Name ?? "", ct) switch
+            var password = input.Password;
+            return await kanban.AccountAsync(input.Name, ct) switch
             {
                 AccountView found when Fits(found.PasswordHash, password) => await SignedInAs(http, found.Name),
                 AccountView => await NobodyThen(http, Results.Unauthorized()),

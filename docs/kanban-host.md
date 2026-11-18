@@ -9,7 +9,7 @@ so far, and says what is not.
 | Slice | What it adds | State |
 |---|---|---|
 | 1 | The host, cookie sign-in, GraphQL reads (Hot Chocolate) | built |
-| 2 | REST: boards, cards, every change, my work, done paging | to come |
+| 2 | REST: boards, cards, every change, my work, done paging | built |
 | 3 | GraphQL mutations and `card(id)`, each outcome a typed union member | to come |
 | 4 | A background job sending stale cards back, time from a `TimeProvider` | to come |
 
@@ -29,10 +29,15 @@ so far, and says what is not.
 What the C# host sees of the F# core is `KanbanData` and the types its methods
 take and return. The rules for that surface:
 
-- **Nothing returned is null, an F# option or an F# `Result`.** A read that
-  can miss returns `Found<T>`, either the value or `Missing`. A change returns
-  an outcome such as `ChangeOutcome`: the card, or `Missing`, `Refused`,
-  `Stale` or `Invalid`.
+- **Nothing null crosses, either way.** Nothing the facade returns is null,
+  an F# option or an F# `Result`: a read that can miss returns `Found<T>`,
+  either the value or `Missing`, and a change returns an outcome such as
+  `ChangeOutcome`: the card, or `Missing`, `Refused`, `Stale` or `Invalid`.
+  Nothing the host passes in is null either. The host's JSON options respect
+  C#'s nullable annotations and required constructor parameters, so a body
+  that leaves out a field, or gives it as null, is answered 400 before any
+  endpoint runs. The facade is opened without a logger, not with a null one,
+  when no SQL is to be written.
 - **Outcomes are C# unions.** Each is a struct marked `[Union]` whose cases
   are records of their own, so C# switches on them:
 
@@ -106,6 +111,42 @@ take and return. The rules for that surface:
 Sent again with the same version, the same request is answered
 `409 {"card": "..."}`.
 
+## REST
+
+Reads are open to anyone; every other endpoint needs someone signed in.
+
+| Endpoint | Facade method | Answers |
+|---|---|---|
+| `GET /boards` | `BoardsAsync` | 200: each board's counts and newest titles |
+| `GET /boards/{slug}` | `BoardAsync` | 200, 404 |
+| `GET /boards/{slug}/done?page=&size=` | `DonePageAsync` | 200 (a page, the total, the pages), 404, 400 (page below 1, size outside 1 to 50) |
+| `GET /me/work` | `WorkOfAsync` | 200: the cards the person signed in is working on |
+| `POST /boards` `{slug, name, wipLimit}` | `CreateBoardAsync` | 201, 400 (a slug already taken is `slug`: "is already taken") |
+| `POST /boards/{slug}/cards` `{title}` | `AddCardAsync` | 201, 404, 400 |
+| `POST /boards/{slug}/send-all-back` | `SendAllBackAsync` | 200 `{cards}`, 404 |
+| `POST /cards/{id}/start` `{version}` | `StartAsync`, as the person signed in | the change's answers |
+| `POST /cards/{id}/ship` `{version}` | `ShipAsync` | the change's answers |
+| `POST /cards/{id}/drop` `{version, reason}` | `DropAsync` | the change's answers |
+| `POST /cards/{id}/send-back` `{version}` | `SendBackAsync` | the change's answers |
+| `POST /cards/{id}/reopen` `{version}` | `ReopenAsync` | the change's answers |
+| `POST /cards/{id}/block` `{version, reason}` | `BlockAsync` | the change's answers |
+| `POST /cards/{id}/unblock` `{version}` | `UnblockAsync` | the change's answers |
+| `PUT /cards/{id}/title` `{version, title}` | `RenameAsync` | the change's answers |
+| `PUT /cards/{id}/labels` `{version, labels}` | `RelabelAsync` | the change's answers; a label that is not one is 400 on `labels[i]` |
+| `POST /cards/{id}/items` `{version, text}` | `AddItemAsync` | the change's answers |
+| `POST /cards/{id}/items/tick` `{version, text}` | `TickAsync` | the change's answers |
+| `POST /cards/{id}/comments` `{body}` | `CommentAsync`, the person signed in the author | the change's answers |
+
+A change's answers are those of `ChangeOutcome`, above: 200, 404, 422 with
+the domain's code, 409, 400. A comment carries no version: it is added to
+the card as stored. Shipping and dropping are two endpoints rather than one
+`finish` with a resolution, so neither host nor facade parses a resolution
+from text.
+
+What the domain decides, the host passes on unchanged. Blocking a card stops
+it shipping (`CardBlocked`), not starting: that is `Card.finish`'s rule, and
+the REST scenarios follow it.
+
 ## Accounts and signing in
 
 `POST /account/register`, `/account/signin`, `/account/signout`, and
@@ -117,7 +158,9 @@ Sent again with the same version, the same request is answered
   unique constraint.
 - The host hashes the password with ASP.NET Core Identity's
   `PasswordHasher` and passes the hash function to the facade, so only the
-  hash is stored. Signing in reads the account (`AccountAsync`) and checks the
+  hash is stored. The hasher's methods take the user the password is for,
+  which its implementation does not read; the host passes one placeholder
+  user, not null. Signing in reads the account (`AccountAsync`) and checks the
   hash in the host. A name with no account is checked against a hash of its
   own, so it takes as long to refuse as a wrong password.
 - Who is signed in is kept in an HTTP-only, SameSite=Strict cookie. An API
@@ -142,7 +185,7 @@ KANBAN_SQL=1 ConnectionStrings__Kanban="..." dotnet run --project src/Host
 ```
 
 The scenarios are in `features/host/` (`authentication.feature`,
-`graphql.feature`). Each starts the host as its own process, on a database of
+`rest.feature`, `graphql.feature`). Each starts the host as its own process, on a database of
 its own, and talks to it over HTTP:
 
 ```bash

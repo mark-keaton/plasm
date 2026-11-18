@@ -23,15 +23,22 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("Kanban")
     ?? throw new InvalidOperationException("Set the connection string 'Kanban' (ConnectionStrings:Kanban).");
 
-// KANBAN_SQL=1 writes each command's SQL to standard output, one line each.
-Action<string>? onSql = Environment.GetEnvironmentVariable("KANBAN_SQL") == "1"
-    ? sql => Console.WriteLine("SQL: " + sql.Replace('\n', ' '))
-    : null;
 var dataSource = NpgsqlDataSource.Create(connectionString);
 // Opening checks every query, the tables, and every declared card field.
-var kanban = await KanbanData.OpenAsync(dataSource, onSql!, CancellationToken.None);
+// KANBAN_SQL=1 writes each command's SQL to standard output, one line each.
+var kanban = Environment.GetEnvironmentVariable("KANBAN_SQL") == "1"
+    ? await KanbanData.OpenAsync(dataSource, sql => Console.WriteLine("SQL: " + sql.Replace('\n', ' ')), CancellationToken.None)
+    : await KanbanData.OpenAsync(dataSource, CancellationToken.None);
 builder.Services.AddSingleton(dataSource);
 builder.Services.AddSingleton(kanban);
+
+// Nothing null crosses into the facade either: a request whose body leaves
+// out a field, or gives it as null, is answered 400 before an endpoint runs.
+builder.Services.ConfigureHttpJsonOptions(o =>
+{
+    o.SerializerOptions.RespectNullableAnnotations = true;
+    o.SerializerOptions.RespectRequiredConstructorParameters = true;
+});
 
 // Who is signed in is kept in a cookie. An API answers 401 and 403 where a
 // site would redirect to a sign-in page.

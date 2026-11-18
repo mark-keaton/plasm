@@ -20,4 +20,36 @@ public static class Outcomes
         Stale stale => Of(stale),
         Invalid invalid => Of(invalid),
     };
+
+    public static IResult Of(CreateBoardOutcome outcome) => outcome switch
+    {
+        BoardSummary board => Results.Created($"/boards/{board.Slug}", board),
+        Invalid invalid => Of(invalid),
+    };
+
+    public static IResult Of(AddCardOutcome outcome) => outcome switch
+    {
+        CardView card => Results.Created($"/cards/{card.Id}", card),
+        Missing missing => Of(missing),
+        Invalid invalid => Of(invalid),
+    };
+
+    public static IResult Of(Found<BoardView> found) => found switch
+    {
+        BoardView board => Results.Ok(board),
+        Missing missing => Of(missing),
+    };
+
+    public static IResult Of(SendAllBackOutcome outcome) => outcome switch
+    {
+        SentBack sent => Results.Ok(sent),
+        Missing missing => Of(missing),
+    };
+
+    public static IResult Of(DonePageOutcome outcome) => outcome switch
+    {
+        DonePage page => Results.Ok(page),
+        Missing missing => Of(missing),
+        Invalid invalid => Of(invalid),
+    };
 }
