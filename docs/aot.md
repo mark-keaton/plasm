@@ -118,6 +118,18 @@ that only a quotation names needs that instantiation's compiled code.
   `LanguagePrimitives` (an aggregate's `GenericZero`), and the scalar types
   Plasm maps, is kept by the descriptor.
 
+- What a condition reads of no row is computed by Plasm's own evaluator
+  (`src/Plasm/Computed.fs`), never by FSharp.Core's, which needs metadata
+  tokens a native binary lacks; it decides by the expression's form, so the
+  runtime accepts and refuses exactly what a native binary does
+  (query-semantics.feature). It reads values and their properties and fields,
+  builds records, unions, tuples, options and lists, computes arithmetic,
+  negation, `abs` and conversions over numbers itself (F#'s operators are
+  inline and generic), and calls functions and constructors. A function,
+  constructor or static member generic over a value type it refuses, naming
+  it, with "bind its value outside the query"; so are lambdas, `if`, `let` and
+  arrays. Before this, a query computing `int64 (n.Value * 3)` or
+  `since.AddDays(float n)` was refused natively only.
 - A message formats a value with F#'s printf only over `obj` (`%A{box r}`, a
   transaction's rejection): printf has no native code for a value type it
   captures, as an `int` rejection, and over `obj` it prints the same; an
@@ -370,5 +382,7 @@ getters marked):
 | Every aggregate, selected in a five-tuple | ✓ | ✓ |
 | A refused query's message, naming literal values of each kind | ✓ | ✓ |
 | A transaction rejected with an `int` | ✓ | ✓ |
+| Values a condition computes before it runs: a captured record's and anonymous record's fields, a ref cell, an option's value, arithmetic, `abs`, a conversion, `DateTimeOffset.AddDays`, `DateOnly(...)`, an application function, `take (n * 2)` | ✓ | ✓ |
+| A prepared argument computed in the condition (`int64 (n.Value * 3)`) | ✓ | ✓ |
 | A binary published without the step for F# union fields refuses its union, naming it, its assembly and the step (`tests/Plasm.Aot.Unpatched`, `PlasmFieldGetters=false`) | | ✓ |
 | The publish has no IL warning naming Plasm | | ✓ |

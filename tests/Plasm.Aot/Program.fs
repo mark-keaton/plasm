@@ -303,6 +303,30 @@ let main argv =
                 r.Name + ": " + String.Join(", ", r.Ordered) + "; sizes " + String.Join(", ", r.Sizes |> List.sort)))
         step "a load that joins and groups is refused" (fun () -> selected (Queries.refusedLoad ()) (fun r -> r.Name))
         step "a refused query's message shows its values" (fun () -> all (Queries.refusedWithValues ()) ticket)
+        step "values a query computes before it runs" (fun () ->
+            let owner = ada
+            let n = 1
+            let shape = {| Size = 3; Points = Some 3L; Ref = ref 5 |}
+
+            all
+                (plasm {
+                    for t in tableOf<Ticket> do
+                        where (
+                            t.Owner = Some owner.Id
+                            && t.Price > 7.25m * 1m - 0.5m
+                            && t.Created < since.AddDays(float n)
+                            && t.Due <> Some(DateOnly(2000, 1, 1))
+                            && t.Size > abs (n - 2)
+                            && t.Size <= shape.Size + shape.Ref.Value
+                            && t.Points <> Some(shape.Points.Value + 10L)
+                            && t.Title <> Queries.labelled "a" 1m "b" 1L 1.0 'c' false
+                        )
+
+                        orderBy t.Title
+                        take (n * 2)
+                })
+                ticket)
+        step "a prepared argument computed in the condition" (fun () -> all (Queries.withPointsTimesThree 1) ticket)
         step "a load of the record a row refers to" (fun () ->
             selected Queries.ticketsWithOwners (fun r -> r.Title + " by " + defaultArg r.Owner "nobody"))
         step "every aggregate" (fun () ->

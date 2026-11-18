@@ -355,7 +355,11 @@ module internal QueryOps =
             let n =
                 match e with
                 | Patterns.ValueWithName(v, _, _) -> unbox<int> v
-                | _ -> unbox<int> (Microsoft.FSharp.Linq.RuntimeHelpers.LeafExpressionConverter.EvaluateQuotation e)
+                | _ ->
+                    try
+                        unbox<int> (Computed.compute (fun _ -> None) (fun _ -> false) e)
+                    with Computed.Refused(_, why) ->
+                        invalidOp $"{what} takes a count Plasm computes before the query runs: {why}"
 
             Choice1Of2 n
 

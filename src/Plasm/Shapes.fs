@@ -185,6 +185,9 @@ module internal Shape =
               listOf<TimeOnly> (); listOf<TimeSpan> (); listOf<byte> (); listOf<char> () ] do
             lists.[t] <- s
 
+    /// A value type whose options and lists are written out above.
+    let writtenOut (t: Type) = options.ContainsKey t
+
     /// Where code cannot be made at run time, an option or a list only of a
     /// reference type or of a value type written out above.
     let private refuse (what: string) (element: Type) =

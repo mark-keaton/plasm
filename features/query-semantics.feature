@@ -134,6 +134,26 @@ Feature: Queries keep their F# meaning
       When I run a prepared query for the Customers named an argument, with null
       Then the read is refused, saying the argument is null and an option says a value may be absent
 
+  Rule: Plasm computes what a condition reads of no row, the same under the runtime and natively
+
+    The parts of a query that read no row are computed in the application
+    before it runs: captured values and what is read from them, records,
+    unions, tuples, options and lists, arithmetic on numbers, and calls of
+    the application's functions. Plasm computes them itself, so a native
+    binary computes the same (docs/aot.md). A function or type generic over a
+    value type has no code a native binary can run, so it is refused
+    everywhere, not only there: bind its value outside the query.
+
+    Scenario: A value computed from captured values is sent as one parameter
+      Given Orders for several Customers
+      When I read the Orders over twice a captured total less one, computed in the query
+      Then the Orders are those over that total, and the SQL has one parameter for it
+
+    Scenario: A function generic over a value type is refused, naming it
+      Given Orders for several Customers
+      When I read the Orders whose total is the sum of a captured list of decimals, computed in the query
+      Then the read is refused, naming List.sum and saying to bind its value outside the query
+
   Rule: Clauses keep the order they are written in, or the query is refused
 
     SQL filters, groups and orders before it pages, and pages once. A clause

@@ -13,7 +13,6 @@ open Microsoft.FSharp.Quotations
 open Microsoft.FSharp.Quotations.Patterns
 open Microsoft.FSharp.Quotations.DerivedPatterns
 open Microsoft.FSharp.Reflection
-open Microsoft.FSharp.Linq.RuntimeHelpers
 
 exception TranslationFailure of TranslationError
 
@@ -433,40 +432,17 @@ let rec isStable (e: Expr) =
 let private dotnetWhiteSpace: obj =
     box (String([| for c in 0 .. 0xFFFF do if Char.IsWhiteSpace(char c) then yield char c |]))
 
-/// Evaluates a closed expression (captured values, literals, constructors).
-let rec private evalDirect (e: Expr) : obj option =
-    match e with
-    | Value(v, _) -> Some v
-    | ValueWithName(v, _, _) -> Some v
-    | PropertyGet(None, p, []) -> Some(p.GetValue(null))
-    | NewUnionCase(c, args) ->
-        let vs = args |> List.map evalDirect
-        if List.forall Option.isSome vs then
-            Some(FSharpValue.MakeUnion(c, vs |> List.map Option.get |> Array.ofList, true))
-        else
-            None
-    | NewTuple args ->
-        let vs = args |> List.map evalDirect
-        if List.forall Option.isSome vs then
-            Some(Shape.tuple e.Type (vs |> List.map Option.get |> Array.ofList))
-        else
-            None
-    | Call(None, mi, [ Value(lo, _); Value(mid, _); Value(hi, _); Value(neg, _); Value(scale, _) ]) when mi.Name = "MakeDecimal" ->
-        Some(box (Decimal(unbox<int> lo, unbox<int> mid, unbox<int> hi, unbox<bool> neg, unbox<byte> scale)))
-    | Coerce(x, _) -> evalDirect x
-    | _ -> None
-
+/// The value of what a condition reads of no row, computed by Plasm the same
+/// under the runtime and natively (Computed, query-semantics.feature).
 let evaluate (ctx: Ctx) (e: Expr) : obj =
     if not (isStable e) then
         ctx.Volatile.Value <- true
 
-    match evalDirect e with
-    | Some v -> v
-    | None ->
-        try
-            LeafExpressionConverter.EvaluateQuotation e
-        with ex ->
-            fail e $"captured expression could not be evaluated: {Err.describeExn ex}"
+    try
+        Computed.compute (fun _ -> None) (fun _ -> false) e
+    with
+    | Computed.Refused(part, why) -> fail part why
+    | ex -> fail e $"captured expression could not be evaluated: {Err.describeExn ex}"
 
 let private unwrapOption (t: Type) (v: obj) =
     if Reflection.isOption t then
@@ -497,13 +473,8 @@ let toParam (ctx: Ctx) (e: Expr) (domainType: Type) (value: obj) : Sql.Expr =
 
 let mentionsArg (e: Expr) = Prepared.mentionsArg e
 
-let private unboxMethod =
-    match <@ unbox<int> null @> with
-    | Call(None, mi, _) -> mi.GetGenericMethodDefinition()
-    | _ -> failwith "unreachable"
-
-/// Compiles a closed expression over prepared-query arguments into a function
-/// of the argument array (once, when the query is planned).
+/// A function of the argument array computing a closed expression over a
+/// prepared query's arguments, checked when the query is planned (Computed).
 let private argFunction (e: Expr) : obj[] -> obj =
     let (|ArgValue|_|) (x: Expr) =
         match x with
@@ -513,28 +484,28 @@ let private argFunction (e: Expr) : obj[] -> obj =
     match e with
     | ArgValue a -> fun args -> args.[a.Index]
     | _ ->
-        let argsVar = Var("args", typeof<obj[]>)
-
-        let rec subst (x: Expr) =
+        let rec bare (x: Expr) =
             match x with
-            | ArgValue a ->
-                let item = <@@ (%%(Expr.Var argsVar): obj[]).[a.Index] @@>
-                Expr.Call(unboxMethod.MakeGenericMethod x.Type, [ item ])
+            | ArgValue _ -> ()
             | Value(:? IArg, _)
             | ValueWithName(:? IArg, _, _) -> fail e "a prepared-query argument must be read with .Value"
-            | ExprShape.ShapeVar _ -> x
-            | ExprShape.ShapeLambda(v, b) -> Expr.Lambda(v, subst b)
-            | ExprShape.ShapeCombination(o, xs) -> ExprShape.RebuildShapeCombination(o, List.map subst xs)
+            | ExprShape.ShapeVar _ -> ()
+            | ExprShape.ShapeLambda(_, b) -> bare b
+            | ExprShape.ShapeCombination(_, xs) -> List.iter bare xs
 
-        let lambda = Expr.Lambda(argsVar, Expr.Coerce(subst e, typeof<obj>))
+        bare e
 
-        let f =
-            try
-                LeafExpressionConverter.EvaluateQuotation lambda :?> (obj[] -> obj)
-            with ex ->
-                fail e $"argument expression could not be compiled: {Err.describeExn ex}"
+        match Computed.refusal (fun x -> (|ArgValue|_|) x |> Option.isSome) e with
+        | Some(part, why) -> fail part why
+        | None -> ()
 
-        f
+        fun args ->
+            Computed.eval
+                (fun x ->
+                    match x with
+                    | ArgValue a -> Some args.[a.Index]
+                    | _ -> None)
+                e
 
 /// The refusal of a null where F# has no absent value (query-semantics.feature).
 let private nullMessage (what: string) (e: Expr) =

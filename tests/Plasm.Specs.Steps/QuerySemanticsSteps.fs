@@ -385,6 +385,41 @@ type QuerySemanticsSteps(w: World) =
 
             equal expected read $"{f} of %A{stored}"
 
+    [<StepDefinition("I read the Orders over twice a captured total less one, computed in the query")>]
+    member _.ComputedTotal() =
+        task {
+            let total = 30m
+            w.MarkCommands()
+            let! r = w.Repo.All(plasm { for o in tableOf<Order> do where (o.Total > total * 2m - 1m) })
+            let! all = w.Repo.All(plasm { for o in tableOf<Order> do select o })
+            w.Set("computed", (ok r, ok all, w.QueryCommands |> List.head))
+        }
+        |> unit
+
+    [<StepDefinition("the Orders are those over that total, and the SQL has one parameter for it")>]
+    member _.ComputedTotalRead() =
+        let (read: Order list), (all: Order list), (command: CommandEvent) = w.Get<Order list * Order list * CommandEvent> "computed"
+        let ids (os: Order list) = os |> List.map (fun o -> o.Id) |> List.sort
+        equal (all |> List.filter (fun o -> o.Total > 59m) |> ids) (ids read) "the Orders over 59"
+        equal 1 command.Parameters.Length $"parameters of {command.Sql}"
+
+    [<StepDefinition("I read the Orders whose total is the sum of a captured list of decimals, computed in the query")>]
+    member _.GenericOverValueType() =
+        task {
+            let totals = [ 10m; 20m ]
+            let! r = w.Repo.All(plasm { for o in tableOf<Order> do where (o.Total = List.sum totals) })
+            w.Set("genericRead", Result.map ignore r)
+        }
+        |> unit
+
+    [<StepDefinition("the read is refused, naming List.sum and saying to bind its value outside the query")>]
+    member _.GenericRefused() =
+        match w.Get<Result<unit, DbError>> "genericRead" with
+        | Error e ->
+            let text = string e
+            check (text.Contains "List.sum" && text.Contains "bind" && text.Contains "outside the query") text
+        | Ok() -> failwith "expected a refusal, the query ran"
+
     [<StepDefinition("^I read the Customers whose name (=|<>) a captured null string$")>]
     member _.CapturedNull(op: string) =
         task {

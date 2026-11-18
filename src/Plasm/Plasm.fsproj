@@ -12,6 +12,7 @@
     <Compile Include="Errors.fs" />
     <Compile Include="Shapes.fs" />
     <Compile Include="Reflection.fs" />
+    <Compile Include="Computed.fs" />
     <Compile Include="Scalar.fs" />
     <Compile Include="Schema.fs" />
     <Compile Include="Stored.fs" />

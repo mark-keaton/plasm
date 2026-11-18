@@ -176,6 +176,10 @@ let priceRanges =
 let labelled (title: string) (price: decimal) (tag: string) (n: int64) (weight: float) (mark: char) (flag: bool) =
     title + string price + tag + string n + string weight + string mark + string flag
 
+/// A prepared query whose condition computes from its argument.
+let withPointsTimesThree =
+    Query.prepare (fun (n: Arg<int>) -> plasm { for t in tableOf<Ticket> do where (t.Points = Some(int64 (n.Value * 3))) })
+
 /// A query Plasm refuses, its message naming literal values of each kind:
 /// the message reads the same natively (docs/aot.md).
 let refusedWithValues () =
