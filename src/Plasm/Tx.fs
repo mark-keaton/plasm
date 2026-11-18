@@ -44,15 +44,16 @@ type TransactionError<'E> =
       /// Steps that had completed before the failure; their effects were rolled back.
       RolledBack: TxStep list
       /// Attempts made (more than one only with a retry policy).
-      Attempts: int }
+      Attempts: int
+      /// Time waited between attempts, as the retry policy said.
+      Waited: TimeSpan }
 
     /// What failed, in words, then where (F# Interactive shows this):
     /// `Customer: Email has already been taken (customers_email_key), at Shop.fs:12 (insert Customer)`.
     member e.Display =
         let reason =
             match e.Failure with
-            // Boxed: F#'s printf has no native code for a value type it
-            // captures (docs/aot.md), and over obj it prints the same.
+            // Written by Reflection.Shown, as every value in a message is.
             | TxFailure.Rejected r -> $"rejected: {Reflection.Shown.typed typeof<'E> (box r)}"
             | TxFailure.InvalidChanges(entity, errors) ->
                 let named (f: FieldError) =
@@ -197,14 +198,24 @@ type Tx<'T, 'E> =
 /// steps are never re-run silently.
 type RetryPolicy =
     { MaxAttempts: int
-      ShouldRetry: DbFailure -> bool }
+      ShouldRetry: DbFailure -> bool
+      /// How long to wait after attempt n (from 1) fails, before the next.
+      Wait: int -> TimeSpan }
 
     static member None =
         { MaxAttempts = 1
-          ShouldRetry = fun _ -> false }
+          ShouldRetry = fun _ -> false
+          Wait = fun _ -> TimeSpan.Zero }
 
     /// Retries serialization failures and deadlocks, re-running the whole
-    /// description (including its reads) in a fresh transaction.
+    /// description (including its reads) in a fresh transaction, after a wait:
+    /// 10 ms after the first attempt, doubling after each, each drawn between
+    /// half and the whole so that two transactions that failed together do not
+    /// try again together. A serialization failure means another transaction
+    /// is committing what this one depends on; tried again at once, this one
+    /// can spend every attempt while that commit is being written (a commit
+    /// takes a few milliseconds on an idle local server, tens on a loaded or
+    /// distant one). Five attempts wait at most 150 ms in all.
     static member OnSerializationFailure(maxAttempts: int) =
         { MaxAttempts = maxAttempts
           ShouldRetry =
@@ -212,7 +223,11 @@ type RetryPolicy =
                 match f.Kind with
                 | DbFailureKind.SerializationFailure
                 | DbFailureKind.Deadlock -> true
-                | _ -> false }
+                | _ -> false
+          Wait =
+            fun attempt ->
+                let whole = 10.0 * Math.Pow(2.0, float (attempt - 1))
+                TimeSpan.FromMilliseconds(whole * (0.5 + 0.5 * Random.Shared.NextDouble())) }
 
 /// The internals shared by the steps.
 module internal TxCore =

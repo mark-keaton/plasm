@@ -430,7 +430,15 @@ check (`NotOwned`) and the single transaction remain.
   (an insert step) or run after `Transact` returns `Ok`.
 - Retries are opt-in (`RetryPolicy.OnSerializationFailure n`). A retry
   re-interprets the whole description in a fresh transaction, so reads are
-  repeated. By default nothing is re-run.
+  repeated. By default nothing is re-run. Between attempts the policy waits
+  (`RetryPolicy.Wait`): `OnSerializationFailure` 10 ms after the first,
+  doubling, each wait drawn between half and the whole, at most 150 ms over
+  five attempts, and the wait ends with the transaction's cancellation. A
+  serialization failure means another transaction is committing what this one
+  depends on; tried again at once, a transaction can spend every attempt while
+  that commit is still being written, and fail where it should have been
+  given the domain's answer. `TransactionError` reports the attempts made and
+  the time waited.
 - Optimistic concurrency: a schema's `version` field is required to match on
   update and delete, and is incremented. A mismatch is
   `WriteError.Stale` / `TxFailure.Conflict` (`TxFailure.Conflict` only since

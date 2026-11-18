@@ -635,8 +635,18 @@ type Repo internal (model: Model, provider: IProvider, ?options: RepoOptions) =
             | Effect _ ->
                 let mutable attempt = 0
                 let mutable outcome = None
+                let mutable waited = TimeSpan.Zero
 
                 while outcome.IsNone do
+                    // After a failed attempt the policy retries, it waits first,
+                    // so that what it lost to can commit (elegance.feature).
+                    if attempt > 0 then
+                        let wait = retry.Wait attempt
+
+                        if wait > TimeSpan.Zero then
+                            do! Task.Delay(wait, ct)
+                            waited <- waited + wait
+
                     attempt <- attempt + 1
                     let completed = ResizeArray<TxStep>()
                     let mutable current = { File = ""; Line = 0; Action = "begin" }
@@ -696,7 +706,8 @@ type Repo internal (model: Model, provider: IProvider, ?options: RepoOptions) =
                                         { Step = step
                                           Failure = failure
                                           RolledBack = List.ofSeq completed
-                                          Attempts = attempt }
+                                          Attempts = attempt
+                                          Waited = waited }
                                 )
 
                 return outcome.Value

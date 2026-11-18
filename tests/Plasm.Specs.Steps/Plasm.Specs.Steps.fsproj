@@ -48,6 +48,7 @@
     <Compile Include="StoredSteps.fs" />
     <Compile Include="RoundTripSteps.fs" />
     <Compile Include="BuildQuerySteps.fs" />
+    <Compile Include="RetryWaitSteps.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Plasm.TestDomain/Plasm.TestDomain.fsproj" />

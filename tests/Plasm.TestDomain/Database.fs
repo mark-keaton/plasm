@@ -95,7 +95,9 @@ let private server: Lazy<Task<Server>> =
                     task {
                         let c =
                             Testcontainers.PostgreSql.PostgreSqlBuilder("postgres:18.4")
-                                .WithCommand("-c", "max_connections=300")
+                                // Prepared transactions: elegance.feature holds a
+                                // transaction committed but not yet visible with them.
+                                .WithCommand("-c", "max_connections=300", "-c", "max_prepared_transactions=10")
                                 .Build()
 
                         do! c.StartAsync()

@@ -136,3 +136,41 @@ Feature: Idiomatic and principled F# persistence
       When a transaction is retried
       Then database-dependent reads are repeated within the new attempt
       And results from the failed attempt are not presented as committed
+
+  Rule: A retried transaction waits before trying again, so that the transaction it lost to can commit
+
+    # PostgreSQL cancels a serializable transaction that would depend on one
+    # committed, or prepared to commit, that it cannot yet see. Retried at once,
+    # it can spend every attempt while that commit is still being written. The
+    # first Order's transaction is held there, prepared but not visible
+    # (PREPARE TRANSACTION), while the second's runs: it reads the published
+    # Orders, as the first did, and cancels the second Order.
+    Scenario: Retried at once, a transaction loses every attempt to a commit still being written
+      Given two published Orders
+      And the first Order cancelled by a serializable transaction that read the published Orders, prepared but not yet committed
+      When the second Order is cancelled the same way, retried up to 5 times without waiting
+      Then it fails as a serialization failure after 5 attempts
+
+    Scenario: Waiting between attempts, a transaction tries again once that commit has landed
+      Given two published Orders
+      And the first Order cancelled by a serializable transaction that read the published Orders, prepared but not yet committed
+      When the second Order is cancelled the same way, retried up to 5 times waiting 100 ms between attempts, while the first commits 150 ms later
+      Then the second Order's change is committed
+      And both Orders are cancelled
+
+    Scenario: A transaction that fails after waiting says how long it waited
+      Given two published Orders
+      And the first Order cancelled by a serializable transaction that read the published Orders, prepared but not yet committed
+      When the second Order is cancelled the same way, retried up to 3 times waiting 50 ms between attempts
+      Then it fails as a serialization failure after 3 attempts, having waited at least 100 ms
+
+    Scenario: A wait between attempts ends when the transaction is cancelled
+      Given two published Orders
+      And the first Order cancelled by a serializable transaction that read the published Orders, prepared but not yet committed
+      When the second Order is cancelled the same way, retried waiting 10 seconds between attempts, and cancelled after 300 ms
+      Then the transaction ends as cancelled within 3 seconds
+
+    Scenario: The policy for serialization failures waits longer after each attempt, never the same twice in a row
+      When I ask RetryPolicy.OnSerializationFailure 5 for its waits, many times over
+      Then each wait after attempt n lies between half of and the whole of 10 ms doubled n - 1 times
+      And the waits are not all the same

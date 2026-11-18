@@ -196,6 +196,16 @@ describe the one style; "Reworded" means only words changed.
 | Retry behavior is explicit | Implemented and verified | `EleganceSteps.fs` |  |  |
 | Retried transactions use a fresh attempt context | Implemented and verified | `EleganceSteps.fs` |  |  |
 
+### elegance.feature: A retried transaction waits before trying again, so that the transaction it lost to can commit
+
+| Scenario | Classification | Step definitions | Related unit tests | Notes |
+|---|---|---|---|---|
+| Retried at once, a transaction loses every attempt to a commit still being written | Implemented and verified | `RetryWaitSteps.fs` |  | The winner held prepared (PREPARE TRANSACTION) |
+| Waiting between attempts, a transaction tries again once that commit has landed | Implemented and verified | `RetryWaitSteps.fs` |  |  |
+| A transaction that fails after waiting says how long it waited | Implemented and verified | `RetryWaitSteps.fs` |  |  |
+| A wait between attempts ends when the transaction is cancelled | Implemented and verified | `RetryWaitSteps.fs` |  |  |
+| The policy for serialization failures waits longer after each attempt, never the same twice in a row | Implemented and verified | `RetryWaitSteps.fs` |  |  |
+
 ### joins.feature: Joins are explicit, typed, and run in the database
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
