@@ -56,6 +56,10 @@ let ownedOneCtors: AssocCtors =
 
 let recordShape (t: Type) : RecordShape = Shape.record t
 
+/// What a function type returns, if `t` is one (a function that builds a query).
+let functionResult (t: Type) : Type option =
+    if FSharpType.IsFunction t then Some(snd (FSharpType.GetFunctionElements t)) else None
+
 let typeName (t: Type) =
     if t.IsGenericType then
         let n = t.Name.Substring(0, t.Name.IndexOf('`'))

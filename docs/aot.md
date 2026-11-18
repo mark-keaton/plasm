@@ -140,18 +140,43 @@ does; the check asserts that the publish marked getters.
 
 ## Trimming warnings
 
-A native publish of the check reports IL trimming and AOT warnings, most of
-them from Plasm's reflection. Since Plasm reads by reflection by design, "no
-warnings" cannot come from removing it. The end state, not reached yet:
+Plasm reads an application's F# types by reflection by design, so the
+trimming and AOT analysis warns about that reflection; no warning can be
+removed by removing it. What makes it safe is what keeps its targets in the
+binary: the rooted application and domain assemblies (`Plasm.targets`), the
+descriptor and its unit tests, the step for F# union fields and its refusal,
+and the check below, which runs it all as a binary.
 
-- Plasm's reflection is guaranteed by what keeps its targets: the rooted
-  application and domain assemblies, the descriptor and its drift test, and
-  the check below.
-- Each warning that guarantee covers is suppressed where it arises, on the
-  member (`UnconditionalSuppressMessage` with the reason), never by a
-  project-wide `NoWarn`.
-- An application's own native publish shows no IL warning naming Plasm, and
-  the check fails if it does.
+So each warning is suppressed in `src/Plasm/Trimming.fs`, one
+`UnconditionalSuppressMessage` per module and warning code, each giving what
+keeps that reflection safe; never a project-wide `NoWarn`. The scope is the
+module because an F# closure is a type of its own, nested in its module, which
+no suppression on its function reaches, and its name (`parts@320`) changes
+with every edit above it.
+
+A suppression per module would also hide a new reflective call added to that
+module later, so the list is kept honest by `tests/Plasm.Aot/trim-audit.sh`:
+it publishes the check with Plasm compiled without the suppressions
+(`PlasmTrimAudit=true`) and fails unless the (module, warning) pairs that warn
+are exactly those suppressed, in either direction. It takes as long as the
+check's publish, so it runs when Plasm's reflection changes, not with every
+check; a new reflective call is then justified by name or made safe.
+
+What an application's native publish shows: no warning naming Plasm (the check
+fails if it does), and two lines from FSharp.Core, which is not annotated for
+trimming:
+
+    FSharp.Core.dll : warning IL2104: Assembly 'FSharp.Core' produced trim warnings.
+    FSharp.Core.dll : warning IL3053: Assembly 'FSharp.Core' produced AOT analysis warnings.
+
+They are not Plasm's: any F# program that uses a quotation or `printfn`
+gets them, without Plasm. Plasm's targets do not quiet them, because neither
+code can be quieted for one assembly: a `NoWarn` or `WarningsNotAsErrors` set
+by a package would also silence the same summary for every other assembly the
+application uses. An application that publishes with warnings as errors sets
+it itself:
+
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104;IL3053</WarningsNotAsErrors>
 
 ## The check
 
@@ -210,4 +235,4 @@ getters marked):
 | An option of a value type compared with `Some` | ✓ | ✓ |
 | A prepared argument of a value type in `Some` | ✓ | ✓ |
 | A binary published without the step for F# union fields refuses its union, naming it, its assembly and the step (`tests/Plasm.Aot.Unpatched`, `PlasmFieldGetters=false`) | | ✓ |
-| No IL warning naming Plasm | | not yet |
+| The publish has no IL warning naming Plasm | | ✓ |

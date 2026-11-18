@@ -343,8 +343,10 @@ type Repo internal (model: Model, provider: IProvider, ?options: RepoOptions) =
 
         let rec isQuery (t: Type) =
             if isQueryType t then true
-            elif Microsoft.FSharp.Reflection.FSharpType.IsFunction t then isQuery (snd (Microsoft.FSharp.Reflection.FSharpType.GetFunctionElements t))
-            else false
+            else
+                match Reflection.functionResult t with
+                | Some r -> isQuery r
+                | None -> false
 
         let translates (q: ICheckable) =
             match q.Select with

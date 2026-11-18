@@ -43,6 +43,11 @@ echo "--- native"; cat "$work/native.txt"
 echo "native binary: $(du -h "$work/native/Plasm.Aot" | cut -f1)"
 
 failed=0
+plasm_warnings=$(grep "warning IL" "$work/publish.log" | grep -cE "/src/Plasm|Plasm[A-Za-z.]*\.dll" || true)
+echo "native: $plasm_warnings IL warnings naming Plasm"
+if [ "$plasm_warnings" -ne 0 ]; then
+  echo "the publish has IL warnings naming Plasm"; failed=1
+fi
 if [ "${marked:-0}" -eq 0 ]; then
   echo "the publish did not apply Plasm's step for F# field getters"; failed=1
 fi

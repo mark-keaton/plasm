@@ -4,8 +4,11 @@
     <PackageId>Plasm</PackageId>
     <!-- FS3370 informational; FS0064 from generic constraints in builders is intentional -->
     <NoWarn>$(NoWarn);FS3370</NoWarn>
+    <!-- Without Trimming.fs's suppressions, for tests/Plasm.Aot/trim-audit.sh. -->
+    <DefineConstants Condition="'$(PlasmTrimAudit)' == 'true'">$(DefineConstants);PLASM_TRIM_AUDIT</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Trimming.fs" />
     <Compile Include="Errors.fs" />
     <Compile Include="Shapes.fs" />
     <Compile Include="Reflection.fs" />
