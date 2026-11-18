@@ -1170,7 +1170,7 @@ let rawReader (model: Model) (t: Type) (label: string) : DbDataReader -> obj =
             |> ctor
     | None when Microsoft.FSharp.Reflection.FSharpType.IsTuple t ->
         let elements = Microsoft.FSharp.Reflection.FSharpType.GetTupleElements t
-        let ctor = Microsoft.FSharp.Reflection.FSharpValue.PreComputeTupleConstructor t
+        let ctor = Shape.tuple t
 
         fun r ->
             if r.FieldCount <> elements.Length then

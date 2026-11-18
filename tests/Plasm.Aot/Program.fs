@@ -29,6 +29,10 @@ let schema =
        due date,
        points bigint,
        priority text,
+       created timestamptz not null,
+       size int not null,
+       price numeric(12,2) not null,
+       ref uuid not null,
        checklist jsonb not null);
      create table notes (
        id bigint generated always as identity primary key,
@@ -82,7 +86,6 @@ let refusal (e: DbError) =
     | DbError.Translation t -> "translation: " + t.ToString()
     | DbError.Materialization m -> "materialization: " + m.Message
     | DbError.MoreThanOneRow -> "more than one row"
-    | _ -> "another error"
 
 [<EntryPoint>]
 let main argv =
@@ -162,6 +165,10 @@ let main argv =
                   Due = Some(DateOnly(2026, 12, 1))
                   Points = Some 3L
                   Priority = Some High
+                  Created = since
+                  Size = 3
+                  Price = 12.5m
+                  Ref = Guid("00000000-0000-0000-0000-000000000001")
                   Checklist = [ { Text = "build"; Done = true }; { Text = "test"; Done = false } ]
                   Notes = [ { Id = NoteId 0L; TicketId = TicketId 0L; Text = "started"; Done = true } ] }
 
@@ -182,6 +189,10 @@ let main argv =
                     Due = None
                     Points = None
                     Priority = None
+                    Created = since.AddHours 1.0
+                    Size = 5
+                    Price = 7.25m
+                    Ref = Guid("00000000-0000-0000-0000-000000000002")
                     Checklist = []
                     Notes = [ { Id = NoteId 0L; TicketId = TicketId 0L; Text = "ask"; Done = false } ] }
 
@@ -221,6 +232,28 @@ let main argv =
             | Error e -> "failed: " + refusal e)
 
         step "a page" (fun () -> all (Queries.page 1 1) ticket)
+
+        step "grouped by an int" (fun () -> selected Queries.bySize (fun (size, n) -> string size + ": " + string n))
+        step "a tuple select with an int" (fun () -> selected Queries.titlesAndSizes (fun (title, size) -> title + " " + string size))
+        step "a record select with an int" (fun () -> selected Queries.sizes (fun r -> r.Title + " " + string r.Size))
+
+        step "an aggregate over decimal" (fun () ->
+            selected Queries.totalPrice (fun (owner, total) ->
+                (match owner with Some(CustomerId id) -> string id | None -> "-") + ": " + total.ToString(Globalization.CultureInfo.InvariantCulture)))
+
+        step "a captured list of Guids" (fun () -> all (Queries.withRefs [ Guid("00000000-0000-0000-0000-000000000002") ]) ticket)
+        step "an option of a value type compared with Some" (fun () -> all Queries.withPoints ticket)
+        step "a prepared argument of a value type in Some" (fun () -> all (Queries.withPointsOf 3L) ticket)
+
+        step "grouped by a field and a reflected function, selecting a tuple with a count" (fun () ->
+            selected Queries.phaseCounts (fun (owner, p, n) ->
+                let phase =
+                    match p with
+                    | Phase.Waiting -> "waiting"
+                    | Phase.Working -> "working"
+                    | Phase.Finished -> "finished"
+
+                (match owner with Some(CustomerId id) -> string id | None -> "-") + " " + phase + ": " + string n))
 
         step "a count" (fun () ->
             match repo.Count(Queries.ticketsOf ada.Id).Result with

@@ -30,6 +30,10 @@ type Ticket =
       Due: DateOnly option
       Points: int64 option
       Priority: Priority option
+      Created: DateTimeOffset
+      Size: int
+      Price: decimal
+      Ref: Guid
       [<Json>]
       Checklist: Item list
       Notes: Note list }
@@ -44,10 +48,27 @@ type Ticket =
 /// A note a ticket owns.
 and [<Table "notes">] Note = { Id: NoteId; TicketId: TicketId; Text: string; Done: bool }
 
+/// What a ticket's stage is, without its facts.
+[<RequireQualifiedAccess>]
+type Phase =
+    | Waiting
+    | Working
+    | Finished
+
+/// The application's own function over a stage, readable in a query (as
+/// Kanban's `kind`).
+[<ReflectedDefinition>]
+let phase (t: Ticket) =
+    match t.Stage with
+    | Todo -> Phase.Waiting
+    | Doing _ -> Phase.Working
+    | Done _ -> Phase.Finished
+
 /// Rows queries return.
 type TicketLine = { Title: string; Points: int64 option }
 type WorkLine = { Customer: string; Ticket: string; Who: string option }
 type CustomerLine = { Customer: Customer; Titles: string list; Started: string list }
+type SizeLine = { Title: string; Size: int }
 
 /// An API contract, as a web application declares one beside its records:
 /// functions, which nothing stores.

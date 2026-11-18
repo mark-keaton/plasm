@@ -8,6 +8,7 @@
 <linker>
   <assembly fullname="FSharp.Core">
     <type fullname="Microsoft.FSharp.Core.Operators" preserve="methods" />
+    <type fullname="Microsoft.FSharp.Core.LanguagePrimitives" preserve="methods" />
     <type fullname="Microsoft.FSharp.Core.LanguagePrimitives/IntrinsicFunctions" preserve="methods" />
     <type fullname="Microsoft.FSharp.Core.LanguagePrimitives/HashCompare" preserve="methods" />
     <type fullname="Microsoft.FSharp.Core.OptionModule" preserve="methods" />
@@ -42,6 +43,23 @@
     <type fullname="System.TimeOnly" preserve="all" />
     <type fullname="System.TimeSpan" preserve="all" />
     <type fullname="System.Byte" preserve="all" />
+    <!-- A tuple a query selects is made by setting its fields (Shape.tuple). -->
+    <type fullname="System.Tuple`1" preserve="fields" />
+    <type fullname="System.Tuple`2" preserve="fields" />
+    <type fullname="System.Tuple`3" preserve="fields" />
+    <type fullname="System.Tuple`4" preserve="fields" />
+    <type fullname="System.Tuple`5" preserve="fields" />
+    <type fullname="System.Tuple`6" preserve="fields" />
+    <type fullname="System.Tuple`7" preserve="fields" />
+    <type fullname="System.Tuple`8" preserve="fields" />
+    <type fullname="System.ValueTuple`1" preserve="fields" />
+    <type fullname="System.ValueTuple`2" preserve="fields" />
+    <type fullname="System.ValueTuple`3" preserve="fields" />
+    <type fullname="System.ValueTuple`4" preserve="fields" />
+    <type fullname="System.ValueTuple`5" preserve="fields" />
+    <type fullname="System.ValueTuple`6" preserve="fields" />
+    <type fullname="System.ValueTuple`7" preserve="fields" />
+    <type fullname="System.ValueTuple`8" preserve="fields" />
   </assembly>
   <!-- Plasm whole: its builder, its query functions and a prepared query's
        arguments are named by quotations that nothing else calls. -->

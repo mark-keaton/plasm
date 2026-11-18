@@ -1,10 +1,11 @@
 <Project>
-  <!-- Plasm in a native binary (docs/aot.md): reflection reads an application's
-       records and unions, and a query names its functions, so the
-       application's assembly and those of its project references are kept
-       whole when a publish trims. Plasm's own assemblies keep what queries
-       name through the descriptor in Plasm.dll. Nothing changes for a build
-       that does not trim. -->
+  <!-- Plasm in a native binary (docs/aot.md). Nothing here changes a build that
+       does not trim or compile natively. -->
+
+  <!-- Reflection reads an application's records and unions, and a query names
+       its functions, so the application's assembly and those of its project
+       references are kept whole when a publish trims. Plasm's own assemblies
+       keep what queries name through the descriptor in Plasm.dll. -->
   <Target Name="PlasmRoots" AfterTargets="ResolveReferences">
     <ItemGroup>
       <_PlasmOwn Include="Plasm;Plasm.Annotations;Plasm.Postgres;Plasm.PGlite" />
@@ -12,6 +13,39 @@
       <_PlasmReferenced Remove="@(_PlasmOwn)" />
       <TrimmerRootAssembly Include="$(AssemblyName)" />
       <TrimmerRootAssembly Include="@(_PlasmReferenced)" />
+    </ItemGroup>
+  </Target>
+
+  <!-- A workaround, until the F# compiler marks them: it emits a union case
+       field's getter without SpecialName, and a native binary keeps no
+       attributes on a property whose getter lacks it, so FSharp.Reflection
+       finds no fields and FSharp.Core cannot read a quotation that reads one
+       (docs/aot-repro/union-field-attributes). Before the native compiler
+       reads them, src/Plasm.FieldGetters writes copies of every F# assembly it
+       reads (the application's, its domain's, Plasm's) into obj with
+       SpecialName set on those getters, and the native compiler reads the
+       copies. Nothing else
+       in a copy changes, and nothing outside obj is touched. -->
+  <PropertyGroup>
+    <PlasmFieldGettersTool Condition="'$(PlasmFieldGettersTool)' == ''">$(MSBuildThisFileDirectory)../tools/Plasm.FieldGetters.dll</PlasmFieldGettersTool>
+  </PropertyGroup>
+
+  <Target Name="PlasmFieldGetters" AfterTargets="ComputeIlcCompileInputs" BeforeTargets="WriteIlcRspFileForCompilation" Condition="'$(PublishAot)' == 'true'">
+    <PropertyGroup>
+      <_PlasmAotCopies>$(IntermediateOutputPath)plasm-aot/</_PlasmAotCopies>
+    </PropertyGroup>
+    <ItemGroup>
+      <_PlasmAotAssembly Include="@(IlcCompileInput);@(IlcReference)" />
+    </ItemGroup>
+    <RemoveDir Directories="$(_PlasmAotCopies)" />
+    <Exec Command="dotnet &quot;$(PlasmFieldGettersTool)&quot; &quot;$(_PlasmAotCopies)&quot; @(_PlasmAotAssembly->'&quot;%(Identity)&quot;', ' ')" ConsoleToMSBuild="true" StandardOutputImportance="$([MSBuild]::ValueOrDefault('$(PlasmAotReport)', 'low'))" />
+    <ItemGroup>
+      <_PlasmAotInput Include="@(IlcCompileInput->'$(_PlasmAotCopies)%(Filename)%(Extension)')" Condition="Exists('$(_PlasmAotCopies)%(Filename)%(Extension)')" />
+      <IlcCompileInput Remove="@(IlcCompileInput)" Condition="Exists('$(_PlasmAotCopies)%(Filename)%(Extension)')" />
+      <IlcCompileInput Include="@(_PlasmAotInput)" />
+      <_PlasmAotReference Include="@(IlcReference->'$(_PlasmAotCopies)%(Filename)%(Extension)')" Condition="Exists('$(_PlasmAotCopies)%(Filename)%(Extension)')" />
+      <IlcReference Remove="@(IlcReference)" Condition="Exists('$(_PlasmAotCopies)%(Filename)%(Extension)')" />
+      <IlcReference Include="@(_PlasmAotReference)" />
     </ItemGroup>
   </Target>
 </Project>

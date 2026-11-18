@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Plasm's build step for a native binary (docs/aot.md): copies of the
+       application's assemblies with SpecialName set on F# field getters that
+       lack it. Run by src/Plasm/build/Plasm.targets; uses only the framework's
+       System.Reflection.Metadata. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <!-- Run by the build of a native application, as a plain program. -->
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+</Project>

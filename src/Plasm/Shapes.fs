@@ -383,6 +383,56 @@ module internal Shape =
               Make = fun items -> Seq.foldBack (fun item acc -> cons.Invoke(null, [| item; acc |])) items empty
               Items = fun l -> (l :?> Collections.IEnumerable) |> Seq.cast<obj> }
 
+    /// A tuple of `t`'s type from its items. Where code can be made at run
+    /// time, FSharp.Reflection's constructor; in a native binary, which has no
+    /// code for the constructor of a tuple only a quotation builds (one with a
+    /// value type in it), the tuple made uninitialised and its fields set,
+    /// which needs no code of that instantiation (docs/aot.md).
+    let private tuples = ConcurrentDictionary<Type, obj[] -> obj>()
+
+    /// A tuple made by setting its fields (a native binary's way, used under
+    /// the runtime by a test): System.Tuple's m_Item1..m_Item7 and m_Rest, a
+    /// struct tuple's Item1..Item7 and Rest. These are the framework's private
+    /// names, verified per .NET version (docs/aot.md).
+    let rec internal tupleByFields (t: Type) : obj[] -> obj =
+        let args = t.GetGenericArguments()
+        let flags = BindingFlags.Instance ||| BindingFlags.Public ||| BindingFlags.NonPublic
+
+        let name (i: int) =
+            match t.IsValueType, i with
+            | false, 7 -> "m_Rest"
+            | false, i -> "m_Item" + string (i + 1)
+            | true, 7 -> "Rest"
+            | true, i -> "Item" + string (i + 1)
+
+        let fields =
+            Array.init args.Length (fun i ->
+                match t.GetField(name i, flags) with
+                | null ->
+                    invalidOp
+                        $"{t.FullName} has no field {name i} in {Runtime.InteropServices.RuntimeInformation.FrameworkDescription}: a native binary makes a tuple by setting its fields, verified with .NET 11.0 (docs/aot.md)"
+                | f -> f)
+
+        // Eight items and more nest their rest in an eighth.
+        let rest = if args.Length = 8 then Some(tupleByFields args.[7]) else None
+
+        fun items ->
+            let tuple = RuntimeHelpers.GetUninitializedObject t
+
+            for i in 0 .. min 6 (args.Length - 1) do
+                fields.[i].SetValue(tuple, items.[i])
+
+            match rest with
+            | Some make -> fields.[7].SetValue(tuple, make (Array.sub items 7 (items.Length - 7)))
+            | None -> ()
+
+            tuple
+
+    let private tupleOf (t: Type) : obj[] -> obj =
+        if dynamicCode then FSharpValue.PreComputeTupleConstructor t else tupleByFields t
+
+    let tuple (t: Type) : obj[] -> obj = tuples.GetOrAdd(t, Func<Type, obj[] -> obj>(tupleOf))
+
     /// `element option`.
     let option (element: Type) : OptionShape = options.GetOrAdd(element, reflectedOption)
 

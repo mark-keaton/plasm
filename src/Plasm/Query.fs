@@ -807,7 +807,7 @@ type internal TieMarkers =
 module internal Ties =
     /// A query of the `t` records tied to `outer` (an expression of a stored
     /// record: a value, or a query's variable), as one marker condition.
-    let make (t: Type) (referring: bool) (outer: Expr) : obj =
+    let def (t: Type) (referring: bool) (outer: Expr) : QueryDef =
         let outer =
             match outer with
             | Patterns.Coerce(x, _) -> x
@@ -819,8 +819,12 @@ module internal Ties =
             | Patterns.Call(None, m, _) -> m.GetGenericMethodDefinition()
             | _ -> invalidOp "unreachable"
 
+        // A method only inspected, never invoked: no code needed for it.
         let mi = marker.MakeGenericMethod(t, outer.Type)
-        let def = { QueryDef.Empty t with Wheres = [ Expr.Lambda(x, Expr.Call(mi, [ Expr.Var x; outer ])) ] }
+        { QueryDef.Empty t with Wheres = [ Expr.Lambda(x, Expr.Call(mi, [ Expr.Var x; outer ])) ] }
+
+    let make (t: Type) (referring: bool) (outer: Expr) : obj =
+        let def = def t referring outer
 
         Activator.CreateInstance(
             (if referring then typedefof<Query<_>> else typedefof<One<_>>).MakeGenericType t,

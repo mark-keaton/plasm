@@ -20,5 +20,5 @@
     <ProjectReference Include="../../src/Plasm.Postgres/Plasm.Postgres.fsproj" />
   </ItemGroup>
   <!-- Plasm's targets, from this repository rather than the package. -->
-  <Import Project="../../src/Plasm/build/Plasm.targets" />
+  <Import Project="../../src/Plasm/build/Plasm.Repository.targets" />
 </Project>

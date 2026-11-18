@@ -19,6 +19,7 @@
     <Compile Include="TrimDescriptor.fs" />
     <Compile Include="Shapes.fs" />
     <Compile Include="UnreadableQueries.fs" />
+    <Compile Include="Tuples.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Plasm.TestDomain/Plasm.TestDomain.fsproj" />

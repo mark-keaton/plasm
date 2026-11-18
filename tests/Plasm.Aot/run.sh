@@ -30,8 +30,10 @@ rid=$(dotnet --info | sed -n 's/^ *RID: *//p' | head -1)
 echo "runtime: building"
 dotnet build "$here" -c Release -v q -o "$work/jit" > "$work/build.log" 2>&1 || { cat "$work/build.log"; exit 1; }
 echo "native: publishing for $rid (about a minute)"
-dotnet publish "$here" -c Release -r "$rid" -v q -o "$work/native" > "$work/publish.log" 2>&1 || { cat "$work/publish.log"; exit 1; }
+dotnet publish "$here" -c Release -r "$rid" -v m -p:PlasmAotReport=high -o "$work/native" > "$work/publish.log" 2>&1 || { cat "$work/publish.log"; exit 1; }
 echo "native: $(grep -c 'warning IL' "$work/publish.log" || true) IL warnings"
+marked=$(sed -n 's/.*Plasm: \([0-9]*\) F# field getters marked.*/\1/p' "$work/publish.log" | head -1)
+echo "native: ${marked:-no} F# field getters marked SpecialName"
 
 dotnet "$work/jit/Plasm.Aot.dll" "$cs" > "$work/jit.txt" 2>&1 || true
 "$work/native/Plasm.Aot" "$cs" > "$work/native.txt" 2>&1 || true
@@ -42,11 +44,14 @@ echo "native binary: $(du -h "$work/native/Plasm.Aot" | cut -f1)"
 
 # The first line says which reader read the unions; the rest is compared.
 failed=0
+if [ "${marked:-0}" -eq 0 ]; then
+  echo "the publish did not apply Plasm's step for F# field getters"; failed=1
+fi
 if [ "$(head -1 "$work/jit.txt")" != "reader: FSharpReflection" ]; then
   echo "the runtime did not read unions through FSharp.Reflection"; failed=1
 fi
-if [ "$(head -1 "$work/native.txt")" != "reader: CompiledStructure" ]; then
-  echo "the native binary did not read unions by their compiled structure"; failed=1
+if [ "$(head -1 "$work/native.txt")" != "reader: FSharpReflection" ]; then
+  echo "the native binary did not read unions through FSharp.Reflection"; failed=1
 fi
 if grep -q ": threw " "$work/jit.txt"; then
   echo "a step threw under the runtime"; failed=1

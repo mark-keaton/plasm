@@ -15,9 +15,10 @@ nothing for it.
   keeps what it reads of a record.
 - **Unions** are read through FSharp.Reflection where it sees their fields
   (the runtime, `dotnet run` of a project published natively, F# Interactive,
-  the koans, the browser). A native binary keeps no attributes on a union's
-  members, and FSharp.Reflection finds no fields there; Plasm then reads a
-  union by its compiled structure: its cases and tags from the compiler's
+  the koans, the browser), and in a native binary published with Plasm's
+  targets, which keep the attributes it reads (see the workaround below).
+  Where a native binary has lost them, FSharp.Reflection finds no fields, and
+  Plasm reads a union by its compiled structure: its cases and tags from the compiler's
   `Tags` class (or, for one case, its one `NewX` method or static property),
   each case built by `NewX` (or, without fields, read from its static
   property), each field read through the property its `NewX` parameter names
@@ -54,8 +55,11 @@ Reflection reads only what a native binary keeps:
   their members, and a `[<ReflectedDefinition>]` function only a query calls
   has nothing else referring to it. A domain referenced as a package rather
   than a project needs a `TrimmerRootAssembly` of its own. The targets change
-  nothing in a build that does not trim. Today `tests/Plasm.Aot` imports them;
-  in the package (not done yet) they would come with Plasm.
+  nothing in a build that does not trim. In this repository a project imports
+  `src/Plasm/build/Plasm.Repository.targets`, and only it: it imports
+  `Plasm.targets` and builds the tool `Plasm.targets` runs from the
+  repository. Today `tests/Plasm.Aot` does; in the package (not done yet)
+  `Plasm.targets` would come with Plasm, and the tool in its `tools/` folder.
 - **What queries name** outside the application is kept by a trimming
   descriptor embedded in Plasm.dll (`src/Plasm/ILLink.Descriptors.xml`): a
   query is a quotation, and FSharp.Core reads every member it names back by
@@ -94,21 +98,63 @@ in a FSharp.Core release: it is verified with FSharp.Core 8.0.0.0 (8.0.403,
 the version Plasm references) and 11.0.0.0, a unit test pins it, and a
 FSharp.Core without it fails with its version and the part that is missing.
 
-## Known: a quotation that reads a union case's field
+## What only a quotation names
 
-A query, or a `[<ReflectedDefinition>]` it uses, that reads a union case's
-field (Kanban's `Card.Assignee`: `match c.Stage with Doing(who, _) -> Some who`)
-cannot be read in a native binary yet. FSharp.Core's quotation decoder takes a
-case's field from `UnionCaseInfo.GetFields()`, which is empty there, and fails
-with `Not a valid F# union case index`. Plasm reports it at start-up and when
-the query runs, naming the query or member.
+A query is a quotation, and many of the types and methods in it appear
+nowhere else in the application: nothing compiled calls a nested query's
+`OrderByDescending<Card, DateTimeOffset>`, builds the tuple
+`BoardId * StageKind * int` a `select` makes, or calls a prepared query's
+`Arg.Value`. A native binary has no code for a generic instantiation over a
+value type that nothing compiled uses, and may have trimmed a member nothing
+calls. So the rule: in a native binary, nothing Plasm does to a type or method
+that only a quotation names needs that instantiation's compiled code.
 
-The cause: the F# compiler emits a union case field's getter without the
-`SpecialName` flag a record field's getter has, and a native binary keeps no
-attributes on a property whose getter lacks it, so FSharp.Reflection finds no
-fields. Marking those getters `SpecialName` in the compiled assembly, and
-nothing else, makes the attributes, FSharp.Reflection and FSharp.Core's decoder
-work in a native binary (shown in a spike). What to do about it is not decided.
+- A query written inside a condition or a load is rebuilt from its builder
+  calls by reading them into a query definition, never by invoking the
+  builder's generic methods.
+- A tuple a query selects is made uninitialised and its fields are set, with
+  `System.Tuple`'s and `System.ValueTuple`'s fields kept by the descriptor,
+  never through its constructor. Those fields' names (`m_Item1`..`m_Item7` and
+  `m_Rest`; a struct tuple's `Item1`..`Item7` and `Rest`) are the framework's
+  own, so like FSharp.Core's decoder below they are verified per version, here
+  .NET 11.0: a unit test (`tests/Plasm.Tests/Tuples.fs`) makes every arity from
+  1 to 15, plain and struct, with a value type in every position, and requires
+  the value F# makes; a .NET without a field fails naming its version and the
+  field.
+- What a quotation names in Plasm, FSharp.Core's operators, modules and
+  `LanguagePrimitives` (an aggregate's `GenericZero`), and the scalar types
+  Plasm maps, is kept by the descriptor.
+
+The check has a row for each kind with a value type in it: a nested query
+ordered by a date, a grouping by an int, tuple and record selects with an int,
+an aggregate over decimal, a captured `Guid list`, an option of a value type
+compared with `Some`, and a prepared argument of a value type.
+
+## A workaround: F# union case fields in a native binary
+
+The F# compiler emits a union case field's getter without the `SpecialName`
+flag a record field's getter has, and a native binary keeps no attributes on a
+property whose getter lacks it. Without them FSharp.Reflection finds no fields
+on a union's cases, and FSharp.Core cannot read a quotation that reads one (a
+query that matches a case and takes its field, Kanban's `Card.Assignee`): it
+fails with `Not a valid F# union case index`. The reproduction, with no Plasm
+in it: `docs/aot-repro/union-field-attributes`.
+
+Plasm's targets work around it in a native publish only. Before the native
+compiler reads them, `src/Plasm.FieldGetters` writes into `obj/plasm-aot/`
+copies of every F# assembly the binary is made of (the application's, its
+domain's, Plasm's), with `SpecialName` set on the getter of each F# field
+property that lacks it, and the native compiler reads the copies. It sets two
+bytes of a MethodDef row in place, so no table grows and nothing moves, with
+the framework's System.Reflection.Metadata and nothing else; nothing outside
+`obj` is touched, and a build that does not compile natively is unchanged. A
+patched copy is no longer strong-name signed, which .NET does not check and
+the native compiler does not need. It is removed when the F# compiler marks
+those getters itself: the reproduction's native run then shows the fields
+without it.
+
+With it, a native binary reads unions through FSharp.Reflection as the runtime
+does; the check asserts that, and that the publish marked getters.
 
 ## Trimming warnings
 
@@ -142,16 +188,18 @@ string) when it is set, and otherwise starts `postgres:18.4` in Docker for the
 run. It takes about 40 seconds on an Apple M4 Max, most of it the native
 publish. The solution builds its projects but does not run it, and neither
 does the acceptance suite. It fails when a step throws under the runtime, when
-the two differ, or when a run did not use the reader it should; until the
-known rows below are solved, it fails on them. It prints the
+the two differ, when a run did not read unions through FSharp.Reflection, or
+when the publish marked no getters. It prints the
 native binary's size. `PLASM_AOT_TRACE=1` adds the stack trace of a step that
 throws (to standard error, not compared).
 
-What it does today (native binary 24 MB, Plasm.dll kept whole):
+What it does today (native binary 24 MB, Plasm.dll kept whole; 293 F# field
+getters marked):
 
 | Step | Runtime | Native |
 |---|---|---|
-| Unions read through FSharp.Reflection / by compiled structure | ✓ | ✓ |
+| The publish marked F# field getters `SpecialName` (more than none) | needs nothing | ✓ |
+| Unions read through FSharp.Reflection | ✓ | ✓ |
 | Build the model of a record with a typed id and a unique field | ✓ | ✓ |
 | Insert one | ✓ | ✓ |
 | Read it by its typed id | ✓ | ✓ |
@@ -161,14 +209,22 @@ What it does today (native binary 24 MB, Plasm.dll kept whole):
 | Read it by its case | ✓ | ✓ |
 | Select a row record the application declares | ✓ | ✓ |
 | An API contract (a record of functions) beside them, which nothing stores | ✓ | ✓ |
-| Start, checking every query value of the application | ✓ | known: two read a case's field |
+| Start, checking every query value of the application | ✓ | ✓ |
 | A prepared query by typed id | ✓ | ✓ |
-| A prepared query through a reflected member over a case's field | ✓ | known |
+| A prepared query through a reflected member over a case's field | ✓ | ✓ |
 | `List.exists` over owned rows, and over a JSON list | ✓ | ✓ |
-| Loads bound with `let!` and `and!`, with `take` | ✓ | ✓ |
-| A join selecting a record, through a reflected member over a case's field | ✓ | known |
+| Loads bound with `let!` and `and!`, the first ordered descending by a date with `take 3` (Kanban's `boardsWithCards`) | ✓ | ✓ |
+| A join selecting a record, through a reflected member over a case's field | ✓ | ✓ |
 | A prepared page, and a count | ✓ | ✓ |
 | Read, decide and update in one transaction, adding an owned row | ✓ | ✓ |
 | Insert what is missing (`Bulk.insertMissing`) | ✓ | ✓ |
 | A broken constraint's message | ✓ | ✓ |
+| Grouped by an int | ✓ | ✓ |
+| Grouped by a field and a reflected function's result, selecting both and a count (Kanban's `cardCounts`) | ✓ | ✓ |
+| A tuple select with an int | ✓ | ✓ |
+| A record select with an int | ✓ | ✓ |
+| An aggregate over decimal | ✓ | ✓ |
+| A captured `Guid list` (`List.contains`) | ✓ | ✓ |
+| An option of a value type compared with `Some` | ✓ | ✓ |
+| A prepared argument of a value type in `Some` | ✓ | ✓ |
 | No IL warning naming Plasm | | not yet |

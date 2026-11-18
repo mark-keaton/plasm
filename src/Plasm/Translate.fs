@@ -109,6 +109,10 @@ let newCtx model = newCtxWith model (ref false)
 // Compact expression printer for error messages
 // ---------------------------------------------------------------------------
 
+/// F#'s printf, behind %A and a quotation's ToString, cannot run in a native
+/// binary (docs/aot.md): there `show` describes without it.
+let private printfWorks = Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported
+
 let rec show (e: Expr) : string =
     match e with
     | Var v -> v.Name
@@ -116,7 +120,11 @@ let rec show (e: Expr) : string =
         // A captured local function: show its source name, not the closure type.
         let n = v.GetType().Name
         if n.Contains "@" then n.Substring(0, n.IndexOf '@') else n
-    | Value(v, _) -> if isNull v then "None" else sprintf "%A" v
+    | Value(v, _) when isNull v -> "None"
+    | Value(v, _) when printfWorks -> sprintf "%A" v
+    | Value(:? string as v, _) -> "\"" + v + "\""
+    | Value(v, _) when v.GetType().IsPrimitive || (v :? decimal) -> string v
+    | Value(_, t) -> "a " + Reflection.fsharpTypeName t
     | ValueWithName(_, _, n) -> n
     | PropertyGet(Some o, p, []) -> $"{show o}.{p.Name}"
     | PropertyGet(None, p, []) -> p.Name
@@ -154,7 +162,9 @@ let rec show (e: Expr) : string =
     | NewUnionCase(c, args) -> $"""{c.Name}({args |> List.map show |> String.concat ", "})"""
     | NewTuple args -> $"""({args |> List.map show |> String.concat ", "})"""
     | Application(f, x) -> $"{show f} {show x}"
-    | _ -> string e
+    | Let(v, a, b) -> $"let {v.Name} = {show a} in {show b}"
+    | _ when printfWorks -> string e
+    | _ -> "an expression of type " + Reflection.fsharpTypeName e.Type
 
 let private fail (e: Expr) reason =
     raise (TranslationFailure(TranslationError.UnsupportedExpression(show e, reason)))
@@ -438,7 +448,7 @@ let rec private evalDirect (e: Expr) : obj option =
     | NewTuple args ->
         let vs = args |> List.map evalDirect
         if List.forall Option.isSome vs then
-            Some(FSharpValue.MakeTuple(vs |> List.map Option.get |> Array.ofList, e.Type))
+            Some(Shape.tuple e.Type (vs |> List.map Option.get |> Array.ofList))
         else
             None
     | Call(None, mi, [ Value(lo, _); Value(mid, _); Value(hi, _); Value(neg, _); Value(scale, _) ]) when mi.Name = "MakeDecimal" ->
@@ -1477,44 +1487,80 @@ and existsQuery ctx (whole: Expr) (q: Expr) : Sql.Expr =
 
     Sql.Exists { Sql.select (Sql.Table(target.Table, alias)) with Where = wheres }
 
-/// Rebuilds a query written inside a condition by running its builder calls,
-/// keeping each quoted argument as it is (it may read the outer rows).
+/// Rebuilds a query written inside a condition or a load from its builder
+/// calls, keeping each quoted argument as it is (it may read the outer rows).
+/// Each call is read, not run: the builder's methods are generic over the
+/// row and the key, and a native binary has no code for an instantiation only
+/// a quotation names (`OrderByDescending<Card, DateTimeOffset>`, docs/aot.md).
+/// The definition is carried as a `Query<obj>`, which only its definition
+/// matters to.
 and innerCheckable (what: string) ctx (whole: Expr) (q: Expr) : ICheckable =
-    let rec build (e: Expr) : obj =
+    let carry (d: QueryDef) = Query<obj>(d)
+
+    let quoted (a: Expr) =
+        match a with
+        | QuoteTyped x
+        | QuoteRaw x -> x
+        | _ -> fail a $"the {what} query takes a quotation here"
+
+    let rec build (e: Expr) : ICheckable =
         match e with
         | Call(None, mi, [ x ]) when mi.DeclaringType.FullName = "Plasm.TieQueries" ->
-            Ties.make (mi.GetGenericArguments().[0]) (mi.Name = "referring") x
+            carry (Ties.def (mi.GetGenericArguments().[0]) (mi.Name = "referring") x)
         | Call(Some _, mi, args) when mi.DeclaringType = typeof<QueryBuilder> ->
-            let ps = mi.GetParameters()
+            let source (a: Expr) : Query<obj> = carry (build a).Def
 
-            let values =
-                args
-                |> List.mapi (fun i a ->
-                    let pt = ps.[i].ParameterType
+            let tableOf (t: Type) =
+                if t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<Table<_>> then Some(t.GetGenericArguments().[0]) else None
 
-                    match a with
-                    | _ when mi.Name = "For" && i = 0 && pt.IsGenericType && pt.GetGenericTypeDefinition() = typedefof<Table<_>> -> null
-                    | _ when mi.Name = "For" && i = 1 && not (typeof<Expr>.IsAssignableFrom pt) -> null
-                    | _ when typeof<ICheckable>.IsAssignableFrom pt || (pt.IsGenericType && pt.GetGenericTypeDefinition() = typedefof<Query<_>>) -> build a
-                    | QuoteTyped x | QuoteRaw x when typeof<Expr>.IsAssignableFrom pt ->
-                        if pt = typeof<Expr> then
-                            box x
-                        else
-                            typeof<Expr>.GetMethod("Cast").MakeGenericMethod(pt.GetGenericArguments().[0]).Invoke(null, [| x |])
-                    | _ when isRowDependent ctx a -> fail a $"an {what} query can read the outer row only in its conditions"
-                    | _ -> evaluate ctx a)
-                |> Array.ofList
+            let built =
+                try
+                    match mi.Name, args with
+                    | "For", [ src; body ] ->
+                        let from =
+                            match tableOf src.Type with
+                            | Some t -> carry (QueryDef.Empty t)
+                            | None -> source src
 
-            try
-                mi.Invoke(QueryBuilder(), values)
-            with :? Reflection.TargetInvocationException as ex when not (isNull ex.InnerException) ->
-                fail e $"the {what} query could not be built: {Err.describeExn ex.InnerException}"
+                        match body with
+                        | QuoteTyped b
+                        | QuoteRaw b -> (LetLoads.projection from.Def b: Projection<obj>) :> ICheckable
+                        | _ -> from :> ICheckable
+                    | ("Yield" | "Zero"), _ -> carry (QueryDef.Empty(mi.ReturnType.GetGenericArguments().[0])) :> ICheckable
+                    | "Where", [ s; p ] -> QueryOps.where (source s) (quoted p) :> ICheckable
+                    | ("OrderBy" | "ThenBy"), [ s; k ] -> QueryOps.order (source s) (quoted k) SortDirection.Ascending :> ICheckable
+                    | ("OrderByDescending" | "ThenByDescending"), [ s; k ] -> QueryOps.order (source s) (quoted k) SortDirection.Descending :> ICheckable
+                    | ("Take" | "Skip"), [ s; c ] -> QueryOps.take (mi.Name.ToLowerInvariant()) (source s) (Expr.Cast<int>(quoted c)) :> ICheckable
+                    | "GroupBy", [ s; k ] -> QueryOps.groupBy (source s) (quoted k) :> ICheckable
+                    | "Having", [ s; p ] -> QueryOps.having (source s) (quoted p) :> ICheckable
+                    | ("Join" | "LeftJoin"), [ outer; inner; outerKey; innerKey; _ ] ->
+                        let def =
+                            match tableOf outer.Type with
+                            | Some t -> QueryDef.Empty t
+                            | None -> { (build outer).Def with Template = None }
+
+                        let target =
+                            match tableOf inner.Type with
+                            | Some t -> t
+                            | None -> fail inner $"the {what} query joins a table"
+
+                        let kind = if mi.Name = "Join" then InnerJoin else LeftJoin
+                        carry (QueryOps.join def kind target (quoted outerKey) (quoted innerKey)) :> ICheckable
+                    | "Select", [ s; projection ] -> Projection<obj>((build s).Def, quoted projection) :> ICheckable
+                    | "SelectDistinct", [ s; projection ] -> Projection<obj>({ (build s).Def with Distinct = true }, quoted projection) :> ICheckable
+                    | name, _ -> fail e $"the {what} query uses {name}, which Plasm cannot read in a query written in place"
+                with
+                | TranslationFailure _ -> reraise ()
+                | ex -> fail e $"the {what} query could not be built: {Err.describeExn ex}"
+
+            built
         | _ when isRowDependent ctx e -> fail e $"{what} takes a query written in place, plasm {{ for x in source do where (...) }}"
-        | _ -> evaluate ctx e
+        | _ ->
+            match evaluate ctx e with
+            | :? ICheckable as c -> c
+            | _ -> fail whole $"{what} takes a query"
 
-    match build q with
-    | :? ICheckable as c -> c
-    | _ -> fail whole $"{what} takes a query"
+    build q
 
 // ---------------------------------------------------------------------------
 // Query-level translation
@@ -2178,7 +2224,7 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
             else
                 match e with
                 | NewTuple parts ->
-                    let ctor = FSharpValue.PreComputeTupleConstructor e.Type
+                    let ctor = Shape.tuple e.Type
                     Build(ctor, parts |> List.map (fun p -> fieldName <- None; shape ctx p))
                 | NewRecord(t, parts) ->
                     let ctor = FSharpValue.PreComputeRecordConstructor(t, true)
@@ -2219,7 +2265,7 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
                     | [ single ] -> single
                     | _ ->
                         let t = items |> List.map snd |> Array.ofList |> FSharpType.MakeTupleType
-                        Build(FSharpValue.PreComputeTupleConstructor t, items |> List.map fst), t
+                        Build(Shape.tuple t, items |> List.map fst), t
 
                 let items = space |> List.map entity
 
