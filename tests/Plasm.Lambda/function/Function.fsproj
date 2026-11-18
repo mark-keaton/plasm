@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A function shaped like a deployed one (tests/Plasm.Lambda/run.sh): a
+       custom runtime whose executable is `bootstrap`, taking Plasm from its
+       packages alone, published natively for linux-arm64 inside Amazon Linux
+       2023. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <AssemblyName>bootstrap</AssemblyName>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Plasm.Postgres" Version="$(PlasmVersion)" />
+    <PackageReference Include="Amazon.Lambda.RuntimeSupport" Version="2.3.1" />
+    <PackageReference Include="Amazon.Lambda.Core" Version="3.4.0" />
+  </ItemGroup>
+</Project>

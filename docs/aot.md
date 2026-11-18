@@ -284,6 +284,43 @@ answer matters, and its package's size with it:
   localhost, more to a database over the network. The check program opens two
   pools (its own to set up the schema, then Plasm's), so its first query pays a
   second connection an application does not.
+- **Open the repository in the function's init**, before the runtime asks for
+  the first event: the model, `Repo.Start` (its query and schema check and
+  first connection) and a first read then cost the handler's first invocation
+  nothing (0.8 ms, against 16 to 18 ms opened there). As the emulator times
+  the whole first invocation, the gain is smaller, 27 ms against 31 ms (table
+  below): the Lambda runtime library's own first request takes the rest, and
+  takes more of it when the handler has less to do.
+
+`tests/Plasm.Lambda/run.sh` runs a function shaped like a deployed one on
+this machine, with no AWS account. Plasm is packed from this repository into
+a local feed; the function (`tests/Plasm.Lambda/function`: a custom runtime
+on Amazon.Lambda.RuntimeSupport whose executable is `bootstrap`, over tickets
+with a typed id, a union with fields, owned notes and a customer) is published
+natively for linux-arm64 inside `amazonlinux:2023`, and invoked through the
+Lambda runtime interface emulator, in that image, against PostgreSQL in a
+second container. The connection string is an environment variable
+(`PLASM_CS`), the data source Npgsql's slim builder with arrays and transport
+security. It runs twice, with the repository opened in init
+(`PLASM_INIT=init`) and in the first invocation, each on a fresh database,
+and fails on any answer that is not the expected one: a ticket read with its
+notes and customer, a start written in a transaction, a second start refused
+by the function's rule, a missing ticket read and started. The binary is
+27.8 MB, its newest glibc symbol `GLIBC_2.34`, which is Amazon Linux 2023's;
+the publish has only FSharp.Core's two summary warnings. A run takes about
+75 to 90 s on an Apple M4 Max (103 s the first time, which installs the SDK
+into a Docker volume the next runs reuse), most of it the publish.
+
+Measured with the modes alternating (the first container of a run reads the
+binary from a cold disk cache, and pays for it):
+
+| | Opened in init | Opened in the first invocation |
+|---|---|---|
+| Process start to `main` | 15.4 ms | 16.0 ms |
+| Model, `Repo.Start`, first read | 16.4 ms, in init | 16.8 ms, in the first invocation |
+| Emulator's init | 25.9 ms | 12.7 ms |
+| First invocation: handler / emulator | 0.8 ms / 27.3 ms | 17.5 ms / 30.9 ms |
+| Later invocations, emulator | 1.2 to 4.4 ms | 1.0 to 4.7 ms |
 
 ### Behind a connection pooler
 
