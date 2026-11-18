@@ -256,7 +256,10 @@ module Round =
     let rows (s: Session) (cmd: Sql.Command) (read: DbDataReader -> 'a) : Round<ResizeArray<'a>> =
         fetch s cmd read |> map raised
 
-    let private one (s: Session) (st: Statement) : Task<Sent> =
+    // The single-command bodies as they were before round trips, raising what
+    // the command raises; what that is becomes a value outside the task, so
+    // no task here awaits inside a try (koans/browser).
+    let private read (s: Session) (st: Statement) (readRow: DbDataReader -> unit) : Task<int> =
         task {
             let trip = nextRoundTrip ()
             use c = prepare s st.Command
@@ -264,48 +267,73 @@ module Round =
             let mutable n = 0
 
             try
-                match st.Read with
-                | Some read ->
-                    use! r = c.ExecuteReaderAsync(s.Ct)
-                    let mutable go = true
+                use! r = c.ExecuteReaderAsync(s.Ct)
+                let mutable go = true
 
-                    while go do
-                        let! more = r.ReadAsync(s.Ct)
+                while go do
+                    let! more = r.ReadAsync(s.Ct)
 
-                        if more then
-                            read r
-                            n <- n + 1
-                        else
-                            go <- false
-                | None ->
-                    let! affected = c.ExecuteNonQueryAsync(s.Ct)
-                    n <- affected
+                    if more then
+                        readRow r
+                        n <- n + 1
+                    else
+                        go <- false
 
                 report s st.Command sw.Elapsed n true trip
-                return Ran n
+                return n
             with ex ->
                 report s st.Command sw.Elapsed n false trip
-                return Threw ex
+                return Err.rethrow ex
         }
 
-    let private oneAtATime (s: Session) (stmts: Statement list) : Task<Sent list> =
+    let private write (s: Session) (st: Statement) : Task<int> =
         task {
-            let sent = ResizeArray<Sent>()
-            let mutable failed = false
+            let trip = nextRoundTrip ()
+            use c = prepare s st.Command
+            let sw = Stopwatch.StartNew()
 
-            for st in stmts do
-                if failed then
-                    sent.Add Skipped
-                else
-                    let! r = one s st
-                    sent.Add r
-
-                    match r with
-                    | Threw _ -> failed <- true
-                    | _ -> ()
-
-            return List.ofSeq sent
+            try
+                let! n = c.ExecuteNonQueryAsync(s.Ct)
+                report s st.Command sw.Elapsed n true trip
+                return n
+            with ex ->
+                report s st.Command sw.Elapsed 0 false trip
+                return Err.rethrow ex
         }
+
+    let private one (s: Session) (st: Statement) : Task<Sent> =
+        let run =
+            try
+                match st.Read with
+                | Some readRow -> read s st readRow
+                | None -> write s st
+            with ex ->
+                Task.FromException<int> ex
+
+        run.ContinueWith(
+            (fun (t: Task<int>) ->
+                if t.IsCompletedSuccessfully then Ran t.Result
+                elif t.IsCanceled then Threw(OperationCanceledException s.Ct)
+                else Threw(t.Exception.InnerException)),
+            TaskContinuationOptions.ExecuteSynchronously
+        )
+
+    // Chained continuations rather than a task: a task that awaited each
+    // statement in turn blocked on a wait in the browser's single thread
+    // (koans/browser).
+    let rec private oneAtATime (s: Session) (stmts: Statement list) : Task<Sent list> =
+        match stmts with
+        | [] -> Task.FromResult []
+        | st :: rest ->
+            (one s st)
+                .ContinueWith(
+                    (fun (t: Task<Sent>) ->
+                        match t.Result with
+                        | Threw _ as r -> Task.FromResult(r :: (rest |> List.map (fun _ -> Skipped)))
+                        | r -> (oneAtATime s rest).ContinueWith((fun (u: Task<Sent list>) -> r :: u.Result), TaskContinuationOptions.ExecuteSynchronously)),
+                    TaskContinuationOptions.ExecuteSynchronously
+                )
+                .Unwrap()
 
     /// The statements as one DbBatch: each query's rows are its result set,
     /// in order; a statement without rows has none, and its count is its

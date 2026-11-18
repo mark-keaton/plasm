@@ -364,7 +364,7 @@ Feature: Walking the path in the browser
     Scenario: A koan says what repo is and where it comes from
       When the learner opens the koan "The shop has three customers"
       Then under Given the definition of repo is labelled "Plasm"
-      And under Given the definition of repo includes "let repo = Repo(Db.model, Postgres.connect connectionString)"
+      And under Given the definition of repo includes "let! repo = Repo.Start(Db.model, Postgres.connect connectionString, queriesIn = typeof<Order>.Assembly)"
 
     Scenario: Definitions say whether they are your app's code or test helpers
       When the learner opens the koan "The shop has three customers"
