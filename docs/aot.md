@@ -46,14 +46,25 @@ Reflection reads only what a native binary keeps:
   descriptor embedded in Plasm.dll (`src/Plasm/ILLink.Descriptors.xml`): a
   query is a quotation, and FSharp.Core reads every member it names back by
   reflection, members nothing compiled calls among them (a prepared query's
-  `Arg.Value`, Plasm's builder inside `Query.prepare`). It keeps Plasm.dll
+  `Arg.Value`, Plasm's builder inside a nested query). It keeps Plasm.dll
   whole; whole, every scalar type Plasm maps (`Scalar.builtIn`: the integers,
   `String`, `Boolean`, `Decimal`, `Double`, `Single`, `Guid`, `DateTime`,
   `DateTimeOffset`, `DateOnly`, `TimeOnly`, `TimeSpan`, `Byte`), since a query
-  may call their members; and FSharp.Core's operators and modules the
-  translator recognises. Unit tests (`tests/Plasm.Tests/TrimDescriptor.fs`)
-  fail when the translator names a type the descriptor does not keep, when a
-  scalar type Plasm maps is not kept whole, or when Plasm is not.
+  may call their members; FSharp.Core's operators and modules the translator
+  recognises; and the constructor of the format `Raw.fragment` takes. Unit
+  tests (`tests/Plasm.Tests/TrimDescriptor.fs`) fail when the translator names
+  a type the descriptor does not keep, when a scalar type Plasm maps is not
+  kept whole, when Plasm is not, or when a raw fragment's format constructor
+  is not kept.
+- **What a query names in Plasm** is marked once, `[<Trimming.QuerySurface>]`
+  on each type or module whose public members a query names inside its
+  quotations: the builder, `Arg`, `Agg`, `Raw`, `exists` and `plasm`,
+  `referring` and `referredBy`, `tableOf`. Plasm is kept whole, so nothing
+  marked can be trimmed; a unit test
+  (`tests/Plasm.Tests/QuerySurface.fs`) reads every query of the check and
+  fails when a member a quotation names is not marked, and when a marked
+  member is named by no query of the check, unless it is listed there with
+  why (`Zero` only). So the binary is what shows each works natively.
 - **When something is missing**, FSharp.Core fails as it reads the quotation,
   before Plasm sees it, and names no member: a `TypeInitializationException`
   from the module that holds the query, its innermost exception
@@ -211,17 +222,34 @@ Sizes of native binaries, osx-arm64, Npgsql 10.0.3, FSharp.Core 8.0.403:
 | Npgsql alone, `NpgsqlDataSource.Create` | 9.4 MB |
 | Npgsql alone, `NpgsqlSlimDataSourceBuilder` | 5.1 MB |
 | One record through Plasm, either builder | 25.0 MB |
-| ... without Plasm.dll kept whole: full builder, slim builder | 15.8 MB, 11.5 MB |
 | The check program, either builder | 25.5 MB |
-| ... without Plasm.dll kept whole: full builder, slim builder | 20.0 MB, 15.8 MB |
 
-Keeping Plasm.dll whole costs about 13.5 MB and hides what the slim builder
-saves; without it the check's queries fail (`Arg.Value` is what a quotation
-names), so the descriptor is to keep what a query can name instead. Keeping
-the scalar types whole costs about 1.5 MB. An application chooses its builder
-by passing its own data source, `PostgresProvider(dataSource)`; with the slim
-builder the check needs only `EnableArrays()` and prints what it prints with
-`NpgsqlDataSource.Create` (`-p:PlasmAotSlim=true`).
+Keeping Plasm.dll whole is about 13.5 MB of that, and makes the two Npgsql
+builders the same size. Keeping only its public types instead (what a query
+compiled outside Plasm can name) was measured at 20.6 MB for the check, 16.4
+MB over the slim builder, and is not done: Plasm's reflection over its own
+internals would then rest on the paths the check runs, and function comes
+before size.
+
+### On AWS Lambda
+
+A function is a process started cold, so what it pays before its first
+answer matters, and its package's size with it:
+
+- **Plasm takes any data source**, `PostgresProvider(dataSource)`, so a
+  function can build its own (pooling, TLS, Npgsql's slim builder); with the
+  slim builder the check needs only `EnableArrays()`, for a captured list, and
+  prints the same as with `NpgsqlDataSource.Create` (`-p:PlasmAotSlim=true`).
+- **Check the queries in a test, not at each cold start**, when there are
+  many: natively the check costs about half a millisecond a query (16 queries
+  9 ms, of which the first query gets back 2). Start the function with
+  `Queries = StartupCheck.Ignore` and run `Repo.Start` with
+  `Queries = StartupCheck.Crash` in a test over the same assembly; a few dozen
+  queries cost too little to bother.
+- **The connection is most of a cold start**: 12 ms to a PostgreSQL on
+  localhost, more to a database over the network. The check program opens two
+  pools (its own to set up the schema, then Plasm's), so its first query pays a
+  second connection an application does not.
 
 ## The check
 
@@ -246,7 +274,7 @@ refuse its union by name, assembly and step. It prints the
 native binary's size. `PLASM_AOT_TRACE=1` adds the stack trace of a step that
 throws (to standard error, not compared).
 
-What it does today (native binary 24 MB, Plasm.dll kept whole; 293 F# field
+What it does today (native binary 24 MB, Plasm.dll kept whole; 292 F# field
 getters marked):
 
 | Step | Runtime | Native |
@@ -279,5 +307,9 @@ getters marked):
 | A captured `Guid list` (`List.contains`) | ✓ | ✓ |
 | An option of a value type compared with `Some` | ✓ | ✓ |
 | A prepared argument of a value type in `Some` | ✓ | ✓ |
+| A raw fragment, `exists`, and loads ordered three ways, paged, and distinct | ✓ | ✓ |
+| A load that joins and groups is refused, the same natively | ✓ | ✓ |
+| A load of the record a row refers to (`referredBy`) | ✓ | ✓ |
+| Every aggregate, selected in a five-tuple | ✓ | ✓ |
 | A binary published without the step for F# union fields refuses its union, naming it, its assembly and the step (`tests/Plasm.Aot.Unpatched`, `PlasmFieldGetters=false`) | | ✓ |
 | The publish has no IL warning naming Plasm | | ✓ |

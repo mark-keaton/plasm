@@ -298,6 +298,17 @@ let main argv =
 
                 (match owner with Some(CustomerId id) -> string id | None -> "-") + " " + phase + ": " + string n))
 
+        step "a raw fragment, exists, and loads ordered, paged and distinct" (fun () ->
+            selected Queries.customersWithTickets2 (fun r ->
+                r.Name + ": " + String.Join(", ", r.Ordered) + "; sizes " + String.Join(", ", r.Sizes |> List.sort)))
+        step "a load that joins and groups is refused" (fun () -> selected (Queries.refusedLoad ()) (fun r -> r.Name))
+        step "a load of the record a row refers to" (fun () ->
+            selected Queries.ticketsWithOwners (fun r -> r.Title + " by " + defaultArg r.Owner "nobody"))
+        step "every aggregate" (fun () ->
+            selected Queries.priceRanges (fun (owner, lo, hi, avg, sizes) ->
+                let d (x: decimal option) = match x with Some v -> v.ToString(Globalization.CultureInfo.InvariantCulture) | None -> "-"
+                let o = match owner with Some(CustomerId n) -> string n | None -> "-"
+                o + ": " + d lo + ".." + d hi + ", avg " + d avg + ", " + string sizes + " sizes"))
         step "a count" (fun () ->
             match repo.Count(Queries.ticketsOf ada.Id).Result with
             | Ok n -> string n

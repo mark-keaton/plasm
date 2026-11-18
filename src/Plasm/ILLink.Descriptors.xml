@@ -17,6 +17,8 @@
     <type fullname="Microsoft.FSharp.Collections.ArrayModule" preserve="methods" />
     <type fullname="Microsoft.FSharp.Core.FSharpOption`1" preserve="all" />
     <type fullname="Microsoft.FSharp.Collections.FSharpList`1" preserve="all" />
+    <!-- Raw.fragment's SQL: a quotation names the format's constructor. -->
+    <type fullname="Microsoft.FSharp.Core.PrintfFormat`5"><method name=".ctor" /></type>
     <!-- The decoder of [<ReflectedDefinition>] bodies, which Plasm calls by
          name in a native binary (Definitions in src/Plasm/Shapes.fs). -->
     <type fullname="Microsoft.FSharp.Quotations.PatternsModule" preserve="all">

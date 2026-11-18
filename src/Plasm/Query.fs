@@ -11,6 +11,7 @@ type internal IArg =
 /// An argument of a prepared query (see `Query.prepare`). Use `.Value` inside
 /// query operations; it is bound to a parameter each time the query runs.
 [<Sealed>]
+[<Trimming.QuerySurface>]
 type Arg<'T> internal (index: int) =
     /// The argument's value. Only meaningful inside query operations, where it
     /// becomes a command parameter; reading it while the query is being built
@@ -26,7 +27,7 @@ type Arg<'T> internal (index: int) =
 
 /// Aggregate functions for `select`, `having` and `orderBy` in a query. They are
 /// translated to SQL and computed by the database; calling one directly fails.
-[<RequireQualifiedAccess>]
+[<RequireQualifiedAccess; Trimming.QuerySurface>]
 module Agg =
     let internal outside name : 'a =
         invalidOp $"Agg.{name} is only meaningful inside a query (select, having or orderBy); it is computed by the database"
@@ -55,7 +56,7 @@ module Agg =
         invalidOp "Agg.avg is only meaningful inside a query (select, having or orderBy); it is computed by the database"
 
 /// Literal SQL inside a typed query, for what the query language cannot say.
-[<RequireQualifiedAccess>]
+[<RequireQualifiedAccess; Trimming.QuerySurface>]
 module Raw =
     /// `Raw.fragment<bool> "{0} ILIKE {1}" (c.Name, pattern)`. The SQL text is
     /// typed as a format string, so the compiler only accepts a literal: values
@@ -516,6 +517,7 @@ module internal LetLoads =
 ///
 /// Each operation receives its expression as an F# quotation so it is
 /// type-checked by the compiler and translated, never run client-side.
+[<Trimming.QuerySurface>]
 type QueryBuilder() =
 
     member _.For(_source: Table<'T>, _body: 'T -> Query<'T>) : Query<'T> = Query<'T>(QueryDef.Empty typeof<'T>)
@@ -784,7 +786,7 @@ type Query =
     static member from(_schema: Table<'T>) : Query<'T> = Query<'T>(QueryDef.Empty typeof<'T>)
 
 
-[<AutoOpen>]
+[<AutoOpen; Trimming.QuerySurface>]
 module QueryBuilderInstance =
     /// The query computation expression.
     let plasm = QueryBuilder()
@@ -837,7 +839,7 @@ module internal Ties =
     let isMarker (mi: Reflection.MethodInfo) = mi.DeclaringType = typeof<TieMarkers>
 
 /// Ties the typed ids prove (referring.feature).
-[<AutoOpen>]
+[<AutoOpen; Trimming.QuerySurface>]
 module TieQueries =
     /// The `'T` records that refer to `record`: those whose one field referring
     /// to its record (plain or an option) holds its key. `referring<Payment> o` is

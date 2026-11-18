@@ -288,7 +288,7 @@ module internal Derive =
 
         if errors.Count > 0 then Error(List.ofSeq errors) else Ok(List.ofSeq defs)
 
-[<AutoOpen>]
+[<AutoOpen; Trimming.QuerySurface>]
 module StoredExtensions =
 
     /// The records of type `'T`, as a query source: `for c in tableOf<Card> do`.

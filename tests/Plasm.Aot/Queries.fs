@@ -102,3 +102,71 @@ let phaseCounts =
             groupBy (t.Owner, phase t)
             select (t.Owner, phase t, Agg.count ())
     }
+
+/// The rest of what a query names inside its quotations (QuerySurface.fs),
+/// so the binary shows each works natively: nested queries with each builder
+/// operation, every aggregate, a raw fragment, and the tie the other way.
+let customersWithTickets2 =
+    plasm {
+        for c in tableOf<Customer> do
+            where (Raw.fragment<bool> "{0} ILIKE 'a%%'" c.Name)
+            where (exists (plasm { for t in tableOf<Ticket> do where (t.Owner = Some c.Id) }))
+            orderBy c.Name
+
+            let! ordered =
+                plasm {
+                    for t in referring<Ticket> c do
+                        orderBy t.Size
+                        thenBy t.Title
+                        thenByDescending t.Created
+                        skip 0
+                        take 5
+                        select t.Title
+                }
+
+            and! sizes =
+                plasm {
+                    for t in referring<Ticket> c do
+                        selectDistinct t.Size
+                }
+
+            return {| Name = c.Name; Ordered = ordered; Sizes = sizes |}
+    }
+
+/// A load that joins and groups, which Plasm refuses: inside a quotation
+/// join, leftJoin, groupBy and having are only read to say so. A function, so
+/// the start-up check does not refuse the application for it; the step shows
+/// the refusal reads the same natively.
+let refusedLoad () =
+    plasm {
+        for c in tableOf<Customer> do
+            let! openNotes =
+                plasm {
+                    for t in referring<Ticket> c do
+                        join n in tableOf<Note> on (t.Id = n.TicketId)
+                        leftJoin o in tableOf<Customer> on (t.Owner = Some o.Id)
+                        where (not n.Done)
+                        groupBy t.Size
+                        having (Agg.count () > 0L)
+                        select t.Size
+                }
+
+            return {| Name = c.Name; OpenNotes = openNotes |}
+    }
+
+let ticketsWithOwners =
+    plasm {
+        for t in tableOf<Ticket> do
+            orderBy t.Title
+
+            let! owner = plasm { for c in referredBy<Customer> t do select c.Name }
+
+            return {| Title = t.Title; Owner = owner |}
+    }
+
+let priceRanges =
+    plasm {
+        for t in tableOf<Ticket> do
+            groupBy t.Owner
+            select (t.Owner, Agg.min t.Price, Agg.max t.Price, Agg.avg t.Price, Agg.countDistinct t.Size)
+    }

@@ -92,6 +92,28 @@ let ``every scalar type Plasm maps is kept whole, since a query may call its mem
 [<Fact>]
 let ``Plasm is kept whole, since quotations name its builder and its arguments`` () = Assert.Contains("Plasm", wholes)
 
+/// `Raw.fragment "..."` puts the format's constructor in the quotation
+/// (`new PrintfFormat<...>("...")`), which FSharp.Core binds when it reads it.
+[<Fact>]
+let ``a raw fragment's format keeps its constructor`` () =
+    use stream = typeof<Plasm.Repo>.Assembly.GetManifestResourceStream "ILLink.Descriptors.xml"
+    let doc = XDocument.Load stream
+
+    let ctorKept (name: string) =
+        doc.Descendants(XName.Get "type")
+        |> Seq.exists (fun t ->
+            (match t.Attribute(XName.Get "fullname") with null -> false | n -> n.Value = name)
+            && t.Elements(XName.Get "method") |> Seq.exists (fun m -> m.Attribute(XName.Get "name").Value = ".ctor"))
+
+    let format = <@ Plasm.Raw.fragment<bool> "{0}" 1 @>
+    let named =
+        match format with
+        | Microsoft.FSharp.Quotations.Patterns.Call(_, _, [ Microsoft.FSharp.Quotations.Patterns.Coerce(Microsoft.FSharp.Quotations.Patterns.NewObject(c, _), _); _ ]) ->
+            c.DeclaringType.GetGenericTypeDefinition().FullName
+        | e -> failwith $"a raw fragment's format is not a constructor call: {e}"
+
+    Assert.True(ctorKept named, $"the descriptor does not keep {named}'s constructor")
+
 [<Fact>]
 let ``the string methods the translator reads are kept`` () =
     Assert.True(translator.Contains "typeof<string>")

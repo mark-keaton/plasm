@@ -19,9 +19,11 @@
     <Compile Include="TrimDescriptor.fs" />
     <Compile Include="UnreadableQueries.fs" />
     <Compile Include="Tuples.fs" />
+    <Compile Include="QuerySurface.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Plasm.TestDomain/Plasm.TestDomain.fsproj" />
+    <ProjectReference Include="../Plasm.Aot/Plasm.Aot.fsproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />

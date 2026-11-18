@@ -18,6 +18,14 @@ module internal Plasm.Trimming
 
 open System.Diagnostics.CodeAnalysis
 
+/// Marks a type or module whose public members a user's query names inside
+/// its quotations (docs/aot.md). Plasm is kept whole in a native binary, so
+/// nothing marked can be trimmed; the mark says which members the native
+/// check must name, which a unit test (QuerySurface.fs) holds it to.
+[<System.AttributeUsage(System.AttributeTargets.Class, AllowMultiple = false)>]
+type QuerySurfaceAttribute() =
+    inherit System.Attribute()
+
 // tests/Plasm.Aot/trim-audit.sh compiles Plasm without the suppressions below
 // (PlasmTrimAudit) and fails unless what warns is exactly what is suppressed.
 #if !PLASM_TRIM_AUDIT
