@@ -6,6 +6,16 @@ using System.Text.Json.Serialization;
 using Kanban.Data;
 using Npgsql;
 
+// Started by a scenario (KANBAN_EXIT_WITH_STDIN=1): exit when the test
+// process that holds this host's standard input goes, so no host outlives a
+// test run that died.
+if (Environment.GetEnvironmentVariable("KANBAN_EXIT_WITH_STDIN") == "1")
+    _ = Task.Run(() =>
+    {
+        Console.In.ReadToEnd();
+        Environment.Exit(0);
+    });
+
 var builder = WebApplication.CreateSlimBuilder(args);
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResolverChain.Insert(0, KanbanJson.Default));
 

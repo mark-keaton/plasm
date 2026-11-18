@@ -78,6 +78,11 @@ KANBAN_CSHARP_HOST=$PWD/artifacts/host-native/Kanban.Host.CSharp dotnet test --p
 (`osx-arm64` is the machine's runtime identifier: `linux-x64`, `win-x64`
 and so on elsewhere.)
 
+Each scenario's host is stopped when the scenario ends, when the test run
+exits, and, through its standard input, when the test run dies;
+`tests/Hosting/no-leftover-hosts.sh` checks that none is left, after a run
+and after a run killed mid-scenario.
+
 ## What the scenarios show
 
 - **A union with fields at the centre.** `Stage` is `Backlog | Doing of

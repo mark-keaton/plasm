@@ -16,6 +16,16 @@ public sealed class Steps : IAsyncDisposable
     string body = "";
     int mark;
 
+    /// Reqnroll does not dispose a binding asynchronously: the host is stopped
+    /// here, when the scenario ends.
+    [AfterScenario]
+    public async Task StopHost()
+    {
+        http?.Dispose();
+        if (host is not null) await host.DisposeAsync();
+        host = null;
+    }
+
     public async ValueTask DisposeAsync()
     {
         http?.Dispose();

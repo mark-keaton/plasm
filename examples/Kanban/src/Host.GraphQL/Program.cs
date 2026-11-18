@@ -12,6 +12,16 @@ using Kanban.Data;
 using Npgsql;
 using Plasm.HotChocolate;
 
+// Started by a scenario (KANBAN_EXIT_WITH_STDIN=1): exit when the test
+// process that holds this host's standard input goes, so no host outlives a
+// test run that died.
+if (Environment.GetEnvironmentVariable("KANBAN_EXIT_WITH_STDIN") == "1")
+    _ = Task.Run(() =>
+    {
+        Console.In.ReadToEnd();
+        Environment.Exit(0);
+    });
+
 var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("Kanban")
     ?? throw new InvalidOperationException("Set the connection string 'Kanban' (ConnectionStrings:Kanban).");
