@@ -24,11 +24,16 @@ A key of several fields is a record of them as the Id. The key's parts are
 the table's own columns, by their own names, so the `Id` below is stored as
 `repo` and `number`, under `primary key (repo, number)`:
 
+<!-- from: tests/Plasm.Specs.Steps/CompositeKeySteps.fs -->
 ```fsharp
 type IssueKey = { Repo: string; Number: int }
 
-[<Table "issues">]
-type Issue = { Id: IssueKey; Title: string; [<Version>] Version: int }
+[<Table "keyed_issues">]
+type Issue =
+    { Id: IssueKey
+      Title: string
+      [<Version>]
+      Version: int }
 ```
 
 Its parts are scalars, none of them optional, and there are at least two,
