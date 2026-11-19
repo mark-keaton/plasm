@@ -27,9 +27,7 @@ let private versionValue (schema: SchemaInfo) (s: CsState) : int option =
     match schema.Version with
     | None -> None
     | Some v ->
-        match s.ExpectedVersion with
-        | Some e -> Some e
-        | None -> s.Data |> Option.map (fun d -> unbox<int> (schema.Shape.Deconstruct d).[v.Index])
+        s.Data |> Option.map (fun d -> unbox<int> (schema.Shape.Deconstruct d).[v.Index])
 
 /// For a record without a version field, the update or delete applies only if
 /// every column still holds what the change was made from (concurrency.feature).
@@ -224,20 +222,13 @@ let rec check (model: Model) (s: CsState) : CsState =
         match schema.Version with
         | Some v when s.Changes.ContainsKey v.Name ->
             st <- err st v.Name (FieldErrorKind.Custom "version") "the version is managed by optimistic concurrency and cannot be set"
-        | Some v when s.Data.IsNone && s.ExpectedVersion.IsNone ->
+        | Some v when s.Data.IsNone ->
             st <-
                 err
                     st
                     v.Name
                     (FieldErrorKind.Custom "version")
-                    "a change to a versioned record must say which version it was made from: pass expectVersion to Tx.update"
-        | None when s.ExpectedVersion.IsSome ->
-            st <-
-                err
-                    st
-                    "Version"
-                    (FieldErrorKind.Custom "version")
-                    $"{schema.Name} has no version field, so there is no version to expect; the record the change was made from is checked instead"
+                    "a change to a versioned record is made from the record read, whose version it checks: read a caller's copy with Tx.oneAsSeen"
         | _ -> ()
     | ChangeAction.Insert -> ()
 

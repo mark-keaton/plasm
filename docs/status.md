@@ -282,12 +282,14 @@ required, or set `PLASM_TEST_PG`): 543 scenarios and 128 unit tests.
 **Writes** (only through `repo.Transact`):
 
 - `Tx.insert record` (gives it back as stored, with its generated key and what
-  it owns), `Tx.update (original, changed, ?expectVersion)` (only the columns
-  that differ), `Tx.delete record`.
-- Concurrency: a record with a `version` field is checked by its version
-  (`expectVersion` for a copy that came back from a client); a record without
-  one is checked against every column of `original` (`IS NOT DISTINCT FROM`)
-  in the same command. A failed check is `TxFailure.Conflict`.
+  it owns), `Tx.update (original, changed)` (only the columns that differ),
+  `Tx.delete record`.
+- Concurrency: a record with a `version` field is checked by its version; a
+  record without one is checked against every column of `original` (`IS NOT
+  DISTINCT FROM`) in the same command. A copy that came back from a client is
+  read with `Tx.oneAsSeen (query, seen)`, a Conflict there if the stored
+  version is no longer `seen`, so nothing is decided on a record the caller
+  has not seen. A failed check is `TxFailure.Conflict`.
 - Plasm validates no input; the domain's constructors do. A violated
   constraint with PostgreSQL's default name (`<table>_<column>_key`, `_fkey`,
   `_check`) is that field's error, `TxFailure.InvalidChanges (entity,
@@ -782,6 +784,7 @@ row's type, not in a field that may be unloaded.
 | 2026-11-16 | `referring<T> o` and `referredBy<T> o`: the tie derived from the typed ids, at the user's request (asked whether F# could generate nine hand-written relationship functions). Reverses "no inferred tie" from the `including` design: with typed ids it is a proof, not a guess; not exactly one candidate field is refused, never picked. Plain ties in koans, README, website, examples and Kanban moved to it | `features/referring.feature` |
 | 2026-11-15 | `[<Json>]`: one jsonb document per field in Plasm's own strict mapping (unknown keys refused, since writes replace the whole document); JSON rendered through `ISqlDialect.Json`, refused at repository creation when absent | `features/json-columns.feature` |
 | 2026-11-19 | The suites run on the FSharp.Core a new project gets (docs/status.md, "Limits"). The packages are still built against the floor 8.0.403 (`PlasmFSharpCoreFloor`), so the nuspecs still say >= 8.0.403, which the package check now asserts. Everything else that runs Plasm here runs on 11.0.101: Plasm.Specs, Plasm.Tests, the native check, the koans and their specs, the browser koans, and the package check's consumers. Until now every F# project here had no FSharp.Core reference of its own, since under central package management the F# SDK makes none, and ran on whatever its references pulled in, mostly the floor through Plasm's. Directory.Build.targets now gives each F# project one that lacks it. Kanban runs on 10.1.202, the newest Fable.Remoting.Server 6.1.0 and Fable.Remoting.Json 3.0.0 allow; its C# host and Lambda reference the F# server for its migrations, so they move to 11 in a later change. A pass with the pin at 11 everywhere found Kanban unbuildable (NU1608) and nothing else: suites, native output, IL warnings (2, both FSharp.Core's) and the trim audit as before. It also found six warnings in tests/Plasm.Aot, under both pins, hiding a match that read every stage as "backlog": that project, and Plasm.Aot.Unpatched, now treat warnings as errors but for FSharp.Core's IL2104 and IL3053, and trim-audit.sh, which counts IL warnings, turns that off for its own publish | `Directory.Build.targets` |
+| 2026-11-19 | **Changed.** `Tx.update`'s `expectVersion` is gone: a change made from a copy a caller saw (one that came back from a client) reads the record with `Tx.oneAsSeen (query, seen)`, which gives None if there is none and is a `TxFailure.Conflict` if its version is no longer `seen`, before anything is decided on it; the update made from it checks the version it was read at again. `expectVersion` checked only at the write, so a decision was made, and could be refused, on a record the caller had not seen. A record without a `[<Version>]` field cannot be read so (`TxFailure.Misused`, naming `Tx.one`). The examples, the koans (lesson 11), Kanban's cards (whose `StaleCopy` refusal is now the Conflict) and the docs read a caller's copy so. typed-transactions.feature: 5 scenarios in place of 2, red first (a stale copy was decided on, and a record without a version was read); 646 in all | `features/typed-transactions.feature` |
 
 ## Suggested next steps
 

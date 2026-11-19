@@ -117,8 +117,8 @@ let private ofTransactionError (deps: Deps) (error: TransactionError<Refusal>) :
     match error.Failure with
     | TxFailure.Rejected(Domain refusal) -> Rejected refusal
     | TxFailure.Rejected(Missing what) -> NotFound what
-    | TxFailure.Rejected StaleCopy -> Stale
-    // The stored version changed between this transaction's read and its write.
+    // The caller's copy is stale: read so (Tx.oneAsSeen), or changed between
+    // this transaction's read and its write.
     | TxFailure.Conflict _ -> Stale
     | TxFailure.InvalidChanges(_, errors) -> Invalid(errors |> List.map View.fieldError |> Array.ofList)
     | TxFailure.Failed failure ->

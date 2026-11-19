@@ -70,9 +70,11 @@ Feature: Transactions are typed, and their steps need no names
 
     A step writes a record: `Tx.insert customer`, `Tx.update (original, changed)`
     and `Tx.delete customer`. An update writes only the columns `changed`
-    differs in from `original`, the record it was made from. `expectVersion`
-    names the version a caller last saw, for a copy that came back from a
-    client.
+    differs in from `original`, the record it was made from, and finds it by
+    its key and the version it was read at. A change made from a copy a caller
+    saw earlier, such as one that came back from a client, reads the record
+    with `Tx.oneAsSeen (query, seen)`: the record as stored, if its version is
+    still `seen`, so a stale caller is told so before anything is decided.
 
     Scenario: Inserting a record gives it back with its key
       When a transaction inserts the Customer "Ada" as a record
@@ -84,15 +86,29 @@ Feature: Transactions are typed, and their steps need no names
       Then the Customer is stored with the name "Ada L."
       And the update sent sets only the name
 
-    Scenario: An update expecting a version the record no longer has is a conflict
+    Scenario: A record read as the caller saw it is changed
       Given a draft Order whose version is 2
-      When a transaction updates it expecting the version 1
+      When a transaction reads that Order as seen at version 2 and updates its total to 99
+      Then the Order is stored with the total 99 at version 3
+
+    Scenario: A copy the caller saw before another change is stale, before anything is decided
+      Given a draft Order whose version is 2
+      When a transaction reads that Order as seen at version 1 and would then refuse the change
       Then the failure is a conflict, and the Order is unchanged
 
-    Scenario: Expecting a version of a record without a version field is invalid
+    Scenario: A change landing between the read and the write is stale
+      Given a draft Order whose version is 2
+      When a transaction reads that Order as seen at version 2, and another writer changes it before the update
+      Then the failure is a conflict, and the Order keeps the other writer's change
+
+    Scenario: A record that is not there is missing, not stale
+      When a transaction reads an Order that does not exist as seen at version 1, with Tx.orReject (Missing "order")
+      Then the failure is the rejection Missing "order", read without a cast
+
+    Scenario: A record without a version field cannot be read as seen
       Given a Customer named "Ada"
-      When a transaction updates that Customer expecting the version 1
-      Then the failure is an invalid change on the version, saying the record has no version field
+      When a transaction reads that Customer as seen at version 1
+      Then the failure says Customer has no version field, and to read it with Tx.one
 
     Scenario: Deleting the record read deletes it
       Given a Customer named "Ada"

@@ -16,8 +16,6 @@ open Kanban.Server.Db
 type Refusal =
     | Domain of DomainError
     | Missing of what: string
-    /// The caller's copy of the card is older than the stored one.
-    | StaleCopy
 
 /// A board as the list of boards shows it: the board, with what was read of
 /// its cards.
@@ -214,16 +212,10 @@ module Queries =
 let private one (what: string) (query: Query<'T>) : Tx<'T, Refusal> =
     Tx.one query |> Tx.orReject (Missing what)
 
-/// The card, if the caller's copy (`expected`) is the stored one.
+/// The card, if the caller's copy (`expected`) is the stored one; a stale
+/// copy is a conflict.
 let private currentCard (id: CardId) (expected: int) : Tx<Card, Refusal> =
-    transaction {
-        let! card = one "card" (Queries.cardById id)
-
-        if card.Version <> expected then
-            return! Tx.fail StaleCopy
-        else
-            return card
-    }
+    Tx.oneAsSeen (Queries.cardById id, expected) |> Tx.orReject (Missing "card")
 
 /// A board and the cards it starts with: all of them, or none.
 let createBoard (board: Board) (first: Card list) : Tx<Board, Refusal> =

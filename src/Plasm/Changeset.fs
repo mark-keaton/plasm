@@ -43,7 +43,6 @@ and internal CsState =
       Data: obj option
       /// For key-only changesets built from partial data.
       Key: (string * obj) option
-      ExpectedVersion: int option
       Action: ChangeAction
       Changes: Map<string, obj>
       Errors: FieldError list
@@ -136,7 +135,6 @@ module internal Cs =
         { Type = t
           Data = data
           Key = None
-          ExpectedVersion = None
           Action = action
           Changes = Map.empty
           Errors = []
@@ -197,10 +195,6 @@ type internal Changeset =
     /// A changeset that deletes `value` (respecting its version, if versioned).
     static member delete(value: 'T) : Changeset<'T> =
         Changeset<'T>(Cs.emptyState typeof<'T> (Some(box value)) ChangeAction.Delete)
-
-    /// The version an update expects, for a copy that came back from a client.
-    static member expectVersion(version: int) =
-        fun (cs: Changeset<'T>) -> Cs.map cs (fun s -> { s with ExpectedVersion = Some version })
 
     // -- Constraints ----------------------------------------------------------
     // A unique, foreign-key or column check constraint with PostgreSQL's default

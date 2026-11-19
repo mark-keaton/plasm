@@ -355,26 +355,18 @@ type Tx =
 
     /// Updates `original`, the record a change was made from, to `changed`:
     /// only the columns that differ are written, and what it owns is written by
-    /// difference. `expectVersion` is the version a caller last saw, for a copy
-    /// that came back from a client; without it the version (or, for a record
-    /// without one, every column) of `original` is checked.
+    /// difference. The version (or, for a record without one, every column)
+    /// `original` was read at is checked; a change made from a copy a caller saw
+    /// earlier reads `original` with Tx.oneAsSeen.
     static member update
         (
             original: 'T,
             changed: 'T,
-            ?expectVersion: int,
-            [<CallerFilePath>] ?file: string,
-            [<CallerLineNumber>] ?line: int
+            [<CallerFilePath; Optional; DefaultParameterValue("")>] file: string,
+            [<CallerLineNumber; Optional; DefaultParameterValue(0)>] line: int
         ) : Tx<'T, 'E> =
-        let at = TxCore.at (defaultArg file "") (defaultArg line 0) $"update {typeof<'T>.Name}"
-        let cs = original |> Changeset.edit (fun _ -> changed)
-
-        let cs =
-            match expectVersion with
-            | Some v -> cs |> Changeset.expectVersion v
-            | None -> cs
-
-        TxCore.write at cs
+        let at = TxCore.at file line $"update {typeof<'T>.Name}"
+        TxCore.write at (original |> Changeset.edit (fun _ -> changed))
 
     /// Deletes a record read (and what it owns).
     static member delete
@@ -422,6 +414,47 @@ type Tx =
                 | Ok [ row ] -> return Ok(Some row)
                 | Ok _ -> return Error(TxFailure.Failed DbError.MoreThanOneRow)
                 | Error e -> return Error e
+            })
+
+    /// The one row a query matches as a caller saw it: None if there is none,
+    /// a Conflict if its version is no longer `seen`, the version the caller's
+    /// copy was read at (one that came back from a client). Checked where it is
+    /// read, so nothing is decided on a record the caller has not seen; the
+    /// update made from it checks the version again. A record without a
+    /// [<Version>] field cannot be read so (TxFailure.Misused).
+    static member oneAsSeen
+        (
+            query: Query<'T>,
+            seen: int,
+            [<CallerFilePath; Optional; DefaultParameterValue("")>] file: string,
+            [<CallerLineNumber; Optional; DefaultParameterValue(0)>] line: int
+        ) : Tx<'T option, 'E> =
+        TxCore.step (TxCore.at file line $"oneAsSeen {typeof<'T>.Name}") (fun rt ->
+            task {
+                match rt.Model.Schema typeof<'T> with
+                | Ok schema when schema.Version.IsNone ->
+                    return
+                        Error(
+                            TxFailure.Misused
+                                $"{typeof<'T>.Name} has no version field, so there is no version a caller saw to check; read it with Tx.one, and the update made from it checks every column it was read with"
+                        )
+                | found ->
+                    let limited = Query<'T>(OneRow.limit rt.Model query.Def)
+
+                    match! TxCore.rows rt limited with
+                    | Ok [] -> return Ok None
+                    | Ok [ row ] ->
+                        let version =
+                            match found with
+                            | Ok schema -> schema.Version |> Option.map (fun v -> unbox<int> (schema.Shape.Deconstruct(box row)).[v.Index])
+                            | Error _ -> None
+
+                        if version.IsSome && version <> Some seen then
+                            return Error(TxFailure.Conflict typeof<'T>.Name)
+                        else
+                            return Ok(Some row)
+                    | Ok _ -> return Error(TxFailure.Failed DbError.MoreThanOneRow)
+                    | Error e -> return Error e
             })
 
     /// How many rows a query matches, counted by the database.

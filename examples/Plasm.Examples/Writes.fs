@@ -11,10 +11,6 @@ open Shop.Queries
 type Refusal =
     | Domain of OrderError
     | Missing of what: string
-    /// The caller's copy is older than the stored one.
-    | StaleCopy
-
-let private one what (query: Query<'T>) : Tx<'T, Refusal> = Tx.one query |> Tx.orReject (Missing what)
 
 /// A customer and their first order, with its lines: all of it, or none.
 /// Each insert gives the record back as stored, with its generated key.
@@ -27,13 +23,13 @@ let checkout (customer: Customer) (lines: OrderLine list) (now: DateTime) : Tx<C
     }
 
 /// Changes an order the way `decide` says, if the caller's copy (`seen`) is
-/// the stored version. Only the columns that differ are written, and the lines
-/// are written by difference.
+/// the stored version: a stale copy is a conflict before anything is decided.
+/// Only the columns that differ are written, and the lines by difference.
 let changeOrder (id: OrderId) (seen: int) (decide: Order -> Result<Order, OrderError>) : Tx<Order, Refusal> =
     transaction {
-        let! order = one "order" (orderById id)
+        let! order = Tx.oneAsSeen (orderById id, seen) |> Tx.orReject (Missing "order")
         let! changed = decide order |> Tx.ofResult Domain
-        return! Tx.update (order, changed, expectVersion = seen)
+        return! Tx.update (order, changed)
     }
 
 let cancel id seen reason = changeOrder id seen (Order.cancel reason)

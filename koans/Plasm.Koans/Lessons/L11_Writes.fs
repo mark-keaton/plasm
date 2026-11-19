@@ -150,11 +150,14 @@ let lesson =
               fun repo ->
                   task {
                       // A copy that comes back from a browser or another service carries
-                      // the version it was read at: expectVersion checks that one instead.
+                      // the version it was read at. Tx.oneAsSeen reads the record as that
+                      // copy saw it: a stored version other than the one seen is a
+                      // Conflict, before anything is decided on it.
                       let! draft = order repo 2L
-                      let! r = repo.Transact(Tx.update (draft, { draft with Total = 20m }, expectVersion = 7): Tx<Order, unit>)
+                      let byId = plasm { for o in tableOf<Order> do where (o.Id = draft.Id) }
+                      let! r = repo.Transact(Tx.oneAsSeen (byId, 7): Tx<Order option, unit>)
                       failure r |> shouldBe __
-                      let! after = order repo 2L
-                      after.Total |> shouldBe __
+                      let! current = repo.Transact(Tx.oneAsSeen (byId, draft.Version): Tx<Order option, unit>)
+                      (ok current).Value.Total |> shouldBe __
                   }
           ) ]

@@ -420,7 +420,6 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
                     match error.Failure with
                     | TxFailure.Rejected(Domain refusal) -> ByDomain refusal
                     | TxFailure.Rejected(Refusal.Missing what) -> Missing what
-                    | TxFailure.Rejected Refusal.StaleCopy
                     | TxFailure.Conflict _ -> Stopped.StaleCopy card
                     | TxFailure.InvalidChanges(_, errors) -> Fields(errors |> List.map View.fieldError)
                     | TxFailure.Failed failure -> failed $"{error.Step.Action} failed" failure

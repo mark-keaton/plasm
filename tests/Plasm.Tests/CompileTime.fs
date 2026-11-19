@@ -62,7 +62,7 @@ let ``accepts writes of records`` () =
     accepts
         """
 let change (o: Order) : Tx<Order, unit> = Tx.update (o, { o with Status = Published; CancellationReason = None; Lines = [] })
-let stale (o: Order) : Tx<Order, unit> = Tx.update (o, { o with Total = 1m }, expectVersion = 3)
+let asSeen (q: Query<Order>) : Tx<Order option, unit> = Tx.oneAsSeen (q, 3)
 """
 [<Fact>]
 let ``accepts transactions with typed dependent steps`` () =

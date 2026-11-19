@@ -247,10 +247,39 @@ let readBack (name: string) : Tx<Customer option, string> =
         }
         |> unit
 
-    [<StepDefinition("a transaction updates it expecting the version 1")>]
-    member _.ExpectOne() =
+    [<StepDefinition("^a transaction reads that Order as seen at version (\\d+) and updates its total to (\\d+)$")>]
+    member _.ReadAsSeenAndUpdate(seen: int, total: decimal) =
         let o = w.Get<Order> "order"
-        transact (Tx.update (o, { o with Total = 99m }, expectVersion = 1)) |> unit
+
+        transact (
+            transaction {
+                let! read = Tx.oneAsSeen (plasm { for x in tableOf<Order> do where (x.Id = o.Id) }, seen) |> Tx.orReject (Missing "order")
+                return! Tx.update (read, { read with Total = total })
+            }
+        )
+        |> unit
+
+    [<StepDefinition("^the Order is stored with the total (\\d+) at version (\\d+)$")>]
+    member _.StoredAt(total: decimal, version: int) =
+        task {
+            let! r = w.Repo.All(Query.from (tableOf<Order>))
+            equal [ total, version ] (ok r |> List.map (fun o -> o.Total, o.Version)) "total and version"
+        }
+        |> unit
+
+    /// The decision would refuse: were the copy not checked where it is read,
+    /// the caller would be told Refused, decided on a record it has not seen.
+    [<StepDefinition("^a transaction reads that Order as seen at version (\\d+) and would then refuse the change$")>]
+    member _.ReadStaleWouldRefuse(seen: int) =
+        let o = w.Get<Order> "order"
+
+        transact (
+            transaction {
+                let! _ = Tx.oneAsSeen (plasm { for x in tableOf<Order> do where (x.Id = o.Id) }, seen) |> Tx.orReject (Missing "order")
+                return! (Tx.fail (Refused "not now"): Tx<Order, Refusal>)
+            }
+        )
+        |> unit
 
     [<StepDefinition("the failure is a conflict, and the Order is unchanged")>]
     member _.ConflictUnchanged() =
@@ -264,16 +293,51 @@ let readBack (name: string) : Tx<Customer option, string> =
         }
         |> unit
 
-    [<StepDefinition("a transaction updates that Customer expecting the version 1")>]
-    member _.ExpectUnversioned() =
-        let c = w.Get<Customer> "customer"
-        transact (Tx.update (c, { c with Name = "x" }, expectVersion = 1)) |> unit
+    /// The other writer commits on its own connection while this transaction
+    /// holds only what it read.
+    [<StepDefinition("^a transaction reads that Order as seen at version (\\d+), and another writer changes it before the update$")>]
+    member _.ChangedBetween(seen: int) =
+        let o = w.Get<Order> "order"
 
-    [<StepDefinition("the failure is an invalid change on the version, saying the record has no version field")>]
+        transact (
+            transaction {
+                let! read = Tx.oneAsSeen (plasm { for x in tableOf<Order> do where (x.Id = o.Id) }, seen) |> Tx.orReject (Missing "order")
+                let other = w.Repo.Transact(o |> edit (fun x -> { x with Total = 42m })).Result
+                ok other |> ignore
+                return! Tx.update (read, { read with Total = 99m })
+            }
+        )
+        |> unit
+
+    [<StepDefinition("the failure is a conflict, and the Order keeps the other writer's change")>]
+    member _.ConflictKeepsOther() =
+        task {
+            match (failure ()).Failure with
+            | TxFailure.Conflict _ -> ()
+            | other -> failwithf "expected a conflict, got %A" other
+
+            let! r = w.Repo.All(Query.from (tableOf<Order>))
+            equal [ 42m ] (ok r |> List.map (fun o -> o.Total)) "totals"
+        }
+        |> unit
+
+    [<StepDefinition("^a transaction reads an Order that does not exist as seen at version (\\d+), with Tx.orReject \\(Missing \"(.*)\"\\)$")>]
+    member _.MissingAsSeen(seen: int, what: string) =
+        let missing = OrderId 987654L
+
+        transact (Tx.oneAsSeen (plasm { for x in tableOf<Order> do where (x.Id = missing) }, seen) |> Tx.orReject (Missing what))
+        |> unit
+
+    [<StepDefinition("^a transaction reads that Customer as seen at version (\\d+)$")>]
+    member _.UnversionedAsSeen(seen: int) =
+        let c = w.Get<Customer> "customer"
+        transact (Tx.oneAsSeen (plasm { for x in tableOf<Customer> do where (x.Id = c.Id) }, seen)) |> unit
+
+    [<StepDefinition("the failure says Customer has no version field, and to read it with Tx.one")>]
     member _.NoVersionField() =
         match (failure ()).Failure with
-        | TxFailure.InvalidChanges(_, errors) -> check (errors |> List.exists (fun e -> e.Message.Contains "no version field")) $"%A{errors}"
-        | other -> failwithf "expected invalid changes, got %A" other
+        | TxFailure.Misused message -> check (message.Contains "Customer has no version field" && message.Contains "Tx.one") message
+        | other -> failwithf "expected the read to be refused, got %A" other
 
     [<StepDefinition("a transaction deletes that Customer")>]
     member _.DeleteRecord() =

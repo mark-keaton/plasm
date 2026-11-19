@@ -611,8 +611,11 @@ describe the one style; "Reworded" means only words changed.
 |---|---|---|---|---|
 | Inserting a record gives it back with its key | Implemented and verified | `TypedTxSteps.fs` |  | One style, G3: write steps take records. `Tx.write` and the public `Changeset` left in step d. |
 | An update writes only the columns that changed | Implemented and verified | `TypedTxSteps.fs` |  | `Tx.update (original, changed)` compares the two records and writes the columns that differ. |
-| An update expecting a version the record no longer has is a conflict | Implemented and verified | `TypedTxSteps.fs` |  | `expectVersion` overrides the version of `original`. |
-| Expecting a version of a record without a version field is invalid | Implemented and verified | `TypedTxSteps.fs` |  | New check in `Writes.check`. |
+| A record read as the caller saw it is changed | Implemented and verified | `TypedTxSteps.fs` |  | `Tx.oneAsSeen (query, seen)` replaces `Tx.update`'s `expectVersion`. |
+| A copy the caller saw before another change is stale, before anything is decided | Implemented and verified | `TypedTxSteps.fs` |  | The read is the Conflict, so a decision is never made on a record the caller has not seen. |
+| A change landing between the read and the write is stale | Implemented and verified | `TypedTxSteps.fs` |  | The update checks the version it was read at again. |
+| A record that is not there is missing, not stale | Implemented and verified | `TypedTxSteps.fs` |  |  |
+| A record without a version field cannot be read as seen | Implemented and verified | `TypedTxSteps.fs` |  | `TxFailure.Misused`, naming `Tx.one`. |
 | Deleting the record read deletes it | Implemented and verified | `TypedTxSteps.fs` |  |  |
 
 ### query-check.feature: The check translates every query without running it

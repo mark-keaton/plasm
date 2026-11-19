@@ -156,8 +156,8 @@ pipeline `Query.where` / `select` / ... functions were removed (step c).
 `Query.from` and `Query.prepare` remain.
 
 **One write path.** Every write is a transaction step run by `repo.Transact`:
-`Tx.insert record`, `Tx.update (original, changed, ?expectVersion)`,
-`Tx.delete record`, `Tx.execute (Bulk...)`, `Tx.executeSql` and `Tx.sql`.
+`Tx.insert record`, `Tx.update (original, changed)` (a caller's copy read
+with `Tx.oneAsSeen (query, seen)`), `Tx.delete record`, `Tx.execute (Bulk...)`, `Tx.executeSql` and `Tx.sql`.
 `repo.Insert`, `Update`, `Delete`, `Execute` and `ExecuteSql`, `WriteError`
 and `Tx.write` were removed (step d). `Changeset`, `ChangeAction` and
 `FieldChange` are internal: the diff a changeset recorded is still how an
