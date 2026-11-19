@@ -106,6 +106,9 @@ module UnionCards =
           Title = "a card"
           Stage = s }
 
+    /// A card's title and its stage, selected into a record.
+    type Titled = { Title: string; Of: Stage }
+
     let everyStage = [ "in the backlog"; "that Ada is doing"; "done and shipped"; "done and dropped as \"dup\"" ]
 
 open UnionCards
@@ -343,6 +346,34 @@ type UnionFieldSteps(w: World) =
     member _.CaseThenColumn() =
         let sql = w.CommandsSinceMark.Head.Sql
         check (Regex.IsMatch(sql, "\"stage\" = 'doing'\)? (AND|OR) \"[a-z]+\"\.\"stage_since\" <") && not (sql.Contains "CASE")) sql
+
+    [<StepDefinition("I select the title and the Stage of every Card")>]
+    member _.SelectStage() =
+        task {
+            w.MarkCommands()
+            let! r = repo().All(plasm { for c in tableOf<Card> do select (c.Title, c.Stage) })
+            w.Set("selectedStages", ok r)
+        }
+        |> unit
+
+    [<StepDefinition("I select the title and the Stage of every Card into a record")>]
+    member _.SelectStageRecord() =
+        task {
+            let! r = repo().All(plasm { for c in tableOf<Card> do select { Title = c.Title; Of = c.Stage } })
+            w.Set("selectedStages", ok r |> List.map (fun t -> t.Title, t.Of))
+        }
+        |> unit
+
+    [<StepDefinition("each row holds the title and the Card's own stage")>]
+    member _.SelectedStages() =
+        let byText = List.map (sprintf "%A") >> List.sort
+        equal (byText [ for s in everyStage -> "a card", stage s ]) (byText (w.Get<(string * Stage) list> "selectedStages")) "rows"
+
+    [<StepDefinition("the SQL reads every Stage column, and no other column but the title")>]
+    member _.EveryStageColumn() =
+        let sql = w.CommandsSinceMark.Head.Sql
+        let read = Regex.Matches(sql, "\"c\"\.\"([a-z_]+)\"") |> Seq.map (fun m -> m.Groups.[1].Value) |> Seq.distinct |> Seq.sort |> List.ofSeq
+        equal (List.sort ("title" :: "stage" :: stageColumns)) read ("columns read: " + sql)
 
     [<StepDefinition("the Cards not in progress are returned")>]
     member _.NotInProgress() =

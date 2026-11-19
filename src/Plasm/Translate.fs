@@ -2018,6 +2018,10 @@ type Shape =
     /// A whole record from consecutive columns starting at `start`; `optional`
     /// for a left-joined source (None when its key is NULL).
     | EntityLeaf of start: int * schema: SchemaInfo * optional: bool
+    /// A field stored in several columns (a union with fields): the result
+    /// columns of its parts, made one value by `fromColumns`, as a whole
+    /// record's field is.
+    | Parts of columns: (int * Type) list * fromColumns: (obj list -> Result<obj, string>) * model: string * field: string
     | Const of obj
     | Build of construct: (obj[] -> obj) * parts: Shape list
 
@@ -2170,6 +2174,11 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
 
         let addLeaf (ctx: Ctx) (e: Expr) =
             match e with
+            // A union with fields: every column of its cases, so that whichever
+            // case a row holds is read whole (union-fields.feature).
+            | RowField ctx (b, f) when f.Composite && f.Union.IsSome ->
+                let columns = f.Parts |> List.map (fun p -> add (Sql.readPart p (Sql.Column(b.Alias, p.Name))) $"{b.Schema.Name}.{f.Name}", p.ProviderType)
+                Parts(columns, f.FromColumns, b.Schema.Name, f.Name)
             | RowField ctx (b, f) when f.Value.IsSome ->
                 fail e $"{b.Schema.Name}.{f.Name} is a {f.ScalarType.Name} stored in several columns; select its fields, or the whole {b.Schema.Name}"
             | RowField ctx (b, f) ->

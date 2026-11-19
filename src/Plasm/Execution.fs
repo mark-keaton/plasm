@@ -800,6 +800,19 @@ let rec private build (shape: Translate.Shape) (row: obj[]) (entity: unit -> obj
     match shape with
     | Translate.Const v -> v
     | Translate.Leaf(i, _, _, _) -> row.[i]
+    | Translate.Parts(columns, fromColumns, model, field) ->
+        let raws = columns |> List.map (fun (i, _) -> row.[i])
+
+        match fromColumns raws with
+        | Ok v -> v
+        | Error msg ->
+            raise (
+                MaterializationFailure
+                    { Model = model
+                      Property = field
+                      Value = String.Join(", ", raws |> List.map describe)
+                      Message = msg }
+            )
     | Translate.Build(ctor, parts) -> ctor (parts |> List.map (fun p -> build p row entity) |> Array.ofList)
     | Translate.EntityLeaf(_, schema, optional) ->
         match entity () with
@@ -820,6 +833,10 @@ let private projection (s: Session) (model: Model) (select: Sql.Select) (shape: 
     let rec collect sh =
         match sh with
         | Translate.Leaf(i, t, c, l) -> leaves.Add(i, t, c, l)
+        // Raw provider values; the field is made of them (build, above).
+        | Translate.Parts(columns, _, model, field) ->
+            for i, t in columns do
+                leaves.Add(i, t, (fun (v: obj) -> Ok v), $"{model}.{field}")
         | Translate.EntityLeaf(start, schema, optional) ->
             entities.Add(start, schema, optional)
             // Raw provider values; the entity is built from them (build, below).

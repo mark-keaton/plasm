@@ -95,6 +95,17 @@ Feature: A union with fields is stored across columns
       Then the Cards not in progress are returned
       And the SQL tests the case, then compares the column stage_since
 
+    Scenario: Selecting the whole union beside another field reads every case
+      Given a Card in each stage
+      When I select the title and the Stage of every Card
+      Then each row holds the title and the Card's own stage
+      And the SQL reads every Stage column, and no other column but the title
+
+    Scenario: Selecting the whole union within a record reads its case too
+      Given a Card in each stage
+      When I select the title and the Stage of every Card into a record
+      Then each row holds the title and the Card's own stage
+
     Scenario: Selecting case fields through the domain's members reads their types
       Given a Card in each stage
       When I select the title, Card.Assignee and Card.Since of the Cards that Ada is doing
