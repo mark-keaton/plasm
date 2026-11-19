@@ -6,6 +6,7 @@ open HotChocolate
 open HotChocolate.Data.Filters
 open HotChocolate.Data.Sorting
 open HotChocolate.Resolvers
+open HotChocolate.Types
 open HotChocolate.Types.Pagination
 open System.Threading.Tasks
 open Plasm
@@ -126,6 +127,37 @@ type PlasmRequest =
             if context.Selection.Field.Arguments.ContainsField name then string (context.ArgumentLiteral<HotChocolate.Language.IValueNode> name) else ""
 
         context.Selection.Field.Coordinate.ToString() + "|" + literal "where" + "|" + literal "order"
+
+    /// The declared fields a request's selection of this field reads, on the
+    /// object type of 'T's read fields (IPlasmReadType), through any types
+    /// between (a page's items); __typename and the like are not fields.
+    static member Chosen(context: IResolverContext, fields: ReadField<'T> seq) : ReadField<'T> list =
+        let byName = Dictionary<string, ReadField<'T>>()
+
+        for f in fields do
+            byName.[f.Name] <- f
+
+        let chosen = ResizeArray<ReadField<'T>>()
+
+        let rec visit (selection: HotChocolate.Execution.Processing.Selection) =
+            match selection.Type.NamedType() with
+            | :? HotChocolate.Types.ObjectType as t when selection.HasSelections ->
+                for child in context.Operation.GetSelectionSet(selection, t).Selections.ToArray() do
+                    match box t with
+                    | :? IPlasmReadType<'T> ->
+                        match byName.TryGetValue child.Field.Name with
+                        | true, f when not (chosen.Contains f) -> chosen.Add f
+                        | _ -> ()
+                    | _ -> visit child
+            | _ -> ()
+
+        visit context.Selection
+        List.ofSeq chosen
+
+    /// As BatchKey, with the fields chosen: requests share a batch only when
+    /// they read the same fields too.
+    static member BatchKey(context: IResolverContext, chosen: ReadField<'T> seq) : string =
+        PlasmRequest.BatchKey context + "|" + String.Join(",", chosen |> Seq.map (fun f -> f.Name) |> Seq.sort)
 
     static member private Count(context: IResolverContext, name: string) : int option =
         if context.Selection.Field.Arguments.ContainsField name then
