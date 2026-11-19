@@ -328,11 +328,6 @@ scenarios.
   case the facade adds, or not compile; a GraphQL client that asks for no
   fragment on it still gets its `__typename` and nothing else, and learns
   of it only from the schema.
-- **Not every condition over a domain member translates.** Plasm reads
-  `c.Since` (a member matching on the stage) as its column in an order, but
-  refuses `c.Since |> Option.exists (fun since -> since < t)` in a where, at
-  start, naming the query; `sendStaleBack`'s query is written as a match on
-  `c.Stage` instead.
 - **`[Authorize]` is a second package.** Hot Chocolate's authorization is
   `HotChocolate.AspNetCore.Authorization`, pinned in this example at the
   version Plasm.HotChocolate is built against; Plasm.HotChocolate does not

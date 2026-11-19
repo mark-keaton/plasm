@@ -83,6 +83,18 @@ Feature: A union with fields is stored across columns
       Then only the Card that Ada is doing is returned
       And the SQL compares the column stage_assignee, without a CASE
 
+    Scenario: Testing the option a domain's member gives, with Option.exists
+      Given a Card in each stage
+      When I keep the Cards whose Card.Since exists and is before a minute after Ada started
+      Then only the Card that Ada is doing is returned
+      And the SQL tests the case, then compares the column stage_since
+
+    Scenario: Testing the option a domain's member gives, with Option.forall
+      Given a Card in each stage
+      When I keep the Cards whose Card.Since, if any, is before Ada started
+      Then the Cards not in progress are returned
+      And the SQL tests the case, then compares the column stage_since
+
     Scenario: Selecting case fields through the domain's members reads their types
       Given a Card in each stage
       When I select the title, Card.Assignee and Card.Since of the Cards that Ada is doing

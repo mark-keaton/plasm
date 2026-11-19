@@ -1,6 +1,7 @@
 namespace Plasm.Specs
 
 open System
+open System.Text.RegularExpressions
 open Reqnroll
 open Plasm
 
@@ -324,10 +325,30 @@ type UnionFieldSteps(w: World) =
     [<StepDefinition("I keep the Cards whose Assignee is Some Ada, through the member Card.Assignee")>]
     member _.ThroughMember() = keep (plasm { for c in tableOf<Card> do where (c.Assignee = Some ada) }) |> unit
 
+    [<StepDefinition("I keep the Cards whose Card.Since exists and is before a minute after Ada started")>]
+    member _.SinceExists() =
+        let later = since.AddMinutes 1.0
+        keep (plasm { for c in tableOf<Card> do where (c.Since |> Option.exists (fun s -> s < later)) }) |> unit
+
+    [<StepDefinition("I keep the Cards whose Card.Since, if any, is before Ada started")>]
+    member _.SinceForall() =
+        keep (plasm { for c in tableOf<Card> do where (c.Since |> Option.forall (fun s -> s < since)) }) |> unit
+
     [<StepDefinition("I keep the Cards whose Stage equals the value Doing \\(Ada, since\\)")>]
     member _.WholeValue() =
         let value = Doing(ada, since)
         keep (plasm { for c in tableOf<Card> do where (c.Stage = value) }) |> unit
+
+    [<StepDefinition("the SQL tests the case, then compares the column stage_since")>]
+    member _.CaseThenColumn() =
+        let sql = w.CommandsSinceMark.Head.Sql
+        check (Regex.IsMatch(sql, "\"stage\" = 'doing'\)? (AND|OR) \"[a-z]+\"\.\"stage_since\" <") && not (sql.Contains "CASE")) sql
+
+    [<StepDefinition("the Cards not in progress are returned")>]
+    member _.NotInProgress() =
+        let byText = List.map (sprintf "%A") >> List.sort
+        let expected = everyStage |> List.filter ((<>) "that Ada is doing") |> List.map stage
+        equal (byText expected) (byText (w.Get<Stage list> "kept")) "stages"
 
     [<StepDefinition("^only the Card (.+) is returned$")>]
     member _.Only(text: string) = equal [ stage text ] (w.Get<Stage list> "kept") "stages"

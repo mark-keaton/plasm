@@ -701,6 +701,16 @@ let (|UnionOptionalLeaf|_|) (ctx: Ctx) (e: Expr) : (string * FieldMap) option =
         Some(alias, f)
     | _ -> None
 
+/// As UnionOptionalLeaf, with the union, the case's tag and the case field
+/// itself: what Option.exists and Option.forall test.
+let (|UnionOptionalCase|_|) (ctx: Ctx) (e: Expr) : (string * UnionLayout * int * Expr) option =
+    match e with
+    | UnionOptionalLeaf ctx _ ->
+        match e with
+        | IfThenElse(UnionCaseTest(UnionPath ctx (alias, u), case), NewUnionCase(_, [ leaf ]), _) -> Some(alias, u, case.Tag, leaf)
+        | _ -> None
+    | _ -> None
+
 /// A case's stored name, written into the SQL: it is an identifier made from an
 /// F# case name, and a literal keeps the expression the same wherever it
 /// appears (GROUP BY and SELECT must match).
@@ -991,6 +1001,19 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
                 Sql.Binary("AND", fieldIsNotNull b.Alias f, inner)
             else
                 Sql.Binary("OR", fieldIsNull b.Alias f, inner)
+        // Option.exists / Option.forall over a case field as an option (what a
+        // domain's member `match c.Stage with Doing(_, since) -> Some since |
+        // _ -> None` reads): the case test, and the predicate over the field's
+        // column, which in that case holds a value.
+        | Call(None, mi, [ Lambda(x, body); UnionOptionalCase ctx (alias, u, tag, leaf) ]) when
+            isOptionModule mi "Exists" || isOptionModule mi "ForAll"
+            ->
+            let inner = predicate ctx (body.Substitute(fun v -> if v = x then Some leaf else None))
+
+            if mi.Name = "Exists" then
+                Sql.Binary("AND", caseIs alias u tag, inner)
+            else
+                Sql.Binary("OR", Sql.Not(caseIs alias u tag), inner)
         | UnionCaseTest(UnionPath ctx (alias, u), case) -> caseIs alias u case.Tag
         | PropertyGet(Some(UnionPath ctx (alias, u)), p, []) when
             p.Name.StartsWith "Is" && u.Cases |> Array.exists (fun c -> "Is" + c.Case.Name = p.Name)

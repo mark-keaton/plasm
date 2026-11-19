@@ -701,6 +701,8 @@ describe the one style; "Reworded" means only words changed.
 | Matching on a case's field | Implemented and verified | `UnionFieldSteps.fs` |  | A `match` normalises to `if case then field = x else false`, translated as AND. |
 | Matching on a nested case's field | Implemented and verified | `UnionFieldSteps.fs` |  |  |
 | The domain's own member reads as its column | Implemented and verified | `UnionFieldSteps.fs` |  | `[<ReflectedDefinition>]` members and functions are inlined; `if case then Some field else None` is the field's column itself. |
+| Testing the option a domain's member gives, with Option.exists | Implemented and verified | `UnionFieldSteps.fs` |  | Found by Kanban's stale-card job: `Option.exists` over `if case then Some field else None` is the case test AND the predicate over the field's column, which in that case holds a value. |
+| Testing the option a domain's member gives, with Option.forall | Implemented and verified | `UnionFieldSteps.fs` |  | As with `Option.exists`: NOT the case test, OR the predicate. |
 | Selecting case fields through the domain's members reads their types | Implemented and verified | `UnionFieldSteps.fs` |  | A `[<ReflectedDefinition>]` member that gives a case field as an option is selected as its column, read back as the field's type. |
 | Comparing with a whole value | Implemented and verified | `UnionFieldSteps.fs` |  | The case and each of its fields. |
 | Counting by case, through the domain's own member | Implemented and verified | `UnionFieldSteps.fs` |  | A `match` that produces values is a SQL CASE; stored case names are written as literals so GROUP BY and SELECT match. F# hides the compiled `Tag` property, so a member naming each case is the way to group by case. |

@@ -126,11 +126,7 @@ module Queries =
         Query.prepare (fun (started: Arg<DateTimeOffset>) ->
             plasm {
                 for c in tableOf<Card> do
-                    where (
-                        match c.Stage with
-                        | Doing(_, since) -> since < started.Value
-                        | _ -> false
-                    )
+                    where (c.Since |> Option.exists (fun since -> since < started.Value))
             })
 
     let doneOn =
