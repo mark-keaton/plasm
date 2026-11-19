@@ -36,6 +36,31 @@ And gone afterwards:
                       let! after = customers repo
 ```
 
+## A C# test of an F# facade
+
+A C# test of an F# facade runs in the same sandbox through the facade, never
+the repository: the facade offers `SandboxAsync(body, ct)`, which gives `body`
+a facade over `repo.Sandbox`'s repository and returns what `body` returns.
+Kanban's is `KanbanData.SandboxAsync`
+([`facade-sandbox.feature`](../../examples/Kanban/features/csharp/facade-sandbox.feature)):
+a board created inside is read there and gone afterwards.
+
+<!-- from: examples/Kanban/tests/Kanban.CSharpHost.Specs/SandboxSteps.cs -->
+```csharp
+inside.Add(await kanban.SandboxAsync(async k =>
+{
+    Equal(true, await k.CreateBoardAsync(slug, slug, 3, CancellationToken.None) is { Value: BoardSummary }, "created");
+    Equal(true, await k.AddCardAsync(slug, title, CancellationToken.None) is { Value: CardView }, "added");
+    return Cards(await k.BoardAsync(slug, CancellationToken.None));
+}, CancellationToken.None));
+```
+
+Set `PublishAot` in the test project, so that `dotnet test` runs with the
+native binary's feature switches and Plasm takes its no-code-generation paths.
+On a referenced library it changes nothing. The tests still run on the JIT,
+untrimmed, so what trimming removes shows only in a native run of the binary
+([Native AOT and Lambda](../aot.md), "Where code cannot be made at run time").
+
 ## What a sandbox cannot test
 
 Inside a sandbox, isolation levels and snapshot reads see the sandbox's

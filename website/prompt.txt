@@ -2,7 +2,7 @@ Use Plasm (https://mark-keaton.github.io/plasm) to build a library lending desk 
 
 Read these before you start, in this order:
 - https://mark-keaton.github.io/plasm/llms.txt (every docs page, as Markdown)
-- docs/start/one-way.md, docs/csharp.md and docs/aot.md from that list
+- docs/start/one-way.md, docs/csharp.md, docs/aot.md and docs/guide/testing.md from that list
 - examples/Kanban in https://github.com/mark-keaton/plasm: src/Data is the F# side, src/Host the C# side. This application has the same shape.
 
 Plasm is not on NuGet yet, so make the packages yourself from a clone of the repository:
@@ -26,6 +26,7 @@ How to build it:
 - Create the database first. Start once with RepoOptions.Unchecked to print repo.Ddl(), run that yourself only when the tables are missing (it is not idempotent; Plasm never runs it), then start with the default options.
 - C# sees one F# facade: plain arguments in, a Task of a union out. Shape the outcome types as docs/csharp.md shows, so C# reads them as unions. C# writes no query, and switches over each outcome with no default arm. Nothing null crosses, either way.
 - The F# project sets <Nullable>enable</Nullable>, since the facade is where null is kept out; box then returns objnull and a string is never null: write an outcome's case as { value = card :> obj }, give a generic one 'T: not null, and take raw input that may be null as string | null, read with match text with null -> "" | t -> t (an if isNull does not narrow it).
+- The facade offers SandboxAsync(body, ct), as KanbanData does: it gives body a facade over repo.Sandbox's repository, so a test's changes are rolled back. docs/guide/testing.md shows a test that uses it.
 - JSON goes through a source-generated context. Set RespectNullableAnnotations and RespectRequiredConstructorParameters on ConfigureHttpJsonOptions's SerializerOptions as well as on the context's attribute: in a minimal API the attribute alone is not enough. A null or missing property must answer 400.
 
-You are done when dotnet test is green against a real PostgreSQL (repo.Sandbox per test, nothing mocked), the host starts with Plasm's start-up check on, which is the default, a request with a null or missing property answers 400, dotnet publish with PublishAot reports no trim warning naming Plasm, and you have borrowed and returned a book over HTTP against the native binary. Then leave it running and show me the requests as curl commands I can run, with the SQL Plasm sent for each.
+You are done when dotnet test is green against a real PostgreSQL (each test inside the facade's SandboxAsync, written as KanbanData.SandboxAsync is, nothing mocked; PublishAot set in the test project too, so the tests take Plasm's native paths), the host starts with Plasm's start-up check on, which is the default, a request with a null or missing property answers 400, dotnet publish with PublishAot reports no trim warning naming Plasm, and you have borrowed and returned a book over HTTP against the native binary. Then leave it running and show me the requests as curl commands I can run, with the SQL Plasm sent for each.
