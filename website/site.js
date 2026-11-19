@@ -24,7 +24,7 @@
   if (promptButton) {
     promptButton.addEventListener("click", async () => {
       try {
-        await navigator.clipboard.writeText(document.getElementById("prompt").textContent);
+        await navigator.clipboard.writeText(document.getElementById("prompt-text").value);
         promptButton.textContent = "Copied";
       } catch {
         promptButton.textContent = "Select and copy";

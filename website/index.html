@@ -26,10 +26,23 @@
       <a class="btn" href="koans/">Learn with the koans</a>
       <a class="btn quiet" href="{{repo}}">GitHub</a>
     </div>
-    <p class="small">Not on NuGet yet. Clone it and run the tour; it needs the .NET 11 SDK and Docker.</p>
-<pre class="code shell">git clone {{repo}}
-cd plasm
-dotnet run --project examples/Plasm.Examples</pre>
+<pre class="install">$ git clone {{repo}}   <span>not on NuGet yet</span></pre>
+    <div class="code-card">
+      <div class="code-title">Queries.fs</div>
+<pre class="code fsharp" data-from="examples/Plasm.Examples/Queries.fs">/// A page of orders, each with its lines: two commands however long the page.
+let orderPage page size (q: Query&lt;Order&gt;) =
+    plasm {
+        for o in q do
+            orderByDescending o.PlacedAt // the key is appended as a tiebreaker
+            skip (page * size)
+            take size
+    }</pre>
+    </div>
+    <div class="tags">
+      <span class="tag violet">2 commands at 20, 100 or 1,000 orders</span>
+      <span class="tag teal">lines read for the selected page only</span>
+      <span class="tag amber">no cartesian product</span>
+    </div>
   </div>
   <div class="prompt-box">
     <div class="prompt-head">
@@ -37,7 +50,9 @@ dotnet run --project examples/Plasm.Examples</pre>
       <span>Paste into your coding assistant</span>
       <button type="button" id="copy-prompt">Copy</button>
     </div>
-<pre id="prompt"><!--prompt--></pre>
+<div id="prompt">
+<!--prompt-->
+</div>
   </div>
 </section>
 

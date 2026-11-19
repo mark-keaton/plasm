@@ -506,6 +506,20 @@ dotnet run --project koans/Plasm.Koans</pre>
 """
     + footer "../"
 
+/// The prompt as the page shows it: a line per paragraph or bullet, bullets
+/// hanging. What Copy copies is the file's own text, kept beside it.
+let promptHtml () =
+    let text = (read "website/prompt.txt").Trim()
+
+    let lines =
+        [ for line in text.Replace("\r", "").Split('\n') do
+              if line = "" then "<div class=\"gap\"></div>"
+              elif line.StartsWith "- " then $"<div class=\"bullet\">{enc line}</div>"
+              elif line.EndsWith ":" then $"<div class=\"head\">{enc line}</div>"
+              else $"<div>{enc line}</div>" ]
+
+    String.concat "\n" lines + $"\n<textarea id=\"prompt-text\" hidden>{enc text}</textarea>"
+
 let build () =
     if Directory.Exists site then
         Directory.Delete(site, true)
@@ -535,7 +549,7 @@ let build () =
                     .Replace("<!--nav-->", nav "" current)
                     .Replace("<!--footer-->", footer "")
                     .Replace("<!--roadmap-teaser-->", roadmapTeaser ())
-                    .Replace("<!--prompt-->", enc ((read "website/prompt.txt").Trim()))
+                    .Replace("<!--prompt-->", promptHtml ())
                     .Replace("{{docs}}", firstDoc)
                     .Replace("{{repo}}", repoUrl)
 
