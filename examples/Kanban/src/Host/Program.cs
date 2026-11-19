@@ -24,15 +24,17 @@ var connectionString = builder.Configuration.GetConnectionString("Kanban")
     ?? throw new InvalidOperationException("Set the connection string 'Kanban' (ConnectionStrings:Kanban).");
 
 var dataSource = NpgsqlDataSource.Create(connectionString);
+// The application's one clock: every change's time, the background job's
+// "now" and the wait between its runs (Clock.cs).
+var time = Clock.FromEnvironment();
 // Opening checks every query, the tables, and every declared card field.
 // KANBAN_SQL=1 writes each command's SQL to standard output, one line each.
 var kanban = Environment.GetEnvironmentVariable("KANBAN_SQL") == "1"
-    ? await KanbanData.OpenAsync(dataSource, sql => Console.WriteLine("SQL: " + sql.Replace('\n', ' ')), CancellationToken.None)
-    : await KanbanData.OpenAsync(dataSource, CancellationToken.None);
+    ? await KanbanData.OpenAsync(dataSource, sql => Console.WriteLine("SQL: " + sql.Replace('\n', ' ')), time, CancellationToken.None)
+    : await KanbanData.OpenAsync(dataSource, time, CancellationToken.None);
 builder.Services.AddSingleton(dataSource);
 builder.Services.AddSingleton(kanban);
-// "Now", for the background job, and the time between its runs.
-builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton(time);
 builder.Services.AddHostedService<StaleCards>();
 
 // Nothing null crosses into the facade either: a request whose body leaves

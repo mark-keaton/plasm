@@ -2,8 +2,8 @@
 // `Kanban:StaleCardsEvery` (an hour unless configured). Which cards are stale,
 // and what sending one back does, are the F# core's
 // (KanbanData.SendStaleBackAsync, Workflows.sendStaleBack), on the facade's
-// clock; this job says when. The wait between runs is the TimeProvider's in
-// the host's services.
+// clock; this job says when. The wait between runs is the host's one clock,
+// the TimeProvider in its services, which the facade was opened with.
 using Kanban.Data;
 
 namespace Kanban.Host;

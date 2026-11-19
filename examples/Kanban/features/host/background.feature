@@ -1,14 +1,15 @@
 Feature: A background job sends stale cards back to the backlog
   A card in progress for longer than the domain allows (Card.staleAfter, 14
   days) is sent back to the backlog by a job the host runs when it starts and
-  then at an interval. The job is a C# BackgroundService; when "now" is, it
-  reads from the TimeProvider in the host's services, and which cards are
-  stale and what sending one back does are the F# core's (Workflows.fs,
+  then at an interval. The job is a C# BackgroundService, which says when;
+  "now" is the host's one clock (clock.feature), and which cards are stale
+  and what sending one back does are the F# core's (Workflows.fs,
   sendStaleBack): one UPDATE over every stale card, each card's version
   incremented as by any change (docs/kanban-host.md).
 
   Background:
     Given the host serves a migrated database
+    And the host sends stale cards back every second
     And board "apollo" has cards in progress:
       | title    | assignee | started     |
       | Guidance | Ada      | 15 days ago |

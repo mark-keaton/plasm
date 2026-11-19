@@ -19,7 +19,7 @@ so far, and says what is not.
 |---|---|---|
 | `examples/Kanban/src/Shared` | F# | The domain: `Card`, `Board`, `Person`, `Password`, and every rule (`Card.start`, `Card.finish`, ...) as a function returning `Result<_, DomainError>`. No I/O. |
 | `examples/Kanban/src/Data` | F# | `Db.fs`: the model Plasm stores. `Workflows.fs`: the queries and transactions, one per change (`changeCard`, `addCard`, ...). `Facade.fs`: `KanbanData`, the one type C# calls. |
-| `examples/Kanban/src/Host` | C# | This host: ASP.NET Core, cookie authentication, REST (`Rest.cs`), GraphQL (`GraphQL.cs`), accounts (`Accounts.cs`), the background job (`StaleCards.cs`), and the one mapping from outcome to HTTP answer (`Outcomes.cs`). |
+| `examples/Kanban/src/Host` | C# | This host: ASP.NET Core, cookie authentication, REST (`Rest.cs`), GraphQL (`GraphQL.cs`), accounts (`Accounts.cs`), the background job (`StaleCards.cs`), its one clock (`Clock.cs`), and the one mapping from outcome to HTTP answer (`Outcomes.cs`). |
 | `src/Plasm.HotChocolate` | F# | Turns Hot Chocolate's where, order and paging into Plasm query refinements, and shows a C# union as a GraphQL union (docs/hotchocolate.md). |
 | `examples/Kanban/src/Host.CSharp` | C# | A second, minimal host that compiles natively; it is the proof that the F# core runs without code generation. Not the subject of this guide. |
 | `examples/Kanban/src/Server`, `Client` | F# | Kanban's own F# server and Fable client, which share the domain and data projects. |
@@ -255,10 +255,9 @@ backlog when the host starts, and then every `Kanban:StaleCardsEvery` (an
 hour unless configured).
 
 - **What is stale is the domain's.** `Card.staleAfter` (14 days) is how long
-  a card may be in progress. The job passes the time and nothing else to
-  `KanbanData.SendStaleBackAsync(now)`, which runs
-  `Workflows.sendStaleBack now`: one UPDATE over every stale card, on every
-  board:
+  a card may be in progress. The job calls
+  `KanbanData.SendStaleBackAsync()`, which runs `Workflows.sendStaleBack`
+  at the facade's "now": one UPDATE over every stale card, on every board:
 
   ```sql
   UPDATE "cards" SET "stage" = @p0, "stage_assignee" = NULL, "stage_since" = NULL, "stage_resolution" = NULL,
@@ -266,11 +265,16 @@ hour unless configured).
     WHERE "cards"."stage" = 'doing' AND "cards"."stage_since" < @p1
   ```
 
-- **Time is the `TimeProvider` in the host's services.** The job reads
-  "now" from it and waits on it between runs (`PeriodicTimer`), so a test
-  host could register a `FakeTimeProvider` instead. The scenarios need no
-  fake: their cards are written as started days ago, and the job runs every
-  second.
+- **The host has one clock.** `Program.cs` makes one `TimeProvider`,
+  registers it in the host's services and opens `KanbanData` with the same
+  one (`OpenAsync(dataSource, time, ct)`), so every change is stamped with
+  its time and the job's "now" is its "now" as well; the job waits on it
+  between runs (`PeriodicTimer`). It is the system's clock, or, when
+  `KANBAN_CLOCK_START` is set, one that starts at that instant and runs on
+  from there (`Clock.cs`). The facade's overloads without a `TimeProvider`
+  use the system's, which is what `Host.CSharp` does. The scenarios for the
+  job need no clock of their own: their cards are written as started days
+  ago, and the job runs every second.
 - **No per-card decision runs, and nothing is skipped.** A bulk write does
   not call `Card.sendBack` for each card; that is sound because
   `Card.sendBack` refuses no card in progress. Each card's version is
@@ -288,11 +292,13 @@ cd examples/Kanban
 ConnectionStrings__Kanban="Host=...;Database=..." dotnet run --project src/Host
 # Each command's SQL on standard output:
 KANBAN_SQL=1 ConnectionStrings__Kanban="..." dotnet run --project src/Host
+# The host's clock starting at a given instant:
+KANBAN_CLOCK_START=2030-01-01T09:00:00Z ConnectionStrings__Kanban="..." dotnet run --project src/Host
 ```
 
 The scenarios are in `features/host/` (`authentication.feature`,
 `rest.feature`, `graphql.feature`, `mutations.feature`,
-`background.feature`). Each starts the host as its own process, on a database of
+`background.feature`, `clock.feature`). Each starts the host as its own process, on a database of
 its own, and talks to it over HTTP:
 
 ```bash
@@ -322,10 +328,6 @@ scenarios.
   case the facade adds, or not compile; a GraphQL client that asks for no
   fragment on it still gets its `__typename` and nothing else, and learns
   of it only from the schema.
-- **Two clocks.** The job's "now" is the host's `TimeProvider`; a change's
-  own time (when a card was started, finished, commented on) is still the
-  facade's, `DateTimeOffset.UtcNow`, since `KanbanData` is opened before the
-  host's services are built and takes no clock.
 - **Not every condition over a domain member translates.** Plasm reads
   `c.Since` (a member matching on the stage) as its column in an order, but
   refuses `c.Since |> Option.exists (fun since -> since < t)` in a where, at

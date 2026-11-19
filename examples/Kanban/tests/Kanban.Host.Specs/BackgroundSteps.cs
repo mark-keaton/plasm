@@ -4,7 +4,7 @@ using Reqnroll;
 
 namespace Kanban.Host.Specs;
 
-/// features/host/background.feature
+/// features/host/background.feature and clock.feature
 public sealed partial class Steps
 {
     /// The first line of the host's output the job has not yet been seen to
@@ -32,8 +32,29 @@ public sealed partial class Steps
             await Sql("insert into cards (id, board, title, stage, stage_assignee, stage_since, checklist, created, version) values ($1, $2, $3, 'doing', $4, $5, '[]', $5, 1)",
                 Guid.NewGuid(), board, row["title"], row["assignee"], started);
         }
-        // The job runs every second here, against the hour the host runs it at by default.
-        environment["Kanban__StaleCardsEvery"] = "00:00:01";
+    }
+
+    /// Against the hour the host runs the job at by default.
+    [Given("the host sends stale cards back every second")]
+    public void EverySecond() => environment["Kanban__StaleCardsEvery"] = "00:00:01";
+
+    [Given("the host's clock starts at {string}")]
+    public void ClockAt(string instant) => environment["KANBAN_CLOCK_START"] = instant;
+
+    [Given("the host's clock starts {int} days from now")]
+    public void ClockAhead(int days) => environment["KANBAN_CLOCK_START"] = DateTimeOffset.UtcNow.AddDays(days).ToString("O");
+
+    /// The host's clock runs on from where it started, so a change a moment
+    /// after is stamped a moment after.
+    [Then("{string} was started at {string}")]
+    public async Task StartedAt(string title, string instant)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var read = new NpgsqlCommand("select stage_since from cards where title = $1", connection) { Parameters = { new() { Value = title } } };
+        var since = (DateTime)(await read.ExecuteScalarAsync())!;
+        var after = since - DateTimeOffset.Parse(instant).UtcDateTime;
+        if (after < TimeSpan.Zero || after > TimeSpan.FromMinutes(1)) throw new Exception($"\"{title}\" was started at {since:O}, not just after {instant}");
     }
 
     /// Waits for `runs` more runs of the job to be written, and adds up the
@@ -62,9 +83,13 @@ public sealed partial class Steps
     [When("the host has sent stale cards back")]
     public Task JobRan() => JobRuns(1);
 
-    /// Two runs, so that one began after the step before.
+    /// Two runs after the step before, so that one began after it.
     [When("the host has sent stale cards back again")]
-    public Task JobRanAgain() => JobRuns(2);
+    public Task JobRanAgain()
+    {
+        jobSeen = host!.Lines.Length;
+        return JobRuns(2);
+    }
 
     [Then(@"^the host sent (\d+) cards? back$")]
     public void SentBack(int cards) => Equal(cards, sentBack, "the cards the job sent back");
@@ -80,9 +105,6 @@ public sealed partial class Steps
     }
 
     [When("{string} has been in progress for {int} days")]
-    public async Task InProgressDays(string title, int days)
-    {
+    public async Task InProgressDays(string title, int days) =>
         await Sql("update cards set stage_since = $1 where title = $2", DateTimeOffset.UtcNow.AddDays(-days), title);
-        jobSeen = host!.Lines.Length;
-    }
 }
