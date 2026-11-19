@@ -135,10 +135,13 @@ type internal QueryDef =
       Return: ReturnDef option
       /// `repo.One`'s own limit (readable-sql.feature): any two rows tell a
       /// second match, so they need no order, and the 2 is Plasm's, not a value.
-      ReadsTwo: bool }
+      ReadsTwo: bool
+      /// BuildQuery.pageEach (build-query.feature): the rows paged per value
+      /// of the key, from skip, take of them.
+      PageEach: (Expr * int * int) option }
 
     member d.Paged =
-        d.Limit.IsSome || d.Offset.IsSome || d.LimitArg.IsSome || d.OffsetArg.IsSome
+        d.Limit.IsSome || d.Offset.IsSome || d.LimitArg.IsSome || d.OffsetArg.IsSome || d.PageEach.IsSome
 
     static member Empty(t: Type) =
         { Root = t
@@ -157,7 +160,8 @@ type internal QueryDef =
           Includings = []
           Distinct = false
           Return = None
-          ReadsTwo = false }
+          ReadsTwo = false
+          PageEach = None }
 
 /// Something that can describe a query for display: a `Repo`.
 type internal IQueryDescriber =
@@ -296,6 +300,7 @@ module internal QueryOps =
     let private paged (d: QueryDef) =
         if d.Limit.IsSome || d.LimitArg.IsSome then Some "take"
         elif d.Offset.IsSome || d.OffsetArg.IsSome then Some "skip"
+        elif d.PageEach.IsSome then Some "pageEach"
         else None
 
     let private problem (d: QueryDef) (p: string option) =
@@ -369,7 +374,9 @@ module internal QueryOps =
         let took = d.Limit.IsSome || d.LimitArg.IsSome
         let skipped = d.Offset.IsSome || d.OffsetArg.IsSome
 
-        if what = "take" && took then
+        if d.PageEach.IsSome then
+            problem d (Some $"{what} is written after pageEach: a query pages once, so write pageEach alone")
+        elif what = "take" && took then
             problem d (Some "take is written twice: SQL pages once, so write one take")
         elif what = "skip" && skipped then
             problem d (Some "skip is written twice: SQL pages once, so write one skip")
@@ -387,6 +394,19 @@ module internal QueryOps =
             map q (fun d -> if what = "take" then { d with Limit = Some n; LimitArg = None } else { d with Offset = Some n; OffsetArg = None })
         | Choice2Of2 i ->
             map q (fun d -> if what = "take" then { d with LimitArg = Some i; Limit = None } else { d with OffsetArg = Some i; Offset = None })
+
+    /// Pages per value of `key` (BuildQuery.pageEach): alone, as a query pages once.
+    let pageEach (q: Query<'T>) (key: Expr) (skip: int) (take: int) =
+        checkCount "skip" skip
+        checkCount "take" take
+
+        map q (fun d ->
+            let d =
+                match paged d with
+                | Some p -> problem d (Some $"pageEach is written after {p}: a query pages once, so write pageEach alone")
+                | None -> d
+
+            { d with PageEach = Some(key, skip, take) })
 
     let join (outer: QueryDef) kind (target: Type) (outerKey: Expr) (innerKey: Expr) : QueryDef =
         { outer with

@@ -1819,6 +1819,42 @@ let private joinSpace (ctx: Ctx) (def: QueryDef) (select: Expr option) (root: Sc
                   On = on } ])
         ([ rootBinding ], [])
 
+/// Keeps the rows whose number among their value's rows (`__rn`, numbered in
+/// a derived table named ranked, never the name of a table inside it) is
+/// within the offset and limit: a load's take per outer record, and
+/// pageEach's page per value.
+let private pageRanked (numbered: Sql.Select) (columns: (Sql.Expr * string) list) (limit: Sql.Expr option) (offset: Sql.Expr option) =
+    let rn = Sql.Column("ranked", "__rn")
+
+    let first =
+        match offset with
+        | Some off -> [ Sql.Binary(">", rn, off) ]
+        | None -> []
+
+    let last =
+        match limit, offset with
+        | Some l, Some off -> [ Sql.Binary("<=", rn, Sql.Binary("+", off, l)) ]
+        | Some l, None -> [ Sql.Binary("<=", rn, l) ]
+        | None, _ -> []
+
+    { Sql.select (Sql.Subquery(numbered, "ranked")) with
+        Columns = columns
+        Where = first @ last
+        OrderBy = [ { Expr = rn; Desc = false; NullsFirst = None } ] }
+
+/// pageEach: `sel`'s rows numbered per `key` in its own order, each value
+/// keeping its rows from `skip`, `take` of them; `columns` read them from
+/// the numbered rows.
+let private pagedEach (sel: Sql.Select) (columns: (Sql.Expr * string) list) (key: Sql.Expr) (skip: int) (take: int) =
+    let numbered =
+        { sel with
+            Columns = sel.Columns @ [ Sql.RowNumber(key, sel.OrderBy), "__rn" ]
+            OrderBy = []
+            Limit = None
+            Offset = None }
+
+    pageRanked numbered columns (Some(Sql.count take)) (if skip > 0 then Some(Sql.count skip) else None)
+
 let private limitExprs (def: QueryDef) =
     let fromArg (i: int) =
         Sql.Param(box (Sql.Bound((fun args -> box (int64 (unbox<int> args.[i]))), $"arg{i + 1}")))
@@ -1864,13 +1900,27 @@ let rootSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Selec
 
         let limit, offset = limitExprs def
 
-        { Sql.select (Sql.Table(schema.Table, alias)) with
-            Columns = entityColumns alias schema
-            Where = wheres
-            OrderBy = orders
-            Limit = limit
-            Offset = offset },
-        schema)
+        match def.PageEach with
+        | None ->
+            { Sql.select (Sql.Table(schema.Table, alias)) with
+                Columns = entityColumns alias schema
+                Where = wheres
+                OrderBy = orders
+                Limit = limit
+                Offset = offset },
+            schema
+        | Some(key, skip, take) ->
+            // Numbered with the stored columns, read as the record's outside.
+            let binding = { Alias = alias; Schema = schema; Optional = false }
+            let plain = [ for f in schema.Fields do for part in f.Parts -> Sql.Column(alias, part.Name), part.Name ]
+
+            let inner =
+                { Sql.select (Sql.Table(schema.Table, alias)) with
+                    Columns = plain
+                    Where = wheres
+                    OrderBy = orders }
+
+            pagedEach inner (entityColumns "ranked" schema) (translateOrder ctx binding (key, SortDirection.Ascending)).Expr skip take, schema)
 
 /// True when a SQL expression reads a column outside the grouping keys and
 /// outside any aggregate.
@@ -1912,18 +1962,25 @@ type private Core =
       Havings: Sql.Expr list
       Orders: Sql.OrderItem list
       Limit: Sql.Expr option
-      Offset: Sql.Expr option }
+      Offset: Sql.Expr option
+      /// pageEach's key, skip and take.
+      Each: (Sql.Expr * int * int) option }
 
     member c.Select(columns) =
-        { Sql.select (Sql.Table(c.Schema.Table, c.Space.Head.Alias)) with
-            Columns = columns
-            Joins = c.Joins
-            Where = c.Wheres
-            GroupBy = c.Groups
-            Having = c.Havings
-            OrderBy = c.Orders
-            Limit = c.Limit
-            Offset = c.Offset }
+        let select =
+            { Sql.select (Sql.Table(c.Schema.Table, c.Space.Head.Alias)) with
+                Columns = columns
+                Joins = c.Joins
+                Where = c.Wheres
+                GroupBy = c.Groups
+                Having = c.Havings
+                OrderBy = c.Orders
+                Limit = c.Limit
+                Offset = c.Offset }
+
+        match c.Each with
+        | None -> select
+        | Some(key, skip, take) -> pagedEach select [ for _, alias in columns -> Sql.Column("ranked", alias), alias ] key skip take
 
 let private core (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr option) : Core =
     checkProblems def
@@ -1967,6 +2024,14 @@ let private core (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr op
 
     let limit, offset = limitExprs def
 
+    let each =
+        def.PageEach
+        |> Option.map (fun (key, skip, take) ->
+            if grouped then
+                invalid "pageEach cannot page a grouped query: it pages rows per value, and a grouped query's rows are its groups"
+
+            (translateOrderOver ctx space (key, SortDirection.Ascending)).Expr, skip, take)
+
     { Ctx = ctx
       Schema = schema
       Space = space
@@ -1977,7 +2042,8 @@ let private core (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr op
       Havings = havings
       Orders = withoutNeedlessNulls space wheres orders
       Limit = limit
-      Offset = offset }
+      Offset = offset
+      Each = each }
 
 /// `SELECT COUNT(*)` for a query; a page or a grouping is counted as a whole
 /// (rows of the page, or groups).
@@ -2583,28 +2649,6 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
         let limit, offset = limitExprs innerDef
         let matchColumn = Sql.Column(alias, matchField.Column)
 
-        // Keeps the rows whose number among their outer value's rows is within
-        // the inner query's skip and take. The numbered rows are a derived
-        // table of their own name, never the name of the table inside it.
-        let page (numbered: Sql.Select) (columns: (Sql.Expr * string) list) (orderBy: Sql.OrderItem list) =
-            let rn = Sql.Column("ranked", "__rn")
-
-            let first =
-                match offset with
-                | Some off -> [ Sql.Binary(">", rn, off) ]
-                | None -> []
-
-            let last =
-                match limit, offset with
-                | Some l, Some off -> [ Sql.Binary("<=", rn, Sql.Binary("+", off, l)) ]
-                | Some l, None -> [ Sql.Binary("<=", rn, l) ]
-                | None, _ -> []
-
-            { Sql.select (Sql.Subquery(numbered, "ranked")) with
-                Columns = columns
-                Where = first @ last
-                OrderBy = orderBy }
-
         let nested =
             inner.Includings
             |> List.map (fun l ->
@@ -2650,7 +2694,7 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
                 filtered
             else
                 let numbered = { filtered with Columns = filtered.Columns @ [ Sql.RowNumber(matchColumn, ranked), "__rn" ]; OrderBy = [] }
-                page numbered [ for _, alias in filtered.Columns -> Sql.Column("ranked", alias), alias ] [ { Expr = Sql.Column("ranked", "__rn"); Desc = false; NullsFirst = None } ]
+                pageRanked numbered [ for _, alias in filtered.Columns -> Sql.Column("ranked", alias), alias ] limit offset
 
         let buildRecords (keys: Array) : Sql.Select =
             let filtered =
@@ -2672,7 +2716,7 @@ let rec includingParts (model: Model) (vol: bool ref) (def: QueryDef) (including
 
                 // Each record's rows keep their order by number; the records'
                 // rows need no order among each other.
-                page numbered (entityColumns "ranked" target) [ { Expr = Sql.Column("ranked", "__rn"); Desc = false; NullsFirst = None } ]
+                pageRanked numbered (entityColumns "ranked" target) limit offset
 
         { Outer = { def with Includings = [] }
           OuterField = outerField

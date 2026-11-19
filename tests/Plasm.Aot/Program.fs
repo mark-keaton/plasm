@@ -355,6 +355,16 @@ let main argv =
 
             selected (query |> BuildQuery.select [ title; stage; notes ]) (fun r ->
                 r.Get<string> title + " " + r.Get<string> stage + " [" + String.Join("/", r.Get<string list> notes) + "]"))
+        step "each owner's first ticket, chosen fields paged per value" (fun () ->
+            let title = ReadField.value "title" <@ fun (t: Ticket) -> t.Title @>
+            let owner = ReadField.via "owner" <@ fun (t: Ticket) -> t.Owner @> (fun o -> match o with Some(CustomerId n) -> string n | None -> "-")
+
+            let query =
+                Query.from tableOf<Ticket>
+                |> BuildQuery.orderBy <@ fun t -> t.Title @>
+                |> BuildQuery.pageEach <@ fun t -> t.Owner @> 0 1
+
+            selected (query |> BuildQuery.select [ owner; title ]) (fun r -> r.Get<string> owner + " " + r.Get<string> title))
         step "a count" (fun () ->
             match repo.Count(Queries.ticketsOf ada.Id).Result with
             | Ok n -> string n

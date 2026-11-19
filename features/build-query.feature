@@ -113,6 +113,42 @@ Feature: A program builds a query at run time from declared fields
       Then the read sends 2 commands: the Orders' totals, and every Order's lines
       And each written row holds its Order's total and its 2 lines
 
+  Rule: A program pages each value of a field in one command
+    # BuildQuery.pageEach key skip take: the query's rows are numbered per
+    # value of key, in the query's order, and each value keeps the rows from
+    # skip to skip + take; one command for every value, as a let!'s take is
+    # (a GraphQL layer's nested page: a board's cards).
+
+    Scenario: Each Order's two newest Payments, in one command
+      Given an Order with Payments of 10, 20 and 30, made in that order, and another with one Payment of 5
+      When I read the Payments of both Orders, newest first, two of each Order
+      Then the Payments are "first: 30, 20; second: 5"
+      And the read sends one command, numbering the rows per Order
+
+    Scenario: Skipping within each value
+      Given an Order with Payments of 10, 20 and 30, made in that order, and another with one Payment of 5
+      When I read the Payments of both Orders, newest first, skipping one and taking two of each Order
+      Then the Payments are "first: 20, 10; second: "
+
+    Scenario: The where is done before each value is paged
+      Given an Order with Payments of 10, 20 and 30, made in that order, and another with one Payment of 5
+      When I read the Payments over 15 of both Orders, newest first, one of each Order
+      Then the Payments are "first: 30; second: "
+
+    Scenario: A page of each value needs an order
+      When I build the Payments two of each Order, without an order
+      Then the built Payments query is refused with "take/skip on Payment requires an explicit ordering"
+
+    Scenario: A query pages once
+      When I build the Payments newest first, taking 10, and then two of each Order
+      Then the built Payments query is refused with "pageEach is written after take: a query pages once"
+
+    Scenario: A list chosen of each page is read for the paged rows alone
+      Given Customers "Ada" and "Grace", Ada with Orders of 10, 20 and 30, and Grace with one of 40, each Order with one line
+      When I read the totals and lines of each Customer's newest Order, chosen
+      Then the totals are "30, 40", each with its line
+      And the read sends 2 commands: the Orders, numbered per Customer, and the lines of the two Orders kept
+
   Rule: Declared fields are checked once, when the program starts
 
     Scenario: Fields Plasm can translate pass the check

@@ -238,6 +238,11 @@ module BuildQuery =
     let take (count: int) (query: Query<'T>) : Query<'T> = QueryOps.take "take" query (Expr.Value count |> Expr.Cast)
     let skip (count: int) (query: Query<'T>) : Query<'T> = QueryOps.take "skip" query (Expr.Value count |> Expr.Cast)
 
+    /// Pages the query per value of `key`: its rows numbered per value in the
+    /// query's order, each value keeping the rows from `skip` to `skip` +
+    /// `take`, in one command for every value.
+    let pageEach (key: Expr<'T -> 'K>) (skip: int) (take: int) (query: Query<'T>) : Query<'T> = QueryOps.pageEach query key.Raw skip take
+
     /// Reads `fields`, and only those, of each record the query finds: one
     /// command for the fields stored in its row, and one more for each list
     /// it owns or links that is chosen, for every row at once.

@@ -32,6 +32,14 @@ builder); an application writes its queries with `plasm { }`, not with these:
   `orderByDescending`, `take` and `skip` add them to a query: each what the
   query builder adds for the same clause written, so the SQL, the rows and
   the refusals are the written query's.
+- `BuildQuery.pageEach key skip take` pages a query per value of `key` (a
+  board's cards per board): its rows numbered per value in the query's own
+  order, `ROW_NUMBER() OVER (PARTITION BY` the key in a derived table named
+  `ranked`, as a load's take per outer record is, each value keeping the
+  rows from `skip`, `take` of them, in one command for every value. The
+  where is done before the numbering, so a page holds only rows that match.
+  A query pages once: a pageEach with a take, a skip or another pageEach is
+  refused, as an unordered one is, in the top level's words.
 - `ReadField.value` and `ReadField.via` declare a field a caller may read: a
   name, a quotation reading it from the record and, for `via`, an F# function
   making what the caller is given of what was read, run after the read, never
@@ -187,11 +195,8 @@ Not done by the database, yet:
 
 - **A nested collection's page.** A board's cards field takes a where and
   an order, done by the database for every board in one command, but no
-  `take` per board. SQL can do it in the same command (Plasm's own loads do:
-  `ROW_NUMBER() OVER (PARTITION BY` the parent key in a derived table named
-  `ranked`), but Plasm plans that only for a load read from a `let!`
-  quotation, and a query built at run time cannot be put inside one: the
-  entry for adding a load from a built query is not public yet.
+  `take` per board yet. Plasm can do it in the same command
+  (`BuildQuery.pageEach`, above); the host does not use it yet.
 
 ## Refused before any SQL
 
