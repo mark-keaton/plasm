@@ -174,3 +174,5 @@ program (`WarningsNotAsErrors` IL2104 and IL3053, see aot.md) and no other
 IL warning. The 10 scenarios pass against the native binary as against the
 built host (`KANBAN_CSHARP_HOST`). The C# union switch, the source-generated
 JSON of the facade's records and Plasm's start-up check all run natively.
+The same facade serves a Lambda function in C# (aot.md, "Kanban's C#
+function").

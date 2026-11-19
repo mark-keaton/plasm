@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Kanban as an AWS Lambda function in C# (docs/aot.md, "Kanban's C#
+       function"): a custom runtime on Amazon.Lambda.RuntimeSupport whose
+       executable is `bootstrap`, published natively for linux-arm64, calling
+       one F# type (Kanban.Data.KanbanData). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>bootstrap</AssemblyName>
+    <RootNamespace>Kanban.Lambda</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- FSharp.Core's two summary warnings, which no F# library can quiet for
+         its users (docs/aot.md). -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104;IL3053</WarningsNotAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Data/Kanban.Data.fsproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Amazon.Lambda.RuntimeSupport" />
+  </ItemGroup>
+  <!-- Plasm's targets, from this repository rather than the package. -->
+  <Import Project="../../../../src/Plasm/build/Plasm.Repository.targets" />
+</Project>

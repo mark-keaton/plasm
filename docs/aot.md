@@ -330,6 +330,73 @@ binary from a cold disk cache, and pays for it):
 | First invocation: handler / emulator | 0.8 ms / 27.3 ms | 17.5 ms / 30.9 ms |
 | Later invocations, emulator | 1.2 to 4.4 ms | 1.0 to 4.7 ms |
 
+### Kanban's C# function
+
+The C# outer, F# inner shape on Lambda: `examples/Kanban/src/Lambda` is a
+custom-runtime function in C# (Amazon.Lambda.RuntimeSupport, executable
+`bootstrap`, `PublishAot`) that references `Kanban.Data` alone, as the C#
+host does (csharp.md). It writes no query and composes no transaction: each
+call is a `KanbanData` method, and what the method returns is switched over
+with no default arm. `KanbanData.OpenAsync` runs once, in init, over Npgsql's
+slim builder with arrays and transport security; nothing else is needed.
+
+An event is a plain typed request, not an API Gateway event:
+`{"call":"start","card":"…","version":1,"assignee":"Ada"}`. The calls are
+records under one abstract `Call`, told apart by `call`
+(`[JsonPolymorphic]`), and each record answers itself, so the handler has no
+routing and no switch over requests. The answer is the outcome's case by
+name, with its value: `{"stale":{"card":"…"}}`. Every type goes through one
+source-generated `JsonSerializerContext`, so nothing is read by reflection.
+The context respects required constructor parameters and nullable
+annotations, so an event that leaves out an argument, or sends it as null,
+fails while it is read (the invocation's error is a `JsonException` naming
+the argument), and no null reaches F#. An HTTP API in front would need its
+own routes and status codes, which the C# host already shows.
+
+`features/lambda/lambda.feature` checks it in `tests/Kanban.Lambda.Specs`,
+as `tests/Plasm.Lambda/run.sh` checks the ticket function.
+`publish.sh` publishes `bootstrap` for linux-arm64 inside `amazonlinux:2023`
+once per run, copying only the sources the build reads. Each scenario then
+runs the function in the Lambda runtime interface emulator, in a container
+of its own, against a migrated database of its own, which the function
+reaches through the host's gateway. The checks are a board read and a board
+missing; a start the domain refuses and a start of a missing card; a stale
+rename; a card and a board refused as invalid field by field; an event
+without an argument refused before F# is called; `KanbanData` opened once,
+before the first event's handler ends; no IL warning naming Plasm; and no
+glibc symbol newer than Amazon Linux 2023's 2.34. The publish takes about
+85 s; each scenario takes about 1.4 s. The publish directory also holds
+`bootstrap.dbg` (78 MB of stripped symbols) and the libraries' `.pdb` and
+`.xml` files, which a deployment leaves out: `bootstrap` alone is the
+package.
+
+Measured on an Apple M4 Max, the database in a container on the function's
+Docker network (as `run.sh` has it), median of five fresh containers each
+after the first, whose cold disk cache costs it about 2.5 times as much:
+
+| | Kanban, C# over `KanbanData` | Tickets, F# (`run.sh`) |
+|---|---:|---:|
+| `bootstrap` | 29.6 MB (12.0 MB zipped) | 27.8 MB |
+| Process start to `main` | 12 ms | 15.4 ms |
+| Open, in init: first connection, model, `Repo.Start`, checks | 37 ms | 16.4 ms, with a first read |
+| ... of which the first connection | 9 ms | |
+| First read after opening | 0.4 ms | |
+| Emulator's init | 46 ms | 25.9 ms |
+| First invocation's round trip, init included | 48 ms | |
+| Later invocations' round trips | 1.5 to 2.4 ms | |
+
+The emulator starts the function when the first event arrives, so its first
+round trip includes init; on Lambda, init comes before the first event.
+Through the host's gateway, which is the scenarios' route, the first
+connection takes 13 to 18 ms and the whole opening takes 42 to 49 ms.
+
+What it costs to open is mostly checking, not connecting. Opening checks
+Kanban's 17 query values and its four tables against the database, plus the
+facade's `CheckFields`, and that takes about 28 ms once the connection is
+made. The function cannot skip this, because `OpenAsync` takes no
+`RepoOptions`. So the advice above, to check the queries in a test and start
+with `StartupCheck.Ignore`, is not available through the facade.
+
 ### Behind a connection pooler
 
 A function usually reaches PostgreSQL through a pooler in transaction mode

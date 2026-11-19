@@ -13,5 +13,7 @@
     <PackageVersion Include="Fable.Elmish.React" Version="5.6.0" />
     <PackageVersion Include="Feliz" Version="3.3.3" />
     <PackageVersion Include="Fable.Remoting.Client" Version="8.0.0" />
+    <!-- The C# Lambda function's custom runtime (src/Lambda), at the version tests/Plasm.Lambda uses. -->
+    <PackageVersion Include="Amazon.Lambda.RuntimeSupport" Version="2.3.1" />
   </ItemGroup>
 </Project>

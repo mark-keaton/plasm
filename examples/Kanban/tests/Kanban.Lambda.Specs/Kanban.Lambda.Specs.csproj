@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The C# Lambda function's scenarios (features/lambda/*.feature), with C#
+       steps. The function is published natively inside Amazon Linux 2023 once
+       a run (publish.sh), and each scenario runs it in the Lambda runtime
+       interface emulator, in a container of its own, over a database of its
+       own. Needs Docker. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ReqnrollFeatureFiles Include="../../features/lambda/*.feature" />
+    <None Include="../../features/lambda/*.feature" Link="Features/%(Filename)%(Extension)" />
+    <Compile Include="../Hosting/Hosting.cs" Link="Hosting.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Reqnroll.xunit.v3" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Only for the F# server's migrations (Kanban.Server.Database.migrate); its
+         ASP.NET Core packages come from the shared framework, as for Kanban.Specs. -->
+    <ProjectReference Include="../../src/Server/Server.fsproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>

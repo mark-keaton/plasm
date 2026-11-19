@@ -2,6 +2,7 @@
 features/*.feature.cs
 features/csharp/*.feature.cs
 features/host/*.feature.cs
+features/lambda/*.feature.cs
 # The client: npm packages, Fable's JavaScript, and the built site
 node_modules/
 src/Client/output/
