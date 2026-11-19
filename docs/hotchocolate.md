@@ -58,7 +58,8 @@ declarations and nothing of Hot Chocolate).
   every field the generated inputs declare and translate nothing, since
   Plasm does.
 - `AddPlasmUnion<'U>()` shows a type of C#'s union shape as a GraphQL union
-  (below).
+  named as the type is, and `AddPlasmUnion<'U>(name)` names it, for a
+  generic type such as `Found<CardView>` (below).
 - `PlasmRequest.Refinement(context, fields, orderWhenNone)` is the request's
   where and order as a function of a query, read from the context at once,
   for a DataLoader's batch, which runs after the resolver and must not keep
@@ -187,6 +188,14 @@ Chocolate the case (`IUnion.Value`), so the case's fields resolve against it:
 ```graphql
 { cards { title stage { __typename ... on InProgress { kind assignee since } } } }
 ```
+
+A case's object type is referred to by its record's type, so a record that
+is a case of several unions, or the type of a field elsewhere, is one object
+type: Kanban's host registers `ChangeOutcome`, `AddCardOutcome` and
+`Found<CardView>`, and `CardView` is one type in all three and in `cards`.
+A generic type's own name (``Found`1``) is not one GraphQL allows, so
+`AddPlasmUnion<'U>()` refuses it, saying to name it:
+`AddPlasmUnion<Found<CardView>>("CardResult")`.
 
 ## Translation
 

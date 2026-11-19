@@ -10,7 +10,7 @@ so far, and says what is not.
 |---|---|---|
 | 1 | The host, cookie sign-in, GraphQL reads (Hot Chocolate) | built |
 | 2 | REST: boards, cards, every change, my work, done paging | built |
-| 3 | GraphQL mutations and `card(id)`, each outcome a typed union member | to come |
+| 3 | GraphQL mutations and `card(id)`, each outcome a typed union member | built |
 | 4 | A background job sending stale cards back, time from a `TimeProvider` | to come |
 
 ## What is F# and what is C#
@@ -20,7 +20,7 @@ so far, and says what is not.
 | `examples/Kanban/src/Shared` | F# | The domain: `Card`, `Board`, `Person`, `Password`, and every rule (`Card.start`, `Card.finish`, ...) as a function returning `Result<_, DomainError>`. No I/O. |
 | `examples/Kanban/src/Data` | F# | `Db.fs`: the model Plasm stores. `Workflows.fs`: the queries and transactions, one per change (`changeCard`, `addCard`, ...). `Facade.fs`: `KanbanData`, the one type C# calls. |
 | `examples/Kanban/src/Host` | C# | This host: ASP.NET Core, cookie authentication, REST (`Rest.cs`), GraphQL (`GraphQL.cs`), accounts (`Accounts.cs`), and the one mapping from outcome to HTTP answer (`Outcomes.cs`). |
-| `src/Plasm.HotChocolate` | F# | Turns Hot Chocolate's where, order and paging into Plasm query refinements (docs/hotchocolate.md). |
+| `src/Plasm.HotChocolate` | F# | Turns Hot Chocolate's where, order and paging into Plasm query refinements, and shows a C# union as a GraphQL union (docs/hotchocolate.md). |
 | `examples/Kanban/src/Host.CSharp` | C# | A second, minimal host that compiles natively; it is the proof that the F# core runs without code generation. Not the subject of this guide. |
 | `examples/Kanban/src/Server`, `Client` | F# | Kanban's own F# server and Fable client, which share the domain and data projects. |
 
@@ -111,6 +111,55 @@ take and return. The rules for that surface:
 Sent again with the same version, the same request is answered
 `409 {"card": "..."}`.
 
+## The same change over GraphQL
+
+```graphql
+mutation {
+  startCard(card: "22222222-...", version: 1) {
+    __typename
+    ... on CardView { title version stage { __typename ... on InProgress { assignee } } }
+    ... on Refused { code message }
+    ... on Stale { card }
+  }
+}
+```
+
+1. **C# resolver** (`GraphQL.cs`, `Mutation.StartCard`). The `Mutation` type
+   is marked `[Authorize]`, so a request without the cookie is answered with
+   the error `AUTH_NOT_AUTHENTICATED` before any resolver runs, and no SQL is
+   sent. The resolver is one line, the same call the REST endpoint makes:
+
+   ```csharp
+   public Task<ChangeOutcome> StartCard(Guid card, int version, ClaimsPrincipal user, [Service] KanbanData kanban, CancellationToken ct) =>
+       kanban.StartAsync(card, version, user.Actor(), ct);
+   ```
+
+   Hot Chocolate refuses a request that leaves out `card` or `version`, or
+   gives null for either, since both are non-null in the schema; nothing null
+   reaches the facade this way either.
+2. **Facade, workflow and SQL**: as over REST, above, statement for
+   statement.
+3. **Outcome.** The resolver returns the `ChangeOutcome` struct. Hot
+   Chocolate is told once, in `Program.cs`, that `ChangeOutcome` is the
+   GraphQL `union ChangeOutcome = CardView | Missing | Refused | Stale |
+   Invalid` (`AddPlasmUnion<ChangeOutcome>()`); a field middleware hands it
+   the case, and the case's own fields answer:
+
+   ```json
+   {"data":{"startCard":{"__typename":"CardView","title":"Build it","version":2,"stage":{"__typename":"InProgress","assignee":"Margaret"}}}}
+   ```
+
+   Sent again with version 1, it reads the card (three statements), finds
+   the version moved on, and updates nothing:
+
+   ```json
+   {"data":{"startCard":{"__typename":"Stale","card":"22222222-..."}}}
+   ```
+
+A GraphQL answer has no status of its own: every case is a 200 with data,
+and the client tells them apart by `__typename`. Only a request the schema
+or the authorization refuses is an error.
+
 ## REST
 
 Reads are open to anyone; every other endpoint needs someone signed in.
@@ -166,13 +215,38 @@ the REST scenarios follow it.
 - Who is signed in is kept in an HTTP-only, SameSite=Strict cookie. An API
   answers 401 where a site would redirect to a sign-in page.
 
-## GraphQL reads
+## GraphQL
 
-`cards(where, order, skip, take)` and `boards { cards(where, order) }`. The
-where and order a client may give are generated from the card fields that
-`Kanban.Data` declares once (`CardFields`), and the database does both. A
-board's cards, for every board a request asks for, are one query. See
-docs/hotchocolate.md.
+Reads are open to anyone; every mutation needs someone signed in.
+
+- `cards(where, order, skip, take)` and `boards { cards(where, order) }`. The
+  where and order a client may give are generated from the card fields that
+  `Kanban.Data` declares once (`CardFields`), and the database does both. A
+  board's cards, for every board a request asks for, are one query. See
+  docs/hotchocolate.md.
+- `card(id)` answers `union CardResult = CardView | Missing`, from
+  `CardAsync`'s `Found<CardView>`. A generic type's own name is not one
+  GraphQL allows, so this union alone is named where it is registered
+  (`AddPlasmUnion<Found<CardView>>("CardResult")`).
+- Each mutation calls the facade method its REST endpoint calls, and answers
+  the facade's outcome as a union of its cases:
+
+| Mutation | Facade method | Answers |
+|---|---|---|
+| `createBoard(slug, name, wipLimit)` | `CreateBoardAsync` | `CreateBoardOutcome = BoardSummary \| Invalid` |
+| `addCard(board, title)` | `AddCardAsync` | `AddCardOutcome = CardView \| Missing \| Invalid` |
+| `sendAllBack(board)` | `SendAllBackAsync` | `SendAllBackOutcome = SentBack \| Missing` |
+| `startCard(card, version)` | `StartAsync`, as the person signed in | `ChangeOutcome` |
+| `shipCard`, `sendCardBack`, `reopenCard`, `unblockCard` `(card, version)` | `ShipAsync`, `SendBackAsync`, `ReopenAsync`, `UnblockAsync` | `ChangeOutcome` |
+| `dropCard`, `blockCard` `(card, version, reason)` | `DropAsync`, `BlockAsync` | `ChangeOutcome` |
+| `renameCard(card, version, title)` | `RenameAsync` | `ChangeOutcome` |
+| `relabelCard(card, version, labels)` | `RelabelAsync` | `ChangeOutcome` |
+| `addItem`, `tickItem` `(card, version, text)` | `AddItemAsync`, `TickAsync` | `ChangeOutcome` |
+| `comment(card, body)` | `CommentAsync`, the person signed in the author | `ChangeOutcome` |
+
+`ChangeOutcome = CardView | Missing | Refused | Stale | Invalid`. Each
+outcome type is registered once, in `Program.cs`; a record that is a case of
+several unions (`CardView`, `Missing`, `Invalid`) is one object type.
 
 ## Running it
 
@@ -185,7 +259,7 @@ KANBAN_SQL=1 ConnectionStrings__Kanban="..." dotnet run --project src/Host
 ```
 
 The scenarios are in `features/host/` (`authentication.feature`,
-`rest.feature`, `graphql.feature`). Each starts the host as its own process, on a database of
+`rest.feature`, `graphql.feature`, `mutations.feature`). Each starts the host as its own process, on a database of
 its own, and talks to it over HTTP:
 
 ```bash
@@ -211,3 +285,11 @@ scenarios.
 - **Each switch handles every case.** A union with five cases needs five
   arms everywhere it is answered. `Outcomes.cs` keeps that to one place per
   outcome type.
+- **A GraphQL client is not held to every case.** The C# host must handle a
+  case the facade adds, or not compile; a GraphQL client that asks for no
+  fragment on it still gets its `__typename` and nothing else, and learns
+  of it only from the schema.
+- **`[Authorize]` is a second package.** Hot Chocolate's authorization is
+  `HotChocolate.AspNetCore.Authorization`, pinned in this example at the
+  version Plasm.HotChocolate is built against; Plasm.HotChocolate does not
+  depend on it.

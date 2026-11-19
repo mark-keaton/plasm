@@ -15,5 +15,6 @@
     <ProjectReference Include="../Data/Kanban.Data.fsproj" />
     <ProjectReference Include="../../../../src/Plasm.HotChocolate/Plasm.HotChocolate.fsproj" />
     <PackageReference Include="HotChocolate.AspNetCore" />
+    <PackageReference Include="HotChocolate.AspNetCore.Authorization" />
   </ItemGroup>
 </Project>

@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Reqnroll;
 
 namespace Kanban.Host.Specs;
@@ -8,10 +9,17 @@ namespace Kanban.Host.Specs;
 /// features/host/graphql.feature
 public sealed partial class Steps
 {
+    /// In a request, `<Title>` is the card's id and `<Title:version>` its
+    /// version as stored.
     [When("I ask for {string}")]
     public async Task Ask(string query)
     {
         await Started();
+        foreach (var m in Regex.Matches(query, "<([^<>:]+)(:version)?>").Reverse())
+        {
+            var (id, version) = await Card(m.Groups[1].Value);
+            query = query[..m.Index] + (m.Groups[2].Success ? version.ToString() : id.ToString()) + query[(m.Index + m.Length)..];
+        }
         mark = host!.Lines.Length - 1;
         using var content = new StringContent(JsonSerializer.Serialize(new { query }), Encoding.UTF8, "application/json");
         using var answer = await http.PostAsync("/graphql", content);

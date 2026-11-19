@@ -73,10 +73,12 @@ type PlasmSortProvider() =
 
     override _.CreateBuilder<'E>(_: string) = Nothing() :> IQueryBuilder
 
-/// A GraphQL union over the cases of a type of C#'s union shape (a struct with
-/// [<Union>], one constructor per case, IUnion.Value the case): one object type
-/// per case record, the case picked by the value's own type.
-type PlasmUnionType<'U when 'U :> IUnion>() =
+/// A GraphQL union named `name` over the cases of a type of C#'s union shape
+/// (a struct with [<Union>], one constructor per case, IUnion.Value the case):
+/// one object type per case record, the case picked by the value's own type.
+/// A case's object type is referred to by its type, so a record that is a
+/// case of several unions, or a field elsewhere, is one object type.
+type PlasmUnionType<'U when 'U :> IUnion>(name: string) =
     inherit UnionType()
 
     static member Cases =
@@ -86,11 +88,10 @@ type PlasmUnionType<'U when 'U :> IUnion>() =
               | _ -> () ]
 
     override _.Configure(d: IUnionTypeDescriptor) =
-        d.Name(typeof<'U>.Name) |> ignore
+        d.Name(name) |> ignore
 
         for case in PlasmUnionType<'U>.Cases do
-            let objectType = System.Activator.CreateInstance(typedefof<ObjectType<_>>.MakeGenericType case) :?> ObjectType
-            d.Type(objectType) |> ignore
+            d.Type(Language.NamedTypeNode(case.Name)) |> ignore
 
 /// Registers filtering and sorting for inputs generated from declared fields
 /// (PlasmFilterInputType, PlasmSortInputType), with Plasm doing both.
@@ -102,13 +103,26 @@ type PlasmRequestExecutorBuilderExtensions =
         builder.AddFiltering(fun (d: IFilterConventionDescriptor) ->
             d.AddDefaultOperations().BindDefaultTypes().Provider(PlasmFilterProvider()) |> ignore)
 
-    /// Shows a field of 'U, a type of C#'s union shape, as a GraphQL union over
-    /// its cases: Hot Chocolate makes such a struct an object type with no
-    /// fields, which it then refuses.
+    /// Shows a field of 'U, a type of C#'s union shape, as a GraphQL union
+    /// over its cases, named as 'U is: Hot Chocolate makes such a struct an
+    /// object type with no fields, which it then refuses.
     [<Extension>]
     static member AddPlasmUnion<'U when 'U :> IUnion>(builder: IRequestExecutorBuilder) : IRequestExecutorBuilder =
+        if typeof<'U>.IsGenericType then
+            invalidArg "U" $"{typeof<'U>} is generic, so it has no name GraphQL allows: give it one with AddPlasmUnion<'U>(name)."
+
+        builder.AddPlasmUnion<'U>(typeof<'U>.Name)
+
+    /// As AddPlasmUnion<'U>(), the union named `name`: for a generic type
+    /// such as Found<CardView>, whose own name GraphQL does not allow.
+    [<Extension>]
+    static member AddPlasmUnion<'U when 'U :> IUnion>(builder: IRequestExecutorBuilder, name: string) : IRequestExecutorBuilder =
+        let builder =
+            PlasmUnionType<'U>.Cases
+            |> List.fold (fun (b: IRequestExecutorBuilder) case -> b.AddType(typedefof<ObjectType<_>>.MakeGenericType case)) builder
+
         builder
-            .AddType<PlasmUnionType<'U>>()
+            .AddType(PlasmUnionType<'U>(name))
             .BindRuntimeType(typeof<'U>, typeof<PlasmUnionType<'U>>)
             .UseField(fun next ->
                 FieldDelegate(fun context ->

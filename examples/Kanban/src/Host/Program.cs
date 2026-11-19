@@ -65,12 +65,20 @@ builder.Services.AddAuthorization();
 builder.Services
     .AddGraphQLServer()
     .AddQueryType<Query>()
+    .AddMutationType<Mutation>()
+    .AddAuthorization()
     .AddTypeExtension<Boards>()
     .AddTypeExtension<BoardCards>()
     .AddDataLoader<BoardCardsLoader>()
     .AddPlasmFiltering()
     .AddPlasmSorting()
-    .AddPlasmUnion<StageView>();
+    // Each outcome a union of its cases, registered once.
+    .AddPlasmUnion<StageView>()
+    .AddPlasmUnion<Found<CardView>>("CardResult")
+    .AddPlasmUnion<ChangeOutcome>()
+    .AddPlasmUnion<AddCardOutcome>()
+    .AddPlasmUnion<CreateBoardOutcome>()
+    .AddPlasmUnion<SendAllBackOutcome>();
 
 var app = builder.Build();
 app.UseAuthentication();

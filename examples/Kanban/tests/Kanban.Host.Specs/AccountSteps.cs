@@ -49,7 +49,7 @@ public sealed partial class Steps
         Equal(200, status, "registering: " + body);
     }
 
-    [When("the person signs out")]
+    [StepDefinition("the person signs out")]
     public Task SignOut() => Send(HttpMethod.Post, "/account/signout", null);
 
     [Then("the answer is {int}")]
