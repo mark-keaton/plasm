@@ -2022,6 +2022,10 @@ type Shape =
     /// columns of its parts, made one value by `fromColumns`, as a whole
     /// record's field is.
     | Parts of columns: (int * Type) list * fromColumns: (obj list -> Result<obj, string>) * model: string * field: string
+    /// A list a record owns or links, selected on its own: read with one
+    /// more command for every row's key (result column `key`), as the whole
+    /// record's list is.
+    | Loaded of key: int * schema: SchemaInfo * assoc: string
     | Const of obj
     | Build of construct: (obj[] -> obj) * parts: Shape list
 
@@ -2033,6 +2037,7 @@ let private distinct (def: QueryDef) (sel: Sql.Select) (shape: Shape) : Sql.Sele
     let rec wholeRecord (s: Shape) =
         match s with
         | EntityLeaf(_, schema, _) -> Some schema.Name
+        | Loaded(_, schema, assoc) -> Some $"{schema.Name}'s {assoc}"
         | Build(_, parts) -> parts |> List.tryPick wholeRecord
         | _ -> None
 
@@ -2201,6 +2206,12 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
 
                 Leaf(i, f.ProviderType, convert, $"{b.Schema.Name}.{f.Name}")
             | RowBinding ctx b -> addEntity b
+            // A list the record owns or links: its key read beside the row, the
+            // list a round trip later (build-query.feature).
+            | RowAssoc ctx (b, a) when (a.Owned || a.Linked) && not c.Grouped ->
+                let key = b.Schema.Key
+                let i = add (Sql.readColumn key (Sql.Column(b.Alias, key.Column))) $"{b.Schema.Name}.{key.Name}"
+                Loaded(i, b.Schema, a.Name)
             | RowAssoc ctx (_, a) -> fail e $"'{a.Name}' cannot be projected on its own; select the whole record, which comes with it"
             // A union's case field (directly, or through a member such as
             // `match c.Stage with Doing(_, since) -> Some since | _ -> None`):
@@ -2270,6 +2281,10 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
                     let ctor = FSharpValue.PreComputeUnionConstructor(c, true)
                     Build(ctor, parts |> List.map (shape ctx))
                 | NewObject(ci, parts) -> Build((fun args -> ci.Invoke args), parts |> List.map (shape ctx))
+                // The cells of a row of chosen fields (BuildQuery.select), each boxed.
+                | NewArray(t, parts) when t = typeof<obj> ->
+                    Build(box, parts |> List.map (fun p -> fieldName <- None; shape ctx p))
+                | Coerce(inner, t) when t = typeof<obj> -> shape ctx inner
                 | _ -> addLeaf ctx e
 
         let s =

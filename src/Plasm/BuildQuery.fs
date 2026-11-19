@@ -185,6 +185,47 @@ module QueryField =
     let orderedVia (name: string) (read: Expr<'T -> 'V>) (convert: 'I -> Result<'V, string>) (sample: 'I) : QueryField<'T> when 'V: comparison =
         QueryField<'T>(name, all, typeof<'I>, box sample, comparison read (via<'T, 'I, 'V> name convert), ordering read)
 
+/// A field of 'T that a program lets its callers read (a GraphQL layer's
+/// selection): its name, a quotation reading it from the record, and the F#
+/// function making what the caller is given of what was read. Made by the
+/// functions of the ReadField module, once, when the program starts.
+[<Sealed>]
+type ReadField<'T> internal (name: string, read: Expr, valueType: Type, convert: obj -> obj) =
+    member _.Name = name
+    /// The type of what the caller is given.
+    member _.ValueType = valueType
+    member internal _.Read = read
+    member internal _.Convert = convert
+
+/// A row of the fields a caller chose (BuildQuery.select), each read through
+/// its declaration; a field not chosen is refused by name, never a default.
+[<Sealed>]
+type Selected<'T> internal (fields: ReadField<'T> list, read: obj[]) =
+    let fields = Array.ofList fields
+    let values = Array.init fields.Length (fun i -> fields.[i].Convert read.[i])
+
+    /// The fields chosen, in the order they were.
+    member _.Fields: ReadField<'T> list = List.ofArray fields
+
+    /// What `field` gave: refused, by name, if it was not chosen.
+    member _.Get(field: ReadField<'T>) : obj =
+        match Array.tryFindIndex (fun (f: ReadField<'T>) -> f.Name = field.Name) fields with
+        | Some i -> values.[i]
+        | None -> invalidOp $"{typeof<'T>.Name}.{field.Name} was not chosen"
+
+    member this.Get<'W>(field: ReadField<'T>) : 'W = unbox<'W> (this.Get field)
+
+/// Declares a field a program lets its callers read.
+[<RequireQualifiedAccess>]
+module ReadField =
+    /// The field as read.
+    let value (name: string) (read: Expr<'T -> 'V>) : ReadField<'T> = ReadField<'T>(name, read.Raw, typeof<'V>, id)
+
+    /// The field as read, made what the caller is given by `convert`, an F#
+    /// function run after the read.
+    let via (name: string) (read: Expr<'T -> 'V>) (convert: 'V -> 'W) : ReadField<'T> =
+        ReadField<'T>(name, read.Raw, typeof<'W>, fun v -> box (convert (unbox<'V> v)))
+
 /// Adds what a program built to a query: what the query builder adds for the
 /// same clause written, so the SQL, the rows and the refusals are the written
 /// query's.
@@ -196,3 +237,26 @@ module BuildQuery =
     let orderByDescending (key: Expr<'T -> 'K>) (query: Query<'T>) : Query<'T> = QueryOps.order query key.Raw SortDirection.Descending
     let take (count: int) (query: Query<'T>) : Query<'T> = QueryOps.take "take" query (Expr.Value count |> Expr.Cast)
     let skip (count: int) (query: Query<'T>) : Query<'T> = QueryOps.take "skip" query (Expr.Value count |> Expr.Cast)
+
+    /// Reads `fields`, and only those, of each record the query finds: one
+    /// command for the fields stored in its row, and one more for each list
+    /// it owns or links that is chosen, for every row at once.
+    let select (fields: ReadField<'T> list) (query: Query<'T>) : Projection<Selected<'T>> =
+        if fields.IsEmpty then
+            invalidArg "fields" "choose at least one field to read"
+
+        let x = Built.variable typeof<'T>
+
+        let cells =
+            [ for f in fields ->
+                  match f.Read with
+                  | Patterns.Lambda(v, body) -> Expr.Coerce(body.Substitute(fun w -> if w = v then Some(Expr.Var x) else None), typeof<obj>)
+                  | _ -> invalidArg "fields" $"{typeof<'T>.Name}.{f.Name}: a field is read by a lambda over its record" ]
+
+        let make =
+            match <@ Selected<'T>(fields, [||]) @> with
+            | Patterns.NewObject(ctor, _) -> ctor
+            | _ -> invalidOp "Selected's constructor"
+
+        let row = Expr.NewObject(make, [ Expr.Value(fields); Expr.NewArray(typeof<obj>, cells) ])
+        Projection<Selected<'T>>(query.Def, Expr.Lambda(x, row))

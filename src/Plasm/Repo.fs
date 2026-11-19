@@ -517,6 +517,33 @@ type Repo internal (model: Model, provider: IProvider, ?options: RepoOptions) =
     /// ordering, once (build-query.feature): what a program building queries
     /// from them can combine. Raises PlasmStartupException naming each one
     /// Plasm cannot translate, as Start does for a query.
+    /// Checks that Plasm translates every field a program lets its callers
+    /// read; raises PlasmStartupException naming each one it cannot.
+    member this.CheckFields(fields: ReadField<'T> seq) : unit =
+        let all = Query<'T>(QueryDef.Empty typeof<'T>)
+
+        let problems =
+            [ for f in fields do
+                  let problem error =
+                      Some(StartupProblem.Query { Query = $"{typeof<'T>.Name}.{f.Name} read"; Error = error })
+
+                  let found =
+                      try
+                          match this.Explain(BuildQuery.select [ f ] all) with
+                          | Ok _ -> None
+                          | Error e -> problem e
+                      with :? ArgumentException as e ->
+                          problem (TranslationError.InvalidQuery e.Message)
+
+                  match found with
+                  | Some p -> yield p
+                  | None -> () ]
+
+        if not problems.IsEmpty then
+            let what = if problems.Length = 1 then "declared field Plasm cannot translate" else "declared fields Plasm cannot translate"
+            let lines = $"Plasm did not start: {problems.Length} {what}" :: [ for p in problems -> $"  - {p}" ]
+            raise (PlasmStartupException(problems, String.concat Environment.NewLine lines))
+
     member this.CheckFields(fields: QueryField<'T> seq) : unit =
         let record = typeof<'T>.Name
         let all = Query<'T>(QueryDef.Empty typeof<'T>)

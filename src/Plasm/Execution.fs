@@ -795,11 +795,13 @@ let private entityValues (start: int) (schema: SchemaInfo) (optional: bool) (row
         values
 
 /// Builds a projected value; `entity` gives the field values of the n-th
-/// whole record in the shape (in the order `collect` found them).
-let rec private build (shape: Translate.Shape) (row: obj[]) (entity: unit -> obj[]) : obj =
+/// whole record in the shape, and `loaded` the n-th list selected on its own
+/// (each in the order `collect` found them).
+let rec private build (shape: Translate.Shape) (row: obj[]) (entity: unit -> obj[]) (loaded: unit -> obj) : obj =
     match shape with
     | Translate.Const v -> v
     | Translate.Leaf(i, _, _, _) -> row.[i]
+    | Translate.Loaded _ -> loaded ()
     | Translate.Parts(columns, fromColumns, model, field) ->
         let raws = columns |> List.map (fun (i, _) -> row.[i])
 
@@ -813,7 +815,7 @@ let rec private build (shape: Translate.Shape) (row: obj[]) (entity: unit -> obj
                       Value = String.Join(", ", raws |> List.map describe)
                       Message = msg }
             )
-    | Translate.Build(ctor, parts) -> ctor (parts |> List.map (fun p -> build p row entity) |> Array.ofList)
+    | Translate.Build(ctor, parts) -> ctor (parts |> List.map (fun p -> build p row entity loaded) |> Array.ofList)
     | Translate.EntityLeaf(_, schema, optional) ->
         match entity () with
         | null -> null // None: the left-joined source had no match
@@ -829,6 +831,7 @@ let rec private build (shape: Translate.Shape) (row: obj[]) (entity: unit -> obj
 let private projection (s: Session) (model: Model) (select: Sql.Select) (shape: Translate.Shape) (label: string) : Round<obj list> =
     let leaves = ResizeArray<int * Type * (obj -> Result<obj, string>) * string>()
     let entities = ResizeArray<int * SchemaInfo * bool>()
+    let lists = ResizeArray<int * SchemaInfo * string>()
 
     let rec collect sh =
         match sh with
@@ -837,6 +840,10 @@ let private projection (s: Session) (model: Model) (select: Sql.Select) (shape: 
         | Translate.Parts(columns, _, model, field) ->
             for i, t in columns do
                 leaves.Add(i, t, (fun (v: obj) -> Ok v), $"{model}.{field}")
+        // The record's key, read as the key, which the list is loaded by.
+        | Translate.Loaded(key, schema, assoc) ->
+            lists.Add(key, schema, assoc)
+            leaves.Add(key, schema.Key.ProviderType, schema.Key.FromDb, $"{schema.Name}.{schema.Key.Name}")
         | Translate.EntityLeaf(start, schema, optional) ->
             entities.Add(start, schema, optional)
             // Raw provider values; the entity is built from them (build, below).
@@ -877,19 +884,54 @@ let private projection (s: Session) (model: Model) (select: Sql.Select) (shape: 
         let records =
             [| for start, schema, optional in entities -> [| for row in rows -> entityValues start schema optional row |] |]
 
+        // Each list selected on its own: a record of its row's key alone, which
+        // the list's load fills, as it fills a whole record's.
+        let owners =
+            [| for key, schema, _ in lists ->
+                   [| for row in rows ->
+                          let values = Array.zeroCreate<obj> schema.FieldCount
+                          values.[schema.Key.Index] <- row.[key]
+
+                          for a in schema.Assocs do
+                              values.[a.Index] <- a.Ctors.Empty
+
+                          values |] |]
+
+        let listLoads =
+            [ for n in 0 .. lists.Count - 1 do
+                  let _, schema, assoc = lists.[n]
+
+                  match Planner.planLoads s.Provider.Dialect model schema with
+                  | Ok nodes ->
+                      match nodes |> List.filter (fun node -> node.Path = assoc) with
+                      | [ node ] when node.KeyField.Name = schema.Key.Name -> loads s (ResizeArray owners.[n]) [ node ]
+                      | _ -> invalidOp $"{schema.Name}'s {assoc} is not loaded by the {schema.Name}'s key"
+                  | Error e -> invalidOp $"the lists {schema.Name} owns could not be planned: {e}" ]
+
         [ for n in 0 .. entities.Count - 1 do
               let _, schema, _ = entities.[n]
               loadOwned s model schema (records.[n] |> Array.filter (fun v -> not (isNull v)) |> List.ofArray) ]
+        @ listLoads
         |> Round.all
         |> Round.map (fun _ ->
             rows
             |> Seq.mapi (fun i row ->
-                let mutable next = 0
+                let mutable nextRecord = 0
+                let mutable nextList = 0
 
-                build shape row (fun () ->
-                    let v = records.[next].[i]
-                    next <- next + 1
-                    v))
+                build
+                    shape
+                    row
+                    (fun () ->
+                        let v = records.[nextRecord].[i]
+                        nextRecord <- nextRecord + 1
+                        v)
+                    (fun () ->
+                        let _, schema, assoc = lists.[nextList]
+                        let a = schema.Assocs |> Array.find (fun a -> a.Name = assoc)
+                        let v = owners.[nextList].[i].[a.Index]
+                        nextList <- nextList + 1
+                        v))
             |> List.ofSeq))
 
 let readProjection (s: Session) (model: Model) (select: Sql.Select) (shape: Translate.Shape) (label: string) : Task<obj list> =

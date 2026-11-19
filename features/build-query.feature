@@ -66,6 +66,53 @@ Feature: A program builds a query at run time from declared fields
       When I build the Orders by total, taking 10 and then taking 5
       Then the built query is refused with "take is written twice: SQL pages once, so write one take"
 
+  Rule: A program reads the fields its caller chose
+    # A read field has a name, a quotation reading it from the record and,
+    # when the caller is given something else, an F# function making it of
+    # what was read, run after the read. BuildQuery.select reads the chosen
+    # fields, and only those, into Selected rows; a row is read through the
+    # field's declaration (GraphQL's selection, slice v).
+
+    Scenario: Only the chosen fields' columns are read
+      Given the Order's status and total, and the number of its lines, declared as fields to read
+      And Orders of 10, 20 and 30, each with two lines
+      When I read the Orders' status, chosen
+      Then the read sends one command, reading only the status column
+      And each row holds its Order's status
+
+    Scenario: A field not chosen is refused by name when read
+      Given the Order's status and total, and the number of its lines, declared as fields to read
+      And Orders of 10, 20 and 30, each with two lines
+      When I read the Orders' status, chosen, and then the total of the first row
+      Then reading is refused with "Order.total was not chosen"
+
+    Scenario: A list the record owns is read with one more command, for every row at once
+      Given the Order's status and total, and the number of its lines, declared as fields to read
+      And Orders of 10, 20 and 30, each with two lines
+      When I read the Orders' total and number of lines, chosen
+      Then the read sends 2 commands: the Orders' totals, and every Order's lines
+      And each row holds its Order's total and 2 lines
+
+    Scenario: A list the record links is read with one more command, for every row at once
+      Given the Article's title and the names of its tags declared as fields to read
+      And Articles "Plasm" tagged "fsharp" and "sql", and "Ecto" tagged "elixir"
+      When I read the Articles' title and tag names, chosen
+      Then the read sends 2 commands: the Articles' titles, and every Article's tags
+      And the rows are "Ecto: elixir; Plasm: fsharp, sql"
+
+    Scenario: The chosen fields are read from the query built
+      Given the Order's status and total, and the number of its lines, declared as fields to read
+      And Orders of 10, 20 and 30, each with two lines
+      When I read the status of the Orders over 15 by total descending, taking 1, chosen
+      Then the read sends one command, with the query's where, order and page
+      And the one row holds the status of the Order of 30
+
+    Scenario: A list the record owns can be selected in a written query too
+      Given Orders of 10, 20 and 30, each with two lines
+      When I select each Order's total and its lines, written
+      Then the read sends 2 commands: the Orders' totals, and every Order's lines
+      And each written row holds its Order's total and its 2 lines
+
   Rule: Declared fields are checked once, when the program starts
 
     Scenario: Fields Plasm can translate pass the check
@@ -86,3 +133,8 @@ Feature: A program builds a query at run time from declared fields
         | Customer.nameHash LessThan           |
         | Customer.nameHash LessThanOrEqual    |
         | Customer.nameHash ordering           |
+
+    Scenario: A field to read Plasm cannot translate fails the check, by name
+      Given the Customer's name declared as a field to read through its hash code
+      When I check the declared Customer fields to read
+      Then the check fails start-up, naming "Customer.nameHash read"

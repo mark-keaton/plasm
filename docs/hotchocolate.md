@@ -32,10 +32,19 @@ builder); an application writes its queries with `plasm { }`, not with these:
   `orderByDescending`, `take` and `skip` add them to a query: each what the
   query builder adds for the same clause written, so the SQL, the rows and
   the refusals are the written query's.
+- `ReadField.value` and `ReadField.via` declare a field a caller may read: a
+  name, a quotation reading it from the record and, for `via`, an F# function
+  making what the caller is given of what was read, run after the read, never
+  translated. `BuildQuery.select fields query` reads the chosen fields, and
+  only those, into `Selected<'T>` rows: one command for the fields stored in
+  the record's row, and one more for each list it owns or links that is
+  chosen, for every row at once, as a whole record's list is read. A row is
+  read through a field's declaration (`row.Get<string> title`); a field not
+  chosen is refused by name (`Order.total was not chosen`), never a default.
 - `repo.CheckFields fields` translates every declared field with each of its
-  operators, and its ordering, once, and fails start-up naming each one Plasm
-  cannot translate (`Card.title GreaterThan: ...`), as `Repo.Start` does for
-  a query.
+  operators, and its ordering, once, or each field to read, and fails
+  start-up naming each one Plasm cannot translate (`Card.title GreaterThan:
+  ...`, `Customer.nameHash read: ...`), as `Repo.Start` does for a query.
 
 These live in the application's data library beside its queries: Kanban.Data
 declares `CardFields` and references only Plasm, so Hot Chocolate reaches no
