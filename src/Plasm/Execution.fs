@@ -553,11 +553,17 @@ let readEntity (schema: SchemaInfo) : DbDataReader -> obj[] =
 
 let private keyOf (f: FieldMap) (v: obj) : obj option = f.ReadOption v
 
-let private providerArray (f: FieldMap) (keys: obj seq) =
+let private providerArray (f: FieldMap) (keys: obj seq) : Array =
     let ks = Seq.toArray keys
-    let arr = Array.CreateInstance(f.ProviderType, ks.Length)
-    ks |> Array.iteri (fun i k -> arr.SetValue(f.ScalarToDb k, i))
-    arr
+
+    if f.Composite then
+        // A key of several parts goes as its values; the load's command makes
+        // an array per part of them (Planner.compositeKeys).
+        ks :> Array
+    else
+        let arr = Array.CreateInstance(f.ProviderType, ks.Length)
+        ks |> Array.iteri (fun i k -> arr.SetValue(f.ScalarToDb k, i))
+        arr
 
 /// The loads of `nodes` into the field arrays `rows` (mutating the arrays,
 /// which are not yet visible to callers), as round trips: every node's

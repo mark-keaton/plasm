@@ -18,9 +18,10 @@ Feature: A record whose Id is a record has a key of several columns
   and its version, and a part cannot be changed. Ddl prints PRIMARY KEY over
   the parts and the schema check compares the primary key's columns.
 
-  What depends on how other tables refer to such a key is refused by name for
-  now: a field of the key's type in another record, owned and linked lists, and
-  bulk writes and upserts keyed by it.
+  References to such a key, and owned lists under it, are
+  composite-references.feature's. Refused by name for now: linked lists on
+  either side, an owned list of records keyed by several parts, and upserts
+  keyed by such a key.
 
   # IssueKey = { Repo: string; Number: int }
   # Issue = { Id: IssueKey; Title: string; [<Version>] Version: int }
@@ -113,5 +114,5 @@ Feature: A record whose Id is a record has a key of several columns
         | a key holding a list                     | ListPart     | a part of a key is a scalar                     |
         | a key holding a value                    | ValuePart    | a part of a key is a scalar                     |
         | a generated key                          | GeneratedKey | a key of several parts is given by the insert   |
-        | a field of another record's key type     | Comment      | refers to Issue, whose key has several parts    |
-        | an owned list under a key of parts       | Thread       | owns Post, but its key has several parts        |
+        | a linked list under a key of parts       | Thread       | links Tag, but its key has several parts        |
+        | an owned list of records keyed by parts  | Board        | owns Card, whose key has several parts          |

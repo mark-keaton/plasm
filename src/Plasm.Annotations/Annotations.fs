@@ -16,11 +16,17 @@ type TableAttribute(name: string) =
 
 /// The column a field is stored in, when it is not the field's name in snake
 /// case: for a table the application did not design, such as one scaffolded
-/// from an existing database.
+/// from an existing database. A field of a key of several parts is stored in
+/// a column per part, named in the order of the key record's fields:
+/// `[<Column("repo", "issue_number")>]` (composite-keys.feature).
 [<AttributeUsage(AttributeTargets.Property, AllowMultiple = false)>]
-type ColumnAttribute(name: string) =
+type ColumnAttribute([<ParamArray>] names: string[]) =
     inherit Attribute()
-    member _.Name = name
+    new(name: string) = ColumnAttribute([| name |])
+    /// The one column's name (the first, for several).
+    member _.Name = if isNull names || names.Length = 0 then null else names.[0]
+    /// Every column's name, in order.
+    member _.Names = if isNull names then [||] else names
 
 /// The field's values are unique in the table. The database holds it with a
 /// unique constraint named <table>_<column>_key, and a duplicate comes back as

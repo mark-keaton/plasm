@@ -13,13 +13,19 @@ open Plasm.Aot.Shop
 open Plasm.Aot.App
 
 let schema =
-    "drop table if exists shipments; drop table if exists notes; drop table if exists tickets; drop table if exists customers;
+    "drop table if exists shipment_events; drop table if exists shipments; drop table if exists notes; drop table if exists tickets; drop table if exists customers;
      create table shipments (
        carrier text not null,
        number integer not null,
        status text not null,
        version int not null,
        primary key (carrier, number));
+     create table shipment_events (
+       id bigint generated always as identity primary key,
+       shipment_carrier text not null,
+       shipment_number integer not null,
+       text text not null,
+       foreign key (shipment_carrier, shipment_number) references shipments (carrier, number));
      create table customers (
        id bigint generated always as identity primary key,
        name text not null,
@@ -272,18 +278,26 @@ let main argv =
 
         step "a prepared argument in an array column of typed ids" (fun () -> all (Queries.watchedBy ada.Id) ticket)
 
-        let shipment (x: Shipment) = "Shipment " + x.Id.Carrier + "#" + string x.Id.Number + " " + x.Status + " v" + string x.Version
+        let shipment (x: Shipment) =
+            "Shipment " + x.Id.Carrier + "#" + string x.Id.Number + " " + x.Status + " v" + string x.Version
+            + " [" + String.Join("/", x.Events |> List.map (fun e -> e.Text)) + "]"
 
         step "insert records keyed by several parts" (fun () ->
             let made =
                 [ for carrier, number, status in [ "ups", 1, "packed"; "ups", 2, "sent"; "dhl", 1, "packed" ] ->
-                      match repo.Transact(Tx.insert { Id = { Carrier = carrier; Number = number }; Status = status; Version = 1 }: Tx<_, unit>).Result with
+                      let key = { Carrier = carrier; Number = number }
+                      let events = if number = 1 then [ { Id = EventId 0L; Shipment = key; Text = "picked up" }; { Id = EventId 0L; Shipment = key; Text = carrier + " depot" } ] else []
+
+                      match repo.Transact(Tx.insert { Id = key; Status = status; Version = 1; Events = events }: Tx<_, unit>).Result with
                       | Ok x -> shipment x
                       | Error e -> "failed: " + e.Display ]
 
             String.Join("; ", made))
 
         step "read by a whole key, a prepared argument" (fun () -> all (Queries.shipmentByKey { Carrier = "ups"; Number = 2 }) shipment)
+
+        step "an owned list under a key of several parts, loaded for every owner at once" (fun () ->
+            all (plasm { for x in tableOf<Shipment> do orderBy x.Id.Carrier; thenBy x.Id.Number }) shipment)
 
         step "update found by every part and the version" (fun () ->
             match repo.One(Queries.shipmentByKey { Carrier = "dhl"; Number = 1 }).Result with

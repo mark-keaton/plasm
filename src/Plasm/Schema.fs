@@ -72,6 +72,9 @@ type SchemaDef =
           Table: string
           Key: (PropertyInfo * bool) option
           Columns: Map<string, string>
+          /// Every name [<Column>] gives a field, in order: several for a field
+          /// of a key of several parts (composite-keys.feature).
+          ColumnNames: Map<string, string list>
           Version: PropertyInfo option
           Generated: Set<string>
           /// Fields whose values are unique in the table (constraints.feature).

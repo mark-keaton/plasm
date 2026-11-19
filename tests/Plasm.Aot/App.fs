@@ -24,13 +24,19 @@ type Item = { Text: string; Done: bool }
 /// A shipment keyed by its carrier and number: a key of several parts
 /// (composite-keys.feature), its parts the table's own columns.
 type ShipmentKey = { Carrier: string; Number: int }
+type EventId = EventId of int64
 
 [<Table "shipments">]
 type Shipment =
     { Id: ShipmentKey
       Status: string
       [<Version>]
-      Version: int }
+      Version: int
+      Events: ShipmentEvent list }
+
+/// What happened to a shipment: owned by it through a reference to its key of
+/// two parts (composite-references.feature).
+and [<Table "shipment_events">] ShipmentEvent = { Id: EventId; Shipment: ShipmentKey; Text: string }
 
 [<Table "tickets">]
 type Ticket =

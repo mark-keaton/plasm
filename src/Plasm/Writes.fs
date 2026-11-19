@@ -306,7 +306,10 @@ let private conventional (schema: SchemaInfo) (name: string) =
 
     schema.Fields
     |> Array.tryPick (fun f ->
-        let stem = $"{table}_{f.Column}"
+        // A field of several columns (a reference to a key of several parts):
+        // PostgreSQL names its constraint by every column.
+        let columns = if f.Composite then f.Parts |> List.map (fun p -> p.Name) |> String.concat "_" else f.Column
+        let stem = $"{table}_{columns}"
 
         if name = stem + "_key" then Some(f.Name, FieldErrorKind.UniqueConstraint name, "has already been taken")
         elif name = stem + "_fkey" then Some(f.Name, FieldErrorKind.ForeignKeyConstraint name, "does not exist")
@@ -626,7 +629,17 @@ and private writeChildWrite model sess (schema: SchemaInfo) (s: CsState) (wi: in
     let a = (schema.TryAssoc w.Field).Value
     let target = schemaOf model a.Target
     let fk = target.Field a.ForeignKey
-    let ownedBy = Sql.Binary("=", Sql.Column(target.Table, fk.Column), Sql.fieldScalar fk parentKey)
+    let ownedBy =
+        if fk.Composite then
+            // A reference over several columns (composite-references.feature):
+            // every part equals the owner's.
+            let owner = if fk.IsOption then fk.WrapSome parentKey else parentKey
+
+            List.zip fk.Parts (fk.ToColumns owner)
+            |> List.map (fun (p, v) -> Sql.Binary("=", Sql.Column(target.Table, p.Name), Sql.partValue p v))
+            |> Sql.conj
+        else
+            Sql.Binary("=", Sql.Column(target.Table, fk.Column), Sql.fieldScalar fk parentKey)
 
     // The parent, with the i-th child's state replaced by what its write found.
     let placed (i: int) (p: Problem) =

@@ -328,7 +328,9 @@ module internal SchemaCheck =
                                     (Some f.Column)
                                     $"the schema states {sc.Name}.{f.Name} is unique, but no unique constraint or index holds it; add `constraint {sc.Table}_{f.Column}_key unique ({f.Column})`"
 
+                            // A reference over several columns is checked below.
                             match f.References |> Option.bind (fun t -> model.Schemas.TryGetValue t |> function | true, target -> Some target | _ -> None) with
+                            | Some _ when f.Composite -> ()
                             | Some target when not (references |> List.contains ((sc.Table, f.Column), target.Table)) ->
                                 add
                                     SchemaIssueKind.MissingReference
@@ -441,6 +443,56 @@ module internal SchemaCheck =
                             None
                             $"{has}; {sc.Name}'s key of several parts needs primary key ({wanted}), in that order"
 
+            // A reference to a key of several parts (composite-references.feature):
+            // one foreign key over its columns, in order, to that table. A
+            // record's own key may hold such a reference as a part.
+            let compositeReferences =
+                [ for sc in schemas do
+                      let candidates =
+                          [ for f in sc.Fields do
+                                yield f, f.Name
+
+                                if f.Name = sc.Key.Name then
+                                    match f.Value with
+                                    | Some v -> for part in v.Fields -> part, $"{f.Name}.{part.Name}"
+                                    | None -> () ]
+
+                      for f, path in candidates do
+                          match f.References |> Option.bind (fun t -> model.Schemas.TryGetValue t |> function | true, r -> Some r | _ -> None) with
+                          | Some target when f.Composite -> yield sc, f, path, target
+                          | _ -> () ]
+
+            if not compositeReferences.IsEmpty then
+                let! foreignRows =
+                    Execution.query
+                        s
+                        { Sql =
+                            "SELECT t.relname::text, r.relname::text, (SELECT string_agg(a.attname::text, ',' ORDER BY k.ord) FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) "
+                            + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum) FROM pg_constraint c "
+                            + "JOIN pg_class t ON t.oid = c.conrelid JOIN pg_class r ON r.oid = c.confrelid JOIN pg_namespace n ON n.oid = t.relnamespace "
+                            + "WHERE c.contype = 'f' AND n.nspname = current_schema() AND t.relname::text = ANY("
+                            + dialect.ParameterName 0
+                            + ")"
+                          Parameters = [ box (compositeReferences |> List.map (fun (sc, _, _, _) -> bare sc.Table) |> List.distinct |> Array.ofList) ] }
+                        (fun r -> r.GetString 0, r.GetString 1, r.GetString 2)
+
+                let foreign = foreignRows |> List.ofSeq
+
+                for sc, f, path, target in compositeReferences do
+                    let columns = f.Parts |> List.map (fun p -> p.Name)
+
+                    if not (foreign |> List.contains (bare sc.Table, bare target.Table, String.concat "," columns)) then
+                        let listed = String.concat ", " columns
+                        let keyColumns = target.Key.Parts |> List.map (fun p -> p.Name) |> String.concat ", "
+
+                        add
+                            SchemaIssueKind.MissingReference
+                            sc.Name
+                            (Some path)
+                            sc.Table
+                            None
+                            $"{sc.Name}.{path} refers to {target.Name}, but no foreign key over ({listed}) references {target.Table}; add `foreign key ({listed}) references {target.Table} ({keyColumns})`"
+
             return List.ofSeq issues
         }
 
@@ -479,20 +531,33 @@ module internal Ddl =
             let typeName = t |> List.map name |> String.concat "."
             line $"create type {typeName} as enum ({labels});"
 
-        // References: (table, column, referenced schema), each once.
+        // The columns a field is stored in, as one reference's columns: one,
+        // or a reference's to a key of several parts (composite-references.feature).
+        let columnsOf (f: FieldMap) = if f.Composite then f.Parts |> List.map (fun p -> p.Name) else [ f.Column ]
+
+        // References: (table, columns, referenced schema), each once. A
+        // record's own key may hold another record's key as a part.
         let references =
             [ for s in schemas do
+                  let rec within (f: FieldMap) =
+                      [ match f.References |> Option.bind (fun t -> match byType.TryGetValue t with | true, r -> Some r | _ -> None) with
+                        | Some r -> yield s.Table, columnsOf f, r
+                        | None -> ()
+
+                        if f.Name = s.Key.Name || f.Value.IsNone then
+                            match f.Value with
+                            | Some v when f.Name = s.Key.Name -> for part in v.Fields do yield! within part
+                            | _ -> () ]
+
                   for f in s.Fields do
-                      match f.References |> Option.bind (fun t -> match byType.TryGetValue t with | true, r -> Some r | _ -> None) with
-                      | Some r -> yield s.Table, f.Column, r
-                      | None -> ()
+                      yield! within f
 
                   for a in s.Assocs do
                       match a.Kind with
                       | AssocKind.HasMany
                       | AssocKind.HasOne ->
                           let child = byType.[a.Target]
-                          yield child.Table, (child.Field a.ForeignKey).Column, s
+                          yield child.Table, columnsOf (child.Field a.ForeignKey), s
                       | AssocKind.ManyToMany -> () ]
             |> List.distinctBy (fun (t, c, _) -> t, c)
 
@@ -562,37 +627,43 @@ module internal Ddl =
 
         let joinReferences =
             [ for j, owner, target in joins do
-                  yield j.Table, j.OwnerColumn, owner
-                  yield j.Table, j.TargetColumn, target ]
+                  yield j.Table, [ j.OwnerColumn ], owner
+                  yield j.Table, [ j.TargetColumn ], target ]
 
-        for table, column, r in references @ joinReferences do
-            let constraintName = name (table + "_" + column + "_fkey")
+        let listed (columns: string list) = columns |> List.map name |> String.concat ", "
+
+        for table, columns, r in references @ joinReferences do
+            let constraintName = name (table + "_" + String.concat "_" columns + "_fkey")
+            let keyColumns = r.Key.Parts |> List.map (fun p -> p.Name)
 
             line
-                $"alter table {name table} add constraint {constraintName} foreign key ({name column}) references {name r.Table} ({name r.Key.Column});"
+                $"alter table {name table} add constraint {constraintName} foreign key ({listed columns}) references {name r.Table} ({listed keyColumns});"
 
         // The columns the model's reads filter on (an owned table's owner
         // column, a reference to another aggregate, a join table's target
         // column), unless the column already leads a unique constraint or the
         // primary key: a join table's key leads with its owner column.
+        // An index's leading columns serve a filter on any prefix of them.
         let leads =
-            set
-                [ for s in schemas do
-                      yield s.Table, s.Key.Parts.Head.Name
+            [ for s in schemas do
+                  yield s.Table, s.Key.Parts |> List.map (fun p -> p.Name)
 
-                      for f in s.Fields do
-                          if f.Unique then
-                              yield s.Table, f.Column
-                  for j, _, _ in joins do
-                      yield j.Table, j.OwnerColumn ]
+                  for f in s.Fields do
+                      if f.Unique then
+                          yield s.Table, [ f.Column ]
+              for j, _, _ in joins do
+                  yield j.Table, [ j.OwnerColumn; j.TargetColumn ] ]
+
+        let led (table: string, columns: string list) =
+            leads |> List.exists (fun (t, l) -> t = table && List.truncate columns.Length l = columns)
 
         let indexed =
-            [ for table, column, _ in references @ joinReferences -> table, column ]
+            [ for table, columns, _ in references @ joinReferences -> table, columns ]
             |> List.distinct
-            |> List.filter (fun k -> not (leads.Contains k))
+            |> List.filter (led >> not)
 
-        for table, column in indexed do
-            let index = (table.Split('.') |> Array.last) + "_" + column + "_idx"
-            line $"create index {name index} on {name table} ({name column});"
+        for table, columns in indexed do
+            let index = (table.Split('.') |> Array.last) + "_" + String.concat "_" columns + "_idx"
+            line $"create index {name index} on {name table} ({listed columns});"
 
         out.ToString()

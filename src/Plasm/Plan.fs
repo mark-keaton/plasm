@@ -64,6 +64,37 @@ module internal Planner =
 
     let private raiseT e = raise (Translate.TranslationFailure e)
 
+    /// The rows whose `matchField` (a reference over several columns) is one of
+    /// `keys`, values of the owner's key of several parts: one array per part,
+    /// read back in rows by unnest, so the command's text does not grow with
+    /// the keys (composite-references.feature).
+    let compositeKeys (alias: string) (keyField: FieldMap) (matchField: FieldMap) (keys: Array) : Sql.Expr =
+        let values = [ for k in keys -> keyField.ToColumns k ]
+        let parts = matchField.Parts
+
+        let arrays =
+            parts
+            |> List.mapi (fun i p ->
+                match Model.arrayOf p.ProviderType with
+                | Some(arrayType, make) ->
+                    let a = Sql.Param(make [ for v in values -> v.[i] ])
+                    match Sql.partStoreType p with
+                    | Some t -> Sql.Cast(a, t, true)
+                    | None -> a
+                | None -> raiseT (TranslationError.InvalidQuery $"a key part of {p.ProviderType.Name} cannot be sent as an array"))
+
+        let columns = parts |> List.map (fun p -> Choice2Of2(Sql.Column(alias, p.Name)))
+        let comma = Choice1Of2 ", "
+        let listed (xs: Choice<string, Sql.Expr> list) = xs |> List.collect (fun x -> [ comma; x ]) |> List.tail
+
+        Sql.Fragment(
+            [ Choice1Of2 "(" ]
+            @ listed columns
+            @ [ Choice1Of2 ") IN (SELECT * FROM unnest(" ]
+            @ listed (arrays |> List.map Choice2Of2)
+            @ [ Choice1Of2 "))" ]
+        )
+
     /// The loads of what `parent` owns or links (owned-collections.feature):
     /// every owned or linked field, at every level, in its declared order (else
     /// by key), one batched command per field.
@@ -120,7 +151,9 @@ module internal Planner =
               let columns = Translate.entityColumns alias target @ ownerColumn
 
               let build (keys: Array) : Sql.Select =
-                  let keyFilter = Sql.AnyOf(matchExpr, keys, Sql.storeType matchField)
+                  let keyFilter =
+                      if keyField.Composite then compositeKeys alias keyField matchField keys
+                      else Sql.AnyOf(matchExpr, keys, Sql.storeType matchField)
 
                   { Sql.select (Sql.Table(target.Table, alias)) with
                       Columns = columns
@@ -210,7 +243,9 @@ module internal Planner =
                           Return = (Translate.returnShape def).Value })
 
     let rec private describeNode (dialect: ISqlDialect) (n: LoadNode) : LoadStep =
-        let sample = n.Build(Array.CreateInstance(n.KeyField.ProviderType, 1))
+        let sample =
+            if n.KeyField.Composite then n.Build(Array.Empty<obj>())
+            else n.Build(Array.CreateInstance(n.KeyField.ProviderType, 1))
 
         { Path = n.Path
           Relationship =

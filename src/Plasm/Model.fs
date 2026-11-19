@@ -535,36 +535,118 @@ module Model =
                 { scalarField prop.Name i column t (Some mapping) with
                     Json = Some shape }
 
-    /// A key of several parts (composite-keys.feature): the field named Id is a
-    /// record with no table, whose fields are the key's parts, each a scalar
-    /// and none optional, stored as the table's own columns with no prefix.
-    let private keyLayout (scalars: IReadOnlyDictionary<Type, ScalarMapping>) (owner: string) (t: Type) : Result<ValueLayout, string> =
-        let props = (Shape.record t).Fields
+    /// The key record of a key of several parts, and the schema it keys: a
+    /// record type that is the type of a stored record's Id and names no table.
+    let private compositeKeyOf (defs: IReadOnlyDictionary<Type, SchemaDef>) (t: Type) : SchemaDef option =
+        if not (Shape.isRecord t) || defs.ContainsKey t then
+            None
+        else
+            defs.Values |> Seq.tryFind (fun d -> match d.Key with Some(k, _) -> k.PropertyType = t | None -> false)
+
+    /// The layout `layout` with its columns, leaf by leaf in order, named
+    /// `names` (composite-references.feature).
+    let rec private renamed (layout: ValueLayout) (names: string list) : ValueLayout * string list =
+        let fields, rest =
+            layout.Fields
+            |> List.mapFold
+                (fun (left: string list) (f: FieldMap) ->
+                    match f.Value with
+                    | Some v ->
+                        let v', left' = renamed v left
+                        { f with Value = Some v' }, left'
+                    | None -> { f with Column = List.head left }, List.tail left)
+                names
+
+        { layout with Fields = fields }, rest
+
+    /// A key of several parts (composite-keys.feature, composite-references.feature):
+    /// the field named Id is a record with no table, whose fields are the key's
+    /// parts, none optional, each a scalar or another record's key (then a
+    /// reference unless marked [<NotReference>]). A part's columns are the
+    /// table's own, by their own names, or as [<Column>] names them.
+    let rec private keyLayout (scalars: IReadOnlyDictionary<Type, ScalarMapping>) (defs: IReadOnlyDictionary<Type, SchemaDef>) (owner: string) (t: Type) : Result<ValueLayout, string> =
+        let shape = Shape.record t
+        let props = shape.Fields
         let name = Reflection.typeName
 
         if props.Length < 2 then
             let p = props.[0]
             Error $"is a {t.Name} of one part ({p.Name}): a key of one part is a single-case wrapper (type {t.Name} = {t.Name} of {name p.PropertyType})"
         else
-            let refusal (p: Reflection.PropertyInfo) =
+            let part (i: int) (p: Reflection.PropertyInfo) : Result<FieldMap, string> =
                 let ft = p.PropertyType
+                let at = $"{t.Name}.{p.Name}"
+                let has (a: Type) = p.GetCustomAttributes(a, true).Length > 0
 
-                if Reflection.isOption ft then
-                    Some $"{t.Name}.{p.Name} is a {name ft}: a part of a key cannot be optional"
-                elif Reflection.isList ft || Result.isError (scalarMapping scalars ft) then
-                    Some $"{t.Name}.{p.Name} is a {name ft}: a part of a key is a scalar"
-                else
-                    None
+                let names =
+                    match p.GetCustomAttributes(typeof<ColumnAttribute>, true) with
+                    | [| :? ColumnAttribute as c |] -> Some(List.ofArray c.Names)
+                    | _ -> None
 
-            match props |> Array.tryPick refusal with
+                let unread =
+                    [ "Unique", typeof<UniqueAttribute>
+                      "Json", typeof<JsonAttribute>
+                      "Version", typeof<VersionAttribute>
+                      "Generated", typeof<GeneratedAttribute>
+                      "Assigned", typeof<AssignedAttribute> ]
+                    |> List.tryFind (snd >> has)
+
+                match unread with
+                | Some(attribute, _) -> Error $"{at} is marked {attribute}, but {attribute} is not supported inside a key"
+                | None when Reflection.isOption ft -> Error $"{at} is a {name ft}: a part of a key cannot be optional"
+                | None ->
+                    match compositeKeyOf defs ft with
+                    | Some keyed ->
+                        keyLayout scalars defs owner ft
+                        |> Result.bind (fun nested ->
+                            let wanted = nested.Columns.Length
+
+                            match names with
+                            | Some ns when ns.Length <> wanted ->
+                                let plural = if ns.Length = 1 then "" else "s"
+                                Error $"{at} names {ns.Length} column{plural} for a key of {wanted} parts"
+                            | Some ns -> Ok(fst (renamed nested ns))
+                            | None -> Ok nested)
+                        |> Result.map (fun nested ->
+                            { scalarField p.Name i "" ft None with
+                                Index = i
+                                Value = Some nested
+                                References = if has typeof<NotReferenceAttribute> then None else Some keyed.Type })
+                    | None when has typeof<NotReferenceAttribute> ->
+                        Error $"{at} is marked NotReference, but only a part that is another record's key refers to a row"
+                    | None when Reflection.isList ft || Result.isError (scalarMapping scalars ft) ->
+                        Error $"{at} is a {name ft}: a part of a key is a scalar, or another record's key"
+                    | None ->
+                        match names, scalarMapping scalars ft with
+                        | Some ns, _ when ns.Length <> 1 -> Error $"{at} is one column, and Column names one"
+                        | _, Ok mapping ->
+                            let column = match names with Some [ n ] -> n | _ -> Paths.snakeCase p.Name
+                            Ok { scalarField p.Name i column ft mapping with Index = i }
+                        | _, Error reason -> Error $"{at}: {reason}"
+
+            let parts = props |> Array.mapi part |> List.ofArray
+
+            match parts |> List.tryPick (function Error e -> Some e | _ -> None) with
             | Some e -> Error e
-            | None -> valueLayout scalars owner t "" false
+            | None ->
+                let fs = parts |> List.map (function Ok f -> f | Error _ -> failwith "unreachable")
+                let layout = { Type = t; Fields = fs; Make = shape.Construct; Read = shape.Deconstruct }
+
+                // Two parts in the same columns would read one value twice.
+                let owners =
+                    fs |> List.collect (fun f -> f.Parts |> List.map (fun c -> c.Name, f.Name))
+
+                match owners |> List.groupBy fst |> List.tryFind (fun (_, ps) -> (ps |> List.map snd |> List.distinct).Length > 1) with
+                | Some(column, ps) ->
+                    let both = ps |> List.map (fun (_, f) -> $"{t.Name}.{f}") |> List.distinct |> String.concat " and "
+                    Error $"{both} both map to the column {column}; name one's columns with [<Column>]"
+                | None -> Ok layout
 
     /// The provider types an array column can hold, each with its array type
     /// and a maker of that array from boxed elements: a closed list, so that
     /// no array type is made at run time (a native binary has only those its
     /// code names).
-    let private arrayOf (provider: Type) : (Type * (obj list -> obj)) option =
+    let internal arrayOf (provider: Type) : (Type * (obj list -> obj)) option =
         let typed (f: obj -> 'a) = Some(typeof<'a[]>, fun (items: obj list) -> box (items |> List.map f |> Array.ofList))
 
         if provider = typeof<string> then typed unbox<string>
@@ -683,8 +765,6 @@ module Model =
                 | Some(k, _) -> Shape.isRecord k.PropertyType && not (defs.ContainsKey k.PropertyType)
                 | None -> false
 
-            let keyedBy (t: Type) =
-                defs.Values |> Seq.tryFind (fun d -> composite d && (match d.Key with Some(k, _) -> k.PropertyType = t | None -> false))
 
             for i, prop in Array.indexed shape.Fields do
                 let t = prop.PropertyType
@@ -706,8 +786,8 @@ module Model =
 
                         let verb = if a.Linked then "links" else "owns"
 
-                        if composite def then
-                            err (Some prop.Name) $"{verb} {target.Name}, but its key has several parts: an owned or linked list under such a key is not supported yet"
+                        if composite def && a.Linked then
+                            err (Some prop.Name) $"links {target.Name}, but its key has several parts: a linked list under such a key is not supported yet"
                         else
                             match defs.TryGetValue target with
                             | true, td when composite td ->
@@ -809,12 +889,30 @@ module Model =
                         if def.Generated.Contains prop.Name then
                             err (Some prop.Name) "is marked Generated, but a key of several parts is given by the insert: no part is generated"
 
-                        match keyLayout scalars def.Type.Name scalarType with
+                        match keyLayout scalars defs def.Type.Name scalarType with
                         | Error reason -> err (Some prop.Name) reason
                         | Ok layout -> fields.Add { scalarField prop.Name i "" t None with Value = Some layout }
-                    elif (keyedBy scalarType).IsSome then
-                        let owner = (keyedBy scalarType).Value.Type.Name
-                        err (Some prop.Name) $"refers to {owner}, whose key has several parts: a reference to such a key is not supported yet"
+                    // A reference to a key of several parts (composite-references.feature):
+                    // a column per part, the field's column followed by the part's,
+                    // or as [<Column>] names them in the key record's order.
+                    elif (compositeKeyOf defs scalarType).IsSome then
+                        let keyed = (compositeKeyOf defs scalarType).Value
+                        let prefix = Paths.snakeCase prop.Name
+
+                        match keyLayout scalars defs keyed.Type.Name scalarType with
+                        | Error reason -> err (Some prop.Name) reason
+                        | Ok layout ->
+                            let wanted = layout.Columns.Length
+
+                            match def.ColumnNames.TryFind prop.Name with
+                            | Some ns when ns.Length <> wanted ->
+                                let plural = if ns.Length = 1 then "" else "s"
+                                err (Some prop.Name) $"names {ns.Length} column{plural} for a key of {wanted} parts ({keyed.Type.Name})"
+                            | named ->
+                                let names = named |> Option.defaultValue (layout.Columns |> List.map (fun c -> prefix + "_" + c.Name))
+                                fields.Add { scalarField prop.Name i prefix t None with Value = Some(fst (renamed layout names)) }
+                    elif (def.ColumnNames.TryFind prop.Name |> Option.map List.length |> Option.defaultValue 1) > 1 then
+                        err (Some prop.Name) $"is one column, and Column names one; several names are for a field of a key of several parts"
                     elif Shape.isRecord scalarType && (scalarMapping scalars scalarType |> Result.isError) then
                         let column = def.Columns.TryFind prop.Name |> Option.defaultValue (Paths.snakeCase prop.Name)
 

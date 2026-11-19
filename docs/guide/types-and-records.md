@@ -41,9 +41,20 @@ since a key of one part is a single-case wrapper. The insert gives every part,
 because nothing is generated. A query reads a part as a column (`i.Id.Number`)
 and compares a whole key with `=`. A key has no order of its own, so a query
 orders by its parts. A change finds the row by every part and its version, and
-a part cannot be changed. For now a reference to such a key from another
-record, owned and linked lists on either side, and upserts keyed by it are
-refused, naming the field.
+a part cannot be changed.
+
+A field of another record's key record refers to that record over every part.
+Its columns are the field's column followed by the key's parts, so
+`Blocker: TicketKey` is `blocker_project` and `blocker_number`, unless
+`[<Column("project", "ticket_number")>]` names them, one name per part in the
+key record's order. An optional one stores every part, or none. A key record
+inside an Id is part of this record's key and a reference too, with the
+table's own columns for its parts, as every part of an Id has.
+`[<NotReference>]` says a field of a key type refers to no row, as for a typed
+id. A list of records holding the owner's key is owned, as for a key of one
+part; each level is loaded in one command, with the owners' keys sent as an
+array per part. Not yet: linked lists on either side, an owned list of records
+keyed by several parts, and upserts keyed by such a key, each refused by name.
 
 ## Validated values
 

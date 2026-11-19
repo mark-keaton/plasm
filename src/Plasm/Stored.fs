@@ -229,6 +229,10 @@ module internal Derive =
                         fields t
                         |> Array.choose (fun p -> attr<ColumnAttribute> p |> Option.map (fun c -> p.Name, c.Name))
                         |> Map.ofArray
+                      ColumnNames =
+                        fields t
+                        |> Array.choose (fun p -> attr<ColumnAttribute> p |> Option.map (fun c -> p.Name, List.ofArray c.Names))
+                        |> Map.ofArray
                       Version = Array.tryHead versions
                       Generated = named has<GeneratedAttribute>
                       Unique = named has<UniqueAttribute>
@@ -303,6 +307,7 @@ module StoredExtensions =
                   Table = defaultArg (Derive.tableName typeof<'T>) ""
                   Key = None
                   Columns = Map.empty
+                  ColumnNames = Map.empty
                   Version = None
                   Generated = Set.empty
                   Unique = Set.empty

@@ -62,19 +62,23 @@ module Unclear =
     [<Table "generated_key">]
     type GeneratedKey = { [<Generated>] Id: GeneratedKeyParts; Title: string }
 
-    type CommentId = CommentId of int64
+    type ThreadKey = { Forum: string; Number: int }
+    type TagId = TagId of int64
 
-    [<Table "keyed_comments">]
-    type Comment = { Id: CommentId; Issue: IssueKey; Body: string }
-
-    type ThreadKey = { Board: string; Number: int }
-    type PostId = PostId of int64
-
-    [<Table "keyed_posts">]
-    type Post = { Id: PostId; Thread: ThreadKey; Text: string }
+    [<Table "keyed_tags">]
+    type Tag = { Id: TagId; Name: string }
 
     [<Table "keyed_threads">]
-    type Thread = { Id: ThreadKey; Posts: Post list }
+    type Thread = { Id: ThreadKey; [<JoinTable "keyed_thread_tags">] Tags: Tag list }
+
+    type BoardId = BoardId of int64
+    type CardKey = { Lane: string; Position: int }
+
+    [<Table "keyed_cards">]
+    type Card = { Id: CardKey; Board: BoardId; Text: string }
+
+    [<Table "keyed_boards">]
+    type Board = { Id: BoardId; Cards: Card list }
 
     let models =
         Map
@@ -83,8 +87,8 @@ module Unclear =
               "a key holding a list", [ typeof<ListPart> ]
               "a key holding a value", [ typeof<ValuePart> ]
               "a generated key", [ typeof<GeneratedKey> ]
-              "a field of another record's key type", [ typeof<Comment>; typeof<Issue> ]
-              "an owned list under a key of parts", [ typeof<Thread> ] ]
+              "a linked list under a key of parts", [ typeof<Thread>; typeof<Tag> ]
+              "an owned list of records keyed by parts", [ typeof<Board> ] ]
 
 namespace Plasm.Specs
 
