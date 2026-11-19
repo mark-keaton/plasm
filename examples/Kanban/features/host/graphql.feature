@@ -86,14 +86,48 @@ Feature: Kanban's cards over GraphQL, filtered and ordered by the database
         | title  | stage   | assignee | version | created              |
         | Plan   | backlog |          | 1       | 2026-11-18T12:00:00Z |
         | Review | doing   | Grace    | 1       | 2026-11-18T13:00:00Z |
-      When I ask for '{ boards { slug cards(where: { stage: { eq: "backlog" } }, order: [{ title: ASC }]) { title } } }'
+      When I ask for '{ boards { slug cards(where: { stage: { eq: "backlog" } }, order: [{ title: ASC }]) { items { title } } } }'
       Then each board's cards are "alpha: Ship it, Write the spec; beta: Plan"
       And the cards were read in 1 command, for every board at once
 
     Scenario: A board's cards asked for twice, with different wheres, are read in a command each
-      When I ask for '{ boards { slug backlog: cards(where: { stage: { eq: "backlog" } }) { title } doing: cards(where: { stage: { eq: "doing" } }) { title } } }'
+      When I ask for '{ boards { slug backlog: cards(where: { stage: { eq: "backlog" } }) { items { title } } doing: cards(where: { stage: { eq: "doing" } }) { items { title } } } }'
       Then the board "alpha" has backlog "Write the spec, Ship it" and doing "Build it"
       And the cards were read in 2 commands, for every board at once
+
+  Rule: A board's cards are a page per board, read in one command for every board
+
+    # A board's cards field pages as the top-level cards field does (skip,
+    # take, pageInfo, totalCount), each board's page numbered among its own
+    # cards in the request's order, in one command for every board
+    # (BuildQuery.pageEach); a total per board is one more command, grouped
+    # by board, only when selected.
+    Scenario: Each board's first card, by title, in one command
+      Given board "beta" has the cards:
+        | title  | stage   | assignee | version | created              |
+        | Plan   | backlog |          | 1       | 2026-11-18T12:00:00Z |
+        | Review | doing   | Grace    | 1       | 2026-11-18T13:00:00Z |
+      When I ask for '{ boards { slug cards(take: 1, order: [{ title: ASC }]) { items { title } pageInfo { hasNextPage } } } }'
+      Then each board's cards are "alpha: Build it; beta: Plan"
+      And each board has a next page
+      And the cards were read in 1 command, for every board at once, numbered per board
+
+    Scenario: A board's page skips within the board
+      When I ask for '{ boards { slug cards(skip: 1, take: 1, order: [{ title: ASC }]) { items { title } pageInfo { hasNextPage hasPreviousPage } } } }'
+      Then each board's cards are "alpha: Ship it"
+      And the page has a next page and a previous page, for the board "alpha"
+
+    Scenario: Each board's total is counted in one command, only when selected
+      Given board "beta" has the cards:
+        | title  | stage   | assignee | version | created              |
+        | Plan   | backlog |          | 1       | 2026-11-18T12:00:00Z |
+      When I ask for '{ boards { slug cards(take: 1, where: { stage: { eq: "backlog" } }) { items { title } totalCount } } }'
+      Then each board's total is "alpha: 2; beta: 1"
+      And the database counted every board's cards in one command, under a WHERE
+
+    Scenario: A total not selected is not counted
+      When I ask for '{ boards { slug cards(take: 1) { items { title } } } }'
+      Then the database counted nothing
 
   Rule: A request reads only what it selects
 
@@ -119,7 +153,7 @@ Feature: Kanban's cards over GraphQL, filtered and ordered by the database
       And the comments were read in one more command, and no labels
 
     Scenario: Each board's cards read only what is selected of them
-      When I ask for '{ boards { slug cards { title } } }'
+      When I ask for '{ boards { slug cards { items { title } } } }'
       Then each board's cards are "alpha: Write the spec, Build it, Ship it"
       And the cards were read in one command, reading only "board, title"
       And no comments or labels were read

@@ -88,8 +88,8 @@ public class Mutation
         kanban.CommentAsync(card, user.Actor(), body, ct);
 }
 
-/// The boards, and a board's cards with their own where and order: one
-/// DataLoader batch per argument set, so every board's cards are one query.
+/// The boards, and a board's cards as a page with their own where and order:
+/// one DataLoader batch per argument set, so every board's page is one query.
 [ExtendObjectType(typeof(Query))]
 public class Boards
 {
@@ -99,12 +99,22 @@ public class Boards
 [ExtendObjectType(typeof(BoardNode))]
 public class BoardCards
 {
+    /// A board's page of cards: every board's page read in one command, each
+    /// numbered among its own board's cards (PlasmRequest.PageEach), and
+    /// every board's total in one more, only when selected.
+    [UseOffsetPaging(DefaultPageSize = Paging.Default, MaxPageSize = Paging.Most, IncludeTotalCount = true)]
     [UseFiltering(typeof(CardFilter))]
     [UseSorting(typeof(CardSort))]
-    public Task<Selected<Card>[]> Cards([Parent] BoardNode board, IResolverContext context, BoardCardsLoader loader, CancellationToken ct)
+    public async Task<CollectionSegment<Selected<Card>>> Cards(
+        [Parent] BoardNode board, IResolverContext context, BoardCardsLoader cards, BoardCountsLoader counts, CancellationToken ct)
     {
         var chosen = PlasmRequest.Chosen(context, CardRead.all);
-        return loader.Load(board.Id, PlasmRequest.BatchKey(context, chosen), chosen, PlasmRequest.Refinement(context, CardFields.all, CardFields.created), ct);
+        var request = PlasmRequest.BatchKey(context, chosen);
+        var refine = PlasmRequest.Refinement(context, CardFields.all, CardFields.created);
+        var page = PlasmRequest.PageEach(context, CardFields.board, Paging.Default);
+        var rows = await cards.Load(board.Id, request, chosen, query => page.Invoke(refine.Invoke(query)), ct);
+        var where = PlasmRequest.Where(context, CardFields.all);
+        return await PlasmRequest.Segment(context, rows, Paging.Default, () => counts.Load(board.Id, request, where, ct));
     }
 }
 
@@ -129,6 +139,32 @@ public sealed class BoardCardsLoader(KanbanData kanban, IBatchScheduler schedule
         {
             var (chosen, refine) = requests[request.Key];
             var byBoard = await kanban.CardsOfBoardsAsync(request.Select(k => k.Board).Distinct(), chosen, refine, ct);
+            foreach (var key in request) result[key] = byBoard[key.Board];
+        }
+        return result;
+    }
+}
+
+/// Every board's total a request asks for with the same arguments, in one
+/// command grouped by board.
+public sealed class BoardCountsLoader(KanbanData kanban, IBatchScheduler scheduler, DataLoaderOptions options)
+    : BatchDataLoader<(Guid Board, string Request), int>(scheduler, options)
+{
+    readonly ConcurrentDictionary<string, Func<Plasm.Query<Card>, Plasm.Query<Card>>> wheres = new();
+
+    public Task<int> Load(Guid board, string request, Func<Plasm.Query<Card>, Plasm.Query<Card>> where, CancellationToken ct)
+    {
+        wheres.TryAdd(request, where);
+        return LoadAsync((board, request), ct);
+    }
+
+    protected override async Task<IReadOnlyDictionary<(Guid Board, string Request), int>> LoadBatchAsync(
+        IReadOnlyList<(Guid Board, string Request)> keys, CancellationToken ct)
+    {
+        var result = new Dictionary<(Guid Board, string Request), int>();
+        foreach (var request in keys.GroupBy(k => k.Request))
+        {
+            var byBoard = await kanban.CountCardsOfBoardsAsync(request.Select(k => k.Board).Distinct(), wheres[request.Key], ct);
             foreach (var key in request) result[key] = byBoard[key.Board];
         }
         return result;

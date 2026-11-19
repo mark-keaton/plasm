@@ -354,6 +354,9 @@ module CardFields =
     /// Oldest first: the order of a page whose request names none.
     let created = QueryField.ordered "created" <@ fun (c: Card) -> c.Created @>
 
+    /// What a board's cards are paged per (BuildQuery.pageEach): the board.
+    let board = <@ fun (c: Card) -> c.Board @>
+
     let all: QueryField<Card> list =
         [ QueryField.text "title" <@ fun (c: Card) -> c.Title.Value @>
           created
@@ -503,6 +506,35 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
                 byBoard.[c.Get<Guid> CardRead.board].Add c
 
             return Dictionary(byBoard |> Seq.map (fun kv -> KeyValuePair(kv.Key, kv.Value.ToArray()))) :> IReadOnlyDictionary<_, _>
+        }
+
+    /// How many of each board's cards the query `refine` makes reads, in one
+    /// command for every board (a page's total per board); `refine` gives a
+    /// where alone, since the count is grouped by board.
+    member _.CountCardsOfBoardsAsync(boards: Guid seq, refine: Func<Query<Card>, Query<Card>>, cancellationToken: CancellationToken) : Task<IReadOnlyDictionary<Guid, int>> =
+        task {
+            let ids = [ for id in boards -> BoardId id ]
+            let query = refine.Invoke(plasm { for c in tableOf<Card> do where (List.contains c.Board ids) })
+
+            let! counts =
+                repo.All(
+                    plasm {
+                        for c in query do
+                            groupBy c.Board
+                            select (c.Board, Agg.count ())
+                    },
+                    cancellationToken = cancellationToken
+                )
+
+            let byBoard = Dictionary<Guid, int>()
+
+            for id in boards do
+                byBoard.[id] <- 0
+
+            for BoardId board, n in read "Counting boards' cards failed" counts do
+                byBoard.[board] <- int n
+
+            return byBoard :> IReadOnlyDictionary<_, _>
         }
 
     /// How many cards the query `refine` makes reads.

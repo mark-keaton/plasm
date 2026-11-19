@@ -219,11 +219,15 @@ the REST scenarios follow it.
 
 Reads are open to anyone; every mutation needs someone signed in.
 
-- `cards(where, order, skip, take)` and `boards { cards(where, order) }`. The
-  where and order a client may give are generated from the card fields that
-  `Kanban.Data` declares once (`CardFields`), and the database does both. A
-  board's cards, for every board a request asks for, are one query. See
-  docs/hotchocolate.md.
+- `cards(where, order, skip, take)` and `boards { cards(where, order, skip,
+  take) }`. The where and order a client may give are generated from the
+  card fields that `Kanban.Data` declares once (`CardFields`), and the
+  database does both. A board's cards are a page, as the top level's are,
+  each board's numbered among its own cards: every board's page is one
+  command, and every board's `totalCount`, when selected, one more. A
+  board's cards were a list before; they are a page now, so a request reads
+  them as `boards { cards { items { title } } }`, which changed every
+  client of this example. See docs/hotchocolate.md.
 - A request reads only what it selects. The `CardView` type is generated
   from what `Kanban.Data` declares a caller may read (`CardRead`: each of
   CardView's fields once, a quotation over the domain's `Card` and the
@@ -336,8 +340,6 @@ machine's, and a process id since reused only delays a drop.
   `Host.CSharp`'s job to show (docs/aot.md).
 - **A selection inside a card's comments is not pushed down.** A comment is
   read whole when comments are selected; a comment is small, and owned.
-- **Nested paging is not pushed down.** A board's cards take a where and an
-  order, but not a page.
 - **Two hosts, two ways of hashing.** Kanban's F# server and this host both
   keep accounts in the `accounts` table, and both use ASP.NET Core Identity's
   hasher, but each wraps it in its own code. They are not meant to share a

@@ -76,6 +76,7 @@ builder.Services
     .AddTypeExtension<Boards>()
     .AddTypeExtension<BoardCards>()
     .AddDataLoader<BoardCardsLoader>()
+    .AddDataLoader<BoardCountsLoader>()
     .AddPlasmFiltering()
     .AddPlasmSorting()
     // A card, read with only the fields a request selects, or whole as a

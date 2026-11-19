@@ -90,11 +90,17 @@ declarations and nothing of Hot Chocolate).
 - `PlasmRequest.Chosen(context, fields)` is the declared fields the request's
   selection of the field reads, through any types between (a page's
   `items`).
+- `PlasmRequest.PageEach(context, key, defaultTake)` is a nested field's
+  offset paging per value of `key` (BuildQuery.pageEach), one row more than
+  the page for each, and `PlasmRequest.Where(context, fields)` its where
+  alone, for a total per value, which is grouped by the value and so takes
+  no order; both read from the context at once, for a DataLoader's batch.
 - `PlasmRequest.Refinement(context, fields, orderWhenNone)` is the request's
   where and order as a function of a query, read from the context at once,
   for a DataLoader's batch, which runs after the resolver and must not keep
-  its context; `PlasmRequest.BatchKey(context)` names the field and its where
-  and order, so that requests with the same arguments share a batch, and
+  its context; `PlasmRequest.BatchKey(context)` names the field and its where,
+  order, skip and take, so that requests with the same arguments share a
+  batch, and
   `PlasmRequest.BatchKey(context, chosen)` the fields chosen too.
 - `PlasmRequest.Page(context, query, defaultTake)` pages a query as the
   field's offset paging (`skip`, `take`) asks, reading one row more than the
@@ -190,13 +196,13 @@ Done by the database:
   "c"."created", "c"."id" LIMIT @p0`, and nothing more; selecting a card's
   comments adds its key to that select and one command for the comments of
   every card on the page.
-
-Not done by the database, yet:
-
-- **A nested collection's page.** A board's cards field takes a where and
-  an order, done by the database for every board in one command, but no
-  `take` per board yet. Plasm can do it in the same command
-  (`BuildQuery.pageEach`, above); the host does not use it yet.
+- **A nested collection's page.** A board's cards field pages as the cards
+  field does, `skip`, `take`, `pageInfo` and `totalCount`, each board's page
+  numbered among its own cards in the request's order, in one command for
+  every board: `ROW_NUMBER() OVER (PARTITION BY "c"."board" ORDER BY ...)`
+  in a derived table named `ranked`, one row more than the page per board.
+  Every board's total, when selected, is one more command, a COUNT grouped
+  by board under the request's where.
 
 ## Refused before any SQL
 

@@ -90,11 +90,12 @@ public sealed partial class Steps
     }
 
     [Then("the database counted nothing")]
-    public void NotCounted() => Equal(0, CardsSql().Count(l => l.StartsWith("SELECT COUNT(")), "counts sent");
+    public void NotCounted() => Equal(0, CardsSql().Count(l => l.Contains("COUNT(")), "counts sent");
 
     IEnumerable<JsonNode> Boards() => JsonNode.Parse(body)!["data"]?["boards"]?.AsArray().Select(b => b!) ?? throw new Exception("no boards in " + body);
 
-    static string Titles(JsonNode? cards) => string.Join(", ", cards!.AsArray().Select(c => (string)c!["title"]!));
+    /// A board's page of cards: its items' titles.
+    static string Titles(JsonNode? cards) => string.Join(", ", cards!["items"]!.AsArray().Select(c => (string)c!["title"]!));
 
     [Then("each board's cards are {string}")]
     public void BoardsCards(string expected) =>
@@ -105,6 +106,39 @@ public sealed partial class Steps
     {
         var board = Boards().Single(b => (string)b["slug"]! == slug);
         Equal((backlog, doing), (Titles(board["backlog"]), Titles(board["doing"])), $"{slug}'s cards");
+    }
+
+    [Then("each board has a next page")]
+    public void EveryNext()
+    {
+        foreach (var b in Boards())
+            Equal(true, (bool)b["cards"]!["pageInfo"]!["hasNextPage"]!, $"{b["slug"]} has a next page");
+    }
+
+    [Then("the page has a next page and a previous page, for the board {string}")]
+    public void BoardBothSides(string slug)
+    {
+        var page = Boards().Single(b => (string)b["slug"]! == slug)["cards"]!["pageInfo"]!;
+        Equal((true, true), ((bool)page["hasNextPage"]!, (bool)page["hasPreviousPage"]!), "next and previous");
+    }
+
+    [Then("the cards were read in {int} command(s), for every board at once, numbered per board")]
+    public void ReadOncePerBoard(int n)
+    {
+        ReadOnce(n);
+        foreach (var sql in Reads())
+            if (!sql.Contains("ROW_NUMBER() OVER (PARTITION BY \"c\".\"board\"")) throw new Exception("not numbered per board: " + sql);
+    }
+
+    [Then("each board's total is {string}")]
+    public void BoardTotals(string expected) =>
+        Equal(expected, string.Join("; ", Boards().Select(b => $"{b["slug"]}: {b["cards"]!["totalCount"]}")), "each board's total");
+
+    [Then("the database counted every board's cards in one command, under a WHERE")]
+    public void CountedPerBoard()
+    {
+        var count = CardsSql().Single(l => l.StartsWith("SELECT ") && l.Contains("COUNT(*)"));
+        if (!count.Contains(" WHERE ") || !count.Contains("GROUP BY")) throw new Exception("the count is not per board under a where: " + count);
     }
 
     [Then("the cards were read in {int} command(s), for every board at once")]
@@ -143,7 +177,13 @@ public sealed partial class Steps
     public void ReadOnly(string columns)
     {
         var sql = Reads().Single();
-        var selected = sql[..sql.IndexOf(" FROM ", StringComparison.Ordinal)];
+        // The select over the cards table itself: a page per board reads it
+        // through a derived table.
+        var from = sql.IndexOf(" FROM \"cards\"", StringComparison.Ordinal);
+        var selected = sql[sql.LastIndexOf("SELECT ", from, StringComparison.Ordinal)..from];
+        // The page's numbering orders by columns it does not read.
+        var numbering = selected.IndexOf(", ROW_NUMBER()", StringComparison.Ordinal);
+        if (numbering >= 0) selected = selected[..numbering];
         var read = Regex.Matches(selected, "\"c\"\\.\"([a-z_]+)\"").Select(m => m.Groups[1].Value).Distinct().Order(StringComparer.Ordinal);
         Equal(columns, string.Join(", ", read), "the columns read: " + sql);
     }
