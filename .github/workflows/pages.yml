@@ -21,19 +21,34 @@ jobs:
   build:
     name: Build the site
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
 
+      # koans/browser/app/stage.sh reads the reference assemblies from ~/.dotnet.
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+        env:
+          DOTNET_INSTALL_DIR: /home/runner/.dotnet
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: koans/browser/app/package-lock.json
+
+      # The koans in the browser: the F# compiler and PGlite as static files.
+      - name: Build the browser koans
+        run: |
+          npm ci --no-audit --no-fund --prefix koans/browser/app
+          bash koans/browser/app/stage.sh "$RUNNER_TEMP/koans"
 
       # Renders docs/ and ROADMAP.md into _site/, and fails when a code block
       # that names its source file is no longer in that file.
       - name: Build
-        run: dotnet fsi website/build.fsx
+        run: dotnet fsi website/build.fsx --koans "$RUNNER_TEMP/koans"
 
       - name: Upload the site
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

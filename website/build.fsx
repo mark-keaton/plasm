@@ -482,8 +482,10 @@ let llms () =
 let rec copyTree (source: string) (target: string) =
     Directory.CreateDirectory target |> ignore
 
+    // GitHub Pages cannot serve the pre-compressed copies the koans' build writes.
     for file in Directory.GetFiles source do
-        File.Copy(file, Path.Combine(target, Path.GetFileName file), true)
+        if not (file.EndsWith ".br" || file.EndsWith ".gz") then
+            File.Copy(file, Path.Combine(target, Path.GetFileName file), true)
 
     for dir in Directory.GetDirectories source do
         copyTree dir (Path.Combine(target, Path.GetFileName dir))
