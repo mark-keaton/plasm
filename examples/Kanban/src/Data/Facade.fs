@@ -490,6 +490,13 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
     static member OpenAsync(dataSource: NpgsqlDataSource, onSql: Action<string>, cancellationToken: CancellationToken) : Task<KanbanData> =
         KanbanData.Open(dataSource, Some onSql, TimeProvider.System, StartupChecks.Run, cancellationToken)
 
+    /// `body` over a facade whose every change is rolled back when it ends
+    /// (Plasm's sandbox: one connection, one transaction, never committed),
+    /// for a test of what the facade does. C# sees only the facade, never
+    /// the repository; the facade given shares this one's clock and ids.
+    member _.SandboxAsync(body: Func<KanbanData, Task<'T>>, cancellationToken: CancellationToken) : Task<'T> =
+        repo.Sandbox((fun sandboxed -> body.Invoke(KanbanData(sandboxed, clock, newId))), cancellationToken)
+
     /// Every card, as `refine` makes the query (a GraphQL request's where and
     /// order, built from CardFields.all), reading only the `fields` chosen
     /// (CardRead): a list a card owns is read only when chosen.
