@@ -535,6 +535,16 @@ tests exercise what the native binary will do. That is .NET's design, not
 Plasm's; Kanban's native C# host, the Lambda-shaped function and the package
 check's consumer have it in their projects, as an application would.
 
+For a test project, that means the test project sets `PublishAot`. Measured
+under `dotnet test` with a probe of `RuntimeFeature`: with `PublishAot` on the
+test project, `IsDynamicCodeSupported` and `IsDynamicCodeCompiled` are both
+false (its `runtimeconfig.json` carries the switch); on a library it
+references, `PublishAot` or `IsAotCompatible` changes nothing. It is a switch,
+not a native binary. The tests still run as IL on the JIT, untrimmed, so they
+exercise Plasm's paths without code generation but not what trimming removes
+or what only native compilation refuses. Only the native binary shows those,
+as `tests/Plasm.Aot/run.sh` and a native run of a host's scenarios do.
+
 ## The check
 
 `tests/Plasm.Aot` is a program over a small domain (`tests/Plasm.Aot.Domain`,
