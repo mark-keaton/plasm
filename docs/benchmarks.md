@@ -364,7 +364,8 @@ What it shows:
   the rows read. A prepared order with its lines and payments and the insert
   are within the noise of each other.
 - **A query built per call is where a native binary is slowest**, by 3.5 to 6
-  times in the work before anything is sent: 15 µs against 86 µs for a read
+  times in the work before anything is sent (as of 0d79f23; the translation
+  half has since been cut, below): 15 µs against 86 µs for a read
   by key, 130 µs against 475 µs for an order with two loads, so that read as
   a whole takes 1.7 times as long (574 µs against 979 µs) and allocates 70%
   more. Both halves of that work are slower: building the query value, where
@@ -377,6 +378,66 @@ For a long-running native host, then: prepare the queries a request runs, as
 Plasm's start-up check already encourages (a prepared query is a value it
 checks); a query built per request pays its translation on every call, and
 natively pays it several times over.
+
+### Native translation, before and after (2026-11-19)
+
+Two commits made Plasm's translation cheaper natively, where it resolved
+types and members by reflection over each quotation:
+
+- 5b2ee39 asks FSharp.Reflection whether a type is a record or a union, and
+  what its fields are, once per type;
+- f3a4d0c makes each member expression once (Reflection.Quoted).
+
+`benchmarks/Plasm.Steady/compare.sh 0d79f23` builds Plasm.Steady from
+0d79f23 and from the tree at da20d8e, both with the same harness, each under
+the runtime and natively, and alternates the four over two rounds on one
+PostgreSQL. The method and limits are as above; the load average was 8 to
+10.7. Each figure is the lower median of the two rounds, in µs.
+
+The harness gains one operation, a select of three fields into a record
+built per call.
+
+"Translation only" is `repo.Explain` of a query built in the call. It
+includes building the query value, which is measured on its own as
+"building only"; Plasm's translation is the difference.
+
+| Operation | Runtime before | Runtime after | Native before | Native after | Native bytes before | Native bytes after |
+|---|---|---|---|---|---|---|
+| Translation only, read by key | 14.2 | 10.5 | 84.1 | 52.3 | 73,935 | 57,407 |
+| Translation only, the order with lines and payments | 124 | 49.2 | 449 | 198 | 333,887 | 220,949 |
+| Translation only, a select into a record | 121 | 46.8 | 456 | 354 | 230,460 | 186,620 |
+| Building only, read by key | 7.7 | 7.9 | 47.3 | 48.0 | 45,123 | 45,068 |
+| Building only, the order with lines and payments | 31.8 | 32.1 | 167 | 168 | 141,576 | 141,407 |
+| Building only, a select into a record | 42.0 | 42.8 | 347 | 348 | 169,147 | 168,964 |
+| Read by key, built per call | 193 | 249 | 249 | 214 | 80,221 | 63,721 |
+| The order with lines and payments, built per call | 522 | 426 | 934 | 668 | 451,903 | 339,174 |
+| Read by key, prepared | 163 | 211 | 171 | 175 | 25,453 | 25,012 |
+| The order with lines and payments, prepared | 300 | 315 | 360 | 342 | 128,009 | 128,019 |
+| Npgsql alone: read by key | 123 | 123 | 127 | 134 | 2,850 | 2,845 |
+| Npgsql alone: order, lines and payments | 378 | 379 | 380 | 374 | 11,336 | 11,332 |
+
+What it shows:
+
+- **Plasm's translation is now a small part.** Natively, translation without
+  building fell from 37 to 4 µs for a read by key, from 282 to 30 µs for the
+  order with two loads, and from 109 to 6 µs for the select. Under the
+  runtime it fell from 7 to 3, 92 to 17, and 79 to 4.
+- **Reads built per call gained with it.** Natively, the order with two loads
+  took 934 µs before and 668 µs after, and allocates a quarter less; a read
+  by key took 249 µs before and 214 µs after.
+- **Building the query value is what is left**, and it did not move: 48,
+  168 and 348 µs natively against 8, 32 and 43 µs under the runtime. It is
+  FSharp.Core decoding the quotations the builder takes as
+  `[<ReflectedDefinition>]` arguments, before Plasm sees the query, so
+  nothing Plasm caches can save it.
+- **Prepared reads and Npgsql alone did not move** beyond the noise. A runtime
+  prepared read by key at 211 µs after 163 µs is noise: the Npgsql twin is
+  123 µs in both.
+
+So caching translated plans or templates by a query's shape is not worth
+building (docs/hotchocolate.md, "Translation"). It could save at most the
+4 to 30 µs left of translation; the shape is known only after the value is
+built; and building costs several times more.
 
 ## Interpretation
 

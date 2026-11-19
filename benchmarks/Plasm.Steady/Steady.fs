@@ -21,6 +21,9 @@ let timed = 5000
 
 type PaymentsOf = { Order: Order; Payments: Payment list }
 
+/// What a select builds: a record of some of an order's fields.
+type OrderSummary = { Id: OrderId; Status: OrderStatus; Total: decimal }
+
 let customerById = Query.prepare (fun (id: Arg<CustomerId>) -> plasm { for c in tableOf<Customer> do where (c.Id = id.Value) })
 let orderById = Query.prepare (fun (id: Arg<OrderId>) -> plasm { for o in tableOf<Order> do where (o.Id = id.Value) })
 
@@ -126,6 +129,16 @@ let main argv =
                 let q = orderWithPayments (order i)
                 if isNull (box q) then failwith "no query"
                 Task.CompletedTask)
+            do! measure "build only: select a record, built per call" (fun i ->
+                let id = order i
+                let q = plasm { for o in tableOf<Order> do where (o.Id = id); select { Id = o.Id; Status = o.Status; Total = o.Total } }
+                if isNull (box q) then failwith "no query"
+                Task.CompletedTask)
+            do! measure "translate only: select a record, built per call" (fun i ->
+                let id = order i
+                match repo.Explain(plasm { for o in tableOf<Order> do where (o.Id = id); select { Id = o.Id; Status = o.Status; Total = o.Total } }) with
+                | Ok _ -> Task.CompletedTask
+                | Error e -> failwith (string e))
             do! measure "translate only: read with two loads, built per call" (fun i ->
                 match repo.Explain(orderWithPayments (order i)) with
                 | Ok _ -> Task.CompletedTask

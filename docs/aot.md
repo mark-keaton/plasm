@@ -252,8 +252,11 @@ before size.
 
 Once warm, a native binary runs a prepared query close to the runtime (slower
 by what making rows into records by reflection costs, 12 to 21% in the
-measured reads), but translates a query built per call several times more
-slowly (docs/benchmarks.md, "Steady state").
+measured reads). A query built per call is still slower natively, but no
+longer because of Plasm's translation: that is now 4 to 30 µs in the measured
+queries. Building the query value itself takes 48 to 348 µs natively, against
+8 to 43 µs under the runtime; that is FSharp.Core decoding the query's
+quotations (docs/benchmarks.md, "Native translation, before and after").
 
 ### On AWS Lambda
 

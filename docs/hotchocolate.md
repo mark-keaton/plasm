@@ -201,12 +201,16 @@ A generic type's own name (``Found`1``) is not one GraphQL allows, so
 
 A request's query is built and translated for each request: a request names
 values Plasm makes parameters, but its shape (which fields, which operators,
-how they nest) is the request's. Translation is cheap under the runtime and
-several times dearer in a native binary (benchmarks.md, "Steady state": a
-read by key built per call costs 15 µs to translate under the runtime, 90 µs
-natively, against a prepared read's 175 µs in all). Translating each declared
-part once, so that a request only assembled them, would need: a way to put a
-prepared query's argument into a built condition (an `Arg` is made only by
-`Query.prepare` today), prepared queries of any number of arguments (today
-one to three), and a bounded cache of templates keyed by a request's shape,
-never by its text or values. None of it is built.
+how they nest) is the request's. Translating it is now a few microseconds:
+for a read by key, 3 µs under the runtime and 4 µs natively; for an order
+with two loads, 17 and 30 µs (benchmarks.md, "Native translation, before and
+after"). A prepared read takes 175 µs in all.
+
+So translated plans are not cached, and no templates are kept by a request's
+shape. A cache could save only those microseconds, and a request's shape is
+known only after its query value is built, which costs more (8 to 43 µs
+under the runtime, 48 to 348 µs natively). Translating each declared part
+once, so that a request only assembled them, is not built either. It would
+also need a way to put a prepared query's argument into a built condition
+(an `Arg` is made only by `Query.prepare` today), and prepared queries of
+any number of arguments (today one to three).
