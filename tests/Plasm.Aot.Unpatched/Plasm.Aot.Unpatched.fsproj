@@ -6,7 +6,7 @@
     <OutputType>Exe</OutputType>
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104;IL3053</WarningsNotAsErrors>
     <!-- The step this program is about: left out on purpose. -->
     <PlasmFieldGetters>false</PlasmFieldGetters>
   </PropertyGroup>

@@ -404,7 +404,7 @@ let main argv =
             all (title.OrderBy(Query.from tableOf<Ticket> |> BuildQuery.where (c.ToExpr()), true)) ticket)
         step "the fields a caller chose, read and checked" (fun () ->
             let title = ReadField.value "title" <@ fun (t: Ticket) -> t.Title @>
-            let stage = ReadField.via "stage" <@ fun (t: Ticket) -> t.Stage @> (fun s -> match s with Backlog -> "backlog" | Doing _ -> "doing" | Done _ -> "done")
+            let stage = ReadField.via "stage" <@ fun (t: Ticket) -> t.Stage @> (fun s -> match s with Todo -> "todo" | Doing _ -> "doing" | Done _ -> "done")
             let notes = ReadField.via "notes" <@ fun (t: Ticket) -> t.Notes @> (List.map (fun n -> n.Text))
             repo.CheckFields [ title; stage; notes ]
             let query = Query.from tableOf<Ticket> |> BuildQuery.orderBy <@ fun t -> t.Title @>

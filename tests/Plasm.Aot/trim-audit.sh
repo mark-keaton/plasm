@@ -11,7 +11,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 rid=$(dotnet --info | sed -n 's/^ *RID: *//p' | head -1)
 echo "publishing without Plasm's suppressions (about a minute)"
-dotnet publish "$here" -c Release -r "$rid" -p:PublishAot=true -v m -p:PlasmTrimAudit=true -o "$work/native" > "$work/publish.log" 2>&1 || { cat "$work/publish.log"; exit 1; }
+dotnet publish "$here" -c Release -r "$rid" -p:PublishAot=true -v m -p:PlasmTrimAudit=true -p:TreatWarningsAsErrors=false -o "$work/native" > "$work/publish.log" 2>&1 || { cat "$work/publish.log"; exit 1; }
 
 # warning ILnnnn: Plasm.Module[.Nested].member...: the top-level module, which
 # a suppression scoped to its type covers with everything nested in it (its

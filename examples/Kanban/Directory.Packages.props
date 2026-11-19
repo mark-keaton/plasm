@@ -9,6 +9,10 @@
     <!-- The host's [Authorize] on GraphQL fields, at the version Plasm.HotChocolate is built against; the host's alone. -->
     <PackageVersion Include="HotChocolate.AspNetCore.Authorization" Version="16.7.6" />
     <PackageVersion Include="Fable.Core" Version="5.6.1" />
+    <!-- Kanban runs on the FSharp.Core Fable.Remoting allows: Fable.Remoting.Server
+         6.1.0 and Fable.Remoting.Json 3.0.0 need >= 10.1.202 and < 10.2.0, so not
+         the SDK's 11.0.101 that the repository's suites run on (docs/status.md). -->
+    <PackageVersion Update="FSharp.Core" Version="10.1.202" />
     <PackageVersion Include="Fable.Elmish" Version="5.0.2" />
     <PackageVersion Include="Fable.Elmish.React" Version="5.6.0" />
     <PackageVersion Include="Feliz" Version="3.3.3" />

@@ -1,0 +1,12 @@
+<Project>
+  <!-- Every F# project references FSharp.Core itself, at the version
+       Directory.Packages.props gives it: under central package management the
+       F# SDK makes no implicit reference (it sets DisableImplicitFSharpCoreReference
+       itself), and a project would run on whatever FSharp.Core its other
+       references pull in: the floor, through Plasm's. A project that declares
+       its own reference is left as it is: the packages, which reference the
+       floor, and Kanban's, which pins its own. -->
+  <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.fsproj' and '@(PackageReference->WithMetadataValue('Identity', 'FSharp.Core'))' == ''">
+    <PackageReference Include="FSharp.Core" />
+  </ItemGroup>
+</Project>

@@ -7,8 +7,6 @@
     <!-- Its doc comments are shown in the browser editor (hover). -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);FS3390</NoWarn>
-    <!-- The oldest FSharp.Core Plasm supports, so hosts with an older one can load it. -->
-    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Koans.fs" />

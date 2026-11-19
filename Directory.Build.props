@@ -11,6 +11,11 @@
     <IsPackable Condition="'$(IsPackable)' == ''">false</IsPackable>
     <GenerateDocumentationFile Condition="'$(IsPackable)' == 'true'">true</GenerateDocumentationFile>
     <Deterministic>true</Deterministic>
+    <!-- The oldest FSharp.Core Plasm supports: the packages are built against it
+         and depend on it or later, so a consumer is never pushed to a newer one:
+         a C# project, which has no FSharp.Core of its own, resolves the floor, and
+         an F# project keeps its own (docs/status.md). -->
+    <PlasmFSharpCoreFloor>8.0.403</PlasmFSharpCoreFloor>
     <!-- Only the packages: a CI build maps source paths to /_/, and the tests, the
          examples and the koans find their own files by __SOURCE_DIRECTORY__ at run time. -->
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true' and '$(IsPackable)' == 'true'">true</ContinuousIntegrationBuild>

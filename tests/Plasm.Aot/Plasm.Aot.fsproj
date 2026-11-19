@@ -10,8 +10,10 @@
          the publish alone. -->
     <DefineConstants Condition="'$(PlasmAotSlim)' == 'true'">$(DefineConstants);PLASM_AOT_SLIM</DefineConstants>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <!-- IL warnings are made errors last, once the binary works (docs/aot.md). -->
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- Warnings are errors, as everywhere: six once hid a match that read every
+         stage as one. FSharp.Core's two summary lines in a publish are not
+         (docs/aot.md); trim-audit.sh, which counts IL warnings, sets it off. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104;IL3053</WarningsNotAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="App.fs" />

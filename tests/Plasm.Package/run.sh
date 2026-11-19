@@ -24,6 +24,14 @@ for p in Plasm.Annotations Plasm Plasm.Postgres Plasm.HotChocolate; do
   dotnet pack "$repo/src/$p" -c Release --no-build -o "$feed" -v q > "$work/pack-$p.log" 2>&1 || { cat "$work/pack-$p.log"; exit 1; }
 done
 version=$(ls "$feed" | sed -n 's/^Plasm\.Postgres\.\(.*\)\.nupkg$/\1/p' | head -1)
+# The packages depend on the floor, FSharp.Core $(PlasmFSharpCoreFloor) or later,
+# whatever the repository's own suites run on (docs/status.md).
+floor=$(sed -n 's/.*<PlasmFSharpCoreFloor>\(.*\)<\/PlasmFSharpCoreFloor>.*/\1/p' "$repo/Directory.Build.props")
+for p in Plasm.Annotations Plasm Plasm.Postgres Plasm.HotChocolate; do
+  declared=$(unzip -p "$feed/$p.$version.nupkg" "$p.nuspec" | sed -n 's/.*<dependency id="FSharp.Core" version="\([^"]*\)".*/\1/p')
+  if [ "$declared" != "$floor" ]; then echo "pack: $p depends on FSharp.Core $declared, not the floor $floor"; exit 1; fi
+done
+echo "pack: every package depends on FSharp.Core $floor or later"
 echo "pack: version $version; Plasm's package carries: $(unzip -Z1 "$feed/Plasm.$version.nupkg" | grep -E '^(build|buildTransitive|tools)/' | tr '\n' ' ')"
 
 mkdir -p "$app"

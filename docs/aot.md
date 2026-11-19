@@ -208,6 +208,10 @@ it itself:
 
     <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104;IL3053</WarningsNotAsErrors>
 
+So those two lines are expected in a publish, and the honest check is the
+`warning IL` lines other than them: none. Searching the log for the library's
+name is not that check, since a path in any other warning may contain it too.
+
 ## Cold start and size
 
 `tests/Plasm.Aot/coldstart.sh` runs the check program's `coldstart` mode as

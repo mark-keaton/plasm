@@ -17,7 +17,7 @@ mkdir -p "$work/repo" "$work/out" "$work/rie"
 
 # Only what the function's build reads, without this machine's bin and obj.
 cd "$repo"
-for p in Directory.Build.props Directory.Packages.props global.json README.md src/Directory.Build.props \
+for p in Directory.Build.props Directory.Build.targets Directory.Packages.props global.json README.md src/Directory.Build.props \
          src/Plasm src/Plasm.Annotations src/Plasm.Postgres src/Plasm.FieldGetters \
          examples/Kanban/Directory.Packages.props examples/Kanban/src/Shared examples/Kanban/src/Data examples/Kanban/src/Lambda; do
   rsync -a --relative --exclude bin --exclude obj "$p" "$work/repo/"

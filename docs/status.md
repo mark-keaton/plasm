@@ -540,7 +540,13 @@ documents), each refused by name rather than guessed:
   translated, naming its type: at start-up by `Repo.Start` for a module
   value, otherwise at first use. Not at compile time.
 - Plasm depends on FSharp.Core 8.0 or later (`FSharp.Core >= 8.0.403`), so it
-  loads into hosts with an older FSharp.Core than the SDK's.
+  loads into hosts with an older FSharp.Core than the SDK's. The packages are
+  built against that floor (`PlasmFSharpCoreFloor`) as a courtesy: a C# project,
+  which has no FSharp.Core of its own, resolves the floor, and an F# project
+  keeps its own. Everything that runs Plasm as an application here, the suites,
+  the native check, the koans, the package check's consumers and the browser
+  koans, runs on the .NET 11 SDK's FSharp.Core, 11.0.101, as a new project does.
+  Kanban runs on 10.1.202, the newest Fable.Remoting 6.1 allows.
 - `DateTime` fields mapped to `timestamptz` must be UTC; Npgsql enforces this.
 - The PostgreSQL error-detail text is redacted by Npgsql unless
   `Include Error Detail` is set. Plasm reports SQLSTATE, constraint name and
@@ -775,6 +781,7 @@ row's type, not in a field that may be unloaded.
 | 2026-11-16 | **Start-up checking by default**, at the user's request ("Can we have a startup check available as a default in the library? And the default is \"crash\", but we can add a setting to turn it down to Warning or Ignore?"): `Repo.Start` is the one way to get a repository; the constructor and `repo.CheckQueries` are internal (Plasm's own tests reach them through InternalsVisibleTo), so the namespace argument that read a typo as success is gone; `RepoOptions.Queries` and `RepoOptions.Schema`, each `Crash`, `Warn` or `Ignore`, since a database migrated after start-up is a reason to relax the schema alone; `OnProblem` beside `OnCommand`; no queries found is a problem; functions returning a query are counted in a note. Koans, the browser course, benchmarks, examples, the F# Interactive tour, README and website start their repositories; a repository that is not checked writes Ignore (`RepoOptions.Unchecked`) | `features/query-check.feature` |
 | 2026-11-16 | `referring<T> o` and `referredBy<T> o`: the tie derived from the typed ids, at the user's request (asked whether F# could generate nine hand-written relationship functions). Reverses "no inferred tie" from the `including` design: with typed ids it is a proof, not a guess; not exactly one candidate field is refused, never picked. Plain ties in koans, README, website, examples and Kanban moved to it | `features/referring.feature` |
 | 2026-11-15 | `[<Json>]`: one jsonb document per field in Plasm's own strict mapping (unknown keys refused, since writes replace the whole document); JSON rendered through `ISqlDialect.Json`, refused at repository creation when absent | `features/json-columns.feature` |
+| 2026-11-19 | The suites run on the FSharp.Core a new project gets (docs/status.md, "Limits"). The packages are still built against the floor 8.0.403 (`PlasmFSharpCoreFloor`), so the nuspecs still say >= 8.0.403, which the package check now asserts. Everything else that runs Plasm here runs on 11.0.101: Plasm.Specs, Plasm.Tests, the native check, the koans and their specs, the browser koans, and the package check's consumers. Until now every F# project here had no FSharp.Core reference of its own, since under central package management the F# SDK makes none, and ran on whatever its references pulled in, mostly the floor through Plasm's. Directory.Build.targets now gives each F# project one that lacks it. Kanban runs on 10.1.202, the newest Fable.Remoting.Server 6.1.0 and Fable.Remoting.Json 3.0.0 allow; its C# host and Lambda reference the F# server for its migrations, so they move to 11 in a later change. A pass with the pin at 11 everywhere found Kanban unbuildable (NU1608) and nothing else: suites, native output, IL warnings (2, both FSharp.Core's) and the trim audit as before. It also found six warnings in tests/Plasm.Aot, under both pins, hiding a match that read every stage as "backlog": that project, and Plasm.Aot.Unpatched, now treat warnings as errors but for FSharp.Core's IL2104 and IL3053, and trim-audit.sh, which counts IL warnings, turns that off for its own publish | `Directory.Build.targets` |
 
 ## Suggested next steps
 
