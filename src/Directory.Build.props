@@ -12,7 +12,11 @@
     <VersionPrefix>0.1.0</VersionPrefix>
     <VersionSuffix Condition="'$(VersionSuffix)' == ''">alpha</VersionSuffix>
     <Authors>Plasm contributors</Authors>
-    <PackageTags>fsharp;orm;ecto;database;postgresql;persistence</PackageTags>
+    <PackageTags>fsharp;csharp;orm;ecto;database;postgresql;persistence;aot</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://mark-keaton.github.io/plasm/</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/mark-keaton/plasm</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>

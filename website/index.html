@@ -3,57 +3,88 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Plasm: persistence that thinks in F#</title>
-<meta name="description" content="Your own immutable F# records stored as they are, compiler-checked queries, and typed transactions. One way to build an application, over PostgreSQL.">
+<title>Plasm: the F# domain core of your C# application</title>
+<meta name="description" content="Keep ASP.NET and your team's C#. Put the domain and its persistence in F#, where Plasm stores immutable records, checks every query and makes every write a typed transaction. Native AOT first, over PostgreSQL.">
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body data-root="">
 
-<header class="nav">
-  <div class="wrap">
-    <a class="brand" href="index.html"><img src="logo.svg" width="28" height="28" alt=""><span>Plasm</span></a>
-    <span class="pill">experimental · PostgreSQL</span>
-    <span class="spacer"></span>
-    <nav class="links" aria-label="Main">
-      <a href="#guarantees">Guarantees</a>
-      <a href="examples.html">Examples</a>
-      <a href="#benchmarks">Benchmarks</a>
-      <a href="#status">Status</a>
-      <a href="#start">Get started</a>
-    </nav>
-  </div>
-</header>
+<!--nav-->
 
 <main>
 <section class="wrap hero" id="top">
   <div>
-    <p class="eyebrow">Ecto's design · expressed in F#</p>
-    <h1>Persistence that thinks in F#.</h1>
-    <p class="sub">Your domain's own immutable records, stored as they are, with what they own. Compiler-checked queries and typed transactions are values; the repo is the only place anything touches the database. There is one way to build an application with it.</p>
+    <p class="eyebrow accent">For C# applications · native AOT first, always</p>
+    <h1>The F# domain core of your C# application.</h1>
+    <p class="sub">Keep ASP.NET, your host and your team's C#. Put the domain and its persistence in F#, where Plasm stores immutable records, checks every query and makes every write a typed transaction. C# calls plain async methods and switches over the outcomes. All of it compiles ahead of time.</p>
     <div class="ctas">
-      <a class="btn primary" href="#start">Get started</a>
-      <a class="btn" href="examples.html">See examples</a>
+      <a class="btn primary" href="{{docs}}">Get started</a>
+      <a class="btn" href="koans/">Learn with the koans</a>
+      <a class="btn quiet" href="{{repo}}">GitHub</a>
     </div>
+    <p class="small">Not on NuGet yet. Clone it and run the tour; it needs the .NET 11 SDK and Docker.</p>
+<pre class="code shell">git clone {{repo}}
+cd plasm
+dotnet run --project examples/Plasm.Examples</pre>
   </div>
   <div class="hero-code">
-<pre class="code fsharp">let page customer =
+    <div class="code-card">
+      <div class="code-title">Queries.fs</div>
+<pre class="code fsharp" data-from="examples/Plasm.Examples/Queries.fs">/// A page of orders, each with its lines: two commands however long the page.
+let orderPage page size (q: Query&lt;Order&gt;) =
     plasm {
-        for o in tableOf&lt;Order&gt; do
-            where (o.CustomerId = Some customer)
-            orderByDescending o.PlacedAt
-            take 20
-    }
-
-let! orders = repo.All(page customerId)
-// Result&lt;Order list, DbError&gt;: every Order with its Lines</pre>
+        for o in q do
+            orderByDescending o.PlacedAt // the key is appended as a tiebreaker
+            skip (page * size)
+            take size
+    }</pre>
+    </div>
     <div class="tags">
       <span class="tag violet">2 commands at 20, 100 or 1,000 orders</span>
-      <span class="tag teal">lines restricted to the selected page</span>
+      <span class="tag teal">lines read for the selected page only</span>
       <span class="tag amber">no cartesian product</span>
+    </div>
+  </div>
+</section>
+
+<section class="band dark" id="csharp">
+  <div class="wrap section">
+    <div class="lede">
+      <h2>C# outside, F# inside</h2>
+      <p>Modern C# reads F# unions as unions. So the boundary is one F# type: your C# passes plain arguments and a cancellation token, and gets back a union the compiler makes it handle case by case.</p>
+    </div>
+    <div class="pair">
+      <div class="code-card">
+        <div class="code-title">Your C# host · Rest.cs, Outcomes.cs</div>
+<pre class="code csharp" data-from="examples/Kanban/src/Host/Rest.cs">card.MapPost("/start", async (Guid id, Versioned input, ClaimsPrincipal user, KanbanData kanban, CancellationToken ct) =&gt;
+    Outcomes.Of(await kanban.StartAsync(id, input.Version, user.Actor(), ct)));</pre>
+<pre class="code csharp" data-from="examples/Kanban/src/Host/Outcomes.cs">public static IResult Of(ChangeOutcome outcome) =&gt; outcome switch
+{
+    CardView card =&gt; Results.Ok(card),
+    Missing missing =&gt; Of(missing),
+    Refused refused =&gt; Of(refused),
+    Stale stale =&gt; Of(stale),
+    Invalid invalid =&gt; Of(invalid),
+};</pre>
+      </div>
+      <div class="code-card">
+        <div class="code-title">Your F# domain · Facade.fs</div>
+<pre class="code fsharp" data-from="examples/Kanban/src/Data/Facade.fs">/// `assignee` starts work on the card, if the board's limit allows it.
+member _.StartAsync(card: Guid, version: int, assignee: string, cancellationToken: CancellationToken) : Task&lt;ChangeOutcome&gt; =
+    match field "assignee" Person.create assignee with
+    | Error problems -&gt; Task.FromResult(ChangeOutcome(View.invalid problems))
+    | Ok who -&gt; change card version (Card.start who (clock ())) cancellationToken</pre>
+      </div>
+    </div>
+    <div class="points">
+      <div><h3>C# writes no query</h3><p>Queries and transactions stay in F#. Each endpoint is one call.</p></div>
+      <div><h3>A new outcome breaks the build</h3><p>The switch has no default arm. Add a case in F#, and every C# switch that misses it stops compiling.</p></div>
+      <div><h3>Nothing null crosses</h3><p>A missing or null argument is refused while the request is read, before F# is called.</p></div>
+      <div><h3>AOT first, always</h3><p>Every commit is compiled natively and must print what the runtime prints, with no trim warning naming Plasm.</p></div>
     </div>
   </div>
 </section>
@@ -65,138 +96,121 @@ let! orders = repo.All(page customerId)
       <p>Each one is an executable Gherkin scenario, run against a real PostgreSQL database.</p>
     </div>
     <div class="grid">
-      <div class="card"><h3>No hidden database access</h3><p>What a record owns or links is read with it, as a plain list. Reading a field never queries, and an empty list always means empty.</p></div>
-      <div class="card"><h3>Nothing runs client-side by accident</h3><p>A predicate that can't become SQL fails with the expression named. Rows are never fetched to be filtered in memory.</p></div>
-      <div class="card"><h3>No N+1, no cartesian product</h3><p>Each owned or linked list is one command per batch of owner keys. Sibling lists are read separately.</p></div>
-      <div class="card"><h3>Your rules, not Plasm's</h3><p>Plasm validates no input. Your constructors and functions decide, and a transaction's refusals are of your own error type.</p></div>
-      <div class="card"><h3>Typed throughout</h3><p>Comparing <code>o.Total</code> with a string, or mixing <code>OrderId</code> with <code>CustomerId</code>, won't compile. Stored values are read through your types' own <code>create</code>.</p></div>
-      <div class="card"><h3>Only what changed is written</h3><p>An update writes the columns that differ from the record read, and owned lists by difference, under an optimistic version check.</p></div>
+      <div class="card"><h3>No hidden database access</h3><p>What a record owns or links is read with it, as a plain field. Nothing is loaded lazily, and nothing is left unloaded.</p></div>
+      <div class="card"><h3>Nothing runs client-side by accident</h3><p>A predicate that cannot be translated fails with the expression named.</p></div>
+      <div class="card"><h3>No N+1, no cartesian products</h3><p>Each owned or linked list is one command per batch of owner keys, however many owners are read.</p></div>
+      <div class="card"><h3>Partial data cannot destroy data</h3><p>An update writes only the columns that differ. A projection is not a record and cannot be written back.</p></div>
+      <div class="card"><h3>Concurrency is checked</h3><p>By a version field, or by every column of the record the change was made from, in the same command.</p></div>
+      <div class="card"><h3>Problems surface at start-up</h3><p>Starting a repository translates every query value and compares the model with the database, naming each problem.</p></div>
     </div>
   </div>
 </section>
 
-<section class="band">
+<section class="band" id="examples">
   <div class="wrap section">
     <div class="lede">
-      <h2>How a page of orders loads</h2>
-      <p>The orders are chosen first. Their lines then receive exactly the selected keys as one array parameter. Payments are another aggregate: a <code>let!</code> reads them for the same keys, and <code>return</code> puts them in the row's <code>Payments</code> field.</p>
+      <h2>Your records, a query, a write</h2>
+      <p>Each example on the <a href="examples.html">examples page</a> has a toggle to the SQL Plasm generated for it, captured from a real run.</p>
     </div>
-    <ol class="flow" style="list-style: none; margin: 0; padding: 0">
-      <li class="step first"><span class="num">1 · the orders</span><strong>orders</strong><code>ORDER BY placed_at DESC, id LIMIT 20</code></li>
-      <li class="step"><span class="num">2 · what they own</span><strong>order_lines</strong><code>order_id = ANY(@keys)</code></li>
-      <li class="step"><span class="num">3 · another aggregate, by id</span><strong>payments</strong><code>order_id = ANY(@keys) AND status = @p1</code></li>
-    </ol>
-    <p class="small">You can inspect any plan without touching the database: <code>repo.Explain query</code> returns the SQL and the lists read with it.</p>
+    <div class="trio">
+      <div class="code-card">
+        <div class="code-title">The record says how it is stored</div>
+<pre class="code fsharp" data-from="examples/Plasm.Examples/Model.fs">[&lt;Table "orders"&gt;]
+type Order =
+    { Id: OrderId
+      CustomerId: CustomerId option
+      Status: OrderStatus
+      Total: decimal
+      PlacedAt: DateTime
+      [&lt;Version&gt;]
+      Version: int
+      Lines: OrderLine list }</pre>
+      </div>
+      <div class="code-card">
+        <div class="code-title">Queries are values</div>
+<pre class="code fsharp" data-from="examples/Plasm.Examples/Queries.fs">let published = plasm { for o in tableOf&lt;Order&gt; do where (o.Status = Published) }
+// ...
+let forCustomer customerId (q: Query&lt;Order&gt;) =
+    plasm { for o in q do where (o.CustomerId = Some customerId) }</pre>
+      </div>
+      <div class="code-card">
+        <div class="code-title">Writes are transactions</div>
+<pre class="code fsharp" data-from="examples/Plasm.Examples/Writes.fs">transaction {
+    let! order = one "order" (orderById id)
+    let! changed = decide order |&gt; Tx.ofResult Domain
+    return! Tx.update (order, changed, expectVersion = seen)
+}</pre>
+      </div>
+    </div>
   </div>
 </section>
 
-<section class="band alt">
+<section class="band alt" id="hosting">
+  <div class="wrap section">
+    <div class="lede"><h2>Two ways to host it</h2></div>
+    <div class="pair">
+      <div class="host">
+        <h3>A native binary on AWS Lambda</h3>
+        <p>Plasm compiles ahead of time with no trim warning naming it. The Kanban example ships a C# function over an F# domain, published natively.</p>
+        <div class="stats">
+          <div><strong>29.6 MB</strong><span>binary, 12.0 MB zipped</span></div>
+          <div><strong>46 ms</strong><span>init, local emulator</span></div>
+          <div><strong>1.5 to 2.4 ms</strong><span>later invocations</span></div>
+        </div>
+        <p class="small">Measured on an Apple M4 Max through the Lambda runtime interface emulator, not on AWS. The method is on the page below.</p>
+        <a class="more" href="docs/aot.html">Native AOT and Lambda</a>
+      </div>
+      <div class="host">
+        <h3>A long-running API with Hot Chocolate</h3>
+        <p>Plasm.HotChocolate turns a GraphQL request into one query: filters, order and paging reach the SQL, a request reads only the fields it selects, and nested lists page per parent in one command.</p>
+        <p>The Kanban host is C# over an F# domain: REST, GraphQL, cookie sign-in and a background job, with every outcome a union the C# compiler checks.</p>
+        <p class="small">Runtime only. GraphQL inside a native binary is not available.</p>
+        <a class="more" href="docs/hotchocolate.html">Hot Chocolate</a>
+        <a class="more" href="docs/kanban-host.html">The Kanban host</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="koans">
   <div class="wrap section split">
     <div>
-      <h2>Your domain decides</h2>
-      <p class="muted">The rules are plain functions over your records, with no persistence in them. Plasm stores the record they return, and validates nothing itself.</p>
-<pre class="code fsharp">let cancel (reason: string) (order: Order) =
-    match order.Status with
-    | Cancelled _ -&gt; Error AlreadyCancelled
-    | _ when String.IsNullOrWhiteSpace reason -&gt; Error ReasonRequired
-    | _ -&gt; Ok { order with Status = Cancelled(reason.Trim()) }
-
-// A constraint with PostgreSQL's default name is the field's error:
-// customers_email_key -&gt; { Field = "Email"; Kind = UniqueConstraint ... }</pre>
+      <h2>Learn it by filling in blanks</h2>
+      <p class="muted">The Plasm Koans are small exercises, each with a blank to fill in. They run against a real PostgreSQL, in your browser or your terminal, and every koan starts from the same data.</p>
+      <div class="ctas">
+        <a class="btn primary" href="koans/">Open the koans</a>
+        <a class="btn quiet" href="{{repo}}/blob/main/koans/CURRICULUM.md">See the curriculum</a>
+      </div>
     </div>
-    <div>
-      <h2>Writes are transactions</h2>
-      <p class="muted">Every write is a typed transaction. Steps pass results with <code>let!</code>; a failure says where its step is written and what was rolled back, and a refusal has your own error type. Retries are opt-in.</p>
-<pre class="code fsharp">let cancelOrder id seen reason : Tx&lt;Order, Refusal&gt; =
-    transaction {
-        let! order = Tx.one (orderById id) |&gt; Tx.orReject (Missing "order")
-        let! changed = cancel reason order |&gt; Tx.ofResult Domain
-        return! Tx.update (order, changed, expectVersion = seen)
-    }
-
-match! repo.Transact(cancelOrder id version "changed my mind") with
-| Ok order -&gt; ...
-| Error { Failure = TxFailure.Rejected r } -&gt; ...   // your Refusal
-| Error { Failure = TxFailure.Conflict _ } -&gt; ...   // a newer version is stored
-| Error e -&gt; printfn "%O failed; rolled back %A" e.Step e.RolledBack</pre>
+    <div class="code-card">
+      <div class="code-title">Lesson 21 · About testing with Plasm</div>
+<pre class="code fsharp" data-from="koans/Plasm.Koans/Lessons/L21_TestingWithPlasm.fs">let! _ = repo.Sandbox(fun repo -&gt; repo.Transact addDan)
+// The sandbox has ended: count with the outer repository.
+let! after = customers repo
+after |&gt; shouldBe __</pre>
     </div>
-  </div>
-</section>
-
-<section class="band" id="benchmarks">
-  <div class="wrap section">
-    <div class="lede">
-      <h2>Measured against EF Core 11</h2>
-      <p>Orders with their lines, and the successful payments of those orders. The dataset is 10,000 orders × 10 lines × 10 payments on PostgreSQL 18 over loopback; figures are BenchmarkDotNet means.</p>
-    </div>
-    <div class="table-box">
-      <table>
-        <thead><tr><th scope="col">Workload</th><th scope="col">Plasm</th><th scope="col">EF single query</th><th scope="col">EF split query</th></tr></thead>
-        <tbody>
-          <tr><td>Page of 20</td><td>3.20 ms · 1.4 MB</td><td class="win">2.59 ms · 502 KB</td><td>3.58 ms · 240 KB</td></tr>
-          <tr><td>Page of 100</td><td>11.1 ms · 6.9 MB</td><td>15.1 ms · 2.2 MB</td><td class="win">10.5 ms · 808 KB</td></tr>
-          <tr><td>Page of 1,000</td><td>108 ms · 69 MB</td><td>80.1 ms · 21.4 MB</td><td class="win">25.0 ms · 7.7 MB</td></tr>
-          <tr><td>One order, queries rebuilt per call</td><td>719 µs · 406 KB</td><td class="win">490 µs · 128 KB</td><td>605 µs · 92 KB</td></tr>
-          <tr><td>One order, prepared queries</td><td>510 µs · 138 KB</td><td class="win">490 µs · 128 KB</td><td>605 µs · 92 KB</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="small" style="max-width: 52rem">Plasm sends as few commands as EF split query and reads the same rows, but it is slower and allocates more, because the scalars it reads by convention are converted by reflection on every row. With the same model and registered mappings, a page of 1,000 measured 23 ms and 20 MB, level with EF split query on time; that conversion is the next thing to fix. These were measured on one machine, shared with other work, against a local database; the full method and limitations are in <code>docs/benchmarks.md</code>.</p>
   </div>
 </section>
 
 <section class="band alt" id="status">
-  <div class="wrap section status">
-    <div class="main">
-      <div class="lede"><h2>Honest status</h2><p>An experimental first delivery, not production-ready. Ecto's design transfers; its operational maturity has to be earned.</p></div>
-      <p class="ok">Every behaviour is an executable Gherkin scenario, run against PostgreSQL</p>
+  <div class="wrap section split top">
+    <div>
+      <h2>Honest status</h2>
+      <p class="muted">Experimental and not production-ready. PostgreSQL only. No migrations: Plasm prints the tables the model expects and checks the database against them.</p>
+      <p class="muted">Every behaviour is an executable Gherkin scenario, run against PostgreSQL, and every commit is also compiled natively.</p>
+      <a class="more" href="docs/status.html">What is verified and what is missing</a>
     </div>
     <div>
-      <h3>Works today</h3>
-      <ul>
-        <li>Your own records as the model, with attributes for the table and what types can't say; scalars by convention</li>
-        <li>Owned lists and records, linked lists, unions with fields</li>
-        <li>Typed queries, projections, <code>exists</code> across aggregates</li>
-        <li>Inner and left joins, with option-typed left sides</li>
-        <li>Typed transactions, constraints as field errors, optimistic concurrency</li>
-        <li>Count, exists, aggregates, group by and having</li>
-        <li>Bulk update, delete, insert and upsert</li>
-        <li>Typed hand-written SQL; prepared queries</li>
-        <li>Printed DDL; schema and query checks; test sandboxes</li>
-        <li>F# Interactive: query displays, playground, scaffolding</li>
-      </ul>
+      <h2>Roadmap</h2>
+      <div class="teaser">
+<!--roadmap-teaser-->
+      </div>
+      <a class="more" href="roadmap.html">The whole roadmap</a>
     </div>
-    <div>
-      <h3>Not yet</h3>
-      <ul>
-        <li>Right and full joins, unions, CTEs</li>
-        <li>Composite keys, JSON columns</li>
-        <li>Prepared projections; published packages</li>
-        <li>Databases other than PostgreSQL</li>
-      </ul>
-    </div>
-  </div>
-</section>
-
-<section class="band dark" id="start">
-  <div class="wrap section start">
-    <div>
-      <h2 style="font-size: 40px">Try it</h2>
-      <p class="muted">It needs the .NET 11 SDK and Docker; the test suite starts PostgreSQL for you. Then work through the <a href="examples.html" style="color: #C9C9FF">examples</a>.</p>
-    </div>
-<pre class="code shell">dotnet build Plasm.slnx
-dotnet test tests/Plasm.Specs
-dotnet run --project examples/Plasm.Examples</pre>
   </div>
 </section>
 </main>
 
-<footer>
-  <div class="wrap">
-    <span>Plasm adapts behavioural test cases from Ecto (Apache-2.0).</span>
-    <span>[YOUR LICENSE] · [YOUR REPOSITORY URL]</span>
-  </div>
-</footer>
-<script src="highlight.js"></script>
+<!--footer-->
 </body>
 </html>

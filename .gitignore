@@ -17,3 +17,4 @@ koans/.work/
 # Browser experiments (kept locally, not committed) and agent worktrees
 koans/browser/experiments/
 .claude/worktrees/
+_site/
