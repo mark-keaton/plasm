@@ -31,6 +31,9 @@ var kanban = Environment.GetEnvironmentVariable("KANBAN_SQL") == "1"
     : await KanbanData.OpenAsync(dataSource, CancellationToken.None);
 builder.Services.AddSingleton(dataSource);
 builder.Services.AddSingleton(kanban);
+// "Now", for the background job, and the time between its runs.
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddHostedService<StaleCards>();
 
 // Nothing null crosses into the facade either: a request whose body leaves
 // out a field, or gives it as null, is answered 400 before an endpoint runs.

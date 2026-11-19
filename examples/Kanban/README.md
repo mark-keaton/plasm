@@ -22,8 +22,8 @@ src/Server   Service.fs    the API: parse input, run a workflow, map the outcome
                            the pipeline
 src/Client   App.fs      the Elmish application
 src/Host.CSharp          the same data served by C# minimal APIs, natively (docs/csharp.md)
-src/Host                 a C# application over the same data: cookie sign-in, REST
-                         and GraphQL, on the runtime (docs/kanban-host.md)
+src/Host                 a C# application over the same data: cookie sign-in, REST,
+                         GraphQL and a background job, on the runtime (docs/kanban-host.md)
 features/    the acceptance scenarios (Reqnroll), run against real PostgreSQL;
              features/csharp/ Host.CSharp's, features/host/ Host's
 ```

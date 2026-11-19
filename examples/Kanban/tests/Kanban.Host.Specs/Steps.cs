@@ -16,6 +16,8 @@ public sealed partial class Steps : IAsyncDisposable
     string body = "";
     int status;
     int mark;
+    /// The host's environment, which a step may add to before it starts.
+    readonly Dictionary<string, string> environment = new() { ["KANBAN_SQL"] = "1" };
 
     /// Reqnroll does not dispose a binding asynchronously: the host is stopped
     /// here, when the scenario ends.
@@ -86,8 +88,7 @@ public sealed partial class Steps : IAsyncDisposable
     async Task Started()
     {
         if (host is not null) return;
-        host = await HostProcess.Start(typeof(Program).Assembly.Location, "KANBAN_HOST", connectionString, "/graphql?sdl",
-            new Dictionary<string, string> { ["KANBAN_SQL"] = "1" });
+        host = await HostProcess.Start(typeof(Program).Assembly.Location, "KANBAN_HOST", connectionString, "/graphql?sdl", environment);
         // Keeps the cookie the host signs a person in with, as a browser does.
         http = new HttpClient(new HttpClientHandler { CookieContainer = new System.Net.CookieContainer() }) { BaseAddress = host.Address };
     }

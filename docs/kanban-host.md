@@ -11,7 +11,7 @@ so far, and says what is not.
 | 1 | The host, cookie sign-in, GraphQL reads (Hot Chocolate) | built |
 | 2 | REST: boards, cards, every change, my work, done paging | built |
 | 3 | GraphQL mutations and `card(id)`, each outcome a typed union member | built |
-| 4 | A background job sending stale cards back, time from a `TimeProvider` | to come |
+| 4 | A background job sending stale cards back, time from a `TimeProvider` | built |
 
 ## What is F# and what is C#
 
@@ -19,7 +19,7 @@ so far, and says what is not.
 |---|---|---|
 | `examples/Kanban/src/Shared` | F# | The domain: `Card`, `Board`, `Person`, `Password`, and every rule (`Card.start`, `Card.finish`, ...) as a function returning `Result<_, DomainError>`. No I/O. |
 | `examples/Kanban/src/Data` | F# | `Db.fs`: the model Plasm stores. `Workflows.fs`: the queries and transactions, one per change (`changeCard`, `addCard`, ...). `Facade.fs`: `KanbanData`, the one type C# calls. |
-| `examples/Kanban/src/Host` | C# | This host: ASP.NET Core, cookie authentication, REST (`Rest.cs`), GraphQL (`GraphQL.cs`), accounts (`Accounts.cs`), and the one mapping from outcome to HTTP answer (`Outcomes.cs`). |
+| `examples/Kanban/src/Host` | C# | This host: ASP.NET Core, cookie authentication, REST (`Rest.cs`), GraphQL (`GraphQL.cs`), accounts (`Accounts.cs`), the background job (`StaleCards.cs`), and the one mapping from outcome to HTTP answer (`Outcomes.cs`). |
 | `src/Plasm.HotChocolate` | F# | Turns Hot Chocolate's where, order and paging into Plasm query refinements, and shows a C# union as a GraphQL union (docs/hotchocolate.md). |
 | `examples/Kanban/src/Host.CSharp` | C# | A second, minimal host that compiles natively; it is the proof that the F# core runs without code generation. Not the subject of this guide. |
 | `examples/Kanban/src/Server`, `Client` | F# | Kanban's own F# server and Fable client, which share the domain and data projects. |
@@ -248,6 +248,38 @@ Reads are open to anyone; every mutation needs someone signed in.
 outcome type is registered once, in `Program.cs`; a record that is a case of
 several unions (`CardView`, `Missing`, `Invalid`) is one object type.
 
+## The background job
+
+`StaleCards.cs` is a `BackgroundService` that sends stale cards back to the
+backlog when the host starts, and then every `Kanban:StaleCardsEvery` (an
+hour unless configured).
+
+- **What is stale is the domain's.** `Card.staleAfter` (14 days) is how long
+  a card may be in progress. The job passes the time and nothing else to
+  `KanbanData.SendStaleBackAsync(now)`, which runs
+  `Workflows.sendStaleBack now`: one UPDATE over every stale card, on every
+  board:
+
+  ```sql
+  UPDATE "cards" SET "stage" = @p0, "stage_assignee" = NULL, "stage_since" = NULL, "stage_resolution" = NULL,
+    "stage_resolution_reason" = NULL, "stage_at" = NULL, "version" = "cards"."version" + 1
+    WHERE "cards"."stage" = 'doing' AND "cards"."stage_since" < @p1
+  ```
+
+- **Time is the `TimeProvider` in the host's services.** The job reads
+  "now" from it and waits on it between runs (`PeriodicTimer`), so a test
+  host could register a `FakeTimeProvider` instead. The scenarios need no
+  fake: their cards are written as started days ago, and the job runs every
+  second.
+- **No per-card decision runs, and nothing is skipped.** A bulk write does
+  not call `Card.sendBack` for each card; that is sound because
+  `Card.sendBack` refuses no card in progress. Each card's version is
+  incremented, so a copy read before the job ran is answered 409 (`Stale`).
+  Kanban keeps no history of changes, so there is no audit for the bulk write
+  to skip.
+- **A database that cannot be reached** fails one run, which is logged; the
+  next run tries again.
+
 ## Running it
 
 ```bash
@@ -259,7 +291,8 @@ KANBAN_SQL=1 ConnectionStrings__Kanban="..." dotnet run --project src/Host
 ```
 
 The scenarios are in `features/host/` (`authentication.feature`,
-`rest.feature`, `graphql.feature`, `mutations.feature`). Each starts the host as its own process, on a database of
+`rest.feature`, `graphql.feature`, `mutations.feature`,
+`background.feature`). Each starts the host as its own process, on a database of
 its own, and talks to it over HTTP:
 
 ```bash
@@ -289,6 +322,15 @@ scenarios.
   case the facade adds, or not compile; a GraphQL client that asks for no
   fragment on it still gets its `__typename` and nothing else, and learns
   of it only from the schema.
+- **Two clocks.** The job's "now" is the host's `TimeProvider`; a change's
+  own time (when a card was started, finished, commented on) is still the
+  facade's, `DateTimeOffset.UtcNow`, since `KanbanData` is opened before the
+  host's services are built and takes no clock.
+- **Not every condition over a domain member translates.** Plasm reads
+  `c.Since` (a member matching on the stage) as its column in an order, but
+  refuses `c.Since |> Option.exists (fun since -> since < t)` in a where, at
+  start, naming the query; `sendStaleBack`'s query is written as a match on
+  `c.Stage` instead.
 - **`[Authorize]` is a second package.** Hot Chocolate's authorization is
   `HotChocolate.AspNetCore.Authorization`, pinned in this example at the
   version Plasm.HotChocolate is built against; Plasm.HotChocolate does not
