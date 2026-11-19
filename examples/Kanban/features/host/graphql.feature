@@ -125,6 +125,22 @@ Feature: Kanban's cards over GraphQL, filtered and ordered by the database
       Then each board's total is "alpha: 2; beta: 1"
       And the database counted every board's cards in one command, under a WHERE
 
+    # Each board's total is a DataLoader of its own: its key must be added in
+    # the same phase as the page's, before the resolver awaits anything, or a
+    # board whose page comes back late starts a second count. With the cards
+    # table locked, the count waits beside the page; were it asked for after
+    # the page, it could not be sent until the lock goes.
+    Scenario: Each board's total is asked for with its page, not after it
+      Given board "beta" has the cards:
+        | title  | stage   | assignee | version | created              |
+        | Plan   | backlog |          | 1       | 2026-11-18T12:00:00Z |
+      And the cards table is locked by another transaction
+      When I send '{ boards { slug cards(take: 1, where: { stage: { eq: "backlog" } }) { items { title } totalCount } } }' while the cards are locked
+      Then the page and the count are both waiting for the lock
+      When the lock is released and the answer comes
+      Then each board's total is "alpha: 2; beta: 1"
+      And the database counted every board's cards in one command, under a WHERE
+
     Scenario: A total not selected is not counted
       When I ask for '{ boards { slug cards(take: 1) { items { title } } } }'
       Then the database counted nothing

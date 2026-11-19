@@ -101,20 +101,23 @@ public class BoardCards
 {
     /// A board's page of cards: every board's page read in one command, each
     /// numbered among its own board's cards (PlasmRequest.PageEach), and
-    /// every board's total in one more, only when selected.
+    /// every board's total in one more, only when selected. LoadedSegment
+    /// starts both loads before it awaits either, so every board joins the
+    /// same two batches.
     [UseOffsetPaging(DefaultPageSize = Paging.Default, MaxPageSize = Paging.Most, IncludeTotalCount = true)]
     [UseFiltering(typeof(CardFilter))]
     [UseSorting(typeof(CardSort))]
-    public async Task<CollectionSegment<Selected<Card>>> Cards(
+    public Task<CollectionSegment<Selected<Card>>> Cards(
         [Parent] BoardNode board, IResolverContext context, BoardCardsLoader cards, BoardCountsLoader counts, CancellationToken ct)
     {
         var chosen = PlasmRequest.Chosen(context, CardRead.all);
         var request = PlasmRequest.BatchKey(context, chosen);
         var refine = PlasmRequest.Refinement(context, CardFields.all, CardFields.created);
         var page = PlasmRequest.PageEach(context, CardFields.board, Paging.Default);
-        var rows = await cards.Load(board.Id, request, chosen, query => page.Invoke(refine.Invoke(query)), ct);
         var where = PlasmRequest.Where(context, CardFields.all);
-        return await PlasmRequest.Segment(context, rows, Paging.Default, () => counts.Load(board.Id, request, where, ct));
+        return PlasmRequest.LoadedSegment(context, Paging.Default,
+            () => cards.Load(board.Id, request, chosen, query => page.Invoke(refine.Invoke(query)), ct),
+            () => counts.Load(board.Id, request, where, ct));
     }
 }
 

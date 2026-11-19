@@ -219,3 +219,32 @@ type PlasmRequest =
             let! n = if counted then total.Invoke() else Task.FromResult 0
             return CollectionSegment<'R>(items, CollectionSegmentInfo(rows.Count > take, skip > 0), n)
         }
+
+    /// A parent's page and its total, each from a DataLoader: the page load,
+    /// and the total load only when the request selects totalCount, are both
+    /// started before anything is awaited. Every parent's keys then join the
+    /// same two batches; a total loaded after the page is awaited joins its
+    /// batch only if every parent's page comes back in time, and otherwise
+    /// starts another. `page` is a query PageEach made, read one row past the
+    /// page.
+    static member LoadedSegment
+        (context: IResolverContext, defaultTake: int, page: Func<Task<IReadOnlyList<'R>>>, total: Func<Task<int>>)
+        : Task<CollectionSegment<'R>> =
+        let rows = page.Invoke()
+        let counted = if context.IsSelected "totalCount" then total.Invoke() else Task.FromResult 0
+
+        task {
+            let! read = rows
+            return! PlasmRequest.Segment(context, read, defaultTake, (fun () -> counted))
+        }
+
+    /// As LoadedSegment, for a page load whose rows are an array.
+    static member LoadedSegment
+        (context: IResolverContext, defaultTake: int, page: Func<Task<'R[]>>, total: Func<Task<int>>)
+        : Task<CollectionSegment<'R>> =
+        PlasmRequest.LoadedSegment(
+            context,
+            defaultTake,
+            Func<Task<IReadOnlyList<'R>>>(fun () -> task { let! rows = page.Invoke() in return rows :> IReadOnlyList<'R> }),
+            total
+        )

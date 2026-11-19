@@ -24,6 +24,8 @@ public sealed partial class Steps : IAsyncDisposable
     [AfterScenario]
     public async Task StopHost()
     {
+        if (locker is not null) await locker.DisposeAsync();
+        locker = null;
         http?.Dispose();
         if (host is not null) await host.DisposeAsync();
         host = null;

@@ -106,7 +106,15 @@ declarations and nothing of Hot Chocolate).
   field's offset paging (`skip`, `take`) asks, reading one row more than the
   page; `PlasmRequest.Segment(context, rows, defaultTake, total)` makes the
   `CollectionSegment` Hot Chocolate shows, running `total` only when the
-  request selects `totalCount`.
+  request selects `totalCount`. It is for a field's own page and count,
+  which are no DataLoader's.
+- `PlasmRequest.LoadedSegment(context, defaultTake, page, total)` is the
+  same for a page and a total per parent, each from a DataLoader. It starts
+  the page load, and the total load if `totalCount` is selected, before it
+  awaits anything. A total loaded only after the page is awaited joins its
+  batch only if every parent's page comes back before Hot Chocolate
+  dispatches that batch, and under load one does not: each late parent then
+  starts another count.
 
 ## A host
 
@@ -163,6 +171,11 @@ answered by a batch DataLoader keyed by board and argument set
 in the batch, `Kanban.Data`'s `CardsOfBoardsAsync` writing the boards' keys as
 one array parameter (`WHERE "c"."board" = ANY(@p0)`) and the request's where
 and order built on it, its rows grouped by board in the query's order.
+Each board's total is a second DataLoader (`BoardCountsLoader`): one grouped
+count per argument set. The resolver is one call,
+`PlasmRequest.LoadedSegment(context, Paging.Default, () => cards.Load(...),
+() => counts.Load(...))`, so every board's page and total join their batches
+before anything is awaited.
 
 The GraphQL types are the application's views of plain types (`CardView`),
 as for a C# host (csharp.md): the package exposes no domain record.
