@@ -74,3 +74,22 @@ Feature: Kanban served by a C# host
       When I add a card titled "Lost" to board "nope"
       Then the answer is 404
       And the answer's JSON is {"what":"board nope"}
+
+  Rule: Nothing null crosses to F#
+
+    # The minimal API reads a body through the source-generated context,
+    # inserted into the host's JSON options; the options must respect nullable
+    # annotations and required constructor parameters, or a null reaches F#
+    # (docs/csharp.md).
+    Scenario Outline: A body with an argument null or left out is refused before KanbanData is called
+      When I post <body> to "<path>"
+      Then the answer is 400
+      And the answer is not one of KanbanData's
+      And board "alpha" still has 2 cards
+
+      Examples:
+        | path                | body                                   |
+        | /boards/alpha/cards | {"title":null}                         |
+        | /boards/alpha/cards | {}                                     |
+        | /boards             | {"slug":"beta","name":null,"wipLimit":2} |
+        | /boards             | {"slug":"beta","wipLimit":2}           |

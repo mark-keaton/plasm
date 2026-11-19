@@ -17,7 +17,15 @@ if (Environment.GetEnvironmentVariable("KANBAN_EXIT_WITH_STDIN") == "1")
     });
 
 var builder = WebApplication.CreateSlimBuilder(args);
-builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResolverChain.Insert(0, KanbanJson.Default));
+// The context's own options do not reach a minimal API's binding: the host's
+// options must refuse a null or missing argument themselves, so that none
+// reaches F# (docs/csharp.md).
+builder.Services.ConfigureHttpJsonOptions(o =>
+{
+    o.SerializerOptions.TypeInfoResolverChain.Insert(0, KanbanJson.Default);
+    o.SerializerOptions.RespectNullableAnnotations = true;
+    o.SerializerOptions.RespectRequiredConstructorParameters = true;
+});
 
 var connectionString = builder.Configuration.GetConnectionString("Kanban")
     ?? throw new InvalidOperationException("Set the connection string 'Kanban' (ConnectionStrings:Kanban).");

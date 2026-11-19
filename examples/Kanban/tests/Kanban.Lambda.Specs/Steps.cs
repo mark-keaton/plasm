@@ -351,7 +351,8 @@ public sealed class Steps(IReqnrollOutputHelper output)
         var error = JsonNode.Parse(answer) as JsonObject;
         Equal("JsonException", (string?)error?["errorType"], "the invocation's error type, of " + answer);
         var message = (string?)error?["errorMessage"] ?? "";
-        if (!message.Contains($"'{name}'")) throw new Exception($"the error does not name '{name}': {message}");
+        // A missing argument is named as 'title', a null one by its path, $.title.
+        if (!message.Contains($"'{name}'") && !message.Contains($"$.{name}")) throw new Exception($"the error does not name '{name}': {message}");
     }
 
     [Then("the board {string} still has {int} cards")]

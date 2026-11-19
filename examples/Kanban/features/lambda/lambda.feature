@@ -67,10 +67,15 @@ Feature: Kanban as a Lambda function in C#
     # The event is read with required properties and nullable annotations
     # respected, so an argument left out or null stops in C#, as the
     # invocation's error, before any F# is called.
-    Scenario: An event without an argument is refused before KanbanData is called
-      When I invoke it with {"call":"addCard","board":"alpha"}
+    Scenario Outline: An event with an argument left out, or null, is refused before KanbanData is called
+      When I invoke it with <event>
       Then the invocation fails with a JsonException naming "title"
       And the board "alpha" still has 2 cards
+
+      Examples:
+        | event                                         |
+        | {"call":"addCard","board":"alpha"}            |
+        | {"call":"addCard","board":"alpha","title":null} |
 
   Rule: A function may open without the start-up check, which these scenarios run
 

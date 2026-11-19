@@ -166,6 +166,14 @@ minimal API never writes an outcome itself; C# switches over it first.
 Reading JSON into an F# record leaves a field the JSON lacks at null, even
 one F# says cannot be, which is why the requests are C# records.
 
+Nothing null crosses to F#. A minimal API binds requests with the host's own
+`SerializerOptions`, not the source-generated context's options, so the host
+sets `RespectNullableAnnotations` and `RespectRequiredConstructorParameters`
+there in `ConfigureHttpJsonOptions`. Then an argument left out or sent as
+null is a 400 before any F# is called (csharp-host.feature). The attribute's
+flags alone protect only a direct `JsonSerializer` call with the context,
+which is how Kanban's Lambda function reads its events (lambda.feature).
+
 ## Native AOT
 
 The C# host publishes natively (`dotnet publish -r osx-arm64`, 47 s, a 33 MB

@@ -127,6 +127,31 @@ public sealed class Steps : IAsyncDisposable
 
     // -- When -----------------------------------------------------------------
 
+    [When("I post {} to {string}")]
+    public async Task PostRaw(string json, string path)
+    {
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var answer = await http.PostAsync(path, content);
+        status = answer.StatusCode;
+        body = await answer.Content.ReadAsStringAsync();
+    }
+
+    /// KanbanData's answers to a bad request say which field: {"problems": ...}
+    /// or {"what": ...}. A body refused before the facade is neither.
+    [Then("the answer is not one of KanbanData's")]
+    public void NotTheFacades()
+    {
+        if (body.Contains("\"problems\"") || body.Contains("\"what\"")) throw new Exception("KanbanData answered: " + body);
+    }
+
+    [Then("board {string} still has {int} cards")]
+    public async Task StillHas(string slug, int count)
+    {
+        await Send(HttpMethod.Get, $"/boards/{slug}");
+        Expect(HttpStatusCode.OK, $"reading board {slug}");
+        Equal(count, JsonNode.Parse(body)!["cards"]!.AsArray().Count, $"cards on board {slug}");
+    }
+
     [When("I ask for the boards")]
     public Task AskBoards() => Send(HttpMethod.Get, "/boards");
 

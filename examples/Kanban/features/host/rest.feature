@@ -58,11 +58,16 @@ Feature: Kanban over REST
       When "Guidance" is dropped because ""
       Then the answer is 422 with the code "DropNeedsReason"
 
-    Scenario: A request that leaves out a field never reaches the domain
+    Scenario Outline: A request that leaves out a field, or sends it null, never reaches the domain
       Given the cards "Guidance" on "apollo"
-      When "Guidance" is dropped with the body '{"version": 1}'
+      When "Guidance" is dropped with the body '<body>'
       Then the answer is 400
       And "Guidance" is in the backlog
+
+      Examples:
+        | body                             |
+        | {"version": 1}                   |
+        | {"version": 1, "reason": null}   |
 
     Scenario: A dropped card is reopened to the backlog
       Given the cards "Guidance" on "apollo"
