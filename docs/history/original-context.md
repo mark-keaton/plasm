@@ -1,3 +1,5 @@
+> A working note, kept for the record: the end of the conversation Plasm began from, in November 2026. It opens mid-conversation and describes the first design, which the library has since left behind in places; `docs/adr/0001-architecture.md` has the decisions as they stand.
+
 You’re right. I answered as though you wanted to discover a new architecture. You want to **adopt an established functional persistence architecture and express it naturally in F#**. Ecto is relevant precisely because it has already worked through many of those design decisions.
 
 My suggestion to bolt relationship loading onto an existing query library addressed functionality, but not whether the resulting system would feel coherent.

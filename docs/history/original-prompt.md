@@ -1,3 +1,5 @@
+> A working note, kept for the record: the brief the first delivery of Plasm was built from, in November 2026. Parts of it (changesets, preloads, unloaded relationships) were later replaced by the one style; `docs/status.md` says what the library is now.
+
 Build an idiomatic F# persistence library based on Ecto’s established architecture and behavior. Use the Gherkin specifications from this conversation as the initial acceptance contract.
 
 The goal is a coherent, reliable library for immutable F# models, composable queries, explicit changesets, and efficient relationship loading. Developer experience, predictable semantics, and operational correctness are primary requirements.
