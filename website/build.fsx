@@ -444,8 +444,21 @@ let docsPage (index: int) (page: Page) =
 """
          + footer prefix)
 
-    // The page as plain Markdown, for llms.txt.
-    write ("docs/" + page.Source) (Regex.Replace(read repoPath, @"<!-- from: ([^ ]+) -->\r?\n", "From `$1`:\n\n"))
+    // The page as plain Markdown, for llms.txt: a link to another docs page
+    // stays relative, and a link that leaves the docs leads to GitHub.
+    let fileDir = Path.GetDirectoryName(Path.Combine(root, repoPath))
+
+    let markdown =
+        Regex.Replace(
+            Regex.Replace(read repoPath, @"<!-- from: ([^ ]+) -->\r?\n", "From `$1`:\n\n"),
+            @"\]\((?<url>[^)\s]+)\)",
+            fun m ->
+                let url = m.Groups["url"].Value
+                let resolved = resolveLink fileDir sitePath url
+                "](" + (if resolved.Contains "://" then resolved else url) + ")"
+        )
+
+    write ("docs/" + page.Source) markdown
 
 // -- llms.txt -----------------------------------------------------------------
 

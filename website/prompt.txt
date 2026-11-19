@@ -5,7 +5,13 @@ Read these before you start, in this order:
 - docs/start/one-way.md, docs/csharp.md and docs/aot.md from that list
 - examples/Kanban in https://github.com/mark-keaton/plasm: src/Data is the F# side, src/Host the C# side. This application has the same shape.
 
-Plasm is not on NuGet yet, so make the packages yourself: clone the repository, build it, pack src/Plasm.Annotations, src/Plasm and src/Plasm.Postgres into a folder, add that folder as a NuGet source, and reference the package Plasm.Postgres (0.1.0-alpha) from the F# project. tests/Plasm.Package/run.sh does exactly this; follow it. Do not reference Plasm's projects directly: the package carries the build step a native binary needs. It needs the .NET 11 SDK and Docker.
+Plasm is not on NuGet yet, so make the packages yourself from a clone of the repository:
+- For each of Plasm.Annotations, Plasm and Plasm.Postgres: dotnet build src/X -c Release, then dotnet pack src/X -c Release --no-build -o <feed>, where <feed> is a folder you keep.
+- Write the nuget.config that tests/Plasm.Package/run.sh writes, with its source mapping, pointing at <feed>.
+- Reference the package Plasm.Postgres (0.1.0-alpha) from the F# project. Do not reference Plasm's projects directly: the package carries the build step a native binary needs.
+- The C# host needs no import and no Plasm package reference of its own: the F# project's PackageReference carries the build step to it. Do not copy Kanban's ProjectReferences or its Import of Plasm.Repository.targets.
+- Copy the repository's global.json: on the .NET 11 SDK dotnet test needs its test.runner setting.
+- It needs the .NET 11 SDK and Docker.
 
 What the domain says:
 - A member borrows a copy if they hold fewer than three loans and the copy is not out.
@@ -15,8 +21,9 @@ What the domain says:
 How to build it:
 - The domain's own records carry [<Table>]. An id is a single-case type (LoanId of Guid). A validated value is a type with a create function returning a Result, and is read back through it. Write no mapping.
 - Queries are plasm { } values. Every write is a step of a Tx run by repo.Transact, with your own error type.
-- Start with Repo.Start(model, Postgres.connect cs, queriesIn = ...) and create the tables from repo.Ddl().
+- The C# host builds an NpgsqlDataSource and passes it to the facade's OpenAsync, which starts the repository over it with Repo.Start(model, PostgresProvider dataSource, ...), as examples/Kanban/src/Data/Facade.fs does.
+- Create the database first. Start once with RepoOptions.Unchecked to print repo.Ddl(), run that yourself only when the tables are missing (it is not idempotent; Plasm never runs it), then start with the default options.
 - C# sees one F# facade: plain arguments in, a Task of a union out. Shape the outcome types as docs/csharp.md shows, so C# reads them as unions. C# writes no query, and switches over each outcome with no default arm. Nothing null crosses, either way.
-- JSON goes through a source-generated context that respects nullable annotations and required constructor parameters, as examples/Kanban/src/Lambda/Program.cs does.
+- JSON goes through a source-generated context. Set RespectNullableAnnotations and RespectRequiredConstructorParameters on ConfigureHttpJsonOptions's SerializerOptions as well as on the context's attribute: in a minimal API the attribute alone is not enough. A null or missing property must answer 400.
 
-You are done when dotnet test is green against a real PostgreSQL (repo.Sandbox per test, nothing mocked), the host starts with Plasm's start-up check on, which is the default, dotnet publish with PublishAot reports no trim warning naming Plasm, and you have borrowed and returned a book over HTTP against the native binary. Then leave it running and show me the requests as curl commands I can run, with the SQL Plasm sent for each.
+You are done when dotnet test is green against a real PostgreSQL (repo.Sandbox per test, nothing mocked), the host starts with Plasm's start-up check on, which is the default, a request with a null or missing property answers 400, dotnet publish with PublishAot reports no trim warning naming Plasm, and you have borrowed and returned a book over HTTP against the native binary. Then leave it running and show me the requests as curl commands I can run, with the SQL Plasm sent for each.
