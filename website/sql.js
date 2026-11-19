@@ -243,11 +243,10 @@ window.PLASM_SQL = {
           "@p1 = 2",
           "@p2 = 2",
           "@p3 = 2",
-          "@p4 = 2",
-          "@p5 = 3"
+          "@p4 = 3"
         ],
         "rows": 1,
-        "sql": "DELETE FROM \u0022order_lines\u0022\nWHERE \u0022order_lines\u0022.\u0022id\u0022 = @p0 AND \u0022order_lines\u0022.\u0022order_id\u0022 = @p1 AND (\u0022order_lines\u0022.\u0022order_id\u0022 IS NOT DISTINCT FROM @p2) AND (\u0022order_lines\u0022.\u0022product_id\u0022 IS NOT DISTINCT FROM @p3) AND (\u0022order_lines\u0022.\u0022quantity\u0022 IS NOT DISTINCT FROM @p4) AND (\u0022order_lines\u0022.\u0022unit_price\u0022 IS NOT DISTINCT FROM @p5)"
+        "sql": "DELETE FROM \u0022order_lines\u0022\nWHERE \u0022order_lines\u0022.\u0022id\u0022 = @p0 AND \u0022order_lines\u0022.\u0022order_id\u0022 = @p1 AND (\u0022order_lines\u0022.\u0022product_id\u0022 IS NOT DISTINCT FROM @p2) AND (\u0022order_lines\u0022.\u0022quantity\u0022 IS NOT DISTINCT FROM @p3) AND (\u0022order_lines\u0022.\u0022unit_price\u0022 IS NOT DISTINCT FROM @p4)"
       },
       {
         "parameters": [
