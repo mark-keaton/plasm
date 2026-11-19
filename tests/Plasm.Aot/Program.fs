@@ -13,7 +13,13 @@ open Plasm.Aot.Shop
 open Plasm.Aot.App
 
 let schema =
-    "drop table if exists notes; drop table if exists tickets; drop table if exists customers;
+    "drop table if exists shipments; drop table if exists notes; drop table if exists tickets; drop table if exists customers;
+     create table shipments (
+       carrier text not null,
+       number integer not null,
+       status text not null,
+       version int not null,
+       primary key (carrier, number));
      create table customers (
        id bigint generated always as identity primary key,
        name text not null,
@@ -121,7 +127,7 @@ let coldStart (cs: string) (queries: StartupCheck) (schemaCheck: bool) =
         cmd.CommandText <- "select 1"
         cmd.ExecuteScalar() |> ignore
     mark "npgsql first connection"
-    let m = Model.buildOrFail [] [ typeof<Customer>; typeof<Ticket> ]
+    let m = Model.buildOrFail [] [ typeof<Customer>; typeof<Ticket>; typeof<Shipment> ]
     mark "model build"
     let repo = Repo.Start(m, provider cs, typeof<Ticket>.Assembly, { RepoOptions.Unchecked with Queries = queries }).Result
     mark "repo start"
@@ -162,7 +168,7 @@ let main argv =
     let mutable model = None
 
     step "model" (fun () ->
-        let m = Model.buildOrFail [] [ typeof<Customer>; typeof<Ticket> ]
+        let m = Model.buildOrFail [] [ typeof<Customer>; typeof<Ticket>; typeof<Shipment> ]
         model <- Some m
         "built, " + string m.Types.Length + " records")
 
@@ -265,6 +271,27 @@ let main argv =
         step "an empty array column" (fun () -> all (plasm { for t in tableOf<Ticket> do where (List.isEmpty t.Labels) }) ticket)
 
         step "a prepared argument in an array column of typed ids" (fun () -> all (Queries.watchedBy ada.Id) ticket)
+
+        let shipment (x: Shipment) = "Shipment " + x.Id.Carrier + "#" + string x.Id.Number + " " + x.Status + " v" + string x.Version
+
+        step "insert records keyed by several parts" (fun () ->
+            let made =
+                [ for carrier, number, status in [ "ups", 1, "packed"; "ups", 2, "sent"; "dhl", 1, "packed" ] ->
+                      match repo.Transact(Tx.insert { Id = { Carrier = carrier; Number = number }; Status = status; Version = 1 }: Tx<_, unit>).Result with
+                      | Ok x -> shipment x
+                      | Error e -> "failed: " + e.Display ]
+
+            String.Join("; ", made))
+
+        step "read by a whole key, a prepared argument" (fun () -> all (Queries.shipmentByKey { Carrier = "ups"; Number = 2 }) shipment)
+
+        step "update found by every part and the version" (fun () ->
+            match repo.One(Queries.shipmentByKey { Carrier = "dhl"; Number = 1 }).Result with
+            | Ok(Some before) ->
+                match repo.Transact(Tx.update (before, { before with Status = "sent" }): Tx<_, unit>).Result with
+                | Ok x -> shipment x
+                | Error e -> "failed: " + e.Display
+            | other -> "not read: " + string other)
 
         step "select a row record" (fun () ->
             selected

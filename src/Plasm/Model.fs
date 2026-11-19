@@ -391,7 +391,9 @@ module Model =
             let field (i: int) (p: Reflection.PropertyInfo) : Result<FieldMap, string> =
                 let ft = p.PropertyType
                 let inner = if Reflection.isOption ft then Reflection.elementType ft else ft
-                let partColumn = column + "_" + Paths.snakeCase p.Name
+                // A key's parts are the table's own columns (composite-keys.feature):
+                // their layout has no prefix.
+                let partColumn = if column = "" then Paths.snakeCase p.Name else column + "_" + Paths.snakeCase p.Name
                 let has (a: Type) = p.GetCustomAttributes(a, true).Length > 0
 
                 let unread =
@@ -533,6 +535,31 @@ module Model =
                 { scalarField prop.Name i column t (Some mapping) with
                     Json = Some shape }
 
+    /// A key of several parts (composite-keys.feature): the field named Id is a
+    /// record with no table, whose fields are the key's parts, each a scalar
+    /// and none optional, stored as the table's own columns with no prefix.
+    let private keyLayout (scalars: IReadOnlyDictionary<Type, ScalarMapping>) (owner: string) (t: Type) : Result<ValueLayout, string> =
+        let props = (Shape.record t).Fields
+        let name = Reflection.typeName
+
+        if props.Length < 2 then
+            let p = props.[0]
+            Error $"is a {t.Name} of one part ({p.Name}): a key of one part is a single-case wrapper (type {t.Name} = {t.Name} of {name p.PropertyType})"
+        else
+            let refusal (p: Reflection.PropertyInfo) =
+                let ft = p.PropertyType
+
+                if Reflection.isOption ft then
+                    Some $"{t.Name}.{p.Name} is a {name ft}: a part of a key cannot be optional"
+                elif Reflection.isList ft || Result.isError (scalarMapping scalars ft) then
+                    Some $"{t.Name}.{p.Name} is a {name ft}: a part of a key is a scalar"
+                else
+                    None
+
+            match props |> Array.tryPick refusal with
+            | Some e -> Error e
+            | None -> valueLayout scalars owner t "" false
+
     /// The provider types an array column can hold, each with its array type
     /// and a maker of that array from boxed elements: a closed list, so that
     /// no array type is made at run time (a native binary has only those its
@@ -649,6 +676,16 @@ module Model =
             let fields = ResizeArray<FieldMap>()
             let assocs = ResizeArray<AssocMap>()
 
+            // A key of several parts (composite-keys.feature): what depends on
+            // how other records refer to one is refused until it is built.
+            let composite (d: SchemaDef) =
+                match d.Key with
+                | Some(k, _) -> Shape.isRecord k.PropertyType && not (defs.ContainsKey k.PropertyType)
+                | None -> false
+
+            let keyedBy (t: Type) =
+                defs.Values |> Seq.tryFind (fun d -> composite d && (match d.Key with Some(k, _) -> k.PropertyType = t | None -> false))
+
             for i, prop in Array.indexed shape.Fields do
                 let t = prop.PropertyType
 
@@ -666,6 +703,16 @@ module Model =
                                 OptionalOne, Reflection.elementType payload
                             else
                                 RequiredOne, payload
+
+                        let verb = if a.Linked then "links" else "owns"
+
+                        if composite def then
+                            err (Some prop.Name) $"{verb} {target.Name}, but its key has several parts: an owned or linked list under such a key is not supported yet"
+                        else
+                            match defs.TryGetValue target with
+                            | true, td when composite td ->
+                                err (Some prop.Name) $"{verb} {target.Name}, whose key has several parts: an owned or linked list of such records is not supported yet"
+                            | _ -> ()
 
                         let kindOk =
                             match a.Kind, cardinality with
@@ -758,6 +805,16 @@ module Model =
                         err
                             (Some prop.Name)
                             $"{prop.Name} is a {scalarType.Name}, a stored record: to own it, give {scalarType.Name} a field holding {def.Type.Name}'s key; to refer to it, hold its id instead"
+                    elif Some prop.Name = keyName && Shape.isRecord scalarType && not isOpt && (scalarMapping scalars scalarType |> Result.isError) then
+                        if def.Generated.Contains prop.Name then
+                            err (Some prop.Name) "is marked Generated, but a key of several parts is given by the insert: no part is generated"
+
+                        match keyLayout scalars def.Type.Name scalarType with
+                        | Error reason -> err (Some prop.Name) reason
+                        | Ok layout -> fields.Add { scalarField prop.Name i "" t None with Value = Some layout }
+                    elif (keyedBy scalarType).IsSome then
+                        let owner = (keyedBy scalarType).Value.Type.Name
+                        err (Some prop.Name) $"refers to {owner}, whose key has several parts: a reference to such a key is not supported yet"
                     elif Shape.isRecord scalarType && (scalarMapping scalars scalarType |> Result.isError) then
                         let column = def.Columns.TryFind prop.Name |> Option.defaultValue (Paths.snakeCase prop.Name)
 
@@ -868,9 +925,16 @@ module Model =
 
             let columns = fieldArr |> Array.map (fun f -> f.Column)
 
-            for column, sharing in fieldArr |> Array.groupBy (fun f -> f.Column) do
-                if sharing.Length > 1 then
-                    let names = sharing |> Array.map (fun f -> f.Name) |> String.concat " and "
+            // Every column each field is stored in: a union's, a value's or a
+            // key's several, or the one.
+            let stored =
+                fieldArr |> Array.collect (fun f -> f.Parts |> List.map (fun p -> p.Name, f.Name) |> Array.ofList)
+
+            for column, sharing in stored |> Array.groupBy fst do
+                let owners = sharing |> Array.map snd |> Array.distinct
+
+                if owners.Length > 1 then
+                    let names = owners |> String.concat " and "
                     err None $"{names} both map to the column {column}; give each field its own column"
 
             if errors.Count > 0 then

@@ -398,6 +398,49 @@ module internal SchemaCheck =
                                 $"{actual} holds the links of {sc.Name}.{a.Name} to {target.Table}, but a link to a missing record is mapped to the field by its default name; {fix}"
                         | None -> ()
 
+            // A key of several parts (composite-keys.feature): the table's
+            // primary key is over its parts, in the key record's order.
+            let compositeSchemas = schemas |> List.filter (fun sc -> sc.Key.Composite)
+
+            if not compositeSchemas.IsEmpty then
+                let! primaryRows =
+                    Execution.query
+                        s
+                        { Sql =
+                            "SELECT t.relname::text, string_agg(a.attname::text, ',' ORDER BY k.ord) FROM pg_constraint c "
+                            + "JOIN pg_class t ON t.oid = c.conrelid JOIN pg_namespace n ON n.oid = t.relnamespace "
+                            + "CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) "
+                            + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum "
+                            + "WHERE c.contype = 'p' AND n.nspname = current_schema() AND t.relname::text = ANY("
+                            + dialect.ParameterName 0
+                            + ") GROUP BY t.relname"
+                          Parameters = [ box (compositeSchemas |> List.map (fun sc -> bare sc.Table) |> Array.ofList) ] }
+                        (fun r -> r.GetString 0, r.GetString 1)
+
+                let primary = primaryRows |> Map.ofSeq
+
+                for sc in compositeSchemas do
+                    let parts = sc.Key.Parts |> List.map (fun p -> p.Name)
+                    let wanted = String.concat ", " parts
+
+                    match primary.TryFind(bare sc.Table) with
+                    | Some actual when actual = String.concat "," parts -> ()
+                    | found ->
+                        let has =
+                            match found with
+                            | Some actual ->
+                                let columns = actual.Replace(",", ", ")
+                                $"the primary key is ({columns})"
+                            | None -> "the table has no primary key"
+
+                        add
+                            SchemaIssueKind.PrimaryKey
+                            sc.Name
+                            (Some sc.Key.Name)
+                            sc.Table
+                            None
+                            $"{has}; {sc.Name}'s key of several parts needs primary key ({wanted}), in that order"
+
             return List.ofSeq issues
         }
 
@@ -460,7 +503,9 @@ module internal Ddl =
                           let required = f.Requires p.Name
 
                           let key =
-                              if f.Name = s.Key.Name then
+                              if f.Name = s.Key.Name && f.Composite then
+                                  ""
+                              elif f.Name = s.Key.Name then
                                   if s.KeyGenerated then " generated always as identity primary key" else " primary key"
                               else
                                   ""
@@ -486,7 +531,13 @@ module internal Ddl =
                   for f in s.Fields do
                       if f.Unique then
                           let constraintName = name (s.Table + "_" + f.Column + "_key")
-                          yield $"  constraint {constraintName} unique ({name f.Column})" ]
+                          yield $"  constraint {constraintName} unique ({name f.Column})"
+
+                  // A key of several parts (composite-keys.feature): one
+                  // primary key over them, in the key record's order.
+                  if s.Key.Composite then
+                      let parts = s.Key.Parts |> List.map (fun p -> name p.Name) |> String.concat ", "
+                      yield $"  primary key ({parts})" ]
 
             line $"create table {name s.Table} ("
             line (String.concat ",\n" columns)
@@ -527,7 +578,7 @@ module internal Ddl =
         let leads =
             set
                 [ for s in schemas do
-                      yield s.Table, s.Key.Column
+                      yield s.Table, s.Key.Parts.Head.Name
 
                       for f in s.Fields do
                           if f.Unique then

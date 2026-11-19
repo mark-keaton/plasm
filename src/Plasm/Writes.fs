@@ -368,8 +368,15 @@ let private pair (a: Written<'a>) (b: Written<'b>) : Written<'a * 'b> =
 
 let private returning (schema: SchemaInfo) = Sql.returningFields schema.Table schema.Fields
 
+/// The row of `key`: its one column, or every part of a composite key
+/// (composite-keys.feature).
 let private keyFilter (schema: SchemaInfo) (key: obj) =
-    Sql.Binary("=", Sql.Column(schema.Table, schema.Key.Column), Sql.fieldScalar schema.Key key)
+    if schema.Key.Composite then
+        List.zip schema.Key.Parts (schema.Key.ToColumns key)
+        |> List.map (fun (p, v) -> Sql.Binary("=", Sql.Column(schema.Table, p.Name), Sql.partValue p v))
+        |> List.reduce (fun a b -> Sql.Binary("AND", a, b))
+    else
+        Sql.Binary("=", Sql.Column(schema.Table, schema.Key.Column), Sql.fieldScalar schema.Key key)
 
 let private setField (schema: SchemaInfo) (s: CsState) (name: string) (domainValue: obj) =
     let f = schema.Field name
@@ -514,7 +521,7 @@ and private update model (sess: Session) (schema: SchemaInfo) (scope: Sql.Expr l
                     { Table = schema.Table
                       Set =
                         (if sets.IsEmpty && versionSet.IsEmpty then
-                             [ schema.Key.Column, Sql.Column(schema.Table, schema.Key.Column) ]
+                             [ schema.Key.Parts.Head.Name, Sql.Column(schema.Table, schema.Key.Parts.Head.Name) ]
                          else
                              sets @ versionSet)
                       Where = where

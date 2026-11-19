@@ -20,6 +20,26 @@ A field of another record's id type is a reference to that record:
 `OrderLine.ProductId` references `products`. `[<NotReference>]` says a field
 is only a value.
 
+A key of several fields is a record of them as the Id. The key's parts are
+the table's own columns, by their own names, so the `Id` below is stored as
+`repo` and `number`, under `primary key (repo, number)`:
+
+```fsharp
+type IssueKey = { Repo: string; Number: int }
+
+[<Table "issues">]
+type Issue = { Id: IssueKey; Title: string; [<Version>] Version: int }
+```
+
+Its parts are scalars, none of them optional, and there are at least two,
+since a key of one part is a single-case wrapper. The insert gives every part,
+because nothing is generated. A query reads a part as a column (`i.Id.Number`)
+and compares a whole key with `=`. A key has no order of its own, so a query
+orders by its parts. A change finds the row by every part and its version, and
+a part cannot be changed. For now a reference to such a key from another
+record, owned and linked lists on either side, and upserts keyed by it are
+refused, naming the field.
+
 ## Validated values
 
 A type with a `create` function is read back through it. A stored value the

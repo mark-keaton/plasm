@@ -633,6 +633,26 @@ let private valueEquals (alias: string) (f: FieldMap) (value: obj) : Sql.Expr =
         else Sql.NotDistinctFrom(Sql.Column(alias, p.Name), Sql.partValue p v))
     |> Sql.conj
 
+/// A value in the row equals a prepared argument: every column equals its
+/// part of the argument, each bound when the query runs (a whole key of
+/// several parts by Arg.Value, composite-keys.feature).
+let private valueEqualsArg (alias: string) (f: FieldMap) (v: Expr) : Sql.Expr =
+    let value = argFunction v
+
+    f.Parts
+    |> List.mapi (fun i p ->
+        let part (args: obj[]) =
+            match value args with
+            | null -> invalidOp (nullMessage "argument" v)
+            | x -> (f.ToColumns x).[i]
+
+        let bound = Sql.Param(box (Sql.Bound(part, show v)))
+        let bound = match Sql.partStoreType p with Some t -> Sql.Cast(bound, t, false) | None -> bound
+
+        if f.Requires p.Name then Sql.Binary("=", Sql.Column(alias, p.Name), bound)
+        else Sql.NotDistinctFrom(Sql.Column(alias, p.Name), bound))
+    |> Sql.conj
+
 let (|RowAssoc|_|) (ctx: Ctx) (e: Expr) =
     match e with
     | PropertyGet(Some(RowBinding ctx b), prop, []) when not b.Optional ->
@@ -790,7 +810,10 @@ let (|OptionalField|_|) (ctx: Ctx) (e: Expr) =
         | None -> fail e $"property '{prop.Name}' of {b.Schema.Name}.{f.Name} is not a mapped column"
     | _ -> None
 
-let private keyOf (b: Binding) = Sql.Column(b.Alias, b.Schema.Key.Column)
+/// A source's key, for telling whether a left-joined row is there: its key's
+/// first column, which is never NULL in a row that is (a key of several
+/// parts, composite-keys.feature, has every part NOT NULL).
+let private keyOf (b: Binding) = Sql.Column(b.Alias, b.Schema.Key.Parts.Head.Name)
 
 let private isCollectionModule (mi: Reflection.MethodInfo) =
     match mi.DeclaringType.FullName with
@@ -851,6 +874,8 @@ let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
         | JsonPath ctx (doc, JScalar(t, _)) -> Sql.JsonText(doc, Some t)
         | UnionPath ctx _ ->
             fail e "a union with fields is stored in several columns; test its case (c.Stage.IsDoing, match) or compare it with a value"
+        | RowField ctx (b, f) when f.Value.IsSome && f.Name = b.Schema.Key.Name ->
+            fail e $"{b.Schema.Name}.{f.Name} is a key of several parts, which has no order of its own: order by its parts, and compare its parts with < or >"
         | RowField ctx (b, f) when f.Value.IsSome ->
             fail e $"{b.Schema.Name}.{f.Name} is a {f.ScalarType.Name} stored in several columns; use one of its fields here, or compare it whole with ="
         | ArrayField ctx (b, f) -> fail e (arrayRefusal b f "it cannot be ordered by, grouped by or compared as a value")
@@ -1053,6 +1078,9 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
             match f.ToDb(evaluate ctx v) with
             | x when x = box DBNull.Value -> Sql.IsNull(Sql.Column(b.Alias, f.Column))
             | x -> Sql.Binary("=", Sql.Column(b.Alias, f.Column), Sql.partValue f.Parts.Head x)
+        | OperatorCall "op_Equality" [ RowField ctx (b, f); v ]
+        | OperatorCall "op_Equality" [ v; RowField ctx (b, f) ] when f.Value.IsSome && not (isRowDependent ctx v) && mentionsArg v ->
+            valueEqualsArg b.Alias f v
         | OperatorCall "op_Equality" [ RowField ctx (b, f); v ]
         | OperatorCall "op_Equality" [ v; RowField ctx (b, f) ] when f.Value.IsSome && not (isRowDependent ctx v) ->
             valueEquals b.Alias f (evaluate ctx v)
@@ -1690,6 +1718,13 @@ let private appendKey (orders: Sql.OrderItem list) (key: Sql.Expr) =
               Desc = false
               NullsFirst = None } ]
 
+/// Every column of a source's key, in order: one, or a composite key's parts.
+let private keyColumns (alias: string) (s: SchemaInfo) =
+    s.Key.Parts |> List.map (fun p -> Sql.Column(alias, p.Name))
+
+let private appendKeys (orders: Sql.OrderItem list) (alias: string) (s: SchemaInfo) =
+    keyColumns alias s |> List.fold appendKey orders
+
 /// An ordering by an option needs its NULLS clause only where a row may hold
 /// None (readable-sql.feature): not where the query's own conditions prove the
 /// column present, by testing it, comparing it, or testing the union case whose
@@ -1755,13 +1790,13 @@ let private withoutNeedlessNulls (space: Binding list) (wheres: Sql.Expr list) (
 let private tellsApart (alias: string) (s: SchemaInfo) (orders: Sql.OrderItem list) =
     orders
     |> List.exists (fun o ->
-        o.Expr = Sql.Column(alias, s.Key.Column)
+        (not s.Key.Composite && o.Expr = Sql.Column(alias, s.Key.Column))
         || s.Fields |> Array.exists (fun f -> f.Unique && not f.IsOption && f.Parts.Length = 1 && o.Expr = Sql.Column(alias, f.Column)))
 
 /// Ensures a deterministic order for pagination: the primary key is appended as
 /// a final tiebreaker unless the ordering already tells the rows apart.
 let stableOrder (alias: string) (s: SchemaInfo) (orders: Sql.OrderItem list) =
-    if tellsApart alias s orders then orders else appendKey orders (Sql.Column(alias, s.Key.Column))
+    if tellsApart alias s orders then orders else appendKeys orders alias s
 
 /// Over joined rows, a row is identified by the keys of every source, but a
 /// source joined on its own key has at most one row for each row before it,
@@ -1778,7 +1813,7 @@ let private stableOrderOver (space: Binding list) (joins: Sql.Join list) orders 
                         | Sql.Binary("=", x, y) -> x = keyOf b || y = keyOf b
                         | _ -> false))
 
-            if byOwnKey || tellsApart b.Alias b.Schema os then os else appendKey os (keyOf b))
+            if byOwnKey || tellsApart b.Alias b.Schema os then os else appendKeys os b.Alias b.Schema)
         orders
 
 let wrap f =
@@ -2882,6 +2917,10 @@ let conflictTarget (model: Model) (t: Type) (on: Expr) : Result<string list, Tra
 
             let column (x: Expr) =
                 match x with
+                | RowField ctx (b, f) when f.Composite && f.Name = b.Schema.Key.Name ->
+                    fail x $"{b.Schema.Name}.{f.Name} is a key of several parts: an insert that skips or updates on a conflict with it is not supported yet"
+                | RowField ctx (b, f) when f.Composite ->
+                    fail x $"{b.Schema.Name}.{f.Name} is stored in several columns: a conflict target is one column, or a tuple of them"
                 | RowField ctx (_, f) -> f.Column
                 | _ -> fail x "a conflict target must be a field (or a tuple of fields) with a unique constraint"
 

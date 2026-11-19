@@ -52,6 +52,7 @@
     <Compile Include="PageEachSteps.fs" />
     <Compile Include="RetryWaitSteps.fs" />
     <Compile Include="ArraySteps.fs" />
+    <Compile Include="CompositeKeySteps.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Plasm.TestDomain/Plasm.TestDomain.fsproj" />

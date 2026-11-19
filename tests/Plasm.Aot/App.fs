@@ -21,6 +21,17 @@ type Stage =
 /// An item of a ticket's checklist, held in one JSON document.
 type Item = { Text: string; Done: bool }
 
+/// A shipment keyed by its carrier and number: a key of several parts
+/// (composite-keys.feature), its parts the table's own columns.
+type ShipmentKey = { Carrier: string; Number: int }
+
+[<Table "shipments">]
+type Shipment =
+    { Id: ShipmentKey
+      Status: string
+      [<Version>]
+      Version: int }
+
 [<Table "tickets">]
 type Ticket =
     { Id: TicketId

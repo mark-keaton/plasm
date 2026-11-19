@@ -62,6 +62,10 @@ let ticketsOf =
 let watchedBy =
     Query.prepare (fun (who: Arg<CustomerId>) -> plasm { for t in tableOf<Ticket> do where (List.contains who.Value t.Watchers) })
 
+/// A shipment by its whole key, a record of two parts, as one argument.
+let shipmentByKey =
+    Query.prepare (fun (key: Arg<ShipmentKey>) -> plasm { for x in tableOf<Shipment> do where (x.Id = key.Value) })
+
 let bySize =
     plasm {
         for t in tableOf<Ticket> do

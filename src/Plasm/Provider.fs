@@ -58,6 +58,9 @@ type SchemaIssueKind =
     | MissingTable
     /// A mapped column does not exist.
     | MissingColumn
+    /// A key of several parts has no primary key over its parts, in their
+    /// order (composite-keys.feature).
+    | PrimaryKey
     /// The column's type cannot hold the field's values.
     | IncompatibleType
     /// A non-optional field reads a nullable column: a NULL would fail to load.
