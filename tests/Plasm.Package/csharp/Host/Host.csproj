@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A C# host over an F# library on Plasm's packages (tests/Plasm.Package/run.sh):
+       it references only the F# project, and neither a Plasm package nor
+       Plasm's targets; the library's package reference carries the build step
+       a native binary needs. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Desk/Desk.fsproj" />
+  </ItemGroup>
+</Project>

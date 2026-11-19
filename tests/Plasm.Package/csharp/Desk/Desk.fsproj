@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The F# library of a C# host (tests/Plasm.Package/run.sh): the domain and
+       its queries, taking Plasm from its packages alone. The host references
+       only this project. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <IsAotCompatible>true</IsAotCompatible>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Desk.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Plasm.Postgres" Version="$(PlasmVersion)" />
+  </ItemGroup>
+</Project>

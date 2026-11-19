@@ -482,6 +482,21 @@ native binary failed at its first record (`The record type
 'Consumer.Program+Ticket' is invalid. Required constructor is not defined`:
 nothing kept the application's assembly whole).
 
+A C# host over an F# library needs nothing either: no Plasm package, no
+import and no property in the C# project, only its reference to the F#
+project and `PublishAot`. The library's reference to Plasm.Postgres flows to
+the host as packages do, so `buildTransitive/` brings Plasm's targets into the
+host's publish, and the step marks the library's F# getters there.
+`tests/Plasm.Package/csharp` checks that shape too (an F# library on the
+package, and a C# executable referencing only it): the native binary prints
+what the runtime prints, and published without the step it refuses the
+library's typed id by name. Build such a pair through its real path: through a
+symlinked one, such as macOS's `/tmp` and `/var` (links to `/private/tmp` and
+`/private/var`), NuGet's restore of the C# project drops its reference to the
+F# project, and with it every package, with no warning; the build succeeds and
+the program cannot load Plasm. The script works in the temporary folder's real
+path for that reason.
+
 The step costs about 0.1 s of a native publish that takes about 16 s on an
 Apple M4 Max (78 to 100 ms in four runs, as MSBuild's performance summary
 times the target); the two publishes, with and without it, differ by less

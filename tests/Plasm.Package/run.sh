@@ -11,7 +11,10 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
-work="$(mktemp -d "${TMPDIR:-/tmp}/plasm-package.XXXXXX")"
+# Its real path: on macOS the temporary folder is under /var, a symlink to
+# /private/var, and NuGet's restore of a C# project then loses its reference to
+# an F# project (MSBuild names one by each path), and with it the packages.
+work="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/plasm-package.XXXXXX")" && pwd -P)"
 trap 'rm -rf "$work"' EXIT
 feed="$work/feed"; app="$work/app"; export NUGET_PACKAGES="$work/packages"
 
@@ -70,6 +73,29 @@ if ! grep -q "^model: built" "$work/native.txt"; then echo "the native binary di
 echo "--- native, without Plasm's step"; cat "$work/without.txt"
 if ! grep -q "TicketId.TicketId has fields that this native binary cannot see" "$work/without.txt"; then echo "without the step, the binary did not refuse its union by name"; failed=1; fi
 if diff -u "$work/jit.txt" "$work/native.txt"; then echo "native binary prints what the runtime prints"; else echo "native binary differs from the runtime"; failed=1; fi
+
+# A C# host over an F# library (docs/aot.md, "From the packages"): the F#
+# library references Plasm.Postgres's package, the C# executable only the F#
+# project, with PublishAot and no Plasm reference or import of its own. The
+# library's package carries Plasm's build step to the C# publish.
+cs="$work/csharp"
+mkdir -p "$cs"
+cp -R "$here/csharp/Desk" "$here/csharp/Host" "$cs/"
+cp "$app/nuget.config" "$cs/"
+dotnet build "$cs/Host" -c Release -p:PlasmVersion="$version" -o "$work/cs-jit" -v q > "$work/cs-build.log" 2>&1 || { cat "$work/cs-build.log"; exit 1; }
+dotnet "$work/cs-jit/Host.dll" > "$work/cs-jit.txt" 2>&1 || true
+dotnet publish "$cs/Host" -c Release -r "$rid" -p:PlasmVersion="$version" -o "$work/cs-native" -v m > "$work/cs-native.log" 2>&1 || { tail -30 "$work/cs-native.log"; exit 1; }
+rm -rf "$cs/Host/obj/Release/net11.0/$rid/native" "$cs/Host/obj/Release/net11.0/$rid/plasm-aot"
+dotnet publish "$cs/Host" -c Release -r "$rid" -p:PlasmVersion="$version" -p:PlasmFieldGetters=false -o "$work/cs-without" -v m > "$work/cs-without.log" 2>&1 || { tail -30 "$work/cs-without.log"; exit 1; }
+"$work/cs-native/Host" > "$work/cs-native.txt" 2>&1 || true
+"$work/cs-without/Host" > "$work/cs-without.txt" 2>&1 || true
+echo "--- C# host over an F# library, runtime"; cat "$work/cs-jit.txt"
+echo "--- C# host over an F# library, native ($(grep -c 'warning IL' "$work/cs-native.log" || true) IL warnings, $(grep 'warning IL' "$work/cs-native.log" | grep -c Plasm || true) naming Plasm)"; cat "$work/cs-native.txt"
+if ! grep -q "^model: built" "$work/cs-native.txt"; then echo "the C# host's native binary did not build its model"; failed=1; fi
+if grep 'warning IL' "$work/cs-native.log" | grep -q Plasm; then echo "the C# host's publish warns about Plasm"; failed=1; fi
+echo "--- C# host over an F# library, native, without Plasm's step"; cat "$work/cs-without.txt"
+if ! grep -q "MemberId.MemberId has fields that this native binary cannot see" "$work/cs-without.txt"; then echo "without the step, the C# host's binary did not refuse its union by name"; failed=1; fi
+if diff -u "$work/cs-jit.txt" "$work/cs-native.txt"; then echo "the C# host's native binary prints what the runtime prints"; else echo "the C# host's native binary differs from the runtime"; failed=1; fi
 
 # A GraphQL application on Plasm.HotChocolate, from the same feed.
 gql="$work/graphql"
