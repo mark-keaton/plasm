@@ -32,7 +32,7 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 - Native AOT, with a Lambda function in F# and one in C# over F#
 - Plasm.HotChocolate: filters, order, paging, selection, a page per parent
 - The Kanban reference application and its C# host
-- The koans: terminal, notebook and browser
+- The koans: terminal and browser
 
 [`docs/status.md`](docs/status.md) lists each of these with the acceptance
 scenarios that check it.

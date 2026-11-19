@@ -164,8 +164,7 @@ dotnet run --project koans/Plasm.Koans -- --list       # every lesson and its pr
 ```
 
 It starts a throwaway PostgreSQL container, or uses the server named by
-`PLASM_KOANS_PG`. The same koans come as a notebook
-(`koans/notebook/plasm-koans.ipynb`) and in the browser, on the site.
+`PLASM_KOANS_PG`. The same koans run in the browser, on the site.
 
 ## Roadmap
 
@@ -192,7 +191,7 @@ dotnet fsi website/build.fsx       # the site, into _site/; fails if a documente
 | `features/`, `tests/` | The acceptance specification (Gherkin, run by Reqnroll) and the other tests |
 | `examples/Plasm.Examples` | The runnable tour |
 | `examples/Kanban` | The reference application; its own solution and scenarios, see its README |
-| `koans/` | The koans: lessons, runner, notebook, browser version |
+| `koans/` | The koans: lessons, runner, browser version |
 | `website/` | The site's sources |
 | `benchmarks/` | Plasm against EF Core |
 | `docs/` | The documentation, indexed by [`docs/README.md`](docs/README.md) |
