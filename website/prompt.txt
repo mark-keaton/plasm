@@ -9,7 +9,8 @@ Plasm is not on NuGet yet, so make the packages yourself from a clone of the rep
 - For each of Plasm.Annotations, Plasm and Plasm.Postgres: dotnet build src/X -c Release, then dotnet pack src/X -c Release --no-build -o <feed>, where <feed> is a folder you keep.
 - Write the nuget.config that tests/Plasm.Package/run.sh writes, with its source mapping, pointing at <feed>.
 - Reference the package Plasm.Postgres (0.1.0-alpha) from the F# project. Do not reference Plasm's projects directly: the package carries the build step a native binary needs.
-- The C# host needs no import and no Plasm package reference of its own: the F# project's PackageReference carries the build step to it. Do not copy Kanban's ProjectReferences or its Import of Plasm.Repository.targets.
+- The C# host needs only its ProjectReference to the F# project and PublishAot: no Plasm package reference and no import, since the F# project's PackageReference carries the build step to it. tests/Plasm.Package/csharp in the repository is this shape, checked natively; copy it, not Kanban's project files, which reference Plasm's projects.
+- Build in a folder reached by its real path, not through a symlink (on macOS, not under /tmp or /var): through one, NuGet drops the F# project's packages from the C# project with no warning and the program cannot load Plasm.
 - Copy the repository's global.json: on the .NET 11 SDK dotnet test needs its test.runner setting.
 - It needs the .NET 11 SDK and Docker.
 
@@ -24,6 +25,7 @@ How to build it:
 - The C# host builds an NpgsqlDataSource and passes it to the facade's OpenAsync, which starts the repository over it with Repo.Start(model, PostgresProvider dataSource, ...), as examples/Kanban/src/Data/Facade.fs does.
 - Create the database first. Start once with RepoOptions.Unchecked to print repo.Ddl(), run that yourself only when the tables are missing (it is not idempotent; Plasm never runs it), then start with the default options.
 - C# sees one F# facade: plain arguments in, a Task of a union out. Shape the outcome types as docs/csharp.md shows, so C# reads them as unions. C# writes no query, and switches over each outcome with no default arm. Nothing null crosses, either way.
+- With <Nullable>enable</Nullable> in the F# project, box returns objnull and a string is never null: write an outcome's case as { value = card :> obj }, give a generic one 'T: not null, and take raw input that may be null as string | null, read with match text with null -> "" | t -> t (an if isNull does not narrow it).
 - JSON goes through a source-generated context. Set RespectNullableAnnotations and RespectRequiredConstructorParameters on ConfigureHttpJsonOptions's SerializerOptions as well as on the context's attribute: in a minimal API the attribute alone is not enough. A null or missing property must answer 400.
 
 You are done when dotnet test is green against a real PostgreSQL (repo.Sandbox per test, nothing mocked), the host starts with Plasm's start-up check on, which is the default, a request with a null or missing property answers 400, dotnet publish with PublishAot reports no trim warning naming Plasm, and you have borrowed and returned a book over HTTP against the native binary. Then leave it running and show me the requests as curl commands I can run, with the SQL Plasm sent for each.
