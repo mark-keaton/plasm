@@ -41,7 +41,7 @@ let provision () : Task<KoansDatabase> =
             | null
             | "" ->
                 task {
-                    // Quiet: the learner's terminal (or notebook) is for the koans,
+                    // Quiet: the learner's terminal is for the koans,
                     // so Testcontainers' console log is set aside while it starts.
                     let console = Console.Out
                     Console.SetOut TextWriter.Null

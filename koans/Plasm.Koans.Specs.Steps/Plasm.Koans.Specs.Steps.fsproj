@@ -7,7 +7,6 @@
     <Compile Include="PathSteps.fs" />
     <Compile Include="CurriculumSteps.fs" />
     <Compile Include="LessonSteps.fs" />
-    <Compile Include="NotebookSteps.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Reqnroll" />

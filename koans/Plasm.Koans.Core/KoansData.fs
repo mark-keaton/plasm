@@ -1,5 +1,5 @@
 /// The koans database's schema and starting data, shared by every way of
-/// running the koans (the program, the notebook and the browser).
+/// running the koans (the program and the browser).
 module Plasm.Koans.KoansData
 
 let schema =

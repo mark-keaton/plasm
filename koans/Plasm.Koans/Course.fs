@@ -1,93 +1,15 @@
-/// The koans in a notebook: `start` once, then each koan cell calls `koan` or
-/// `koanTask`, which runs it in its own sandbox and shows the outcome. The
-/// notebook itself is generated from the lesson sources (`generate`).
-module Plasm.Koans.Notebook
+/// The course as the browser koans show it (koans/browser): each lesson's
+/// helpers and each koan's code, read from the lesson sources, with what the
+/// lesson specifications say it teaches. `--course` writes it as course.json.
+module Plasm.Koans.Course
 
 open System
 open System.IO
 open System.Text.Json
 open System.Text.RegularExpressions
-open System.Threading.Tasks
-open Plasm
-open Plasm.Postgres
 open Plasm.Koans.Runner
 
-type private Session =
-    { Repo: Repo
-      Commands: ResizeArray<CommandEvent>
-      Database: Database.KoansDatabase }
-
-let mutable private session: Session option = None
 let private guidance = lazy (Guidance.load ())
-
-/// Starts the koans database for this notebook (once; later calls do nothing).
-let start () =
-    match session with
-    | Some s -> printfn "Database: %s" s.Database.Description
-    | None ->
-        let db = (Database.provision ()).GetAwaiter().GetResult()
-        let commands = ResizeArray<CommandEvent>()
-
-        // The koans' own queries include ones Plasm refuses on purpose (lesson 21
-        // checks them), so the course's repository is written as unchecked.
-        let repo =
-            Repo
-                .Start(
-                    Shop.Db.model,
-                    Postgres.connect db.ConnectionString,
-                    queriesIn = typeof<Shop.Customer>.Assembly,
-                    options =
-                        { RepoOptions.Unchecked with
-                            OnCommand = Some commands.Add
-                            IncludeParameterValues = true }
-                )
-                .GetAwaiter()
-                .GetResult()
-
-        session <-
-            Some
-                { Repo = repo
-                  Commands = commands
-                  Database = db }
-
-        AppDomain.CurrentDomain.ProcessExit.Add(fun _ -> db.Dispose().GetAwaiter().GetResult())
-        printfn "Database: %s" db.Description
-
-let private check (name: string) (body: Repo -> Task<unit>) =
-    if session.IsNone then start ()
-    let s = session.Value
-
-    let title =
-        guidance.Value
-        |> List.tryFind (fun l -> l.Koans.ContainsKey name)
-        |> Option.map (fun l -> l.Title)
-        |> Option.defaultValue "Plasm Koans"
-
-    // No source file: a blank is reported as "in this cell".
-    let koan =
-        { Name = name
-          File = ""
-          Line = 0
-          Body = body }
-
-    let r = (run s.Repo s.Commands (Lesson.make title [ koan ]) koan).GetAwaiter().GetResult()
-
-    match r.Outcome with
-    | Passed -> printfn "✔ %s" name
-    | _ -> printfn "✘ %s\n\n%s" name (describeNext guidance.Value r)
-
-/// Runs a koan whose body is ordinary code.
-let koan (name: string) (body: Repo -> unit) =
-    check name (fun repo ->
-        body repo
-        Task.FromResult())
-
-/// Runs a koan whose body is a task.
-let koanTask (name: string) (body: Repo -> Task<unit>) = check name body
-
-// ---------------------------------------------------------------------------
-// Generating the notebook from the lesson sources
-// ---------------------------------------------------------------------------
 
 let private koanStart = Regex(@"^(\s*)(?:\[ )?Koan\.(Sync|Task)\(\s*$")
 let private nameLine = Regex("^\\s*\"(.*)\",\\s*$")
@@ -102,10 +24,6 @@ let private dedent (lines: string list) =
     | _ ->
         let n = List.min indents
         lines |> List.map (fun l -> if l.Length >= n then l.Substring n else l.TrimStart())
-
-type private Cell =
-    | Markdown of string list
-    | Code of string list
 
 /// One koan as source: its name, whether its body is a task, its lambda's
 /// head ("fun k ->") and its body lines (indented by four).
@@ -162,18 +80,6 @@ let parseLesson (file: string) : string list * KoanSource list =
                         Body = body } ]
 
     helpers, koans
-
-/// A lesson's cells: its helpers, then one cell per koan.
-let private lessonCells (file: string) : Cell list =
-    let helpers, koans = parseLesson file
-
-    let cells =
-        koans
-        |> List.map (fun k ->
-            let call = if k.IsTask then "koanTask" else "koan"
-            Code([ $"{call} \"{k.Name}\" ({k.Lambda}" ] @ (List.take (k.Body.Length - 1) k.Body) @ [ List.last k.Body + ")" ]))
-
-    (if helpers.IsEmpty then [] else [ Code helpers ]) @ cells
 
 /// The course as data for the browser: every lesson's helpers and every
 /// koan's code and guidance, in order.
@@ -264,78 +170,3 @@ let course () : string =
         |> Array.ofList
 
     JsonSerializer.Serialize(dict [ "tables", box (Array.ofList Given.tables); "lessons", box lessons ], JsonSerializerOptions(WriteIndented = true)) + "\n"
-
-/// The notebook (.ipynb JSON) for the lessons, referencing the built koans in `bin`.
-let generate (bin: string) : string =
-    let byTitle = guidance.Value |> List.map (fun g -> g.Title, g) |> Map.ofList
-
-    let intro =
-        Markdown
-            [ "# The Plasm Koans"
-              ""
-              "Each koan below has blanks (`__`) to fill in. Run the setup cell once, then run each koan cell:"
-              "it runs the koan in its own sandbox, so every koan starts from the same data, and shows ✔ when"
-              "it passes, or what to fill in or fix. Edit a cell and run it again until it passes."
-              ""
-              "Build the koans first: `dotnet build koans/Plasm.Koans`. The setup cell starts a throwaway"
-              "PostgreSQL container, or uses the server named by `PLASM_KOANS_PG`." ]
-
-    let setup =
-        Code
-            [ $"#I \"{bin}\""
-              "#r \"Microsoft.Extensions.Logging.Abstractions.dll\""
-              "#r \"Plasm.Annotations.dll\""
-              "#r \"Plasm.dll\""
-              "#r \"Plasm.Postgres.dll\""
-              "#r \"Npgsql.dll\""
-              "#r \"Testcontainers.dll\""
-              "#r \"Testcontainers.PostgreSql.dll\""
-              "#r \"Plasm.Koans.Core.dll\""
-              "#r \"Plasm.Koans.dll\""
-              "open Plasm"
-              "open Plasm.Koans"
-              "open Plasm.Koans.Shop"
-              "open Plasm.Koans.Notebook"
-              ""
-              "start ()" ]
-
-    let lessons =
-        Path.lessons
-        |> List.collect (fun lesson ->
-            let goal = byTitle.TryFind lesson.Title |> Option.map (fun g -> g.Goal) |> Option.defaultValue ""
-            Markdown [ $"## {lesson.Title}"; ""; goal ] :: lessonCells lesson.Koans.Head.File)
-
-    let cellJson (cell: Cell) =
-        let lines, kind =
-            match cell with
-            | Markdown l -> l, "markdown"
-            | Code l -> l, "code"
-
-        let source = lines |> List.mapi (fun i l -> if i < lines.Length - 1 then l + "\n" else l) |> Array.ofList
-
-        if kind = "markdown" then
-            box (dict [ "cell_type", box "markdown"; "metadata", box (dict []); "source", box source ])
-        else
-            box (
-                dict
-                    [ "cell_type", box "code"
-                      "execution_count", null
-                      "metadata", box (dict [ "dotnet_interactive", box (dict [ "language", "fsharp" ]); "polyglot_notebook", box (dict [ "kernelName", "fsharp" ]) ])
-                      "outputs", box [||]
-                      "source", box source ]
-            )
-
-    let notebook =
-        dict
-            [ "cells", box (intro :: setup :: lessons |> List.map cellJson |> Array.ofList)
-              "metadata",
-              box (
-                  dict
-                      [ "kernelspec", box (dict [ "display_name", ".NET (F#)"; "language", "F#"; "name", ".net-fsharp" ])
-                        "language_info", box (dict [ "name", "F#" ])
-                        "polyglot_notebook", box (dict [ "kernelInfo", box (dict [ "defaultKernelName", "fsharp" ]) ]) ]
-              )
-              "nbformat", box 4
-              "nbformat_minor", box 5 ]
-
-    JsonSerializer.Serialize(notebook, JsonSerializerOptions(WriteIndented = true)) + "\n"

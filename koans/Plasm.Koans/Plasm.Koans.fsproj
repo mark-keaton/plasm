@@ -3,11 +3,6 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
-    <!-- The oldest FSharp.Core Plasm supports, so notebook kernels with an
-         older FSharp.Core can load the koans. -->
-    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
-    <!-- Logging.Abstractions is referenced on purpose (see below), though .NET provides it. -->
-    <NoWarn>$(NoWarn);NU1510</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Database.fs" />
@@ -35,12 +30,11 @@
     <Compile Include="Lessons/L22_UnionsWithFields.fs" />
     <Compile Include="Path.fs" />
     <Compile Include="Given.fs" />
-    <Compile Include="Notebook.fs" />
+    <Compile Include="Course.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
     <!-- What each koan teaches comes from the lesson specifications. -->
-    <None Include="$(PkgMicrosoft_Extensions_Logging_Abstractions)/lib/net10.0/Microsoft.Extensions.Logging.Abstractions.dll" Link="Microsoft.Extensions.Logging.Abstractions.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
     <None Include="$(PlasmRoot)koans/features/lessons/*.feature" Link="lessons/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
@@ -49,9 +43,6 @@
     <ProjectReference Include="$(PlasmRoot)src/Plasm.Postgres/Plasm.Postgres.fsproj" />
     <PackageReference Include="FSharp.Core" />
     <PackageReference Include="Npgsql" />
-    <!-- What Npgsql and Testcontainers reference. .NET 11 provides a newer copy, so
-         the build would not copy it; notebook kernels need it next to the koans. -->
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" GeneratePathProperty="true" />
     <PackageReference Include="Testcontainers.PostgreSql" />
   </ItemGroup>
 </Project>
