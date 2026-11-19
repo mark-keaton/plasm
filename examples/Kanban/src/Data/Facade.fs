@@ -74,7 +74,7 @@ type StageByKind() =
         JsonTypeClassifier(fun reader ->
             // A copy: the classifier only looks ahead.
             let mutable r = reader
-            let mutable found: Type = null
+            let mutable found: Type | null = null
 
             if r.TokenType = JsonTokenType.StartObject then
                 let depth = r.CurrentDepth
@@ -83,13 +83,15 @@ type StageByKind() =
                     if r.TokenType = JsonTokenType.PropertyName && r.ValueTextEquals "kind" then
                         r.Read() |> ignore
 
-                        found <-
+                        let kind: Type | null =
                             match r.GetString() with
                             | "backlog" -> typeof<InBacklog>
                             | "doing" -> typeof<InProgress>
                             | "shipped" -> typeof<WasShipped>
                             | "dropped" -> typeof<WasDropped>
                             | _ -> null
+
+                        found <- kind
                     elif r.TokenType = JsonTokenType.StartObject || r.TokenType = JsonTokenType.StartArray then
                         r.Skip()
 
@@ -97,10 +99,10 @@ type StageByKind() =
 
 and [<Struct; Union; JsonUnion(TypeClassifier = typeof<StageByKind>)>] StageView =
     val private value: obj
-    new(backlog: InBacklog) = { value = box backlog }
-    new(doing: InProgress) = { value = box doing }
-    new(shipped: WasShipped) = { value = box shipped }
-    new(dropped: WasDropped) = { value = box dropped }
+    new(backlog: InBacklog) = { value = backlog :> obj }
+    new(doing: InProgress) = { value = doing :> obj }
+    new(shipped: WasShipped) = { value = shipped :> obj }
+    new(dropped: WasDropped) = { value = dropped :> obj }
     member this.Value = this.value
 
     interface IUnion with
@@ -142,10 +144,10 @@ type Missing = { What: string }
 
 /// A read that can miss: the value, or what is missing.
 [<Struct; Union>]
-type Found<'T> =
+type Found<'T when 'T: not null> =
     val private value: obj
-    new(found: 'T) = { value = box found }
-    new(missing: Missing) = { value = box missing }
+    new(found: 'T) = { value = found :> obj }
+    new(missing: Missing) = { value = missing :> obj }
     member this.Value = this.value
 
     interface IUnion with
@@ -166,9 +168,9 @@ type Invalid = { Problems: FieldProblem[] }
 [<Struct; Union>]
 type AddCardOutcome =
     val private value: obj
-    new(card: CardView) = { value = box card }
-    new(missing: Missing) = { value = box missing }
-    new(invalid: Invalid) = { value = box invalid }
+    new(card: CardView) = { value = card :> obj }
+    new(missing: Missing) = { value = missing :> obj }
+    new(invalid: Invalid) = { value = invalid :> obj }
     member this.Value = this.value
 
     interface IUnion with
@@ -178,11 +180,11 @@ type AddCardOutcome =
 [<Struct; Union>]
 type ChangeOutcome =
     val private value: obj
-    new(card: CardView) = { value = box card }
-    new(missing: Missing) = { value = box missing }
-    new(refused: Refused) = { value = box refused }
-    new(stale: Stale) = { value = box stale }
-    new(invalid: Invalid) = { value = box invalid }
+    new(card: CardView) = { value = card :> obj }
+    new(missing: Missing) = { value = missing :> obj }
+    new(refused: Refused) = { value = refused :> obj }
+    new(stale: Stale) = { value = stale :> obj }
+    new(invalid: Invalid) = { value = invalid :> obj }
     member this.Value = this.value
 
     interface IUnion with
@@ -192,8 +194,8 @@ type ChangeOutcome =
 [<Struct; Union>]
 type CreateBoardOutcome =
     val private value: obj
-    new(board: BoardSummary) = { value = box board }
-    new(invalid: Invalid) = { value = box invalid }
+    new(board: BoardSummary) = { value = board :> obj }
+    new(invalid: Invalid) = { value = invalid :> obj }
     member this.Value = this.value
 
     interface IUnion with
@@ -206,8 +208,8 @@ type SentBack = { Cards: int }
 [<Struct; Union>]
 type SendAllBackOutcome =
     val private value: obj
-    new(sent: SentBack) = { value = box sent }
-    new(missing: Missing) = { value = box missing }
+    new(sent: SentBack) = { value = sent :> obj }
+    new(missing: Missing) = { value = missing :> obj }
     member this.Value = this.value
 
     interface IUnion with
@@ -232,9 +234,9 @@ type DonePage =
 [<Struct; Union>]
 type DonePageOutcome =
     val private value: obj
-    new(page: DonePage) = { value = box page }
-    new(missing: Missing) = { value = box missing }
-    new(invalid: Invalid) = { value = box invalid }
+    new(page: DonePage) = { value = page :> obj }
+    new(missing: Missing) = { value = missing :> obj }
+    new(invalid: Invalid) = { value = invalid :> obj }
     member this.Value = this.value
 
     interface IUnion with
@@ -248,8 +250,8 @@ type AccountView = { Name: string; PasswordHash: string }
 [<Struct; Union>]
 type RegisterOutcome =
     val private value: obj
-    new(account: AccountView) = { value = box account }
-    new(invalid: Invalid) = { value = box invalid }
+    new(account: AccountView) = { value = account :> obj }
+    new(invalid: Invalid) = { value = invalid :> obj }
     member this.Value = this.value
 
     interface IUnion with
@@ -257,7 +259,7 @@ type RegisterOutcome =
 
 /// The database could not be reached or failed; the inner exception, when
 /// there is one, is the provider's.
-type KanbanUnavailableException(message: string, inner: exn) =
+type KanbanUnavailableException(message: string, inner: exn | null) =
     inherit Exception(message, inner)
 
 module private View =
@@ -393,7 +395,7 @@ type StartupChecks =
 [<Sealed>]
 type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit -> Guid) =
 
-    let unavailable (what: string) (detail: obj) (inner: exn) =
+    let unavailable (what: string) (detail: obj) (inner: exn | null) =
         KanbanUnavailableException($"{what}: {detail}", inner) |> raise
 
     let failed (what: string) (error: DbError) =

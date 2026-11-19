@@ -2,6 +2,9 @@
   <!-- The domain and the API contract. This project compiles for .NET (the
        server) and to JavaScript (the client), so it references only FSharp.Core
        and Plasm.Annotations: attribute classes, which Fable compiles from source. -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
   <ItemGroup>
     <!-- Explicit, because Fable does not see the SDK's implicit reference under central package management. -->
     <PackageReference Include="FSharp.Core" />

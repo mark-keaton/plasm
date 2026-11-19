@@ -91,7 +91,14 @@ Null was tried first and dropped. F# 9 nullness reaches C# through `Task<_>`
 (`Task<string | null>` gives CS8602 on a dereference), but an F# record
 cannot be `| null`, and with `<Nullable>enable</Nullable>` a record in
 `Task<_>` is annotated as never null; without it, C# sees it as oblivious and
-warns about nothing.
+warns about nothing. So Kanban.Data and Kanban's Shared domain set
+`<Nullable>enable</Nullable>`, since the facade is the null boundary, and
+compile clean against FSharp.Core 8 (this repository's) and 11 (what a new
+project gets). What matters is FSharp.Core 9 and later, where `box` returns
+`objnull` and a `string` is never null: write an outcome's case as
+`{ value = card :> obj }`, give a generic one `'T: not null`, and take raw
+input that may be null as `string | null`, read with
+`match text with null -> "" | t -> t` (an `if isNull` does not narrow it).
 
 Opening is asynchronous: starting the repository checks every query and the
 tables against the database, so the facade is made by

@@ -26,8 +26,8 @@ type Slug =
         let (Slug v) = s
         v
 
-    static member create(text: string) : Result<Slug, string> =
-        let t = (if isNull text then "" else text).Trim().ToLowerInvariant()
+    static member create(text: string | null) : Result<Slug, string> =
+        let t = (match text with null -> "" | t -> t).Trim().ToLowerInvariant()
         let allowed c = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c = '-'
 
         if t.Length < 2 || t.Length > 30 then
@@ -49,8 +49,8 @@ type Title =
         let (Title v) = t
         v
 
-    static member create(text: string) : Result<Title, string> =
-        let t = (if isNull text then "" else text).Trim()
+    static member create(text: string | null) : Result<Title, string> =
+        let t = (match text with null -> "" | t -> t).Trim()
 
         if t.Length = 0 then Error "is required"
         elif t.Length > 120 then Error "must be at most 120 characters"
@@ -65,8 +65,8 @@ type Person =
         let (Person v) = p
         v
 
-    static member create(text: string) : Result<Person, string> =
-        let t = (if isNull text then "" else text).Trim()
+    static member create(text: string | null) : Result<Person, string> =
+        let t = (match text with null -> "" | t -> t).Trim()
 
         if t.Length = 0 then Error "is required"
         elif t.Length > 40 then Error "must be at most 40 characters"
@@ -94,8 +94,8 @@ type Label =
         let (Label v) = l
         v
 
-    static member create(text: string) : Result<Label, string> =
-        let t = (if isNull text then "" else text).Trim().ToLowerInvariant()
+    static member create(text: string | null) : Result<Label, string> =
+        let t = (match text with null -> "" | t -> t).Trim().ToLowerInvariant()
 
         if t.Length < 1 || t.Length > 24 then Error "must be 1 to 24 characters" else Ok(Label t)
 
@@ -109,8 +109,8 @@ type Password =
         let (Password v) = p
         v
 
-    static member create(text: string) : Result<Password, string> =
-        let t = if isNull text then "" else text
+    static member create(text: string | null) : Result<Password, string> =
+        let t = match text with null -> "" | t -> t
 
         if t.Length < 8 then Error "must be at least 8 characters"
         elif t.Length > 200 then Error "must be at most 200 characters"

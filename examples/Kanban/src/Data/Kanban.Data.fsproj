@@ -6,6 +6,8 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
+    <!-- The facade is the null boundary: F# checks nullness here (docs/csharp.md). -->
+    <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Db.fs" />
