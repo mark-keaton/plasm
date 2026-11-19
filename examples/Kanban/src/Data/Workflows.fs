@@ -121,6 +121,18 @@ module Queries =
                     where (c.Board = board.Value && c.Stage.IsDoing)
             })
 
+    /// The cards in progress since before `started`, on every board.
+    let inProgressBefore =
+        Query.prepare (fun (started: Arg<DateTimeOffset>) ->
+            plasm {
+                for c in tableOf<Card> do
+                    where (
+                        match c.Stage with
+                        | Doing(_, since) -> since < started.Value
+                        | _ -> false
+                    )
+            })
+
     let doneOn =
         Query.prepare (fun (board: Arg<BoardId>) ->
             plasm {
@@ -276,6 +288,17 @@ let sendAllBack (slug: Slug) : Tx<int, Refusal> =
         let! board = one $"board {slug.Value}" (Queries.boardBySlug slug)
         return! Tx.execute (Bulk.update(Queries.inProgressOn board.Id, fun c -> { c with Stage = Backlog }))
     }
+
+/// Sends every stale card back to the backlog, on every board, with one
+/// UPDATE: each card in progress for longer than `Card.staleAfter` at `now`.
+/// How many there were.
+///
+/// As in `sendAllBack`, no per-card decision runs, which is sound because
+/// `Card.sendBack` never refuses a card in progress. Each card's version is
+/// incremented, so copies read before are stale. Kanban keeps no history of
+/// changes, so there is no audit for the bulk write to skip.
+let sendStaleBack (now: DateTimeOffset) : Tx<int, Refusal> =
+    Tx.execute (Bulk.update(Queries.inProgressBefore (now - Card.staleAfter), fun c -> { c with Stage = Backlog }))
 
 /// Adds the comment `write` puts on the card, if the domain allows one. The
 /// comment is part of the card, so this is a change to the card.

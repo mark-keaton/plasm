@@ -302,6 +302,10 @@ module Card =
         | Doing _, Shipped, None when left > 0 -> Error(ItemsLeft left)
         | Doing _, Shipped, None -> Ok { card with Stage = Done(Shipped, now) }
 
+    /// How long a card may be in progress. A card in progress longer than
+    /// this is stale, and is sent back to the backlog (`sendBack`).
+    let staleAfter = TimeSpan.FromDays 14.0
+
     /// Puts work in progress back in the backlog.
     let sendBack (card: Card) : Result<Card, DomainError> =
         match card.Stage with

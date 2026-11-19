@@ -652,6 +652,15 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
                 | Error other -> return unavailable "Sending cards back stopped" other null
         }
 
+    /// Sends every card in progress for longer than the domain allows at
+    /// `now` back to the backlog, on every board: how many (docs/kanban-host.md).
+    member _.SendStaleBackAsync(now: DateTimeOffset, cancellationToken: CancellationToken) : Task<SentBack> =
+        task {
+            match! transact Guid.Empty (sendStaleBack now) cancellationToken with
+            | Ok n -> return { SentBack.Cards = n }
+            | Error other -> return unavailable "Sending stale cards back stopped" other null
+        }
+
     /// The cards `person` is working on, oldest start first.
     member _.WorkOfAsync(person: string, cancellationToken: CancellationToken) : Task<WorkView[]> =
         task {
