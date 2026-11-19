@@ -52,6 +52,9 @@ type World() =
     member val StartFailure: exn option = None with get, set
     member val AfterScenario: (unit -> Task) list = [] with get, set
 
+    /// The databases made for this scenario alone, dropped when it ends.
+    member val Databases: string list = [] with get, set
+
     /// The application's API over this scenario's repository and clock, as
     /// used by `person` (or by nobody).
     member w.ApiAs(person: string option) : IKanbanApi =
@@ -196,11 +199,12 @@ type Hooks(w: World, scenario: ScenarioContext) =
                 ()
             elif tagged "committed" then
                 let! connectionString = Databases.migrated ()
+                w.Databases <- connectionString :: w.Databases
                 w.ConnectionString <- connectionString
                 let! repo = Databases.repoFor connectionString
                 w.Repo <- repo
             else
-                let! shared = Databases.shared.Value
+                let! _, shared = Databases.shared.Value
                 // Repo.Sandbox takes the work as a function. A scenario's steps
                 // are separate methods, so the function waits until the scenario
                 // has ended, and the steps use the repository it was given.
@@ -232,4 +236,20 @@ type Hooks(w: World, scenario: ScenarioContext) =
         task {
             for finish in w.AfterScenario do
                 do! finish ()
+        }
+
+    /// After every other hook, so that what used a database has stopped.
+    [<AfterScenario(Order = 100000)>]
+    member _.DropDatabases() : Task =
+        task {
+            for connectionString in w.Databases do
+                do! Databases.drop connectionString
+        }
+
+    [<AfterTestRun>]
+    static member DropShared() : Task =
+        task {
+            if Databases.shared.IsValueCreated then
+                let! connectionString, _ = Databases.shared.Value
+                do! Databases.drop connectionString
         }

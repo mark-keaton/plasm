@@ -306,7 +306,11 @@ dotnet test --project tests/Kanban.Host.Specs    # Docker, or PLASM_TEST_PG
 ```
 
 `tests/Hosting/no-leftover-hosts.sh` checks that no host outlives its
-scenarios.
+scenarios. Each scenario's database is dropped once its host has stopped.
+On a server named by PLASM_TEST_PG, one a killed run left is dropped by the
+next run on the same machine. A database is named after the machine and the
+test process, so that sweep is per machine: it never drops another
+machine's, and a process id since reused only delays a drop.
 
 ## What is awkward or missing
 

@@ -385,6 +385,7 @@ type KanbanSteps(w: World, d: Driver) =
         task {
             // Empty: the application migrates it as it starts.
             let! connectionString = Databases.empty ()
+            w.Databases <- connectionString :: w.Databases
             do! this.StartApplication connectionString
 
             match w.StartFailure with
@@ -465,6 +466,7 @@ type KanbanSteps(w: World, d: Driver) =
     member _.GivenDrift(column: string) : Task =
         task {
             let! connectionString = Databases.migrated ()
+            w.Databases <- connectionString :: w.Databases
             let parts = column.Split '.'
             do! Databases.execute connectionString $"alter table {parts.[0]} drop column {parts.[1]} cascade"
             w.ConnectionString <- connectionString

@@ -20,13 +20,15 @@ public sealed partial class Steps : IAsyncDisposable
     readonly Dictionary<string, string> environment = new() { ["KANBAN_SQL"] = "1" };
 
     /// Reqnroll does not dispose a binding asynchronously: the host is stopped
-    /// here, when the scenario ends.
+    /// here, when the scenario ends, and then its database is dropped.
     [AfterScenario]
     public async Task StopHost()
     {
         http?.Dispose();
         if (host is not null) await host.DisposeAsync();
         host = null;
+        if (connectionString != "") await Databases.Drop(connectionString);
+        connectionString = "";
     }
 
     public async ValueTask DisposeAsync()
