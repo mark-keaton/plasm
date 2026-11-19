@@ -20,7 +20,7 @@ so far, and says what is not.
 | `examples/Kanban/src/Shared` | F# | The domain: `Card`, `Board`, `Person`, `Password`, and every rule (`Card.start`, `Card.finish`, ...) as a function returning `Result<_, DomainError>`. No I/O. |
 | `examples/Kanban/src/Data` | F# | `Db.fs`: the model Plasm stores. `Workflows.fs`: the queries and transactions, one per change (`changeCard`, `addCard`, ...). `Facade.fs`: `KanbanData`, the one type C# calls. |
 | `examples/Kanban/src/Host` | C# | This host: ASP.NET Core, cookie authentication, REST (`Rest.cs`), GraphQL (`GraphQL.cs`), accounts (`Accounts.cs`), the background job (`StaleCards.cs`), its one clock (`Clock.cs`), and the one mapping from outcome to HTTP answer (`Outcomes.cs`). |
-| `src/Plasm.HotChocolate` | F# | Turns Hot Chocolate's where, order and paging into Plasm query refinements, and shows a C# union as a GraphQL union (docs/hotchocolate.md). |
+| `src/Plasm.HotChocolate` | F# | Turns Hot Chocolate's where, order, paging and selection into Plasm query refinements, generates the card type from the read declarations, and shows a C# union as a GraphQL union (docs/hotchocolate.md). |
 | `examples/Kanban/src/Host.CSharp` | C# | A second, minimal host that compiles natively; it is the proof that the F# core runs without code generation. Not the subject of this guide. |
 | `examples/Kanban/src/Server`, `Client` | F# | Kanban's own F# server and Fable client, which share the domain and data projects. |
 
@@ -224,6 +224,23 @@ Reads are open to anyone; every mutation needs someone signed in.
   `Kanban.Data` declares once (`CardFields`), and the database does both. A
   board's cards, for every board a request asks for, are one query. See
   docs/hotchocolate.md.
+- A request reads only what it selects. The `CardView` type is generated
+  from what `Kanban.Data` declares a caller may read (`CardRead`: each of
+  CardView's fields once, a quotation over the domain's `Card` and the
+  conversion to the view's value), and `KanbanData.CardsAsync(chosen, ...)`
+  reads only the chosen fields' columns, and a card's comments or labels
+  only when chosen. `{ cards { items { title } } }` reads the title column
+  and nothing else:
+
+  ```sql
+  SELECT "c"."title" AS "c0" FROM "cards" AS "c" ORDER BY "c"."created", "c"."id" LIMIT @p0
+  ```
+
+  The same GraphQL type answers a mutation's whole `CardView`, a field read
+  by the view's property of the declared name, so REST's JSON and GraphQL's
+  fields are named alike by construction; a declared field the view has no
+  property of the same name and type for is refused when the schema is
+  built.
 - `card(id)` answers `union CardResult = CardView | Missing`, from
   `CardAsync`'s `Found<CardView>`. A generic type's own name is not one
   GraphQL allows, so this union alone is named where it is registered
@@ -317,8 +334,8 @@ machine's, and a process id since reused only delays a drop.
 - **Runtime only.** Hot Chocolate 16.7.6 does not start in a native binary,
   so this host runs on the JIT. The F# core does compile natively; that is
   `Host.CSharp`'s job to show (docs/aot.md).
-- **Selection is not pushed down.** A GraphQL request that asks for a card's
-  title alone still reads the whole card, with its comments and labels.
+- **A selection inside a card's comments is not pushed down.** A comment is
+  read whole when comments are selected; a comment is small, and owned.
 - **Nested paging is not pushed down.** A board's cards take a where and an
   order, but not a page.
 - **Two hosts, two ways of hashing.** Kanban's F# server and this host both

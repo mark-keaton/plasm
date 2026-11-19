@@ -95,6 +95,48 @@ Feature: Kanban's cards over GraphQL, filtered and ordered by the database
       Then the board "alpha" has backlog "Write the spec, Ship it" and doing "Build it"
       And the cards were read in 2 commands, for every board at once
 
+  Rule: A request reads only what it selects
+
+    # The card type is generated from Kanban.Data's read declarations
+    # (CardRead), each a quotation over the domain's Card: the cards a request
+    # asks for are read with only the columns its selection needs, and a list
+    # a card owns or links (comments, labels) only when selected, with one
+    # more command for every card at once (docs/hotchocolate.md).
+    Scenario: The cards' titles alone are one command, reading the title alone
+      When I ask for '{ cards { items { title } } }'
+      Then the cards are "Write the spec, Build it, Ship it"
+      And the cards were read in one command, reading only "title"
+      And no comments or labels were read
+
+    Scenario: A card's stage reads the stage's columns, and nothing else
+      When I ask for '{ cards(where: { stage: { eq: "doing" } }) { items { stage { __typename ... on InProgress { assignee } } } } }'
+      Then the answer's JSON is {"data":{"cards":{"items":[{"stage":{"__typename":"InProgress","assignee":"Ada"}}]}}}
+      And the cards were read in one command, reading only "stage, stage_assignee, stage_at, stage_resolution, stage_resolution_reason, stage_since"
+
+    Scenario: Comments selected are one more command for every card, and labels are not read
+      When I ask for '{ cards { items { title comments { author } } } }'
+      Then the cards were read in one command, reading only "id, title"
+      And the comments were read in one more command, and no labels
+
+    Scenario: Each board's cards read only what is selected of them
+      When I ask for '{ boards { slug cards { title } } }'
+      Then each board's cards are "alpha: Write the spec, Build it, Ship it"
+      And the cards were read in one command, reading only "board, title"
+      And no comments or labels were read
+
+  Rule: A field read is the view's field of that name, checked when the schema is built
+
+    # One GraphQL card type serves a request's chosen fields and a change's
+    # whole CardView: a declared field resolves from CardView by the property
+    # of its name, so REST's JSON and GraphQL name a field alike.
+    Scenario: A field the view has no property for is refused, naming it
+      When a schema is built with the card field "titel" read from the title
+      Then building the schema is refused with "Card.titel is read, but CardView has no property titel"
+
+    Scenario: A field read as another type than the view's is refused, naming both
+      When a schema is built with the card field "version" read as text
+      Then building the schema is refused with "Card.version is read as a String, but CardView.Version is a Int32"
+
   Rule: The answer is the application's view
 
     Scenario: A card's stage is a GraphQL union over its cases

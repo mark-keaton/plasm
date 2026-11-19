@@ -262,22 +262,26 @@ type KanbanUnavailableException(message: string, inner: exn) =
 
 module private View =
 
+    let id (CardId id) = id
+    let title (title: Title) = title.Value
+
+    let stage (stage: Stage) =
+        match stage with
+        | Backlog -> StageView(InBacklog())
+        | Doing(who, since) -> StageView { Assignee = who.Value; Since = since }
+        | Done(Shipped, at) -> StageView { WasShipped.At = at }
+        | Done(Dropped reason, at) -> StageView { Reason = reason; At = at }
+
+    let labels (labels: Tag list) = [| for tag in labels -> tag.Name.Value |]
+    let comments (comments: Comment list) = [| for c in comments -> { Author = c.Author.Value; Body = c.Body; At = c.At } |]
+
     let card (card: Card) : CardView =
-        let (CardId id) = card.Id
-
-        let stage =
-            match card.Stage with
-            | Backlog -> StageView(InBacklog())
-            | Doing(who, since) -> StageView { Assignee = who.Value; Since = since }
-            | Done(Shipped, at) -> StageView { WasShipped.At = at }
-            | Done(Dropped reason, at) -> StageView { Reason = reason; At = at }
-
-        { Id = id
-          Title = card.Title.Value
-          Stage = stage
+        { Id = id card.Id
+          Title = title card.Title
+          Stage = stage card.Stage
           Version = card.Version
-          Labels = [| for tag in card.Labels -> tag.Name.Value |]
-          Comments = [| for c in card.Comments -> { Author = c.Author.Value; Body = c.Body; At = c.At } |] }
+          Labels = labels card.Labels
+          Comments = comments card.Comments }
 
     let summary (counts: (BoardId * StageKind * int64) list) (line: BoardLine) : BoardSummary =
         let count kind =
@@ -356,6 +360,25 @@ module CardFields =
           QueryField.ordered "version" <@ fun (c: Card) -> c.Version @>
           QueryField.equalVia "stage" <@ fun (c: Card) -> kind c @> stage "backlog" ]
 
+/// What a program building queries at run time (a GraphQL host) may read of a
+/// card: each field of CardView once, by its name, a quotation over the
+/// domain's Card and the conversion to CardView's value (View), checked when
+/// KanbanData opens. A request reads only the fields it chose.
+[<RequireQualifiedAccess>]
+module CardRead =
+    let id = ReadField.via "id" <@ fun (c: Card) -> c.Id @> View.id
+    let title = ReadField.via "title" <@ fun (c: Card) -> c.Title @> View.title
+    let stage = ReadField.via "stage" <@ fun (c: Card) -> c.Stage @> View.stage
+    let version = ReadField.value "version" <@ fun (c: Card) -> c.Version @>
+    let labels = ReadField.via "labels" <@ fun (c: Card) -> c.Labels @> View.labels
+    let comments = ReadField.via "comments" <@ fun (c: Card) -> c.Comments @> View.comments
+
+    let all: ReadField<Card> list = [ id; title; stage; version; labels; comments ]
+
+    /// The board a card is on: read beside a board's cards, which are
+    /// grouped by it, and not a field a caller reads.
+    let internal board = ReadField.via "board" <@ fun (c: Card) -> c.Board @> (fun (BoardId b) -> b)
+
 [<Sealed>]
 type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit -> Guid) =
 
@@ -418,6 +441,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
             let! repo = Repo.Start(model, PostgresProvider dataSource, typeof<Refusal>.Assembly, options, cancellationToken)
 
             repo.CheckFields CardFields.all
+            repo.CheckFields CardRead.all
             return KanbanData(repo, time.GetUtcNow, Guid.CreateVersion7)
         }
 
@@ -441,11 +465,12 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
         KanbanData.Open(dataSource, Some onSql, TimeProvider.System, cancellationToken)
 
     /// Every card, as `refine` makes the query (a GraphQL request's where and
-    /// order, built from CardFields.all), each with its comments and labels.
-    member _.CardsAsync(refine: Func<Query<Card>, Query<Card>>, cancellationToken: CancellationToken) : Task<CardView[]> =
+    /// order, built from CardFields.all), reading only the `fields` chosen
+    /// (CardRead): a list a card owns is read only when chosen.
+    member _.CardsAsync(fields: ReadField<Card> seq, refine: Func<Query<Card>, Query<Card>>, cancellationToken: CancellationToken) : Task<Selected<Card>[]> =
         task {
-            let! cards = repo.All(refine.Invoke(Query.from tableOf<Card>), cancellationToken = cancellationToken)
-            return read "Reading cards failed" cards |> List.map View.card |> Array.ofList
+            let! cards = repo.All(refine.Invoke(Query.from tableOf<Card>) |> BuildQuery.select (List.ofSeq fields), cancellationToken = cancellationToken)
+            return read "Reading cards failed" cards |> Array.ofList
         }
 
     /// Every board, by name.
@@ -462,20 +487,20 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
         }
 
     /// The cards of every board in `boards`, as `refine` makes the query, in
-    /// one query for them all; each board's in the query's order.
-    member _.CardsOfBoardsAsync(boards: Guid seq, refine: Func<Query<Card>, Query<Card>>, cancellationToken: CancellationToken) : Task<IReadOnlyDictionary<Guid, CardView[]>> =
+    /// one query for them all, reading the `fields` chosen; each board's in
+    /// the query's order.
+    member _.CardsOfBoardsAsync(boards: Guid seq, fields: ReadField<Card> seq, refine: Func<Query<Card>, Query<Card>>, cancellationToken: CancellationToken) : Task<IReadOnlyDictionary<Guid, Selected<Card>[]>> =
         task {
             let ids = [ for id in boards -> BoardId id ]
             let query = plasm { for c in tableOf<Card> do where (List.contains c.Board ids) }
-            let! cards = repo.All(refine.Invoke query, cancellationToken = cancellationToken)
-            let byBoard = Dictionary<Guid, ResizeArray<CardView>>()
+            let! cards = repo.All(refine.Invoke query |> BuildQuery.select (CardRead.board :: List.ofSeq fields), cancellationToken = cancellationToken)
+            let byBoard = Dictionary<Guid, ResizeArray<Selected<Card>>>()
 
             for id in boards do
                 byBoard.[id] <- ResizeArray()
 
             for c in read "Reading boards' cards failed" cards do
-                let (BoardId board) = c.Board
-                byBoard.[board].Add(View.card c)
+                byBoard.[c.Get<Guid> CardRead.board].Add c
 
             return Dictionary(byBoard |> Seq.map (fun kv -> KeyValuePair(kv.Key, kv.Value.ToArray()))) :> IReadOnlyDictionary<_, _>
         }

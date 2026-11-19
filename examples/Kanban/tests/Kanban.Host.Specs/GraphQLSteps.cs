@@ -2,6 +2,12 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Kanban;
+using Kanban.Data;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.FSharp.Core;
+using Microsoft.FSharp.Quotations;
+using Plasm.HotChocolate;
 using Reqnroll;
 
 namespace Kanban.Host.Specs;
@@ -125,6 +131,66 @@ public sealed partial class Steps
         var errors = JsonNode.Parse(body)!["errors"]?.AsArray() ?? throw new Exception("no error in " + body);
         Equal(message, (string)errors[0]!["message"]!, "the error");
     }
+
+    /// What the host logged since the request began, every command.
+    List<string> AllSql()
+    {
+        Thread.Sleep(200);
+        return host!.Lines.Skip(mark).Where(l => l.StartsWith("SQL: ")).Select(l => l.Substring(5).Trim()).ToList();
+    }
+
+    [Then("the cards were read in one command, reading only {string}")]
+    public void ReadOnly(string columns)
+    {
+        var sql = Reads().Single();
+        var selected = sql[..sql.IndexOf(" FROM ", StringComparison.Ordinal)];
+        var read = Regex.Matches(selected, "\"c\"\\.\"([a-z_]+)\"").Select(m => m.Groups[1].Value).Distinct().Order(StringComparer.Ordinal);
+        Equal(columns, string.Join(", ", read), "the columns read: " + sql);
+    }
+
+    [Then("no comments or labels were read")]
+    public void NoLists() =>
+        Equal(0, AllSql().Count(l => l.Contains("FROM \"comments\"") || l.Contains("FROM \"labels\"")), "comments' and labels' commands: " + string.Join(" | ", AllSql()));
+
+    [Then("the comments were read in one more command, and no labels")]
+    public void CommentsOnly()
+    {
+        var sql = AllSql();
+        Equal((1, 0), (sql.Count(l => l.Contains("FROM \"comments\"")), sql.Count(l => l.Contains("FROM \"labels\""))), "comments' and labels' commands: " + string.Join(" | ", sql));
+    }
+
+    string refused = "";
+
+    void BuildSchema(Plasm.ReadField<Card> field)
+    {
+        try
+        {
+            new ServiceCollection().AddGraphQLServer()
+                .AddPlasmReadType<Card, CardView>(new[] { field });
+        }
+        catch (InvalidOperationException e)
+        {
+            refused = e.Message;
+        }
+    }
+
+    /// `fun (c: Card) -> c.<property>`, as F# would quote it: C# writes no quotation.
+    static FSharpExpr<FSharpFunc<Card, T>> Read<T>(string property)
+    {
+        var c = new FSharpVar("c", typeof(Card), null);
+        return FSharpExpr.Cast<FSharpFunc<Card, T>>(FSharpExpr.Lambda(c, FSharpExpr.PropertyGet(FSharpExpr.Var(c), typeof(Card).GetProperty(property)!, null)));
+    }
+
+    [When("a schema is built with the card field {string} read from the title")]
+    public void TitleMisnamed(string name) =>
+        BuildSchema(Plasm.ReadField.via(name, Read<Title>("Title"), FuncConvert.FromFunc<Title, string>(t => t.Value)));
+
+    [When("a schema is built with the card field {string} read as text")]
+    public void VersionAsText(string name) =>
+        BuildSchema(Plasm.ReadField.via(name, Read<int>("Version"), FuncConvert.FromFunc<int, string>(v => v.ToString())));
+
+    [Then("building the schema is refused with {string}")]
+    public void SchemaRefused(string message) => Equal(message, refused, "the refusal");
 
     [Then("no cards' SQL was sent")]
     public void NoSql() => Equal(0, CardsSql().Count, "cards' SQL sent");

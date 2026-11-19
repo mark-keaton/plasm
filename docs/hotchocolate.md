@@ -69,11 +69,25 @@ declarations and nothing of Hot Chocolate).
 - `AddPlasmUnion<'U>()` shows a type of C#'s union shape as a GraphQL union
   named as the type is, and `AddPlasmUnion<'U>(name)` names it, for a
   generic type such as `Found<CardView>` (below).
+- `AddPlasmReadType<'T, 'V>(fields)` is the GraphQL object type of the
+  fields of 'T a caller may read (`ReadField`), named and described as the
+  view 'V is. Each field resolves from a row of the fields a request chose
+  (`Selected<'T>`), through its declaration, or from a whole 'V (a change's
+  outcome), through the view's property of the declared name, so one GraphQL
+  type serves both. A declared field must have such a property, of the type
+  it is read as: that is checked as the schema is described, and refused
+  naming the field (`Card.titel is read, but CardView has no property
+  titel`). Since a field resolves from the view by its name, REST's JSON and
+  GraphQL's fields are named alike by construction.
+- `PlasmRequest.Chosen(context, fields)` is the declared fields the request's
+  selection of the field reads, through any types between (a page's
+  `items`).
 - `PlasmRequest.Refinement(context, fields, orderWhenNone)` is the request's
   where and order as a function of a query, read from the context at once,
   for a DataLoader's batch, which runs after the resolver and must not keep
   its context; `PlasmRequest.BatchKey(context)` names the field and its where
-  and order, so that requests with the same arguments share a batch.
+  and order, so that requests with the same arguments share a batch, and
+  `PlasmRequest.BatchKey(context, chosen)` the fields chosen too.
 - `PlasmRequest.Page(context, query, defaultTake)` pages a query as the
   field's offset paging (`skip`, `take`) asks, reading one row more than the
   page; `PlasmRequest.Segment(context, rows, defaultTake, total)` makes the
@@ -98,8 +112,9 @@ module CardFields =
 marked `[<ReflectedDefinition>]`, so Plasm reads its body, the wrapper's own
 field, as the title column (scalar-conventions.feature); `stage` is given as
 `backlog`, `doing` or `done` and compared with Kanban's own `kind c`. `KanbanData.OpenAsync` checks them after the repository starts, and
-`KanbanData.CardsAsync(refine, ct)` runs the cards query as `refine` makes it.
-The host, in C#:
+`KanbanData.CardsAsync(chosen, refine, ct)` runs the cards query as `refine`
+makes it, reading the fields chosen of those `CardRead` declares. The host, in
+C#:
 
 ```csharp
 builder.Services
@@ -107,6 +122,7 @@ builder.Services
     .AddQueryType<Query>()
     .AddPlasmFiltering()
     .AddPlasmSorting()
+    .AddPlasmReadType<Card, CardView>(CardRead.all)
     .AddPlasmUnion<StageView>();
 
 public class Query
@@ -114,10 +130,11 @@ public class Query
     [UseOffsetPaging(DefaultPageSize = Paging.Default, MaxPageSize = Paging.Most, IncludeTotalCount = true)]
     [UseFiltering(typeof(CardFilter))]
     [UseSorting(typeof(CardSort))]
-    public async Task<CollectionSegment<CardView>> Cards(IResolverContext context, [Service] KanbanData kanban, CancellationToken ct)
+    public async Task<CollectionSegment<Selected<Card>>> Cards(IResolverContext context, [Service] KanbanData kanban, CancellationToken ct)
     {
         Plasm.Query<Card> Filtered(Plasm.Query<Card> query) => PlasmRequest.Apply(context, CardFields.all, query, CardFields.created);
-        var rows = await kanban.CardsAsync(query => PlasmRequest.Page(context, Filtered(query), Paging.Default), ct);
+        var chosen = PlasmRequest.Chosen(context, CardRead.all);
+        var rows = await kanban.CardsAsync(chosen, query => PlasmRequest.Page(context, Filtered(query), Paging.Default), ct);
         return await PlasmRequest.Segment(context, rows, Paging.Default, () => kanban.CountCardsAsync(Filtered, ct));
     }
 }
@@ -158,12 +175,16 @@ Done by the database:
   request's where, not run otherwise. Hot Chocolate refuses a `take` over the
   field's `MaxPageSize` before the resolver runs.
 
+- **The selection.** Only the columns of the fields a request selects are
+  read, and a list a card owns or links (comments, labels) only when it is
+  selected, with one more command for every card read. `{ cards { items {
+  title } } }` is `SELECT "c"."title" AS "c0" FROM "cards" AS "c" ORDER BY
+  "c"."created", "c"."id" LIMIT @p0`, and nothing more; selecting a card's
+  comments adds its key to that select and one command for the comments of
+  every card on the page.
+
 Not done by the database, yet:
 
-- **Field selection.** Every column of the record is read, and its owned and
-  linked lists are loaded (a card's comments and labels, one command each for
-  all the cards read), whatever the request selects; Hot Chocolate picks the
-  selected fields from the views.
 - **A nested collection's page.** A board's cards field takes a where and
   an order, done by the database for every board in one command, but no
   `take` per board. SQL can do it in the same command (Plasm's own loads do:

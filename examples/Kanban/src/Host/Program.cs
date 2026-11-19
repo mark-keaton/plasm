@@ -3,6 +3,7 @@
 // KanbanData. Every rule is the domain's; this host reads requests, keeps who
 // is signed in, calls the facade with the person signed in as the actor, and
 // turns each outcome into a response in one place (Outcomes.cs).
+using Kanban;
 using Kanban.Data;
 using Kanban.Host;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -77,6 +78,9 @@ builder.Services
     .AddDataLoader<BoardCardsLoader>()
     .AddPlasmFiltering()
     .AddPlasmSorting()
+    // A card, read with only the fields a request selects, or whole as a
+    // change's outcome: one type, generated from CardRead.
+    .AddPlasmReadType<Card, CardView>(CardRead.all)
     // Each outcome a union of its cases, registered once.
     .AddPlasmUnion<StageView>()
     .AddPlasmUnion<Found<CardView>>("CardResult")

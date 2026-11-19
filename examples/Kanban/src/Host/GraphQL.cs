@@ -12,6 +12,7 @@ using HotChocolate.Resolvers;
 using HotChocolate.Types.Pagination;
 using Kanban;
 using Kanban.Data;
+using Plasm;
 using Plasm.HotChocolate;
 
 namespace Kanban.Host;
@@ -23,10 +24,11 @@ public class Query
     [UseOffsetPaging(DefaultPageSize = Paging.Default, MaxPageSize = Paging.Most, IncludeTotalCount = true)]
     [UseFiltering(typeof(CardFilter))]
     [UseSorting(typeof(CardSort))]
-    public async Task<CollectionSegment<CardView>> Cards(IResolverContext context, [Service] KanbanData kanban, CancellationToken ct)
+    public async Task<CollectionSegment<Selected<Card>>> Cards(IResolverContext context, [Service] KanbanData kanban, CancellationToken ct)
     {
         Plasm.Query<Card> Filtered(Plasm.Query<Card> query) => PlasmRequest.Apply(context, CardFields.all, query, CardFields.created);
-        var rows = await kanban.CardsAsync(query => PlasmRequest.Page(context, Filtered(query), Paging.Default), ct);
+        var chosen = PlasmRequest.Chosen(context, CardRead.all);
+        var rows = await kanban.CardsAsync(chosen, query => PlasmRequest.Page(context, Filtered(query), Paging.Default), ct);
         return await PlasmRequest.Segment(context, rows, Paging.Default, () => kanban.CountCardsAsync(Filtered, ct));
     }
 
@@ -99,30 +101,34 @@ public class BoardCards
 {
     [UseFiltering(typeof(CardFilter))]
     [UseSorting(typeof(CardSort))]
-    public Task<CardView[]> Cards([Parent] BoardNode board, IResolverContext context, BoardCardsLoader loader, CancellationToken ct) =>
-        loader.Load(board.Id, PlasmRequest.BatchKey(context), PlasmRequest.Refinement(context, CardFields.all, CardFields.created), ct);
+    public Task<Selected<Card>[]> Cards([Parent] BoardNode board, IResolverContext context, BoardCardsLoader loader, CancellationToken ct)
+    {
+        var chosen = PlasmRequest.Chosen(context, CardRead.all);
+        return loader.Load(board.Id, PlasmRequest.BatchKey(context, chosen), chosen, PlasmRequest.Refinement(context, CardFields.all, CardFields.created), ct);
+    }
 }
 
-/// Every board's cards a request asks for with the same arguments, in one
-/// query: keyed by board and argument set, one query per argument set.
+/// Every board's cards a request asks for with the same arguments and the
+/// same selection, in one query: keyed by board and request, one query each.
 public sealed class BoardCardsLoader(KanbanData kanban, IBatchScheduler scheduler, DataLoaderOptions options)
-    : BatchDataLoader<(Guid Board, string Request), CardView[]>(scheduler, options)
+    : BatchDataLoader<(Guid Board, string Request), Selected<Card>[]>(scheduler, options)
 {
-    readonly ConcurrentDictionary<string, Func<Plasm.Query<Card>, Plasm.Query<Card>>> refinements = new();
+    readonly ConcurrentDictionary<string, (IReadOnlyList<ReadField<Card>> Chosen, Func<Plasm.Query<Card>, Plasm.Query<Card>> Refine)> requests = new();
 
-    public Task<CardView[]> Load(Guid board, string request, Func<Plasm.Query<Card>, Plasm.Query<Card>> refine, CancellationToken ct)
+    public Task<Selected<Card>[]> Load(Guid board, string request, IReadOnlyList<ReadField<Card>> chosen, Func<Plasm.Query<Card>, Plasm.Query<Card>> refine, CancellationToken ct)
     {
-        refinements.TryAdd(request, refine);
+        requests.TryAdd(request, (chosen, refine));
         return LoadAsync((board, request), ct)!;
     }
 
-    protected override async Task<IReadOnlyDictionary<(Guid Board, string Request), CardView[]>> LoadBatchAsync(
+    protected override async Task<IReadOnlyDictionary<(Guid Board, string Request), Selected<Card>[]>> LoadBatchAsync(
         IReadOnlyList<(Guid Board, string Request)> keys, CancellationToken ct)
     {
-        var result = new Dictionary<(Guid Board, string Request), CardView[]>();
+        var result = new Dictionary<(Guid Board, string Request), Selected<Card>[]>();
         foreach (var request in keys.GroupBy(k => k.Request))
         {
-            var byBoard = await kanban.CardsOfBoardsAsync(request.Select(k => k.Board).Distinct(), refinements[request.Key], ct);
+            var (chosen, refine) = requests[request.Key];
+            var byBoard = await kanban.CardsOfBoardsAsync(request.Select(k => k.Board).Distinct(), chosen, refine, ct);
             foreach (var key in request) result[key] = byBoard[key.Board];
         }
         return result;
