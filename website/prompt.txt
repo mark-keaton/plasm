@@ -10,10 +10,12 @@ Read these before you start, in this order:
   the F# side, src/Host the C# side. This application has the same shape.
 
 Plasm is not on NuGet yet, so make the packages yourself: clone the
-repository, run dotnet pack Plasm.slnx -c Release -o <a folder>, add
-that folder as a NuGet source, and reference the package Plasm.Postgres
-(0.1.0-alpha) from the F# project. Do not reference Plasm's projects
-directly: the package carries the build step a native binary needs.
+repository, build it, pack src/Plasm.Annotations, src/Plasm and
+src/Plasm.Postgres into a folder, add that folder as a NuGet source,
+and reference the package Plasm.Postgres (0.1.0-alpha) from the F#
+project. tests/Plasm.Package/run.sh does exactly this; follow it. Do
+not reference Plasm's projects directly: the package carries the build
+step a native binary needs.
 It needs the .NET 11 SDK and Docker.
 
 What the domain says:
@@ -23,18 +25,26 @@ What the domain says:
 - A change made from a stale copy is refused, never merged.
 
 How to build it:
-- The domain's own records carry [<Table>]. Ids and validated values
-  are single-case types with a create function. Write no mapping.
+- The domain's own records carry [<Table>]. An id is a single-case
+  type (LoanId of Guid). A validated value is a type with a create
+  function returning a Result, and is read back through it. Write no
+  mapping.
 - Queries are plasm { } values. Every write is a step of a Tx run by
   repo.Transact, with your own error type.
 - Start with Repo.Start(model, Postgres.connect cs, queriesIn = ...)
   and create the tables from repo.Ddl().
 - C# sees one F# facade: plain arguments in, a Task of a union out.
-  C# writes no query, and switches over each outcome with no default
-  arm. Nothing null crosses, either way.
+  Shape the outcome types as docs/csharp.md shows, so C# reads them as
+  unions. C# writes no query, and switches over each outcome with no
+  default arm. Nothing null crosses, either way.
+- JSON goes through a source-generated context that respects nullable
+  annotations and required constructor parameters, as
+  examples/Kanban/src/Lambda/Program.cs does.
 
 You are done when dotnet test is green against a real PostgreSQL
-(repo.Sandbox per test, nothing mocked), dotnet publish with
+(repo.Sandbox per test, nothing mocked), the host starts with Plasm's
+start-up check on, which is the default, dotnet publish with
 PublishAot reports no trim warning naming Plasm, and you have borrowed
 and returned a book over HTTP against the native binary. Then leave it
-running and give me the URL.
+running and show me the requests as curl commands I can run, with the
+SQL Plasm sent for each.
