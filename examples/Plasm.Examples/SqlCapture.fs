@@ -286,8 +286,8 @@ let run (connectionString: string) (outputPath: string) =
         do!
             capture
                 "errors"
-                "The duplicate email reaches the database, which refuses it by customers_email_key; that is the Email field's error. The stale cancel requires version 1, but the stored row is at version 2, so no row matches: a Conflict. The untranslatable query sends nothing at all."
-                [ "INSERT INTO \"customers\""; "\"orders\".\"version\" = @p" ]
+                "The duplicate email reaches the database, which refuses it by customers_email_key; that is the Email field's error. The stale cancel was made from version 1, but the order is read at version 2: a Conflict at the read, so nothing is decided and no UPDATE is sent. The untranslatable query sends nothing at all."
+                [ "INSERT INTO \"customers\""; "\"o\".\"version\"" ]
                 (Some "isLucky o.Total: no command was sent; translation failed first.")
                 (fun () ->
                     task {

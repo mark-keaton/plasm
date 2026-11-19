@@ -282,7 +282,7 @@ window.PLASM_SQL = {
     ]
   },
   "errors": {
-    "caption": "The duplicate email reaches the database, which refuses it by customers_email_key; that is the Email field\u0027s error. The stale cancel requires version 1, but the stored row is at version 2, so no row matches: a Conflict. The untranslatable query sends nothing at all.",
+    "caption": "The duplicate email reaches the database, which refuses it by customers_email_key; that is the Email field\u0027s error. The stale cancel was made from version 1, but the order is read at version 2: a Conflict at the read, so nothing is decided and no UPDATE is sent. The untranslatable query sends nothing at all.",
     "commands": [
       {
         "parameters": [
@@ -305,22 +305,12 @@ window.PLASM_SQL = {
         ],
         "rows": 1,
         "sql": "SELECT \u0022order_lines\u0022.\u0022id\u0022, \u0022order_lines\u0022.\u0022order_id\u0022, \u0022order_lines\u0022.\u0022product_id\u0022, \u0022order_lines\u0022.\u0022quantity\u0022, \u0022order_lines\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022\nWHERE \u0022order_lines\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022order_lines\u0022.\u0022id\u0022"
-      },
-      {
-        "parameters": [
-          "@p0 = cancelled",
-          "@p1 = too late",
-          "@p2 = 1",
-          "@p3 = 1"
-        ],
-        "rows": 0,
-        "sql": "UPDATE \u0022orders\u0022\nSET \u0022status\u0022 = @p0, \u0022status_reason\u0022 = @p1, \u0022version\u0022 = \u0022orders\u0022.\u0022version\u0022 \u002B 1\nWHERE \u0022orders\u0022.\u0022id\u0022 = @p2 AND \u0022orders\u0022.\u0022version\u0022 = @p3\nRETURNING \u0022id\u0022, \u0022customer_id\u0022, \u0022status\u0022, \u0022status_reason\u0022, \u0022total\u0022, \u0022placed_at\u0022, \u0022version\u0022"
       }
     ],
     "empty": "isLucky o.Total: no command was sent; translation failed first.",
     "marks": [
       "INSERT INTO \u0022customers\u0022",
-      "\u0022orders\u0022.\u0022version\u0022 = @p"
+      "\u0022o\u0022.\u0022version\u0022"
     ]
   },
   "joins": {
