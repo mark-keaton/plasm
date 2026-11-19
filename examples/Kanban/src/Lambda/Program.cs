@@ -22,8 +22,16 @@ var clock = Stopwatch.StartNew();
 var connectionString = Environment.GetEnvironmentVariable("KANBAN_CS")
     ?? throw new InvalidOperationException("Set KANBAN_CS, the connection string.");
 var dataSource = new NpgsqlSlimDataSourceBuilder(connectionString).EnableArrays().EnableTransportSecurity().Build();
-var kanban = await KanbanData.OpenAsync(dataSource, CancellationToken.None);
-Console.WriteLine($"KanbanData opened {clock.Elapsed.TotalMilliseconds:F1} ms");
+// KANBAN_STARTUP_CHECKS=skip opens without the start-up check, which the
+// function's scenarios run in this binary over the same migrations.
+var checks = Environment.GetEnvironmentVariable("KANBAN_STARTUP_CHECKS") switch
+{
+    null or "" or "run" => StartupChecks.Run,
+    "skip" => StartupChecks.Skip,
+    var other => throw new InvalidOperationException($"KANBAN_STARTUP_CHECKS is \"{other}\": run or skip."),
+};
+var kanban = await KanbanData.OpenAsync(dataSource, checks, CancellationToken.None);
+Console.WriteLine($"KanbanData opened{(checks == StartupChecks.Skip ? " without its start-up check" : "")} {clock.Elapsed.TotalMilliseconds:F1} ms");
 
 using var bootstrap = LambdaBootstrapBuilder.Create(
     (Func<Stream, ILambdaContext, Task<Stream>>)(async (input, context) =>

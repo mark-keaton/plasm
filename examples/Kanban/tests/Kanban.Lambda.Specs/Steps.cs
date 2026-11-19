@@ -14,7 +14,13 @@ sealed record Published(string Work, string Log)
 {
     static readonly Lazy<Task<Published>> Once = new(async () =>
     {
-        var work = Directory.CreateTempSubdirectory("kanban-lambda.").FullName;
+        // Named with this machine and process, as the containers are, so that
+        // the next run removes the folder of a run that was killed.
+        foreach (var old in Directory.GetDirectories(Path.GetTempPath(), "kanban-lambda.*"))
+            if (Regex.Match(Path.GetFileName(old), @"^kanban-lambda\.([0-9a-f]{8})_(\d+)\.") is { Success: true } m
+                && m.Groups[1].Value == Docker.Machine && !Docker.Running(int.Parse(m.Groups[2].Value)))
+                Directory.Delete(old, true);
+        var work = Directory.CreateTempSubdirectory($"kanban-lambda.{Docker.Owner}.").FullName;
         AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { Directory.Delete(work, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } };
         // Beside this project's source, which the build output is under.
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -36,14 +42,14 @@ sealed record Published(string Work, string Log)
 }
 
 /// Docker, run as a program. Every function container is labelled with this
-/// machine and this test process's id: removed when its scenario ends, when
-/// the test process exits, and, for one a killed run left, by the next run on
-/// the same machine, which finds that process gone.
+/// machine and this test process's id (Owner): removed when its scenario
+/// ends, when the test process exits, and, for one a killed run left, by the
+/// next run on the same machine, which finds that process gone.
 static class Docker
 {
     const string Label = "kanban.lambda.specs";
 
-    static readonly string Owner = Convert.ToHexStringLower(
+    public static readonly string Owner = Convert.ToHexStringLower(
         System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(Environment.MachineName.ToLowerInvariant())))[..8]
         + "_" + Environment.ProcessId;
 
@@ -75,7 +81,9 @@ static class Docker
         return output.Trim();
     }
 
-    static bool Running(int pid)
+    public static string Machine => Owner[..8];
+
+    public static bool Running(int pid)
     {
         try { using var p = Process.GetProcessById(pid); return !p.HasExited; }
         catch (ArgumentException) { return false; }
@@ -83,7 +91,7 @@ static class Docker
 
     static readonly Lazy<Task> Orphans = new(async () =>
     {
-        var machine = Owner[..8];
+        var machine = Machine;
         foreach (var line in (await Must("ps", "-a", "--filter", "label=" + Label, "--format", "{{.ID}} {{.Label \"" + Label + "\"}}")).Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
             var parts = line.Split(' ', '_');
@@ -94,12 +102,13 @@ static class Docker
 
     /// The function, in the emulator in Amazon Linux 2023, its port 8080 on a
     /// free port of this machine's loopback.
-    public static async Task<(string Id, int Port)> Function(Published published, string connectionString)
+    public static async Task<(string Id, int Port)> Function(Published published, string connectionString, string checks)
     {
         await Orphans.Value;
         var id = await Must("run", "-d", "--label", $"{Label}={Owner}", "--add-host", "host.docker.internal:host-gateway",
             "-p", "127.0.0.1::8080", "-v", published.Out + ":/var/task:ro", "-v", published.Rie + ":/rie:ro",
-            "-e", "KANBAN_CS=" + connectionString, "public.ecr.aws/amazonlinux/amazonlinux:2023", "/rie/aws-lambda-rie", "/var/task/bootstrap");
+            "-e", "KANBAN_CS=" + connectionString, "-e", "KANBAN_STARTUP_CHECKS=" + checks,
+            "public.ecr.aws/amazonlinux/amazonlinux:2023", "/rie/aws-lambda-rie", "/var/task/bootstrap");
         lock (Started) Started.Add(id);
         var port = int.Parse((await Must("port", id, "8080/tcp")).Split('\n')[0].Split(':').Last());
         return (id, port);
@@ -121,11 +130,19 @@ public sealed class Steps(IReqnrollOutputHelper output)
     string? function;
     HttpClient http = null!;
     string connectionString = "";
+    string reached = "";
     string answer = "";
     readonly Dictionary<string, Guid> cards = new();
 
     [AfterScenario]
     public async Task Stop()
+    {
+        await StopFunction();
+        if (connectionString != "") await Databases.Drop(connectionString);
+        connectionString = "";
+    }
+
+    async Task StopFunction()
     {
         http?.Dispose();
         if (function is not null)
@@ -135,9 +152,22 @@ public sealed class Steps(IReqnrollOutputHelper output)
             await Docker.Remove(function);
         }
         function = null;
-        if (connectionString != "") await Databases.Drop(connectionString);
-        connectionString = "";
     }
+
+    /// The function in a container of its own, KANBAN_STARTUP_CHECKS set to `checks`.
+    async Task StartFunction(string checks)
+    {
+        var (id, port) = await Docker.Function(published, reached, checks);
+        function = id;
+        http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
+        var waited = Stopwatch.StartNew();
+        while (true)
+        {
+            try { using var _ = await http.GetAsync("/"); return; }
+            catch (HttpRequestException) when (waited.Elapsed < TimeSpan.FromSeconds(30)) { await Task.Delay(100); }
+        }
+    }
+
 
     static void Equal<T>(T expected, T actual, string what)
     {
@@ -155,6 +185,7 @@ public sealed class Steps(IReqnrollOutputHelper output)
 
     JsonObject Case(string name)
     {
+        if (answer == "") throw new Exception($"expected the answer {{\"{name}\": ...}} but there was none (the function's init failed?)");
         var node = JsonNode.Parse(answer) as JsonObject;
         if (node is null || node.Count != 1 || node[name] is not JsonObject value)
             throw new Exception($"expected the answer {{\"{name}\": ...}} but was\n  {answer}");
@@ -174,15 +205,28 @@ public sealed class Steps(IReqnrollOutputHelper output)
         connectionString = await Databases.Migrated();
         var there = new NpgsqlConnectionStringBuilder(connectionString);
         if (there.Host is "localhost" or "127.0.0.1" or "::1") there.Host = "host.docker.internal";
-        var (id, port) = await Docker.Function(published, there.ConnectionString);
-        function = id;
-        http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
-        var waited = Stopwatch.StartNew();
-        while (true)
-        {
-            try { using var _ = await http.GetAsync("/"); return; }
-            catch (HttpRequestException) when (waited.Elapsed < TimeSpan.FromSeconds(30)) { await Task.Delay(100); }
-        }
+        reached = there.ConnectionString;
+        await StartFunction("run");
+    }
+
+    /// A new container over the same database, the first one stopped.
+    [Given("^it runs again, opening KanbanData (with|without) its start-up check$")]
+    [When("^it runs again, opening KanbanData (with|without) its start-up check$")]
+    public async Task RunsAgain(string with)
+    {
+        await StopFunction();
+        await StartFunction(with == "with" ? "run" : "skip");
+    }
+
+    /// A difference only the schema check reads: no call the function has
+    /// touches accounts.
+    [Given("the table {string} has its column {string} renamed to {string}")]
+    public async Task Renamed(string table, string column, string to)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand($"alter table {table} rename column {column} to {to}", connection);
+        await command.ExecuteNonQueryAsync();
     }
 
     [Given("board {string} named {string} allows {int} card(s) in progress")]
@@ -256,6 +300,25 @@ public sealed class Steps(IReqnrollOutputHelper output)
         var first = Array.FindIndex(lines, l => Regex.IsMatch(l, @"\binvocation [0-9.]+ ms"));
         Equal(1, opened.Count, "times KanbanData was opened");
         if (first < 0 || opened[0] > first) throw new Exception("KanbanData was not opened before the first event's handler ended:\n" + string.Join("\n", lines));
+    }
+
+    [Then("the function's log says KanbanData was opened without its start-up check")]
+    public async Task OpenedUnchecked()
+    {
+        var log = await Docker.Logs(function!);
+        if (!log.Contains("KanbanData opened without its start-up check")) throw new Exception("the function's log does not say so:\n" + log);
+    }
+
+    /// The emulator answers an event whose init failed with no body, and logs
+    /// the failure (on Lambda, the invoker gets Runtime.ExitError); the
+    /// function's log has the exception.
+    [Then("its init fails, its log naming {string}")]
+    public async Task InitFails(string name)
+    {
+        Equal("", answer, "the answer to an event whose init failed");
+        var log = await Docker.Logs(function!);
+        if (!log.Contains("Init failed") || !log.Contains("PlasmStartupException") || !log.Contains(name))
+            throw new Exception($"the log does not have the init failing with PlasmStartupException naming {name}:\n{log}");
     }
 
     [Then("it answers {}")]

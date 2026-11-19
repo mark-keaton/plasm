@@ -71,3 +71,25 @@ Feature: Kanban as a Lambda function in C#
       When I invoke it with {"call":"addCard","board":"alpha"}
       Then the invocation fails with a JsonException naming "title"
       And the board "alpha" still has 2 cards
+
+  Rule: A function may open without the start-up check, which these scenarios run
+
+    # Every scenario's Background opens KanbanData with its check, in this
+    # binary, over Kanban's migrations: that check is what a function that
+    # skips it at start relies on (docs/aot.md, "Kanban's C# function").
+    Scenario: Opened without its start-up check, the function answers as when checked
+      Given it runs again, opening KanbanData without its start-up check
+      When "Ada" renames "Write" to "Write it" from version 1
+      Then the answer is the card "Write" titled "Write it" at version 2
+      When I invoke it with {"call":"board","slug":"nope"}
+      Then it answers {"missing":{"what":"board nope"}}
+      And the function's log says KanbanData was opened without its start-up check
+
+    Scenario: Only the check finds a table that differs from the model, at start
+      Given the table "accounts" has its column "password_hash" renamed to "hash"
+      When it runs again, opening KanbanData with its start-up check
+      And I invoke it with {"call":"board","slug":"alpha"}
+      Then its init fails, its log naming "accounts"
+      When it runs again, opening KanbanData without its start-up check
+      And I invoke it with {"call":"board","slug":"alpha"}
+      Then the answer is a board "Alpha" whose cards are "Write (backlog, v1); Test (backlog, v1)"

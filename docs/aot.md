@@ -393,9 +393,38 @@ connection takes 13 to 18 ms and the whole opening takes 42 to 49 ms.
 What it costs to open is mostly checking, not connecting. Opening checks
 Kanban's 17 query values and its four tables against the database, plus the
 facade's `CheckFields`, and that takes about 28 ms once the connection is
-made. The function cannot skip this, because `OpenAsync` takes no
-`RepoOptions`. So the advice above, to check the queries in a test and start
-with `StartupCheck.Ignore`, is not available through the facade.
+made. A host chooses with a plain value of Kanban.Data's own:
+`KanbanData.OpenAsync(dataSource, StartupChecks.Skip, ct)` opens without
+any of the three checks, while `StartupChecks.Run`, like every other
+`OpenAsync`, keeps them. No Plasm type crosses to C#. The function reads its
+choice from `KANBAN_STARTUP_CHECKS` (`run`, the default, or `skip`).
+
+Skipping is safe only where a test has already run the check, on the same
+binary and against the same migrations. Here that test is the function's own
+scenarios: every one, in its Background, opens this `bootstrap` with the
+check against a database made by Kanban's migrations, so a query that does
+not translate natively, or a migration that no longer matches the model,
+fails them all. Of the two scenarios that then open it again without the
+check, one shows that the function answers as it does when
+checked. The other shows what skipping gives up: with a column of `accounts`
+renamed, the checked function fails its init with `PlasmStartupException`
+naming `accounts.password_hash`, while the unchecked one starts and serves
+board reads until a call touches accounts. So skip only when the deployed
+database is the one the migrations make.
+
+Skipping saves less than the check costs, because the check also made the
+first connection and translated every query in advance. Without it, the
+first invocation pays for both. Same method as the table above:
+
+| Opened | Init | First invocation, handler | First round trip, init included |
+|---|---:|---:|---:|
+| With the check (`run`) | 45.4 ms | 0.8 ms | 47.7 ms |
+| Without it (`skip`) | 15.6 ms | 15.5 ms | 32.7 ms |
+| Without it, then a first read in init | 28.7 ms | 0.5 ms | 30.7 ms |
+
+So skipping takes about 15 ms off a cold start, not 28. The last row's read,
+made after opening, puts the connection back in init. That row was measured
+with a timing build and is not something the function does.
 
 ### Behind a connection pooler
 
