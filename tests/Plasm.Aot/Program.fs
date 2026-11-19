@@ -33,6 +33,8 @@ let schema =
        size int not null,
        price numeric(12,2) not null,
        ref uuid not null,
+       labels text[] not null,
+       watchers bigint[] not null,
        checklist jsonb not null);
      create table notes (
        id bigint generated always as identity primary key,
@@ -75,7 +77,9 @@ let ticket (t: Ticket) =
     let priority = match t.Priority with Some Low -> "low" | Some High -> "high" | None -> "no priority"
     let items = String.Join("/", t.Checklist |> List.map (fun i -> i.Text + (if i.Done then "+" else "-")))
     let notes = String.Join("/", t.Notes |> List.map (fun n -> n.Text + (if n.Done then "+" else "-")))
-    "Ticket " + string id + " " + t.Title + ", " + stage + ", " + due + ", " + points + ", " + priority + ", [" + items + "], [" + notes + "]"
+    let labels = String.Join("/", t.Labels)
+    let watchers = String.Join("/", t.Watchers |> List.map (fun (CustomerId c) -> string c))
+    "Ticket " + string id + " " + t.Title + ", " + stage + ", " + due + ", " + points + ", " + priority + ", [" + items + "], [" + notes + "], labels [" + labels + "], watchers [" + watchers + "]"
 
 let tickets (ts: Ticket list) = String.Join("; ", ts |> List.map ticket)
 
@@ -218,6 +222,8 @@ let main argv =
                   Size = 3
                   Price = 12.5m
                   Ref = Guid("00000000-0000-0000-0000-000000000001")
+                  Labels = [ "urgent"; "q4" ]
+                  Watchers = [ ada.Id ]
                   Checklist = [ { Text = "build"; Done = true }; { Text = "test"; Done = false } ]
                   Notes = [ { Id = NoteId 0L; TicketId = TicketId 0L; Text = "started"; Done = true } ] }
 
@@ -242,6 +248,8 @@ let main argv =
                     Size = 5
                     Price = 7.25m
                     Ref = Guid("00000000-0000-0000-0000-000000000002")
+                    Labels = []
+                    Watchers = []
                     Checklist = []
                     Notes = [ { Id = NoteId 0L; TicketId = TicketId 0L; Text = "ask"; Done = false } ] }
 
@@ -250,6 +258,13 @@ let main argv =
             | Error e -> "failed: " + e.Display)
 
         step "read it by its case" (fun () -> all (plasm { for t in tableOf<Ticket> do where t.Stage.IsDoing }) ticket)
+
+        step "a value in an array column" (fun () ->
+            all (plasm { for t in tableOf<Ticket> do where (List.contains "urgent" t.Labels) }) ticket)
+
+        step "an empty array column" (fun () -> all (plasm { for t in tableOf<Ticket> do where (List.isEmpty t.Labels) }) ticket)
+
+        step "a prepared argument in an array column of typed ids" (fun () -> all (Queries.watchedBy ada.Id) ticket)
 
         step "select a row record" (fun () ->
             selected

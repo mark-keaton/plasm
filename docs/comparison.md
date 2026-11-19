@@ -96,8 +96,8 @@ In rough order of importance for teams leaving EF Core:
    Npgsql 10.0.3 and PGlite 0.5.16 ([enums.md](comparisons/enums.md)).
 4. **Modelling.** Owned records live in their own tables; a record with no
    table is stored in its owner's row (a value, like EF Core's complex types).
-   A field marked `[<Json>]` is one jsonb document. No composite keys, array
-   columns, inheritance, or keyless and view entities. A join table cannot carry columns of its own.
+   A field marked `[<Json>]` is one jsonb document, and a list of scalars one
+   array column. No composite keys, inheritance, or keyless and view entities. A join table cannot carry columns of its own.
 5. **Querying.** No set operations, no nested collections
    projected into DTOs, no streaming, a
    fixed set of translated functions, and raw SQL that cannot be composed

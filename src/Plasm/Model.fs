@@ -296,7 +296,8 @@ module Model =
           ReadOption = if isOpt then Reflection.getOptionValue t else fun v -> if isNull v then None else Some v
           Union = None
           Value = None
-          Json = None }
+          Json = None
+          Array = None }
 
     /// A union with fields (one no scalar mapping or convention covers), stored
     /// across columns (union-fields.feature).
@@ -532,6 +533,96 @@ module Model =
                 { scalarField prop.Name i column t (Some mapping) with
                     Json = Some shape }
 
+    /// The provider types an array column can hold, each with its array type
+    /// and a maker of that array from boxed elements: a closed list, so that
+    /// no array type is made at run time (a native binary has only those its
+    /// code names).
+    let private arrayOf (provider: Type) : (Type * (obj list -> obj)) option =
+        let typed (f: obj -> 'a) = Some(typeof<'a[]>, fun (items: obj list) -> box (items |> List.map f |> Array.ofList))
+
+        if provider = typeof<string> then typed unbox<string>
+        elif provider = typeof<int16> then typed unbox<int16>
+        elif provider = typeof<int> then typed unbox<int>
+        elif provider = typeof<int64> then typed unbox<int64>
+        elif provider = typeof<bool> then typed unbox<bool>
+        elif provider = typeof<decimal> then typed unbox<decimal>
+        elif provider = typeof<float> then typed unbox<float>
+        elif provider = typeof<float32> then typed unbox<float32>
+        elif provider = typeof<Guid> then typed unbox<Guid>
+        elif provider = typeof<DateTime> then typed unbox<DateTime>
+        elif provider = typeof<DateTimeOffset> then typed unbox<DateTimeOffset>
+        elif provider = typeof<DateOnly> then typed unbox<DateOnly>
+        elif provider = typeof<TimeOnly> then typed unbox<TimeOnly>
+        elif provider = typeof<TimeSpan> then typed unbox<TimeSpan>
+        else None
+
+    /// A list of scalars (array-columns.feature): one array column of the
+    /// elements' provider type, each element read and written as its own
+    /// column would be. Never NULL: an empty list is an empty array.
+    let private arrayField (scalars: IReadOnlyDictionary<Type, ScalarMapping>) (prop: Reflection.PropertyInfo) (i: int) (column: string) : Result<FieldMap, string> =
+        let t = prop.PropertyType
+        let e = Reflection.elementType t
+        let name = Reflection.typeName t
+        let asDocument = "mark it [<Json>] to store it as one document"
+
+        if Reflection.isOption e then
+            Error $"is a {name}: an element of an array cannot be absent; leave it out of the list instead"
+        elif Reflection.isList e || (e.IsArray && e <> typeof<byte[]>) then
+            Error $"is a {name}: an array column holds scalars, not lists; {asDocument}"
+        else
+            match scalarMapping scalars e with
+            | Error _ -> Error $"is a {name}: its elements are not scalars stored in one column; {asDocument}"
+            | Ok(Some m) when m.StoreType.IsSome ->
+                let stored = String.concat "." m.StoreType.Value
+                Error $"is a {name}: an array of a type stored as {stored} is not supported; store {e.Name} as text, or {asDocument}"
+            | Ok mapping ->
+                let provider = mapping |> Option.map (fun m -> m.ProviderType) |> Option.defaultValue e
+
+                match arrayOf provider with
+                | None -> Error $"is a {name}: an array of {provider.Name} is not supported; {asDocument}"
+                | Some(arrayType, make) ->
+                    let toProvider = mapping |> Option.map (fun m -> m.ToProvider) |> Option.defaultValue id
+                    let fromProvider = mapping |> Option.map (fun m -> m.FromProvider) |> Option.defaultValue Ok
+                    let items = Reflection.listItems e
+                    let makeList = Reflection.makeList e
+
+                    let read (raw: obj) : Result<obj, string> =
+                        match raw with
+                        | :? Array as a ->
+                            let read = ResizeArray<obj>(a.Length)
+                            let mutable problem = None
+                            let mutable j = 0
+
+                            while problem.IsNone && j < a.Length do
+                                match a.GetValue j with
+                                | x when isNull x || x = box DBNull.Value ->
+                                    problem <- Some $"{prop.Name}[{j}] is NULL, but an element of {name} cannot be absent"
+                                | x ->
+                                    match fromProvider x with
+                                    | Ok v -> read.Add v
+                                    | Error m -> problem <- Some $"{prop.Name}[{j}]: {m}"
+
+                                j <- j + 1
+
+                            match problem with
+                            | Some m -> Error m
+                            | None -> Ok(makeList read)
+                        | other -> Error $"{prop.Name}: the column holds {other.GetType().Name}, not an array"
+
+                    let mapping =
+                        { DomainType = t
+                          ProviderType = arrayType
+                          ToProvider = fun v -> make [ for x in items v -> toProvider x ]
+                          FromProvider = read
+                          Ordered = None
+                          Cases = []
+                          StoreType = None
+                          Description = $"{name} as an array of {provider.Name}" }
+
+                    Ok
+                        { scalarField prop.Name i column t (Some mapping) with
+                            Array = Some e }
+
     let private resolveSchema
         (scalars: IReadOnlyDictionary<Type, ScalarMapping>)
         (defs: IReadOnlyDictionary<Type, SchemaDef>)
@@ -680,6 +771,25 @@ module Model =
                             fields.Add
                                 { scalarField prop.Name i column t None with
                                     Value = Some layout }
+                    elif isOpt && Reflection.isList scalarType then
+                        err
+                            (Some prop.Name)
+                            $"is a {Reflection.typeName t}: an empty list is already no elements, so store the {Reflection.typeName scalarType} itself"
+                    elif t.IsArray && t <> typeof<byte[]> then
+                        err (Some prop.Name) $"is a {t.Name}: use a list ({t.GetElementType().Name} list) for an array column"
+                    // A list of scalars is one array column (array-columns.feature);
+                    // a list of stored records is owned or linked, declared on the
+                    // record it holds.
+                    elif Reflection.isList t && not (defs.ContainsKey(Reflection.elementType t)) then
+                        let column = def.Columns.TryFind prop.Name |> Option.defaultValue (Paths.snakeCase prop.Name)
+
+                        for name, marked in [ "Unique", def.Unique.Contains prop.Name; "Generated", def.Generated.Contains prop.Name ] do
+                            if marked then
+                                err (Some prop.Name) $"is marked {name}, but an array column is read and written whole"
+
+                        match arrayField scalars prop i column with
+                        | Error reason -> err (Some prop.Name) reason
+                        | Ok field -> fields.Add field
                     elif Reflection.isList t then
                         err
                             (Some prop.Name)
@@ -734,7 +844,8 @@ module Model =
                                         fun v -> if isNull v then None else Some v
                                   Union = None
                                   Value = None
-                                  Json = None }
+                                  Json = None
+                                  Array = None }
 
             for a in def.Assocs do
                 if not (shape.Fields |> Array.exists (fun f -> f.Name = a.Property.Name)) then

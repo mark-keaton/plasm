@@ -311,10 +311,12 @@ module Ineffective =
     [<Table "json_in_values">]
     type JsonInValue = { Id: JsonInValueId; Price: MoneyWithJson }
 
-    type StringyId = StringyId of int64
+    type MappedId = MappedId of int64
 
-    [<Table "stringies">]
-    type Stringy = { Id: StringyId; Tags: string list }
+    /// A list of scalars is an array column (array-columns.feature); a list
+    /// of maps is neither that nor a list of stored records.
+    [<Table "mapped">]
+    type Mapped = { Id: MappedId; Counts: Map<string, int> list }
 
     type TwinnedId = TwinnedId of int64
 
@@ -327,7 +329,7 @@ module Ineffective =
 
     let models =
         Map
-            [ "a list of strings", [ typeof<Stringy> ]
+            [ "a list of maps", [ typeof<Mapped> ]
               "two fields of one column", [ typeof<Twinned> ]
               "a table named by an empty string", [ typeof<Blank> ]
               "an Assigned field that is not the key", [ typeof<Misassigned> ]

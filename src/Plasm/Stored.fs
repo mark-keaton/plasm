@@ -157,7 +157,7 @@ module internal Derive =
                 [ for p in fields t |> Array.filter (fun p -> not (has<JsonAttribute> p)) do
                       match shapeOf p, key with
                       | ListOfUnstored e, _ ->
-                          err (Some p.Name) $"is a list of {e.Name}, which names no table; a list of records is stored only if its records are (give {e.Name} a [<Table>])"
+                          err (Some p.Name) $"is a list of {e.Name}, which names no table; a list of records is stored only if its records are (give {e.Name} a [<Table>]), or mark it [<Json>] to store it as one document"
                       | OfStored(target, isList), Some k ->
                           let refs = backReferences target k.PropertyType
 

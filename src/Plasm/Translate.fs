@@ -640,6 +640,26 @@ let (|RowAssoc|_|) (ctx: Ctx) (e: Expr) =
     | _ -> None
 
 /// `IsSome` / `IsNone` (or Option.isSome / isNone) of an owned optional record.
+/// A list of scalars stored as one array column (array-columns.feature).
+let (|ArrayField|_|) (ctx: Ctx) (e: Expr) =
+    match e with
+    | RowField ctx (b, f) when f.Array.IsSome -> Some(b, f)
+    | _ -> None
+
+/// A call or property over an array column that is not List.contains or
+/// List.isEmpty: refused, naming the field.
+let (|OverArray|_|) (ctx: Ctx) (e: Expr) =
+    let direct (args: Expr list) =
+        args |> List.tryPick (fun a -> match a with ArrayField ctx bf -> Some bf | _ -> None)
+
+    match e with
+    | Call(target, _, args) -> direct (Option.toList target @ args)
+    | PropertyGet(Some(ArrayField ctx bf), _, _) -> Some bf
+    | _ -> None
+
+let private arrayRefusal (b: Binding) (f: FieldMap) (what: string) =
+    $"{b.Schema.Name}.{f.Name} is an array column: {what}; test it with List.contains or List.isEmpty"
+
 let (|OwnedPresence|_|) (ctx: Ctx) (e: Expr) =
     let owned (x: Expr) =
         match x with
@@ -833,6 +853,8 @@ let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
             fail e "a union with fields is stored in several columns; test its case (c.Stage.IsDoing, match) or compare it with a value"
         | RowField ctx (b, f) when f.Value.IsSome ->
             fail e $"{b.Schema.Name}.{f.Name} is a {f.ScalarType.Name} stored in several columns; use one of its fields here, or compare it whole with ="
+        | ArrayField ctx (b, f) -> fail e (arrayRefusal b f "it cannot be ordered by, grouped by or compared as a value")
+        | OverArray ctx (b, f) -> fail e (arrayRefusal b f $"{show e} reads more of it than a query translates")
         | RowField ctx (b, f) -> Sql.Column(b.Alias, f.Column)
         | OptionalField ctx (b, f) -> Sql.Column(b.Alias, f.Column)
         | UnionLeaf ctx (alias, f) -> Sql.Column(alias, f.Column)
@@ -1111,6 +1133,15 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
                 Sql.JsonAny(doc, alias, condition)
             else
                 Sql.Not(Sql.JsonAny(doc, alias, Sql.IsNotTrue condition))
+        // An array column holds a value (array-columns.feature): value = ANY(column).
+        | Call(None, mi, [ x; ArrayField ctx (b, f) ]) when mi.Name = "Contains" && mi.DeclaringType.Name = "ListModule" ->
+            Sql.Fragment [ Choice2Of2(scalar ctx x); Choice1Of2 " = ANY("; Choice2Of2(Sql.Column(b.Alias, f.Column)); Choice1Of2 ")" ]
+        // An array column holds nothing: its cardinality is 0.
+        | Call(None, mi, [ ArrayField ctx (b, f) ]) when mi.Name = "IsEmpty" && mi.DeclaringType.Name = "ListModule" ->
+            Sql.Binary("=", Sql.Func("cardinality", [ Sql.Column(b.Alias, f.Column) ]), Sql.Literal "0")
+        | PropertyGet(Some(ArrayField ctx (b, f)), p, []) when p.Name = "IsEmpty" ->
+            Sql.Binary("=", Sql.Func("cardinality", [ Sql.Column(b.Alias, f.Column) ]), Sql.Literal "0")
+        | OverArray ctx (b, f) -> fail e (arrayRefusal b f $"{show e} reads more of it than a query translates")
         | Call(None, mi, [ x; coll ]) when mi.Name = "Contains" && isCollectionModule mi -> membership ctx e x coll
         | Call(Some coll, mi, [ x ]) when mi.Name = "Contains" && not (isRowDependent ctx coll) -> membership ctx e x coll
         // An owned or linked list is a plain list: F#'s own List.exists and

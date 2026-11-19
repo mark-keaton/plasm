@@ -311,7 +311,7 @@ The gap list for an EF Core replacement. Plasm status is from `docs/status.md` (
 8. Inheritance: TPH, TPT, TPC.
 9. Owned and complex types (table splitting, value objects across several columns, optional complex types, structs) and JSON columns (`ToJson`, query into JSON, `ExecuteUpdate` on JSON). Plasm's owned records live in their own tables; a record with no table is stored in its owner's row (like a complex type), and a field marked `[<Json>]` is one jsonb document that queries can read into. Plasm has no table splitting, structs as values, or bulk updates into a document.
 10. Composite primary and foreign keys, alternate keys, shadow properties, backing fields, property access modes.
-11. Primitive collections as columns, queryable (PostgreSQL arrays: `= ANY`, `@>`). Plasm rejects collections as columns.
+11. Primitive collections as columns, queryable (PostgreSQL arrays: `= ANY`, `@>`). Plasm stores a list of scalars as an array column and translates `List.contains` (`= ANY`) and `List.isEmpty`, nothing more over it.
 12. Many-to-many with payload or skip navigations, and has-through equivalents. Plasm has plain linked lists (`links`) only.
 13. Keyless entities, views, table-valued and user-defined function mapping (`HasDbFunction`), stored-procedure mapping for inserts, updates and deletes, raw SQL entity sources composable with LINQ (`FromSql(...).Where(...).Include(...)`). Plasm's `repo.Sql` is not composable.
 14. Value generation: sequences, HiLo, identity options, computed columns, defaults, `ValueGeneratedOnAddOrUpdate`.

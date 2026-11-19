@@ -99,7 +99,7 @@ Feature: A record says how it is stored
         | an owned list ordered by a field it does not have | Misordered | has no field named Missing                     |
         | a list of records that are not stored            | Plain      | is a list of Unstored, which names no table      |
         | a record with two version fields                 | Doubled    | two fields marked Version                       |
-        | a list of strings                                | Stringy    | mark it [<Json>] to store it as one JSON document |
+        | a list of maps                                   | Mapped     | mark it [<Json>] to store it as one document      |
         | two fields of one column                         | Twinned    | Name and Title both map to the column name      |
 
   Rule: An attribute where it has no effect is refused

@@ -590,7 +590,7 @@ window.PLASM_SQL = {
           "@p0 = ?"
         ],
         "rows": 29,
-        "sql": "SELECT\n    table_name,\n    column_name,\n    data_type,\n    is_nullable,\n    column_default IS NOT NULL OR is_identity = \u0027YES\u0027 OR is_generated \u003C\u003E \u0027NEVER\u0027,\n    udt_schema,\n    udt_name\nFROM information_schema.columns\nWHERE table_schema = current_schema() AND table_name = ANY(@p0)"
+        "sql": "SELECT table_name, column_name, CASE WHEN data_type = \u0027ARRAY\u0027 THEN (SELECT format_type(t.typelem, NULL) || \u0027[]\u0027 FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE t.typname = udt_name AND n.nspname = udt_schema) ELSE data_type END, is_nullable, column_default IS NOT NULL OR is_identity = \u0027YES\u0027 OR is_generated \u003C\u003E \u0027NEVER\u0027, udt_schema, udt_name\nFROM information_schema.columns\nWHERE table_schema = current_schema() AND table_name = ANY(@p0)"
       },
       {
         "parameters": [
@@ -611,7 +611,7 @@ window.PLASM_SQL = {
           "@p0 = [articles, customers, orders, order_lines, payments, products, tags, article_tags]"
         ],
         "rows": 29,
-        "sql": "SELECT\n    table_name,\n    column_name,\n    data_type,\n    is_nullable,\n    column_default IS NOT NULL OR is_identity = \u0027YES\u0027 OR is_generated \u003C\u003E \u0027NEVER\u0027,\n    udt_schema,\n    udt_name\nFROM information_schema.columns\nWHERE table_schema = current_schema() AND table_name = ANY(@p0)"
+        "sql": "SELECT table_name, column_name, CASE WHEN data_type = \u0027ARRAY\u0027 THEN (SELECT format_type(t.typelem, NULL) || \u0027[]\u0027 FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE t.typname = udt_name AND n.nspname = udt_schema) ELSE data_type END, is_nullable, column_default IS NOT NULL OR is_identity = \u0027YES\u0027 OR is_generated \u003C\u003E \u0027NEVER\u0027, udt_schema, udt_name\nFROM information_schema.columns\nWHERE table_schema = current_schema() AND table_name = ANY(@p0)"
       },
       {
         "parameters": [

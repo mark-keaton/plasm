@@ -129,6 +129,19 @@ type Article =
       Tags: Tag list }
 ```
 
+## A list of plain values
+
+A list of scalars is one array column in its owner's row, from the type alone.
+A scalar here is a built-in type, a single-case wrapper, a type read through
+its `create`, or a fieldless union, so `string list` is `text[]` and a
+`CustomerId list` over `int64` is `bigint[]`. What the list holds decides: a
+list of stored records is owned or linked; a list of scalars is an array; a
+list of anything else is refused, and `[<Json>]` stores it as one document
+instead. The array is read and written whole and is never NULL, since an empty
+list is an empty array. Each element is read as its own column would be. A
+query tests an array with `List.contains` (`= ANY`) and `List.isEmpty`
+(`cardinality`), and refuses anything else over it by name.
+
 ## The model
 
 The model is built from the records that are not owned. Anything the types

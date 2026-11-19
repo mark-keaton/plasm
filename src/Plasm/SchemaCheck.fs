@@ -3,6 +3,16 @@ namespace Plasm
 open System
 open System.Threading.Tasks
 
+/// The catalogue type names a column of a provider type may have: the
+/// dialect's, and for an array column (array-columns.feature) its elements'
+/// names followed by [], as the schema check reads an array column's type.
+module internal ColumnTypes =
+    let ofType (d: ISqlDialect) (t: Type) : string list =
+        if t.IsArray && t <> typeof<byte[]> then
+            d.ColumnTypes(t.GetElementType()) |> List.map (fun n -> n + "[]")
+        else
+            d.ColumnTypes t
+
 module internal SchemaCheck =
 
     type private Column =
@@ -36,7 +46,10 @@ module internal SchemaCheck =
 
             let cmd: Sql.Command =
                 { Sql =
-                    "SELECT table_name, column_name, data_type, is_nullable, column_default IS NOT NULL OR is_identity = 'YES' OR is_generated <> 'NEVER', udt_schema, udt_name "
+                    // An array column's data_type is ARRAY: its type is read as its
+                    // elements' type followed by [] (array-columns.feature).
+                    "SELECT table_name, column_name, CASE WHEN data_type = 'ARRAY' THEN (SELECT format_type(t.typelem, NULL) || '[]' FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE t.typname = udt_name AND n.nspname = udt_schema) ELSE data_type END, "
+                    + "is_nullable, column_default IS NOT NULL OR is_identity = 'YES' OR is_generated <> 'NEVER', udt_schema, udt_name "
                     + "FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ANY("
                     + dialect.ParameterName 0
                     + ")"
@@ -164,7 +177,7 @@ module internal SchemaCheck =
                       Message = message }
 
             let typeCheck modelName field table (c: Column) (providerType: Type) =
-                match dialect.ColumnTypes providerType with
+                match ColumnTypes.ofType dialect providerType with
                 | [] -> ()
                 | allowed when not (List.contains c.DataType allowed) ->
                     add
@@ -402,7 +415,7 @@ module internal Ddl =
             match p.Mapping |> Option.bind (fun m -> m.StoreType) with
             | Some parts -> parts |> List.map name |> String.concat "."
             | None ->
-                match dialect.ColumnTypes p.ProviderType with
+                match ColumnTypes.ofType dialect p.ProviderType with
                 | t :: _ -> t
                 | [] -> failwith $"{dialect.Name} has no column type for {p.ProviderType.Name}"
 

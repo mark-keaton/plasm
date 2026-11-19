@@ -13,7 +13,6 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 ## Next: in the library
 
 - Composite keys
-- Array columns such as `text[]`
 - Batched writes for a list of transaction steps
 - Selection inside a GraphQL card's comments and labels
 - Kanban's own F# server as a native binary
@@ -26,7 +25,7 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
 ## Shipped
 
-- Stored records by convention, owned and linked lists, unions with fields
+- Stored records by convention, owned and linked lists, unions with fields, array columns
 - Typed queries: joins, grouping, exists, prepared queries, hand-written SQL
 - Typed transactions with optimistic concurrency
 - Start-up checks of every query and of the schema

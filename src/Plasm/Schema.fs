@@ -307,7 +307,11 @@ type internal FieldMap =
       /// fields, stored in the owner's row (Column is then only their prefix).
       Value: ValueLayout option
       /// For a [<Json>] field: its document's shape (json-columns.feature).
-      Json: JsonShape option }
+      Json: JsonShape option
+      /// For a list of scalars, stored as one array column
+      /// (array-columns.feature): the elements' domain type. Mapping then
+      /// turns the list into an array of the elements' provider values.
+      Array: Type option }
 
     /// Field value (possibly an option) to a provider value or DBNull.
     member f.ToDb(value: obj) : obj =

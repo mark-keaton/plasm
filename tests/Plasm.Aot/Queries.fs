@@ -58,6 +58,10 @@ let ticketsOf =
 
 
 /// Each a value type only the quotation names.
+/// The tickets a customer watches: an argument in an array column.
+let watchedBy =
+    Query.prepare (fun (who: Arg<CustomerId>) -> plasm { for t in tableOf<Ticket> do where (List.contains who.Value t.Watchers) })
+
 let bySize =
     plasm {
         for t in tableOf<Ticket> do

@@ -34,6 +34,9 @@ type Ticket =
       Size: int
       Price: decimal
       Ref: Guid
+      /// Lists of scalars, each one array column (array-columns.feature).
+      Labels: string list
+      Watchers: CustomerId list
       [<Json>]
       Checklist: Item list
       Notes: Note list }
