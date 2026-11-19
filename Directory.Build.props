@@ -11,6 +11,8 @@
     <IsPackable Condition="'$(IsPackable)' == ''">false</IsPackable>
     <GenerateDocumentationFile Condition="'$(IsPackable)' == 'true'">true</GenerateDocumentationFile>
     <Deterministic>true</Deterministic>
-    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <!-- Only the packages: a CI build maps source paths to /_/, and the tests, the
+         examples and the koans find their own files by __SOURCE_DIRECTORY__ at run time. -->
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true' and '$(IsPackable)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 </Project>
