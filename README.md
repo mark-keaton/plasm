@@ -125,9 +125,9 @@ needs, let the domain decide, write what it decided.
 ```fsharp
 let changeOrder (id: OrderId) (seen: int) (decide: Order -> Result<Order, OrderError>) : Tx<Order, Refusal> =
     transaction {
-        let! order = one "order" (orderById id)
+        let! order = Tx.oneAsSeen (orderById id, seen) |> Tx.orReject (Missing "order")
         let! changed = decide order |> Tx.ofResult Domain
-        return! Tx.update (order, changed, expectVersion = seen)
+        return! Tx.update (order, changed)
     }
 ```
 

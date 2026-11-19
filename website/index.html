@@ -141,9 +141,9 @@ let forCustomer customerId (q: Query&lt;Order&gt;) =
       <div class="code-card">
         <div class="code-title">Writes are transactions</div>
 <pre class="code fsharp" data-from="examples/Plasm.Examples/Writes.fs">transaction {
-    let! order = one "order" (orderById id)
+    let! order = Tx.oneAsSeen (orderById id, seen) |&gt; Tx.orReject (Missing "order")
     let! changed = decide order |&gt; Tx.ofResult Domain
-    return! Tx.update (order, changed, expectVersion = seen)
+    return! Tx.update (order, changed)
 }</pre>
       </div>
     </div>

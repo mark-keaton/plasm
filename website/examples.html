@@ -245,13 +245,13 @@ match! repo.Transact(checkout ada lines DateTime.UtcNow) with
 
     <section class="example" id="changes" data-sql="changes">
       <h2>8 · Changing a record</h2>
-      <p>Read the record, let the domain decide, and write the record it decided. <code>Tx.update (original, changed)</code> writes only the columns that differ from the record read, and what the record owns is written by difference: a line left out is deleted, a new one is inserted. <code>expectVersion</code> is the version the caller last saw, for a copy that came back from a client.</p>
+      <p>Read the record, let the domain decide, and write the record it decided. <code>Tx.update (original, changed)</code> writes only the columns that differ from the record read, and what the record owns is written by difference: a line left out is deleted, a new one is inserted. <code>Tx.oneAsSeen</code> reads the record as the caller saw it, for a copy that came back from a client: if its version is no longer the one seen, the read is a conflict, before anything is decided.</p>
       <div class="view-fs">
 <pre class="code fsharp">let changeOrder (id: OrderId) (seen: int) (decide: Order -&gt; Result&lt;Order, OrderError&gt;) : Tx&lt;Order, Refusal&gt; =
     transaction {
-        let! order = Tx.one (orderById id) |&gt; Tx.orReject (Missing "order")
+        let! order = Tx.oneAsSeen (orderById id, seen) |&gt; Tx.orReject (Missing "order")
         let! changed = decide order |&gt; Tx.ofResult Domain
-        return! Tx.update (order, changed, expectVersion = seen)
+        return! Tx.update (order, changed)
     }
 
 // The domain removes the gadget line and recomputes the total.

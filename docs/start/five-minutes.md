@@ -58,15 +58,16 @@ commands however many orders there are.
 ## A write is a transaction
 
 Read what the decision needs, let the domain decide, write what it decided.
-`Tx.update` writes only the columns that differ, and the lines by difference.
+`Tx.oneAsSeen` reads the order as the caller saw it, and `Tx.update` writes
+only the columns that differ, and the lines by difference.
 
 <!-- from: examples/Plasm.Examples/Writes.fs -->
 ```fsharp
 let changeOrder (id: OrderId) (seen: int) (decide: Order -> Result<Order, OrderError>) : Tx<Order, Refusal> =
     transaction {
-        let! order = one "order" (orderById id)
+        let! order = Tx.oneAsSeen (orderById id, seen) |> Tx.orReject (Missing "order")
         let! changed = decide order |> Tx.ofResult Domain
-        return! Tx.update (order, changed, expectVersion = seen)
+        return! Tx.update (order, changed)
     }
 ```
 

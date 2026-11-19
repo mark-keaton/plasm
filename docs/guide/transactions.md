@@ -13,8 +13,6 @@ examples are from
 type Refusal =
     | Domain of OrderError
     | Missing of what: string
-    /// The caller's copy is older than the stored one.
-    | StaleCopy
 ```
 
 ## Steps
@@ -37,18 +35,18 @@ let checkout (customer: Customer) (lines: OrderLine list) (now: DateTime) : Tx<C
 ## Read, decide, write
 
 `Tx.update (original, changed)` writes only the columns that differ, and what
-the record owns by difference from what was read. With `expectVersion`, a
-change made from a stale copy is refused.
+the record owns by difference from what was read. A change made from a copy a
+caller saw earlier reads the record with `Tx.oneAsSeen (query, seen)`: if its
+version is no longer `seen`, the read is a conflict, before anything is
+decided, and the update checks the version again.
 
 <!-- from: examples/Plasm.Examples/Writes.fs -->
 ```fsharp
-let private one what (query: Query<'T>) : Tx<'T, Refusal> = Tx.one query |> Tx.orReject (Missing what)
-// ...
 let changeOrder (id: OrderId) (seen: int) (decide: Order -> Result<Order, OrderError>) : Tx<Order, Refusal> =
     transaction {
-        let! order = one "order" (orderById id)
+        let! order = Tx.oneAsSeen (orderById id, seen) |> Tx.orReject (Missing "order")
         let! changed = decide order |> Tx.ofResult Domain
-        return! Tx.update (order, changed, expectVersion = seen)
+        return! Tx.update (order, changed)
     }
 
 let cancel id seen reason = changeOrder id seen (Order.cancel reason)
