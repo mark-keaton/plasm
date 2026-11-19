@@ -330,3 +330,4 @@ pre.install span { color: var(--ink-3); }
 #prompt .head { font-weight: 500; color: var(--accent-ink); }
 #prompt .bullet { padding-left: 2ch; text-indent: -2ch; }
 .hero .code-card { margin-top: 12px; }
+#prompt div { white-space: pre-wrap; }
