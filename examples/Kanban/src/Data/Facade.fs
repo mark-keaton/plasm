@@ -427,7 +427,6 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
             return KanbanData(repo, (fun () -> DateTimeOffset.UtcNow), Guid.CreateVersion7)
         }
 
-    /// Every board with its card counts and newest titles, by name.
     /// Every card, as `refine` makes the query (a GraphQL request's where and
     /// order, built from CardFields.all), each with its comments and labels.
     member _.CardsAsync(refine: Func<Query<Card>, Query<Card>>, cancellationToken: CancellationToken) : Task<CardView[]> =
@@ -475,6 +474,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
             return int (read "Counting cards failed" n)
         }
 
+    /// Every board with its card counts and newest titles, by name.
     member _.BoardsAsync(cancellationToken: CancellationToken) : Task<BoardSummary[]> =
         task {
             let! boards = repo.All(Queries.boardsWithCards, cancellationToken = cancellationToken)
@@ -505,6 +505,16 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
                               Name = board.Name.Value
                               WipLimit = board.WipLimit.Value
                               Cards = read "Reading a board's cards failed" cards |> List.map View.card |> Array.ofList }
+        }
+
+    /// A card with its comments and labels; Missing when no card has the id.
+    member _.CardAsync(card: Guid, cancellationToken: CancellationToken) : Task<Found<CardView>> =
+        task {
+            let! found = repo.One(Queries.cardById (CardId card), cancellationToken = cancellationToken)
+
+            match read "Reading a card failed" found with
+            | None -> return Found<CardView> { What = "card" }
+            | Some card -> return Found(View.card card)
         }
 
     member _.CreateBoardAsync(slug: string, name: string, wipLimit: int, cancellationToken: CancellationToken) : Task<CreateBoardOutcome> =
