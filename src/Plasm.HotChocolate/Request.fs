@@ -88,10 +88,7 @@ type PlasmRequest =
         let argument (name: string) =
             if context.Selection.Field.Arguments.ContainsField name then context.ArgumentValue<obj> name else null
 
-        let condition =
-            match argument "where" with
-            | :? IDictionary<string, obj> as input -> PlasmRequest.Condition(byName, input)
-            | _ -> None
+        let condition = PlasmRequest.WhereCondition(context, byName)
 
         let ordering =
             match argument "order" with
@@ -120,13 +117,46 @@ type PlasmRequest =
 
             ordering |> List.fold (fun q (f, descending) -> f.OrderBy(q, descending)) filtered)
 
+    /// The field's where argument as a condition, if it has one.
+    static member private WhereCondition(context: IResolverContext, byName: IReadOnlyDictionary<string, QueryField<'T>>) : QueryCondition<'T> option =
+        if context.Selection.Field.Arguments.ContainsField "where" then
+            match context.ArgumentValue<obj> "where" with
+            | :? IDictionary<string, obj> as input -> PlasmRequest.Condition(byName, input)
+            | _ -> None
+        else
+            None
+
+    /// The request's where alone, as a function of a query, read from the
+    /// context at once: what a count of a field's rows needs, which has no
+    /// order (a count per parent groups by the parent, and orders by nothing).
+    static member Where(context: IResolverContext, fields: QueryField<'T> seq) : Func<Query<'T>, Query<'T>> =
+        let byName = Dictionary<string, QueryField<'T>>()
+        for f in fields do byName.[f.Name] <- f
+
+        let condition = PlasmRequest.WhereCondition(context, byName)
+
+        Func<Query<'T>, Query<'T>>(fun query ->
+            match condition with
+            | Some c -> query |> BuildQuery.where (c.ToExpr())
+            | None -> query)
+
+    /// The field's offset paging (skip, take) per value of `key`, as a
+    /// function of a query, read from the context at once: a nested field's
+    /// page for every parent in one command (BuildQuery.pageEach), one row
+    /// more than the page for each, so that Segment knows whether another
+    /// page follows; `defaultTake` when the request gives no take.
+    static member PageEach(context: IResolverContext, key: Quotations.Expr<'T -> 'K>, defaultTake: int) : Func<Query<'T>, Query<'T>> =
+        let skip = defaultArg (PlasmRequest.Count(context, "skip")) 0
+        let take = defaultArg (PlasmRequest.Count(context, "take")) defaultTake
+        Func<Query<'T>, Query<'T>>(fun query -> query |> BuildQuery.pageEach key skip (take + 1))
+
     /// A name for the DataLoader of this field with these arguments: fields
-    /// asked for with the same where and order share one batch.
+    /// asked for with the same where, order, skip and take share one batch.
     static member BatchKey(context: IResolverContext) : string =
         let literal (name: string) =
             if context.Selection.Field.Arguments.ContainsField name then string (context.ArgumentLiteral<HotChocolate.Language.IValueNode> name) else ""
 
-        context.Selection.Field.Coordinate.ToString() + "|" + literal "where" + "|" + literal "order"
+        context.Selection.Field.Coordinate.ToString() + "|" + literal "where" + "|" + literal "order" + "|" + literal "skip" + "|" + literal "take"
 
     /// The declared fields a request's selection of this field reads, on the
     /// object type of 'T's read fields (IPlasmReadType), through any types
