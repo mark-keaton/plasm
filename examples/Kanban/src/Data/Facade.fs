@@ -382,6 +382,14 @@ module CardRead =
     /// grouped by it, and not a field a caller reads.
     let internal board = ReadField.via "board" <@ fun (c: Card) -> c.Board @> (fun (BoardId b) -> b)
 
+/// Whether opening checks every query, the tables and the declared fields
+/// against the database. Run is the default; Skip is for a host whose tests
+/// open it with Run over the same migrations, and that cannot spend the check
+/// at each cold start (a Lambda function: docs/aot.md, "Kanban's C# function").
+type StartupChecks =
+    | Run = 0
+    | Skip = 1
+
 [<Sealed>]
 type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit -> Guid) =
 
@@ -434,17 +442,25 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
     let change (card: Guid) (version: int) (decide: Board -> int -> Card -> Result<Card, DomainError>) ct : Task<ChangeOutcome> =
         changed card (changeCard (CardId card) version decide) ct
 
-    static member private Open(dataSource: NpgsqlDataSource, onSql: Action<string> option, time: TimeProvider, cancellationToken: CancellationToken) : Task<KanbanData> =
+    static member private Open(dataSource: NpgsqlDataSource, onSql: Action<string> option, time: TimeProvider, checks: StartupChecks, cancellationToken: CancellationToken) : Task<KanbanData> =
         task {
+            let checking =
+                match checks with
+                | StartupChecks.Run -> RepoOptions.Default
+                | StartupChecks.Skip -> RepoOptions.Unchecked
+                | other -> raise (ArgumentOutOfRangeException(nameof checks, other, "is neither Run nor Skip"))
+
             let options =
                 match onSql with
-                | None -> RepoOptions.Default
-                | Some onSql -> { RepoOptions.Default with OnCommand = Some(fun e -> onSql.Invoke e.Sql) }
+                | None -> checking
+                | Some onSql -> { checking with OnCommand = Some(fun e -> onSql.Invoke e.Sql) }
 
             let! repo = Repo.Start(model, PostgresProvider dataSource, typeof<Refusal>.Assembly, options, cancellationToken)
 
-            repo.CheckFields CardFields.all
-            repo.CheckFields CardRead.all
+            if checks = StartupChecks.Run then
+                repo.CheckFields CardFields.all
+                repo.CheckFields CardRead.all
+
             return KanbanData(repo, time.GetUtcNow, Guid.CreateVersion7)
         }
 
@@ -453,19 +469,24 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
     /// PlasmStartupException here, before anything is served. Every change
     /// takes its time from `time`, the application's one clock.
     static member OpenAsync(dataSource: NpgsqlDataSource, time: TimeProvider, cancellationToken: CancellationToken) : Task<KanbanData> =
-        KanbanData.Open(dataSource, None, time, cancellationToken)
+        KanbanData.Open(dataSource, None, time, StartupChecks.Run, cancellationToken)
 
     /// As OpenAsync, `onSql` given the SQL of each command sent (a log).
     static member OpenAsync(dataSource: NpgsqlDataSource, onSql: Action<string>, time: TimeProvider, cancellationToken: CancellationToken) : Task<KanbanData> =
-        KanbanData.Open(dataSource, Some onSql, time, cancellationToken)
+        KanbanData.Open(dataSource, Some onSql, time, StartupChecks.Run, cancellationToken)
 
     /// As OpenAsync, on the system's clock.
     static member OpenAsync(dataSource: NpgsqlDataSource, cancellationToken: CancellationToken) : Task<KanbanData> =
-        KanbanData.Open(dataSource, None, TimeProvider.System, cancellationToken)
+        KanbanData.Open(dataSource, None, TimeProvider.System, StartupChecks.Run, cancellationToken)
+
+    /// As OpenAsync, on the system's clock, checking at start only when
+    /// `checks` is Run.
+    static member OpenAsync(dataSource: NpgsqlDataSource, checks: StartupChecks, cancellationToken: CancellationToken) : Task<KanbanData> =
+        KanbanData.Open(dataSource, None, TimeProvider.System, checks, cancellationToken)
 
     /// As OpenAsync, on the system's clock, `onSql` given the SQL of each command sent.
     static member OpenAsync(dataSource: NpgsqlDataSource, onSql: Action<string>, cancellationToken: CancellationToken) : Task<KanbanData> =
-        KanbanData.Open(dataSource, Some onSql, TimeProvider.System, cancellationToken)
+        KanbanData.Open(dataSource, Some onSql, TimeProvider.System, StartupChecks.Run, cancellationToken)
 
     /// Every card, as `refine` makes the query (a GraphQL request's where and
     /// order, built from CardFields.all), reading only the `fields` chosen
