@@ -40,7 +40,13 @@ jobs:
           cache-dependency-path: koans/browser/app/package-lock.json
 
       # The koans in the browser: the F# compiler and PGlite as static files.
+      # Without the commit's hash in each assembly's informational version, an
+      # assembly whose sources did not change keeps its bytes, and so its
+      # fingerprinted name, from one deploy to the next; a koans page open
+      # across a deploy then still finds the files it was told to load.
       - name: Build the browser koans
+        env:
+          IncludeSourceRevisionInInformationalVersion: false
         run: |
           npm ci --no-audit --no-fund --prefix koans/browser/app
           bash koans/browser/app/stage.sh "$RUNNER_TEMP/koans"
