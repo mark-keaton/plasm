@@ -1,9 +1,9 @@
 // Sends stale cards back to the backlog, when the host starts and then every
 // `Kanban:StaleCardsEvery` (an hour unless configured). Which cards are stale,
 // and what sending one back does, are the F# core's
-// (KanbanData.SendStaleBackAsync, Workflows.sendStaleBack); this job says when.
-// "Now", and the wait between runs, are the TimeProvider's in the host's
-// services.
+// (KanbanData.SendStaleBackAsync, Workflows.sendStaleBack), on the facade's
+// clock; this job says when. The wait between runs is the TimeProvider's in
+// the host's services.
 using Kanban.Data;
 
 namespace Kanban.Host;
@@ -19,7 +19,7 @@ public sealed class StaleCards(KanbanData kanban, TimeProvider time, IConfigurat
         {
             try
             {
-                var sent = await kanban.SendStaleBackAsync(time.GetUtcNow(), stopping);
+                var sent = await kanban.SendStaleBackAsync(stopping);
                 log.LogInformation("Stale cards sent back: {Cards}", sent.Cards);
             }
             catch (KanbanUnavailableException unavailable)

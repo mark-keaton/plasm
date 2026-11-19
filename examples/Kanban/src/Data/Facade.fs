@@ -408,24 +408,37 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
     let change (card: Guid) (version: int) (decide: Board -> int -> Card -> Result<Card, DomainError>) ct : Task<ChangeOutcome> =
         changed card (changeCard (CardId card) version decide) ct
 
-    /// Starts the repository over `dataSource`, which checks every query and
-    /// the tables first: a query or table that would fail raises
-    /// PlasmStartupException here, before anything is served.
-    static member OpenAsync(dataSource: NpgsqlDataSource, cancellationToken: CancellationToken) : Task<KanbanData> =
-        KanbanData.OpenAsync(dataSource, null, cancellationToken)
-
-    /// As OpenAsync, `onSql` given the SQL of each command sent (a log).
-    static member OpenAsync(dataSource: NpgsqlDataSource, onSql: Action<string>, cancellationToken: CancellationToken) : Task<KanbanData> =
+    static member private Open(dataSource: NpgsqlDataSource, onSql: Action<string> option, time: TimeProvider, cancellationToken: CancellationToken) : Task<KanbanData> =
         task {
             let options =
-                if isNull onSql then RepoOptions.Default
-                else { RepoOptions.Default with OnCommand = Some(fun e -> onSql.Invoke e.Sql) }
+                match onSql with
+                | None -> RepoOptions.Default
+                | Some onSql -> { RepoOptions.Default with OnCommand = Some(fun e -> onSql.Invoke e.Sql) }
 
             let! repo = Repo.Start(model, PostgresProvider dataSource, typeof<Refusal>.Assembly, options, cancellationToken)
 
             repo.CheckFields CardFields.all
-            return KanbanData(repo, (fun () -> DateTimeOffset.UtcNow), Guid.CreateVersion7)
+            return KanbanData(repo, time.GetUtcNow, Guid.CreateVersion7)
         }
+
+    /// Starts the repository over `dataSource`, which checks every query and
+    /// the tables first: a query or table that would fail raises
+    /// PlasmStartupException here, before anything is served. Every change
+    /// takes its time from `time`, the application's one clock.
+    static member OpenAsync(dataSource: NpgsqlDataSource, time: TimeProvider, cancellationToken: CancellationToken) : Task<KanbanData> =
+        KanbanData.Open(dataSource, None, time, cancellationToken)
+
+    /// As OpenAsync, `onSql` given the SQL of each command sent (a log).
+    static member OpenAsync(dataSource: NpgsqlDataSource, onSql: Action<string>, time: TimeProvider, cancellationToken: CancellationToken) : Task<KanbanData> =
+        KanbanData.Open(dataSource, Some onSql, time, cancellationToken)
+
+    /// As OpenAsync, on the system's clock.
+    static member OpenAsync(dataSource: NpgsqlDataSource, cancellationToken: CancellationToken) : Task<KanbanData> =
+        KanbanData.Open(dataSource, None, TimeProvider.System, cancellationToken)
+
+    /// As OpenAsync, on the system's clock, `onSql` given the SQL of each command sent.
+    static member OpenAsync(dataSource: NpgsqlDataSource, onSql: Action<string>, cancellationToken: CancellationToken) : Task<KanbanData> =
+        KanbanData.Open(dataSource, Some onSql, TimeProvider.System, cancellationToken)
 
     /// Every card, as `refine` makes the query (a GraphQL request's where and
     /// order, built from CardFields.all), each with its comments and labels.
@@ -652,11 +665,11 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
                 | Error other -> return unavailable "Sending cards back stopped" other null
         }
 
-    /// Sends every card in progress for longer than the domain allows at
-    /// `now` back to the backlog, on every board: how many (docs/kanban-host.md).
-    member _.SendStaleBackAsync(now: DateTimeOffset, cancellationToken: CancellationToken) : Task<SentBack> =
+    /// Sends every card in progress for longer than the domain allows, now,
+    /// back to the backlog, on every board: how many (docs/kanban-host.md).
+    member _.SendStaleBackAsync(cancellationToken: CancellationToken) : Task<SentBack> =
         task {
-            match! transact Guid.Empty (sendStaleBack now) cancellationToken with
+            match! transact Guid.Empty (sendStaleBack (clock ())) cancellationToken with
             | Ok n -> return { SentBack.Cards = n }
             | Error other -> return unavailable "Sending stale cards back stopped" other null
         }
