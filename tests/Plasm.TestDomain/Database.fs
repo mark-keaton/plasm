@@ -143,9 +143,12 @@ type Recorder() =
     member this.Writes = this.Events |> List.filter (fun e -> not (e.Sql.StartsWith "SELECT"))
     member _.Clear() = events.Clear()
 
-/// An isolated database for one test.
+/// An isolated database for one test. Disposing it closes its connections
+/// and drops it, so a run leaves no database or connection behind.
 type TestDb =
-    { ConnectionString: string
+    { Name: string
+      Admin: string
+      ConnectionString: string
       Recorder: Recorder
       Provider: PostgresProvider
       Repo: Repo
@@ -203,6 +206,21 @@ type TestDb =
                 IncludeParameterValues = defaultArg includeParameterValues false }
         )
 
+    interface IAsyncDisposable with
+        member db.DisposeAsync() =
+            task {
+                do! db.Provider.DataSource.DisposeAsync()
+                // A repo made by RepoWith has a data source of its own; FORCE
+                // ends whatever connection is still open to the database.
+                use conn = new NpgsqlConnection(db.Admin)
+                do! conn.OpenAsync()
+                use cmd = conn.CreateCommand()
+                cmd.CommandText <- $"drop database if exists {db.Name} with (force)"
+                let! _ = cmd.ExecuteNonQueryAsync()
+                return ()
+            }
+            |> ValueTask
+
 let fresh (model: Model) : Task<TestDb> =
     task {
         let! s = server.Force()
@@ -221,7 +239,9 @@ let fresh (model: Model) : Task<TestDb> =
         let provider = Postgres.connect cs
 
         return
-            { ConnectionString = cs
+            { Name = name
+              Admin = s.Admin
+              ConnectionString = cs
               Recorder = recorder
               Provider = provider
               Repo =

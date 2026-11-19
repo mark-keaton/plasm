@@ -222,7 +222,7 @@ let ``captured expressions are evaluated once as parameters`` () =
 [<Fact>]
 let ``SQL injection attempt is inert against a real database`` () =
     task {
-        let! db = Plasm.TestDomain.Database.freshDefault ()
+        use! db = Plasm.TestDomain.Database.freshDefault ()
         let! _ = Plasm.TestDomain.Database.Seed.customer db "Ada" "ada@example.com"
         let name = "x' OR '1'='1"
         let! r = db.Repo.All(plasm { for c in tableOf<Customer> do where (c.Name = name) })

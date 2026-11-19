@@ -27,7 +27,7 @@ let seedOrderWithLines (db: TestDb) n =
 [<Fact>]
 let ``One returns None, Some, or an error for several rows`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! none = db.Repo.One(Query.from (tableOf<Order>))
         Assert.Equal(None, ok none)
         let! o = Seed.order db None "draft" 1m (Seed.at 1)
@@ -41,7 +41,7 @@ let ``One returns None, Some, or an error for several rows`` () =
 [<Fact>]
 let ``projections read only projected columns and rebuild tuples, anonymous records and computed values`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! o = Seed.order db None "draft" 10m (Seed.at 1)
         db.Recorder.Clear()
         let! a = db.Repo.All(plasm { for x in tableOf<Order> do select (x.Id, x.Total) })
@@ -59,7 +59,7 @@ let ``projections read only projected columns and rebuild tuples, anonymous reco
 [<Fact>]
 let ``a persisted value rejected by its domain constructor is a materialization error`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! p = Seed.product db "A"
         let! o = Seed.order db None "draft" 1m (Seed.at 1)
         let! _ = Seed.line db o p 0 1m
@@ -87,7 +87,7 @@ let ``connection failures are classified as infrastructure failures`` () =
 [<Fact>]
 let ``snapshot reads do not see writes committed between commands`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! o = Seed.order db None "draft" 1m (Seed.at 1)
         let! p = Seed.product db "A"
         let mutable injected = false
@@ -113,7 +113,7 @@ let ``snapshot reads do not see writes committed between commands`` () =
 [<Fact>]
 let ``changing the primary key or the version is rejected before writing`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! o = Seed.order db None "draft" 1m (Seed.at 1)
         let! all = db.Repo.All(Query.from (tableOf<Order>))
         let order = (ok all).Head
@@ -133,7 +133,7 @@ let ``changing the primary key or the version is rejected before writing`` () =
 [<Fact>]
 let ``updating a child that belongs to another parent is rejected and rolled back`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! _, order, _ = seedOrderWithLines db 1
         let! other = Seed.order db None "draft" 1m (Seed.at 2)
         let! _ = db.Exec("update order_lines set order_id = @o", [ "o", rawId other ])
@@ -152,7 +152,7 @@ let ``updating a child that belongs to another parent is rejected and rolled bac
 [<Fact>]
 let ``a database check failing in a child write rolls back the parent`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! p, order, _ = seedOrderWithLines db 1
         // unit_price < 0 violates order_lines_unit_price_check in the database only.
         let changed = { order with Total = 99m; Lines = order.Lines @ [ New.line p 1 -1m ] }
@@ -167,7 +167,7 @@ let ``a database check failing in a child write rolls back the parent`` () =
 [<Fact>]
 let ``an owned item with a key its owner did not have is refused`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! _, order, _ = seedOrderWithLines db 1
         let! p = Seed.product db "B"
         let! otherId = Seed.order db None "draft" 5m (Seed.at 2)
@@ -192,7 +192,7 @@ let ``an owned item with a key its owner did not have is refused`` () =
 [<Fact>]
 let ``Tx.traverse reports the failing step and rolls back the earlier ones`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let totals = [ 1m; -1m; 3m ]
         let tx = totals |> Tx.traverse (fun t -> Tx.insert (New.order None Draft t))
         let! r = db.Repo.Transact tx
@@ -202,7 +202,7 @@ let ``Tx.traverse reports the failing step and rolls back the earlier ones`` () 
 [<Fact>]
 let ``cancellation propagates to a blocked database command`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! o = Seed.order db None "draft" 1m (Seed.at 1)
         let! all = db.Repo.All(Query.from (tableOf<Order>))
         use locker = new Npgsql.NpgsqlConnection(db.ConnectionString)

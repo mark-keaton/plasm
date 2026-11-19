@@ -31,7 +31,7 @@ let ``countDistinct renders COUNT DISTINCT and sum is zero for no rows`` () =
 [<Fact>]
 let ``aggregates of domain types come back as the domain type`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! a = Seed.order db None "draft" 1m (Seed.at 1)
         let! b = Seed.order db None "draft" 2m (Seed.at 2)
 
@@ -95,7 +95,7 @@ let ``paging groups appends the grouping keys as the tiebreaker`` () =
 [<Fact>]
 let ``count and exists over joins, pages and groups`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! ada = Seed.customer db "Ada" "a@x"
         let! _ = Seed.order db (Some ada) "draft" 1m (Seed.at 1)
         let! _ = Seed.order db (Some ada) "draft" 2m (Seed.at 2)
@@ -129,7 +129,7 @@ let ``count and exists over joins, pages and groups`` () =
 [<Fact>]
 let ``a bulk update can clear an optional field and filter through a relationship`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! paid = Seed.order db None "cancelled" 1m (Seed.at 1)
         let! unpaid = Seed.order db None "cancelled" 1m (Seed.at 2)
         let! _ = db.Exec("update orders set cancellation_reason = 'x'")
@@ -157,7 +157,7 @@ let ``a bulk update can clear an optional field and filter through a relationshi
 [<Fact>]
 let ``a bulk delete blocked by a foreign key is a classified failure`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! o = Seed.order db None "draft" 1m (Seed.at 1)
         let! _ = Seed.payment db o 1m "pending" (Seed.at 1)
         let! r = db.Repo.Transact(Tx.execute (Bulk.delete (Query.from (tableOf<Order>))): Tx<_, unit>)
@@ -182,7 +182,7 @@ let ``bulk writes reject versions, relationships and empty changes`` () =
 [<Fact>]
 let ``an empty bulk insert sends nothing`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         db.Recorder.Clear()
         let! r = db.Repo.Transact(Tx.execute (Bulk.insert ([]: Product list)): Tx<_, unit>)
         Assert.Equal<Product list>([], ok r)
@@ -192,7 +192,7 @@ let ``an empty bulk insert sends nothing`` () =
 [<Fact>]
 let ``a large bulk insert is split into commands inside one transaction`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         // Two columns per product: at most 32,500 rows per command.
         let products = [ for i in 1..40_000 -> { Id = ProductId 0L; Sku = $"S{i}"; Name = "n" } ]
         db.Recorder.Clear()
@@ -226,7 +226,7 @@ let ``upserts accept composite conflict targets and computed updates`` () =
 [<Fact>]
 let ``hand-written SQL takes lists, options and domain values as parameters`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! a = Seed.order db None "draft" 1m (Seed.at 1)
         let! b = Seed.order db None "published" 2m (Seed.at 2)
         let! _ = Seed.order db None "published" 3m (Seed.at 3)
@@ -243,7 +243,7 @@ let ``hand-written SQL takes lists, options and domain values as parameters`` ()
 [<Fact>]
 let ``a tuple with the wrong arity is a materialization error`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! r = db.Repo.Sql<int * int>($"SELECT 1")
 
         match r with
@@ -265,7 +265,7 @@ let ``fragments can be projected and escape percent signs`` () =
 [<Fact>]
 let ``prepared string patterns are escaped per call`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! _ = Seed.customer db "50% off" "a@x"
         let! _ = Seed.customer db "500 club" "b@x"
 
@@ -285,7 +285,7 @@ let ``prepared string patterns are escaped per call`` () =
 [<Fact>]
 let ``prepared queries run in transactions and with three arguments`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! a = Seed.order db None "draft" 5m (Seed.at 1)
         let! _ = Seed.order db None "draft" 50m (Seed.at 2)
 
@@ -341,7 +341,7 @@ let ``take accepts computed counts and rejects expressions of arguments`` () =
 [<Fact>]
 let ``expressions of arguments are compiled into bound parameters`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! _ = Seed.order db None "draft" 5m (Seed.at 1)
         let! big = Seed.order db None "draft" 50m (Seed.at 2)
 
@@ -380,7 +380,7 @@ let ``links requires a join table name`` () =
 [<Fact>]
 let ``linked lists are written as join-table rows by difference`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! a = db.Scalar<int64>("insert into articles(title) values ('A') returning id")
         let! t = db.Scalar<int64>("insert into tags(name) values ('x') returning id")
         let tag = { Id = TagId t; Name = "x" }
@@ -403,7 +403,7 @@ let ``linked lists are written as join-table rows by difference`` () =
 [<Fact>]
 let ``a links-only update of an identity table without a version sends no row update`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! a = db.Scalar<int64>("insert into articles(title) values ('A') returning id")
         let! t = db.Scalar<int64>("insert into tags(name) values ('x') returning id")
         db.Recorder.Clear()
@@ -416,7 +416,7 @@ let ``a links-only update of an identity table without a version sends no row up
 [<Fact>]
 let ``a failed write inside a sandbox transaction step leaves the sandbox usable`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
 
         let! names =
             db.Repo.Sandbox(fun repo ->
@@ -444,7 +444,7 @@ let ``a failed write inside a sandbox transaction step leaves the sandbox usable
 [<Fact>]
 let ``the schema check reports a type mismatch on a join table column`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! _ = db.Exec("alter table article_tags alter column tag_id type integer")
         let! r = db.Repo.CheckSchema()
         let issues = ok r

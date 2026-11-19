@@ -9,7 +9,7 @@ open Plasm.Tests.Helpers
 [<Fact>]
 let ``write path smoke`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! c = Seed.customer db "Ada" "ada@example.com"
         let! p = Seed.product db "A"
 

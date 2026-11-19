@@ -14,12 +14,15 @@ type BackgroundSteps(w: World) =
             (w.Db.Model.References |> List.exists (fun r -> r.Model = model && r.Field = field && r.Target = target.Name))
             $"{model}.{field} references {target.Name}: %A{w.Db.Model.References}"
 
-    /// Each scenario has its own database and connection pool; release the
-    /// pool's connections when the scenario ends.
-    [<AfterScenario>]
-    member _.ReleaseConnections() =
-        if not (obj.ReferenceEquals(w.Db, null)) then
-            w.Db.Provider.DataSource.Dispose()
+    /// Each scenario has its own database and connection pool: both go when
+    /// the scenario ends, after every other hook (one rolls back a prepared
+    /// transaction, which would keep the database from being dropped).
+    [<AfterScenario(Order = 100000)>]
+    member _.DropDatabase() =
+        if obj.ReferenceEquals(w.Db, null) then
+            System.Threading.Tasks.Task.CompletedTask
+        else
+            (w.Db :> IAsyncDisposable).DisposeAsync().AsTask()
 
     [<StepDefinition("a configured relational database")>]
     member _.Database() =

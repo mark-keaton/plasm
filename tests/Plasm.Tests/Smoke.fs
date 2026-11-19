@@ -10,7 +10,7 @@ open Plasm.Tests.Helpers
 [<Fact>]
 let ``milestone page with nested batched loads`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! c = Seed.customer db "Ada" "ada@example.com"
         let! p1 = Seed.product db "A"
         let! p2 = Seed.product db "B"

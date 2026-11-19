@@ -40,7 +40,7 @@ let order0 = New.order None Draft 10m
 [<Fact>]
 let ``ecto: insert, update and delete`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! inserted = db.Repo.Transact(Tx.insert order0: Tx<_, unit>)
         let inserted = ok (inserted |> Result.mapError string)
         let! updated = db.Repo.Transact(inserted |> edit (fun o -> { o with Total = 2m }))
@@ -56,7 +56,7 @@ let ``ecto: insert, update and delete`` () =
 [<Fact>]
 let ``ecto: insert and update with empty changeset`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! inserted = db.Repo.Transact(Tx.insert order0: Tx<_, unit>)
         let inserted = ok (inserted |> Result.mapError string)
         db.Recorder.Clear()
@@ -72,7 +72,7 @@ let ``ecto: insert and update with empty changeset`` () =
 [<Fact>]
 let ``ecto: insert and update with changeset read after writes`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! inserted = db.Repo.Transact(Tx.insert order0: Tx<_, unit>)
         let inserted = ok (inserted |> Result.mapError string)
         Assert.NotEqual(order0.Id, inserted.Id)
@@ -85,7 +85,7 @@ let ``ecto: insert and update with changeset read after writes`` () =
 [<Fact>]
 let ``ecto: optimistic locking in update/delete operations`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! base' = db.Repo.Transact(Tx.insert order0: Tx<_, unit>)
         let base' = ok (base' |> Result.mapError string)
         let! okUpdate = db.Repo.Transact(base' |> edit (fun o -> { o with Total = 3m }))
@@ -105,7 +105,7 @@ let ``ecto: optimistic locking in update/delete operations`` () =
 [<Fact>]
 let ``ecto: unique constraint`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let customer = New.customer "A" "dup@example.com"
         let! first = db.Repo.Transact(Tx.insert customer: Tx<_, unit>)
         ok (first |> Result.mapError string) |> ignore
@@ -129,7 +129,7 @@ let ``ecto: unique constraint`` () =
 [<Fact>]
 let ``ecto: foreign key constraint`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! o = Seed.order db None "draft" 1m (Seed.at 1)
         let line = { New.line (ProductId 999L) 1 1m with OrderId = o }
         let! declared = db.Repo.Transact(Tx.insert line: Tx<_, unit>)
@@ -152,7 +152,7 @@ let ``ecto: change/2 with a struct`` () =
 [<Fact>]
 let ``ecto: empty multi`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! r = db.Repo.Transact(transaction { return () })
         Assert.Equal(Ok(), r)
         Assert.Equal(0, db.Recorder.Count)
@@ -162,7 +162,7 @@ let ``ecto: empty multi`` () =
 [<Fact>]
 let ``ecto: insert and update changesets with dependent steps`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! p = Seed.product db "A"
 
         let tx =
@@ -183,7 +183,7 @@ let ``ecto: insert and update changesets with dependent steps`` () =
 [<Fact>]
 let ``ecto: error`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
 
         let tx =
             transaction {
@@ -212,7 +212,7 @@ let ``ecto: error`` () =
 [<Fact>]
 let ``ecto: multi with invalid changeset returns the failed operation and its errors`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         // orders_total_check refuses a negative total.
         let tx =
             transaction {
@@ -236,7 +236,7 @@ let ``ecto: multi with invalid changeset returns the failed operation and its er
 [<Fact>]
 let ``ecto: run with fun`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
 
         let tx =
             transaction {
@@ -262,7 +262,7 @@ let ``ecto: run with fun`` () =
 [<Fact>]
 let ``ecto: all queryable`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
 
         let tx =
             transaction {
@@ -283,7 +283,7 @@ let ``ecto: all queryable`` () =
 [<Fact>]
 let ``ecto (deliberate difference): comparing with None means IS NULL`` () =
     task {
-        let! db = freshDefault ()
+        use! db = freshDefault ()
         let! a = Seed.order db None "draft" 1m (Seed.at 1)
         let! b = Seed.order db None "draft" 2m (Seed.at 2)
         let! _ = db.Exec("update orders set cancellation_reason = 'late' where id = @i", [ "i", box (let (OrderId v) = b in v) ])

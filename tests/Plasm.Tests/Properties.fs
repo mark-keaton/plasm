@@ -71,6 +71,8 @@ let evalPred (paid: Set<OrderId>) (p: Pred) (o: Order) =
     | HasLineAbove a -> o.Lines |> List.exists (fun l -> l.UnitPrice > decimal (abs a % 30))
     | AllLinesAbove a -> o.Lines |> List.forall (fun l -> l.UnitPrice > decimal (abs a % 30))
 
+/// One seeded database the properties below share for the whole run; the
+/// fixture after it drops it when the run ends.
 let private seeded =
     lazy
         (run (
@@ -112,6 +114,19 @@ let private seeded =
                 return db, ok all, paid
             }
         ))
+
+/// Drops the shared seeded database when the test assembly's run ends.
+type SeededDatabase() =
+    interface IAsyncDisposable with
+        member _.DisposeAsync() =
+            if seeded.IsValueCreated then
+                let db, _, _ = seeded.Value
+                (db :> IAsyncDisposable).DisposeAsync()
+            else
+                Threading.Tasks.ValueTask.CompletedTask
+
+[<assembly: Xunit.AssemblyFixture(typeof<SeededDatabase>)>]
+do ()
 
 let ids (os: Order list) = os |> List.map (fun o -> o.Id) |> List.sort
 
@@ -203,7 +218,7 @@ let ``batched loading assembles the same aggregates for every batch size with ke
 
     run (
         task {
-            let! db = freshDefault ()
+            use! db = freshDefault ()
             let! products = [ "a"; "b"; "c"; "d" ] |> List.map (Seed.product db) |> Threading.Tasks.Task.WhenAll
 
             for i in 0 .. parents - 1 do
@@ -240,7 +255,7 @@ let ``owned lines keep their declared order within each parent`` (prices: int li
 
     run (
         task {
-            let! db = freshDefault ()
+            use! db = freshDefault ()
             let! p = Seed.product db "P"
             let! o1 = Seed.order db None "published" 1m (Seed.at 1)
             let! o2 = Seed.order db None "published" 2m (Seed.at 2)
