@@ -564,7 +564,17 @@ let build () =
     llms ()
 
     match koansBuild with
-    | Some dir when Directory.Exists dir -> copyTree dir (Path.Combine(site, "koans"))
+    | Some dir when Directory.Exists dir ->
+        copyTree dir (Path.Combine(site, "koans"))
+        // The koans are their own application; on the site, its header leads back to the rest.
+        let page = Path.Combine(site, "koans", "index.html")
+        let own = """<nav class="links" aria-label="Elsewhere">"""
+        let text = File.ReadAllText page
+
+        if text.Contains own then
+            File.WriteAllText(page, text.Replace(own, own + $"""<a href="../index.html">Plasm</a><a href="../{firstDoc}">Docs</a><a href="../roadmap.html">Roadmap</a><a href="{repoUrl}">GitHub</a>"""))
+        else
+            problems.Add "the koans' index.html no longer has the header links the site adds its own to"
     | Some dir -> problems.Add $"--koans {dir}: no such directory"
     | None -> write "koans/index.html" (koansFallback ())
 
