@@ -1,0 +1,40 @@
+Use Plasm (https://mark-keaton.github.io/plasm) to build a library
+lending desk over PostgreSQL: members borrow and return copies of
+books. The host is a C# ASP.NET minimal API; the domain and its
+persistence are an F# project it references. Publish it with native AOT.
+
+Read these before you start, in this order:
+- https://mark-keaton.github.io/plasm/llms.txt (every docs page, as Markdown)
+- docs/start/one-way.md, docs/csharp.md and docs/aot.md from that list
+- examples/Kanban in https://github.com/mark-keaton/plasm: src/Data is
+  the F# side, src/Host the C# side. This application has the same shape.
+
+Plasm is not on NuGet yet, so make the packages yourself: clone the
+repository, run dotnet pack Plasm.slnx -c Release -o <a folder>, add
+that folder as a NuGet source, and reference the package Plasm.Postgres
+(0.1.0-alpha) from the F# project. Do not reference Plasm's projects
+directly: the package carries the build step a native binary needs.
+It needs the .NET 11 SDK and Docker.
+
+What the domain says:
+- A member borrows a copy if they hold fewer than three loans and the
+  copy is not out.
+- A loan is due in 21 days. Returning it late records a fine.
+- A change made from a stale copy is refused, never merged.
+
+How to build it:
+- The domain's own records carry [<Table>]. Ids and validated values
+  are single-case types with a create function. Write no mapping.
+- Queries are plasm { } values. Every write is a step of a Tx run by
+  repo.Transact, with your own error type.
+- Start with Repo.Start(model, Postgres.connect cs, queriesIn = ...)
+  and create the tables from repo.Ddl().
+- C# sees one F# facade: plain arguments in, a Task of a union out.
+  C# writes no query, and switches over each outcome with no default
+  arm. Nothing null crosses, either way.
+
+You are done when dotnet test is green against a real PostgreSQL
+(repo.Sandbox per test, nothing mocked), dotnet publish with
+PublishAot reports no trim warning naming Plasm, and you have borrowed
+and returned a book over HTTP against the native binary. Then leave it
+running and give me the URL.

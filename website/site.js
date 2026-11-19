@@ -20,6 +20,19 @@
     pre.appendChild(button);
   });
 
+  const promptButton = document.getElementById("copy-prompt");
+  if (promptButton) {
+    promptButton.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(document.getElementById("prompt").textContent);
+        promptButton.textContent = "Copied";
+      } catch {
+        promptButton.textContent = "Select and copy";
+      }
+      setTimeout(() => (promptButton.textContent = "Copy"), 1600);
+    });
+  }
+
   const input = document.getElementById("search");
   const results = document.getElementById("search-results");
   if (!input || !results) return;

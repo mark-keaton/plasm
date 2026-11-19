@@ -12,6 +12,13 @@ on the runtime. Its design comes from [Ecto](https://github.com/elixir-ecto/ecto
 
 Site, docs and the koans in the browser: <https://mark-keaton.github.io/plasm/>
 
+## Prompt it yourself
+
+[`website/prompt.txt`](website/prompt.txt) is a prompt to paste into a coding
+assistant: it builds a small C# application over an F# domain with Plasm,
+tests it against PostgreSQL and publishes it natively. The site's home page
+has it with a Copy button.
+
 ## C# outside, F# inside
 
 C# passes plain arguments and a cancellation token to one F# type, and gets

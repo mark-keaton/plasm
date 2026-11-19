@@ -312,3 +312,11 @@ pre.code:hover .copy, .copy:focus-visible { opacity: 1; }
 .split.top { align-items: flex-start; }
 .section.split { flex-direction: row; }
 .wrap.hero, .wrap.section, .wrap.docs { padding-left: 24px; padding-right: 24px; }
+.hero > .prompt-box { flex: 1 1 520px; gap: 0; border: 1px solid var(--line-2); border-radius: 12px; background: var(--surface); overflow: hidden; align-self: flex-start; }
+.prompt-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--line); }
+.prompt-head strong { font-family: var(--display); font-size: 16px; font-weight: 600; }
+.prompt-head span { font-size: 13px; color: var(--ink-3); }
+.prompt-head button { margin-left: auto; min-height: 44px; padding: 0 18px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #FFFFFF; font: 600 14px var(--body); cursor: pointer; }
+@media (prefers-color-scheme: dark) { .prompt-head button { color: #121418; } }
+#prompt { margin: 0; padding: 16px; max-height: 520px; overflow-y: auto; font-size: 12.5px; line-height: 1.6; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.hero { align-items: flex-start; }

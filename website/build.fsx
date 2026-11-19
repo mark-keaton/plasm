@@ -535,6 +535,7 @@ let build () =
                     .Replace("<!--nav-->", nav "" current)
                     .Replace("<!--footer-->", footer "")
                     .Replace("<!--roadmap-teaser-->", roadmapTeaser ())
+                    .Replace("<!--prompt-->", enc ((read "website/prompt.txt").Trim()))
                     .Replace("{{docs}}", firstDoc)
                     .Replace("{{repo}}", repoUrl)
 
