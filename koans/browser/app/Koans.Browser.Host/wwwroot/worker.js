@@ -4,6 +4,13 @@ import { dotnet } from './_framework/dotnet.js';
 import { PGlite } from './pglite/index.js';
 
 const post = (m) => self.postMessage(m);
+
+// A runtime that cannot start (a page open across a deploy asks for files the
+// new deploy no longer has) is said to the page, which offers a reload,
+// instead of leaving it waiting for "ready".
+const failed = (e) => post({ type: 'failed', message: String(e?.message ?? e) });
+self.addEventListener('unhandledrejection', (e) => failed(e.reason));
+self.addEventListener('error', (e) => failed(e.error ?? e.message));
 const t0 = performance.now();
 const since = () => Math.round(performance.now() - t0);
 

@@ -118,7 +118,7 @@ namespace Plasm.Koans.Browser.Specs.Features
         
         private static global::Reqnroll.Formatters.RuntimeSupport.FeatureLevelCucumberMessages InitializeCucumberMessages()
         {
-            return new global::Reqnroll.Formatters.RuntimeSupport.FeatureLevelCucumberMessages("../features/course-in-the-browser.feature.ndjson", 9);
+            return new global::Reqnroll.Formatters.RuntimeSupport.FeatureLevelCucumberMessages("../features/course-in-the-browser.feature.ndjson", 10);
         }
         
         async System.Threading.Tasks.ValueTask Xunit.IAsyncLifetime.InitializeAsync()
@@ -401,6 +401,44 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 62
       await testRunner.ThenAsync("pointing at \"repo\" in \"repo.Count\" in the koan \"Every koan is given a repo\" says " +
                         "\"The one way in to the database\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [global::Xunit.FactAttribute(DisplayName="A page whose engine cannot load says so and offers a reload")]
+        [global::Xunit.TraitAttribute("FeatureTitle", "The koans run in a web browser")]
+        [global::Xunit.TraitAttribute("Description", "A page whose engine cannot load says so and offers a reload")]
+        public async global::System.Threading.Tasks.Task APageWhoseEngineCannotLoadSaysSoAndOffersAReload()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
+            string pickleIndex = "7";
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A page whose engine cannot load says so and offers a reload", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
+            string[] tagsOfRule = ((string[])(null));
+            global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("A reload shows the site as it was last staged", "", tagsOfRule);
+#line 66
+    this.ScenarioInitialize(scenarioInfo, ruleInfo);
+#line hidden
+            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                await testRunner.SkipScenarioAsync();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 13
+  await this.FeatureBackgroundAsync();
+#line hidden
+#line 67
+      await testRunner.WhenAsync("the koans page is opened while the site\'s Plasm assemblies are not found, as acro" +
+                        "ss a deploy", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 68
+      await testRunner.ThenAsync("the page says the course could not load and offers to reload it", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 69
+      await testRunner.AndAsync("running the first koan says the same, rather than running for ever", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();

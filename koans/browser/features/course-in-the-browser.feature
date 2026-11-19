@@ -60,3 +60,10 @@ Feature: The koans run in a web browser
       When the site is restaged with Repo documented as "The one way in to the database"
       And the learner reloads the page
       Then pointing at "repo" in "repo.Count" in the koan "Every koan is given a repo" says "The one way in to the database"
+
+    # A page open across a deploy holds the old dotnet.js, whose assemblies'
+    # names the new deploy no longer serves; the engine then cannot start.
+    Scenario: A page whose engine cannot load says so and offers a reload
+      When the koans page is opened while the site's Plasm assemblies are not found, as across a deploy
+      Then the page says the course could not load and offers to reload it
+      And running the first koan says the same, rather than running for ever

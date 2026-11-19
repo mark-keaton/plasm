@@ -26,10 +26,13 @@ function startEngine() {
       const m = e.data;
       if (m.type === 'progress') status(`Loading… ${m.what} ready.`);
       else if (m.type === 'ready') { engine.readyMs = m.ms; resolve(engine); }
+      else if (m.type === 'failed') reject(new Error(m.message));
       else if (m.type === 'result') { engine.pending.get(m.id)?.(m.result); engine.pending.delete(m.id); }
     };
-    worker.onerror = (e) => reject(new Error(e.message));
+    worker.onerror = (e) => reject(new Error(e.message || 'the engine stopped'));
   });
+  // Said where the learner is looking, once the page can say it.
+  engine.ready.catch((e) => { if (typeof cannotLoad === 'function') cannotLoad(e.message); });
   return engine;
 }
 
@@ -76,6 +79,22 @@ async function runKoan(lessonIndex, koanIndex, body) {
   keep(lessonIndex, koanIndex, (s) => { if (result.status === 'passed') s.passed = true; else delete s.passed; });
   updateProgress();
   return result;
+}
+
+/// The engine could not start: most often a page open across a deploy, whose
+/// files the new site no longer serves. A reload fetches the site as it is now.
+function couldNotLoad(why) {
+  return `The course could not load (${why}). The site may have been updated while this page was open; reload it to get the current one.`;
+}
+function reloadButton() {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = 'Reload';
+  b.onclick = () => location.reload();
+  return b;
+}
+function cannotLoad(why) {
+  $('status').replaceChildren(couldNotLoad(why) + ' ', reloadButton());
 }
 
 /// Stops a running koan: the worker is replaced and its pending runs end as stopped.
@@ -311,7 +330,15 @@ async function runShown() {
   delete $('result').dataset.status;
   $('run').disabled = true;
   $('stop').hidden = false;
-  const r = await runKoan(lessonIndex, koanIndex, editor.get());
+  let r;
+  try {
+    r = await runKoan(lessonIndex, koanIndex, editor.get());
+  } catch (e) {
+    $('run').disabled = false;
+    $('stop').hidden = true;
+    $('result').replaceChildren(el('div', { class: 'headline' }, couldNotLoad(e.message)), reloadButton());
+    return;
+  }
   $('run').disabled = false;
   $('stop').hidden = true;
   if (shown.lessonIndex !== lessonIndex || shown.koanIndex !== koanIndex) return;
@@ -406,7 +433,13 @@ window.koans = { course, runKoan, show, stop, evaluate, addressOf, complete, hov
 updateProgress();
 go(addressed(), 'replace');
 window.addEventListener('popstate', () => go(addressed(), 'none'));
-const ready = await engine.ready;
+let ready;
+try {
+  ready = await engine.ready;
+} catch (e) {
+  cannotLoad(e.message);
+  throw e;
+}
 window.koansReady = true;
 
 // Once the koans are ready, store the site for offline use in the background

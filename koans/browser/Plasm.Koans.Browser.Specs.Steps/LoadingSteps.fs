@@ -143,6 +143,57 @@ type LoadingSteps(w: BrowserWorld) =
         }
         |> unit
 
+    [<StepDefinition("the koans page is opened while the site's Plasm assemblies are not found, as across a deploy")>]
+    member _.Stale() =
+        task {
+            let! page = newPage ()
+            w.Page <- page
+
+            let! _ =
+                page.Context.RouteAsync(
+                    "**/_framework/Plasm*",
+                    Func<IRoute, Task>(fun route -> route.FulfillAsync(RouteFulfillOptions(Status = Nullable 404, Body = "not found")))
+                )
+
+            let! _ = page.GotoAsync(baseUrl () + "index.html")
+            // The engine fails, or nothing is said: either way the next step tells.
+            try
+                let! _ = page.WaitForFunctionAsync("() => /could not load/.test(document.getElementById('status').textContent)", null, PageWaitForFunctionOptions(Timeout = Nullable 60000.f))
+                ()
+            with :? TimeoutException -> ()
+        }
+        |> unit
+
+    [<StepDefinition("the page says the course could not load and offers to reload it")>]
+    member _.CannotLoad() =
+        task {
+            let! text = w.Page.TextContentAsync "#status"
+            check (text.Contains "could not load") $"the page says: {text}"
+            let! reload = w.Page.Locator("#status button").CountAsync()
+            check (reload = 1) $"no button to reload in: {text}"
+            let! label = w.Page.TextContentAsync "#status button"
+            check (label.Contains "Reload") $"the button says {label}"
+        }
+        |> unit
+
+    [<StepDefinition("running the first koan says the same, rather than running for ever")>]
+    member _.RunSaysSo() =
+        task {
+            do! w.Page.ClickAsync "#run"
+
+            let! said =
+                w.Page.WaitForFunctionAsync(
+                    "() => /could not load/.test(document.getElementById('result').textContent)",
+                    null,
+                    PageWaitForFunctionOptions(Timeout = Nullable 10000.f)
+                )
+
+            ignore said
+            let! disabled = w.Page.IsDisabledAsync "#run"
+            check (not disabled) "Run stays disabled"
+        }
+        |> unit
+
     [<StepDefinition("a learner runs every koan of the first lesson")>]
     member _.RunFirstLesson() =
         task {
