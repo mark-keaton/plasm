@@ -64,7 +64,9 @@ let lesson =
                       // naming those Plasm cannot translate. Warn reports each through
                       // OnProblem instead, and starts. Here it checks the shop's
                       // assembly (Shop.fs): Queries, whose queries translate, and
-                      // Mistakes, whose one query, Mistakes.shouting, does not.
+                      // Mistakes, whose one query, Mistakes.shouting, does not. A problem
+                      // names its query in full, by module and value: Shop.fs is the
+                      // module Plasm.Koans.Shop.
                       let found = ResizeArray<StartupProblem>()
 
                       let! _ =
@@ -143,6 +145,9 @@ let lesson =
               fun repo ->
                   task {
                       // DDL is transactional in PostgreSQL, so the sandbox undoes this too.
+                      // A SchemaIssue has a Kind, a SchemaIssueKind (MissingTable,
+                      // MissingColumn, IncompatibleType, ...), the Model's name as text,
+                      // and the Field when one is at fault, as an option.
                       let drop: Tx<int, unit> = Tx.executeSql $"alter table orders drop column cancellation_reason"
                       let! _ = repo.Transact drop
                       let! issues = repo.CheckSchema()

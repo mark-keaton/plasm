@@ -95,6 +95,9 @@ let lesson =
                               Task.FromResult())
 
                       // The sandbox has ended; its repository returns an error rather than throwing.
+                      // A database failure's Kind is a DbFailureKind: ConnectionFailure,
+                      // Timeout, UniqueViolation, ..., and RepositoryClosed for a repository
+                      // that has ended.
                       let! r = kept.Value.All(Query.from (tableOf<Customer>))
 
                       match r with
@@ -118,6 +121,8 @@ let lesson =
               "Unreadable rows are named",
               fun repo ->
                   task {
+                      // A row the model cannot read is a materialisation error, naming the
+                      // Model by its type's short name and the Property it could not read.
                       let lose: Tx<int, unit> = Tx.executeSql $"update orders set status = 'lost' where id = 1"
                       let! _ = repo.Transact lose
                       let! r = repo.All(Query.from (tableOf<Order>))
@@ -145,6 +150,8 @@ let lesson =
               "Too many rows is about the data",
               fun repo ->
                   task {
+                      // One reads at most one row. Finding more than one is
+                      // DbError.MoreThanOneRow, a fact about the data, not about the query.
                       let! r = repo.One(plasm { for o in tableOf<Order> do where (o.Status = Published) })
                       r |> shouldBe __
                   }

@@ -72,9 +72,10 @@ let lesson =
               "A failure is a value",
               fun repo ->
                   task {
-                      // Ada's email is taken, and tableOf<Customer> states the email is
-                      // unique. The failure comes back as an Error you can match on,
-                      // here as invalid changes naming the field; nothing is thrown.
+                      // Ada's email is taken, and Customer's Email is marked [<Unique>] in
+                      // Shop.fs. The failure comes back as an Error you can match on,
+                      // here as invalid changes naming the field as the record spells it;
+                      // nothing is thrown.
                       // (Lessons 10 and 20 go deeper.)
                       let addAdaAgain: Tx<Customer, unit> = Tx.insert (New.customer "Ada again" "ada@example.com")
                       let! r = repo.Transact addAdaAgain
@@ -107,7 +108,8 @@ let lesson =
               fun repo ->
                   // Model.build checks every record type once, when the model is made.
                   // It cannot store a Bookmark's Address (above, under Given).
-                  // Each error names the record and the field (Property) at fault.
+                  // Each error names the record and, when one field is at fault, that
+                  // field: Property is an option, Some with the field's name.
                   // (Lesson 05 goes deeper.)
                   match Model.build [] [ typeof<Bookmark> ] with
                   | Ok _ -> failwith "expected a configuration error"

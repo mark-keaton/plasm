@@ -71,7 +71,9 @@ let lesson =
               fun repo ->
                   task {
                       let! totals = repo.One(plasm { for o in tableOf<Order> do select (Agg.sum o.Total, Agg.avg o.Total) })
-                      // The four totals are 30.00, 12.50, 99.00 and 5.00.
+                      // The four totals are 30.00, 12.50, 99.00 and 5.00. Agg.sum gives
+                      // the column's own type, and over no rows it is zero; Agg.avg,
+                      // Agg.max and Agg.min are options, since no rows have none.
                       (ok totals).Value |> shouldBe __
                   }
           )
@@ -80,6 +82,8 @@ let lesson =
               "No rows is explicit",
               fun repo ->
                   task {
+                      // No order's total is over 1000 (the koan above says what each
+                      // aggregate gives over no rows).
                       let! r = repo.One(plasm { for o in tableOf<Order> do where (o.Total > 1000m); select (Agg.sum o.Total, Agg.max o.Total) })
                       (ok r).Value |> shouldBe __
                   }
@@ -89,6 +93,8 @@ let lesson =
               "Grouping by a key",
               fun repo ->
                   task {
+                      // One row per CustomerId, an option. orderBy over an option puts
+                      // None first, as F# compares options.
                       let perCustomer =
                           plasm {
                               for o in tableOf<Order> do

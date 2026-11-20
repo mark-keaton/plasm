@@ -42,6 +42,9 @@ let lesson =
                       // A repo (repository) is where Plasm meets the database. It is
                       // made from a model, the record types Plasm can store (Db.model,
                       // built from the records in Shop.fs), and a database connection.
+                      // Db.model lists the records that are not owned; repo.Model.Types
+                      // lists those and every record they own (an order's OrderLines, an
+                      // account's Profile), which come with their owner.
                       repo.Model.Types.Length |> shouldBe __
 
                       // CheckSchema compares the model with the database's tables
@@ -84,7 +87,9 @@ let lesson =
                       // sqlSent () lists the SQL this koan has sent to the database
                       // so far, in order; every koan starts with none. Counting it
                       // shows when Plasm talks to the database. (In your app, Plasm
-                      // reports each command to RepoOptions.OnCommand instead.)
+                      // reports each command to RepoOptions.OnCommand, a transaction's
+                      // own BEGIN and COMMIT too, each with a Kind; sqlSent () keeps the
+                      // statements.)
                       sqlSent () |> shouldBe __
                       let! _ = repo.Count(Query.from (tableOf<Customer>))
                       sqlSent().Length |> shouldBe __
@@ -165,6 +170,7 @@ let lesson =
                       let! customers = narrow.All(Query.from (tableOf<Customer>))
 
                       // It cannot read customers: it returns an Error, it does not throw.
+                      // UnmappedType names the record by its type's short name.
                       match err customers with
                       | DbError.Translation(TranslationError.UnmappedType name) -> name |> shouldBe __
                       | other -> failwithf "expected an unmapped type, got %A" other

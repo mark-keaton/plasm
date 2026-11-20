@@ -90,7 +90,7 @@ let lesson =
               fun repo ->
                   task {
                       // A Customer is an aggregate of its own, so an Order holds only its
-                      // CustomerId. Because CustomerId is the key type of tableOf<Customer>,
+                      // CustomerId. Because CustomerId is the type of Customer's Id,
                       // Plasm knows the field refers to a customer.
                       // To reach the customer, ask for it with a query.
                       let! orders = repo.All(Query.from (tableOf<Order>))

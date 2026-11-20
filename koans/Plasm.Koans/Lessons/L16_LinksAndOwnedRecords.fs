@@ -39,7 +39,8 @@ let lesson =
                   task {
                       // A Tag is shared: many articles can link to the same one. An article
                       // does not own its tags, only its links to them: rows of the
-                      // article_tags table (tableOf<Article> says links ... "article_tags").
+                      // article_tags table (Article's Tags are marked [<JoinTable "article_tags">]
+                      // in Shop.fs).
                       // The tags are read with the article, in the order of their key.
                       // In the starting data, article 2 ('Deep dive') links to tags 1 and 3.
                       let! deepDive = article repo 2L
@@ -118,9 +119,10 @@ let lesson =
               "A link to a missing tag is the field's error",
               fun repo ->
                   task {
-                      // There is no tag 99. The join table's foreign key refuses the link,
-                      // and it comes back as the Tags field's error. fieldErrors is at the
-                      // top of this lesson.
+                      // There is no tag 99. The join table's foreign key, by its default
+                      // name article_tags_tag_id_fkey, refuses the link, and it comes back
+                      // as the Tags field's error, its Kind as in lesson 10. fieldErrors is
+                      // at the top of this lesson.
                       let! intro = article repo 1L
                       let! r = repo.Transact(Tx.update (intro, { intro with Tags = [ tag 99L "nope" ] }): Tx<Article, unit>)
                       fieldErrors r |> List.map (fun e -> e.Field, e.Kind) |> shouldBe __
@@ -145,6 +147,7 @@ let lesson =
               fun repo ->
                   task {
                       // article_tags has no record of its own; hand-written SQL counts it.
+                      // repo.Sql (lesson 18) returns the rows it reads, as a list.
                       let! intro = article repo 1L
                       let! _ = repo.Transact(Tx.delete intro: Tx<Article, unit>)
                       let! links = repo.Sql<int64>($"select count(*) from article_tags")

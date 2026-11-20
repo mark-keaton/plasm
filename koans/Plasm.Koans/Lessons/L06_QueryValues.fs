@@ -95,6 +95,8 @@ let lesson =
               "A query can explain itself",
               fun repo ->
                   let published = plasm { for o in tableOf<Order> do where (o.Status = Published) }
+                  // repo.Explain translates a query without running it. A value a
+                  // query compares with is sent as a parameter, @p0, @p1, ... in order.
                   let sql = (ok (repo.Explain published)).Sql
                   // Is the status sent as a parameter?
                   sql.Contains "\"status\" = @p0" |> shouldBe __

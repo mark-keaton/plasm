@@ -21,7 +21,7 @@ Some "duplicate"
 # A model reports every mistake at once
 2
 [ Some "Page"; Some "Referrer" ]
-# A list is stored only if its records are
+# A list of records is stored only if the records are
 [ Some "Wishes" ]
 # One record without a table lives in its owner's row
 true

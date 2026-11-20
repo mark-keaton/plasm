@@ -145,8 +145,9 @@ let lesson =
               fun repo ->
                   task {
                       // The second line's negative price breaks order_lines_unit_price_check.
-                      // The error names the line by its place in the list, and nothing is
-                      // written: neither the order nor its first line.
+                      // The error names the line by its place in the list, counted from
+                      // zero, as Lines[n].Field; and nothing is written: neither the order
+                      // nor its first line.
                       let lines = [ New.line (ProductId 1L) 1 10m; New.line (ProductId 2L) 1 -1m ]
                       let! r = repo.Transact(Tx.insert { New.order None Draft 9m with Lines = lines }: Tx<Order, unit>)
 

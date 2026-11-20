@@ -67,7 +67,7 @@ let lesson =
               "The version goes up on update",
               fun repo ->
                   task {
-                      // tableOf<Order> declares a version field: Version counts the updates of the row.
+                      // Order's Version is marked [<Version>] in Shop.fs: it counts the updates of the row.
                       let! draft = order repo 2L
                       let! updated = repo.Transact(Tx.update (draft, { draft with Status = Published }): Tx<Order, unit>)
                       draft.Version |> shouldBe __
@@ -122,7 +122,8 @@ let lesson =
                   task {
                       // An update checks that the row is still the one you read: for a
                       // record with a version, by its version. failure is at the top of
-                      // this lesson.
+                      // this lesson. A change from a stale copy fails as TxFailure.Conflict,
+                      // carrying the name of the record type that was stale.
                       let! first = order repo 1L
                       let! _ = repo.Transact(Tx.update (first, { first with Total = 31m }): Tx<Order, unit>)
                       // `first` still has the old version: this change was made from a stale copy.

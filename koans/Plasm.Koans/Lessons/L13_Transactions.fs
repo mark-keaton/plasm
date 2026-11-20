@@ -138,6 +138,8 @@ let lesson =
                       let e = err r
                       // A failure gives the step that failed: what it did (Action), and
                       // where it is written (File and Line), so steps need no names.
+                      // Action is a text: the step's verb and its record type, as
+                      // "update Product" is for a Tx.update of a product.
                       e.Step.Action |> shouldBe __
                       e.RolledBack |> List.map (fun s -> s.Action) |> shouldBe __
                       let! n = customers repo
@@ -169,7 +171,8 @@ let lesson =
               fun repo ->
                   task {
                       // A transaction's own reasons to fail are its error type: here
-                      // Refusal, above under Given. Tx.orReject turns a None into one.
+                      // Refusal, above under Given. Tx.orReject turns a None into one,
+                      // and the transaction fails as TxFailure.Rejected, carrying it.
                       let zed =
                           Tx.one (plasm { for c in tableOf<Customer> do where (c.Name = "Zed") })
                           |> Tx.orReject (Missing "customer Zed")
@@ -205,6 +208,9 @@ let lesson =
           Koan.Sync(
               "Retries are opt-in",
               fun _ ->
+                  // A RetryPolicy says how often a transaction may be tried after a
+                  // serialisation failure. MaxAttempts counts every attempt, the
+                  // first included.
                   RetryPolicy.None.MaxAttempts |> shouldBe __
                   (RetryPolicy.OnSerializationFailure 3).MaxAttempts |> shouldBe __
           )
@@ -213,6 +219,10 @@ let lesson =
               "Custom steps use the transaction",
               fun repo ->
                   task {
+                      // Tx.run is a step you write: it is given the transaction's
+                      // connection (ctx) and runs its own commands on it, inside the
+                      // transaction. Tx.fail is a step too; a step of no record type
+                      // has its verb alone as its Action.
                       let audit =
                           transaction {
                               let! _ =

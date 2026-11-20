@@ -52,6 +52,9 @@ let lesson =
                       // marked [<Unique>] in Shop.fs, and the table's unique constraint has
                       // PostgreSQL's default name, customers_email_key. A duplicate comes
                       // back as the Email field's error. fieldErrors is at the top of this lesson.
+                      // A field error has a Field, a Kind and a Message. Its Kind says which
+                      // constraint broke: FieldErrorKind.UniqueConstraint, ForeignKeyConstraint
+                      // or CheckConstraint, each carrying the constraint's name.
                       // (repo.Transact runs a transaction and Tx.insert is a step that
                       // inserts a record: lesson 11 goes deeper.)
                       let addAdaAgain: Tx<Customer, unit> = Tx.insert (New.customer "Ada again" "ada@example.com")
@@ -66,7 +69,8 @@ let lesson =
                   task {
                       // An order's CustomerId refers to a customer, and the table's foreign
                       // key has the default name orders_customer_id_fkey. There is no
-                      // customer 99.
+                      // customer 99. A field error's Message is Plasm's wording for its
+                      // kind: "has already been taken", "does not exist" or "is invalid".
                       let order: Tx<Order, unit> = Tx.insert (New.order (Some(CustomerId 99L)) Draft 1m)
                       let! r = repo.Transact order
                       fieldErrors r |> List.map (fun e -> e.Field, e.Message) |> shouldBe __
@@ -78,7 +82,8 @@ let lesson =
               fun repo ->
                   task {
                       // The orders table checks `total >= 0`, in a check constraint with
-                      // the default name orders_total_check.
+                      // the default name orders_total_check. Its Kind is one of the three
+                      // in "A duplicate is the field's error".
                       let order: Tx<Order, unit> = Tx.insert (New.order None Draft -1m)
                       let! r = repo.Transact order
                       fieldErrors r |> List.map (fun e -> e.Kind) |> shouldBe __
@@ -105,6 +110,8 @@ let lesson =
                       // The orders table has a rule across two columns: a cancelled order
                       // needs a reason. Its constraint, orders_cancelled_has_reason, has no
                       // field's default name, so breaking it stays a database failure.
+                      // A failure's Constraint is an option: Some with the name the
+                      // database gave, when it gave one.
                       let order: Tx<Order, unit> = Tx.insert (New.order None Cancelled 5m)
                       let! r = repo.Transact order
 

@@ -99,6 +99,9 @@ let lesson =
               "A fragment inside a typed query",
               fun repo ->
                   task {
+                      // Raw.fragment writes SQL of its own into a typed query, {0} and {1}
+                      // standing for its arguments. ILIKE is PostgreSQL's LIKE ignoring
+                      // case, and % matches any text.
                       let startingWithA = plasm { for c in tableOf<Customer> do where (Raw.fragment<bool> "{0} ILIKE {1}" (c.Name, "a%")) }
                       let! rows = repo.All startingWithA
                       ok rows |> List.map (fun c -> c.Name) |> shouldBe __

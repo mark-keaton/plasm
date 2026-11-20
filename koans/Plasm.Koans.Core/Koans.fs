@@ -41,7 +41,7 @@ let err (r: Result<'T, 'E>) : 'E =
 /// by whatever runs the koans.
 let mutable internal reported: unit -> CommandEvent list = fun () -> []
 
-/// The SQL of every command this koan has sent to the database, in order. In
+/// The SQL of every statement this koan has sent to the database, in order. In
 /// your app, Plasm reports each command to the function you give as
 /// RepoOptions.OnCommand; the koans give one that keeps them here.
 let sqlSent () =

@@ -16,7 +16,7 @@ type Visit =
 /// A wish: a plain record that names no table, so it is not stored.
 type Wish = { Item: string }
 
-/// A wishlist holding wishes. A list is stored only if its records are.
+/// A wishlist holding wishes. A list of records is stored only if the records are.
 [<Table "wishlists">]
 type Wishlist = { Id: int64; Wishes: Wish list }
 
@@ -158,7 +158,8 @@ let lesson =
               fun _ ->
                   // A Visit (above, under Given) has two fields Plasm cannot store.
                   // Model.build makes a model from the record types it lists, and
-                  // reports every problem, not just the first.
+                  // reports every problem, not just the first, each with its Property
+                  // as in lesson 04.
                   match Model.build [] [ typeof<Visit> ] with
                   | Ok _ -> failwith "expected configuration errors"
                   | Error errors ->
@@ -167,7 +168,7 @@ let lesson =
           )
 
           Koan.Sync(
-              "A list is stored only if its records are",
+              "A list of records is stored only if the records are",
               fun _ ->
                   // A Wishlist (under Given) holds a list of Wish, a record that names
                   // no table. Plasm does not guess where the wishes would go: building
