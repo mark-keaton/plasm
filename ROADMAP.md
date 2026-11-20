@@ -10,7 +10,6 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
 ## Next: in the library
 
-- Batched writes for a list of transaction steps
 - Selection inside a GraphQL card's comments and labels
 - Kanban's own F# server as a native binary
 - Kanban's C# host and Lambda on the FSharp.Core a new project gets (they run on 10.1 today)
@@ -25,7 +24,7 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
 - Stored records by convention, owned and linked lists, unions with fields, array columns, composite keys
 - Typed queries: joins, grouping, exists, set operations, window functions, filtered aggregates, prepared queries, hand-written SQL
-- Typed transactions with optimistic concurrency: a record read as the caller saw it, a stale copy refused at the read; row locks, and a step that may fail under a savepoint
+- Typed transactions with optimistic concurrency: a record read as the caller saw it, a stale copy refused at the read; row locks, and a step that may fail under a savepoint; a list's writes sent together
 - Start-up checks of every query and of the schema, every statement described by the database before any runs
 - Each command as an OpenTelemetry activity
 - Native AOT, with a Lambda function in F# and one in C# over F#
