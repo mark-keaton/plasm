@@ -166,6 +166,48 @@ field's error.
 Nothing is loaded lazily and nothing is left unloaded: an empty list always
 means the order has no lines.
 
+A record a list owns has a table of its own, and a query can read it like any
+other: alone, joined, or projected; what it reads are rows of that table,
+without their owner. [Joins](queries.md#joins) reads order lines so.
+
+An owned record refers to another aggregate as any record does, by its id:
+the line's ProductId is a column with a foreign key, and reading an order
+never reads the product.
+
+<!-- from: examples/Plasm.Examples/Model.fs -->
+```fsharp
+and [<Table "order_lines">] OrderLine =
+    { Id: OrderLineId
+      OrderId: OrderId
+      ProductId: ProductId
+      Quantity: Quantity
+      UnitPrice: decimal }
+```
+
+A record can hold several lists: each owned or linked list is loaded by a
+command of its own when the record is read, and written as the difference
+when it is changed; a `[<Json>]` list is a value in the record's own row.
+Kanban's card owns its comments, links its labels and keeps its checklist in
+its row.
+
+<!-- from: examples/Kanban/src/Shared/Domain.fs -->
+```fsharp
+[<Table "cards">]
+type Card =
+    { Id: CardId
+      Board: BoardId
+      Title: Title
+      Stage: Stage
+      // ...
+      [<Json>]
+      Checklist: ChecklistItem list
+      [<OrderedBy(nameof the<Comment>.At)>]
+      Comments: Comment list
+      [<JoinTable("card_labels", "card_id", "label_id"); OrderedBy(nameof the<Tag>.Name)>]
+      Labels: Tag list
+      // ...
+```
+
 ## What a record links to
 
 A list of stored records that do not hold the owner's key is linked through a
