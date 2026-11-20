@@ -1,50 +1,28 @@
-Use Plasm (https://mark-keaton.github.io/plasm) to build a library lending desk over PostgreSQL: members borrow and return copies of books. The host is a C# ASP.NET minimal API; the domain and its persistence are an F# project it references. Publish it with native AOT.
+Use Plasm (https://mark-keaton.github.io/plasm) to build a library lending desk over PostgreSQL: members borrow and return copies of books. The host is a C# ASP.NET minimal API, the domain and its persistence are an F# project it references, and it is published with native AOT.
 
-Read these before you start, in this order:
-- https://mark-keaton.github.io/plasm/llms-full.txt (every docs page in one file; llms.txt is its index). Of them, docs/start/one-way.md, docs/csharp.md, docs/aot.md and docs/guide/testing.md matter most.
-- A clone of https://github.com/mark-keaton/plasm. The clone may be ahead of the site; where they differ, the clone is right.
-- examples/Kanban in the clone: src/Data is the F# side, and src/Host.CSharp is the C# side to follow, a minimal API published natively (src/Host is the larger host that runs on the runtime only).
-- examples/Starter: what a new application starts from, an F# library on the packages with a C# minimal API and C# tests over it, checked natively. Copy it, not Kanban, whose projects reference Plasm's.
+Start from the starter; do not start from nothing:
+- Clone https://github.com/mark-keaton/plasm and copy examples/Starter to a folder of its own outside the clone, reached by its real path: on macOS /tmp and /var are symlinks, and NuGet drops packages through one.
+- Pack Plasm into the copy's packages folder, as its README's Packages line does for the clone. Then run dotnet test before you change anything. It needs Docker, and it must be green first.
+- PostgreSQL for the running host can come from Docker too: postgres:18.
+- Read https://mark-keaton.github.io/plasm/llms-full.txt, every docs page in one file. Read docs/start, docs/guide and docs/csharp.md; the rest can wait. Where the site and the clone differ, the clone is right.
 
-Plasm is not on NuGet yet, so make the packages yourself from the clone:
-- For each of Plasm.Annotations, Plasm and Plasm.Postgres: dotnet build src/X -c Release, then dotnet pack src/X -c Release --no-build -o <feed>, where <feed> is a folder you keep.
-- Put this nuget.config beside your solution. The packages folder is the solution's own because the version never changes, so a Plasm 0.1.0-alpha already in ~/.nuget/packages would silently win over the one you packed:
-<configuration>
-  <config><add key="globalPackagesFolder" value="../packages" /></config>
-  <packageSources>
-    <clear />
-    <add key="local" value="<feed>" />
-    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-  </packageSources>
-  <packageSourceMapping>
-    <packageSource key="local"><package pattern="Plasm" /><package pattern="Plasm.*" /></packageSource>
-    <packageSource key="nuget.org"><package pattern="*" /></packageSource>
-  </packageSourceMapping>
-</configuration>
-- Reference the package Plasm.Postgres (0.1.0-alpha) from the F# project only. The C# host needs its ProjectReference to the F# project and PublishAot, nothing of Plasm's.
-- Copy the clone's global.json (on the .NET 11 SDK dotnet test needs its test.runner setting) and make a solution file, so a bare dotnet test works.
-- Build in a folder reached by its real path, not through a symlink (on macOS, not under /tmp or /var): through one, NuGet drops the F# project's packages from the C# project with no warning.
-- PostgreSQL: docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:18, then Host=localhost;Username=postgres;Password=postgres;Database=postgres.
-
-What the domain says:
+Then replace its booking domain with this one:
 - A member borrows a copy if they hold fewer than three loans and the copy is not out.
 - A loan is due in 21 days. Returning it late records a fine.
-- A change made from a stale copy is refused, never merged.
+- A change made from a stale version of a record is refused, never merged.
 
-How to build it:
-- The domain's own records carry [<Table>]. An id is a single-case type (LoanId of Guid). A validated value is a type with a create function returning a Result, and is read back through it. Write no mapping.
-- Queries are plasm { } values. Every write is a step of a Tx run by repo.Transact, with your own error type.
-- C# sees one F# facade: plain arguments in, a Task of a union out, the outcome types shaped as docs/csharp.md shows so that C# reads them as unions. C# writes no query, and switches over each outcome with no default arm.
-- Nothing null crosses, either way: the F# project sets <Nullable>enable</Nullable>, and the host's JSON refuses a null or missing property, both as docs/csharp.md says.
-- The C# host builds an NpgsqlDataSource and passes it to the facade's OpenAsync, which starts the repository over it, as examples/Kanban/src/Data/Facade.fs does.
-- Create the database first. Start once with RepoOptions.Unchecked to print repo.Ddl(), run that yourself only when the tables are missing (it is not idempotent; Plasm never runs it), then start with the default options.
-- The facade offers SandboxAsync(body, ct), as KanbanData does, and every test runs inside it. Set PublishAot in the test project too, so the tests take Plasm's native paths.
+Keep everything else the starter does, and write none of it again:
+- Its project files, nuget.config, global.json and JSON serializer options stay as they are, apart from names.
+- C# sees one F# type: plain arguments in, a Task of a union out. C# writes no query and switches over each outcome with no default arm.
+- Records carry [<Table>], an id is a single-case type, a validated value has a create function. Write no mapping.
+- Every write is a Tx step, and a caller's copy is read with Tx.oneAsSeen.
+- Every test runs inside SandboxAsync against a real PostgreSQL. Mock nothing.
 
 You are done when:
-- dotnet test is green against a real PostgreSQL, nothing mocked.
+- dotnet test is green.
 - The host starts with Plasm's start-up check on, which is the default.
 - A request with a null or missing property answers 400.
-- dotnet publish with PublishAot prints no warning IL line other than FSharp.Core's two (IL2104 and IL3053), which are expected.
+- dotnet publish prints no IL warning other than FSharp.Core's two, IL2104 and IL3053.
 - You have borrowed and returned a book over HTTP against the native binary.
 
 Then leave it running and show me the requests as curl commands I can run, with the SQL Plasm sent for each.
