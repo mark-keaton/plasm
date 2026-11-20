@@ -105,12 +105,11 @@ type Found<'T when 'T: not null> =
     interface IUnion with
         member this.Value = this.value
 
-/// Adding equipment: the equipment, or why not.
+/// Adding equipment: the equipment, or the input that was not valid.
 [<Struct; Union>]
 type AddOutcome =
     val private value: obj
     new(equipment: EquipmentView) = { value = equipment :> obj }
-    new(refused: Refused) = { value = refused :> obj }
     new(invalid: Invalid) = { value = invalid :> obj }
     member this.Value = this.value
 
@@ -166,7 +165,7 @@ module private View =
         let (EquipmentId id) = e.Id
 
         { Id = id
-          Name = e.Name
+          Name = e.Name.Value
           Condition = condition e.Condition
           Bookings = [| for b in e.Bookings -> { Who = b.Who; From = b.From; Until = b.Until } |]
           Version = e.Version }
@@ -174,7 +173,6 @@ module private View =
     let refused (refusal: Refusal) =
         let code =
             match refusal with
-            | NameRequired -> "NameRequired"
             | WhoRequired -> "WhoRequired"
             | ReasonRequired -> "ReasonRequired"
             | EndsBeforeItStarts -> "EndsBeforeItStarts"
@@ -193,7 +191,7 @@ module private View =
         | _ -> { Field = field; Message = e.Message }
 
 [<Sealed>]
-type BookingData private (repo: Repo, clock: unit -> DateTimeOffset) =
+type BookingData private (repo: Repo, time: TimeProvider) =
 
     let unavailable (what: string) (error: DbError) =
         match error with
@@ -211,14 +209,28 @@ type BookingData private (repo: Repo, clock: unit -> DateTimeOffset) =
             | Error other -> return raise (BookingUnavailableException(string other, null))
         }
 
+    static member private Open(dataSource: NpgsqlDataSource, onSql: Action<string> option, time: TimeProvider, cancellationToken: CancellationToken) =
+        task {
+            let options =
+                match onSql with
+                | None -> RepoOptions.Default
+                | Some onSql -> { RepoOptions.Default with OnCommand = Some(fun e -> onSql.Invoke e.Sql) }
+
+            let! repo = Repo.Start(Db.model, PostgresProvider dataSource, typeof<BookingData>.Assembly, options, cancellationToken)
+            return BookingData(repo, time)
+        }
+
     /// Starts Plasm's repository over `dataSource`. It checks every query and
     /// the tables first, so one that would fail throws here, before anything
-    /// is served.
-    static member OpenAsync(dataSource: NpgsqlDataSource, cancellationToken: CancellationToken) : Task<BookingData> =
-        task {
-            let! repo = Repo.Start(Db.model, PostgresProvider dataSource, typeof<BookingData>.Assembly, RepoOptions.Default, cancellationToken)
-            return BookingData(repo, fun () -> DateTimeOffset.UtcNow)
-        }
+    /// is served. Every change takes its time from `time`, the application's
+    /// one clock: TimeProvider.System, or a test's own.
+    static member OpenAsync(dataSource: NpgsqlDataSource, time: TimeProvider, cancellationToken: CancellationToken) : Task<BookingData> =
+        BookingData.Open(dataSource, None, time, cancellationToken)
+
+    /// As OpenAsync, `onSql` given the SQL of each command sent, BEGIN and
+    /// COMMIT included (a log).
+    static member OpenAsync(dataSource: NpgsqlDataSource, onSql: Action<string>, time: TimeProvider, cancellationToken: CancellationToken) : Task<BookingData> =
+        BookingData.Open(dataSource, Some onSql, time, cancellationToken)
 
     /// The SQL that creates the tables.
     static member Ddl: string = Db.ddl.Value
@@ -226,13 +238,17 @@ type BookingData private (repo: Repo, clock: unit -> DateTimeOffset) =
     /// `body` over a BookingData whose every change is rolled back when it
     /// ends: one connection, one transaction, never committed. For tests.
     member _.SandboxAsync(body: Func<BookingData, Task<'T>>, cancellationToken: CancellationToken) : Task<'T> =
-        repo.Sandbox((fun sandboxed -> body.Invoke(BookingData(sandboxed, clock))), cancellationToken)
+        repo.Sandbox((fun sandboxed -> body.Invoke(BookingData(sandboxed, time))), cancellationToken)
 
+    /// Adds equipment called `name`: Invalid, with the field, when the name
+    /// is not one (EquipmentName.create) or is taken.
     member _.AddEquipmentAsync(name: string, cancellationToken: CancellationToken) : Task<AddOutcome> =
         task {
-            match Equipment.create (EquipmentId(Guid.CreateVersion7())) name with
-            | Error refusal -> return AddOutcome(View.refused refusal)
-            | Ok equipment ->
+            match EquipmentName.create name with
+            | Error message -> return AddOutcome { Problems = [| { Field = "name"; Message = message } |] }
+            | Ok name ->
+                let equipment = Equipment.create (EquipmentId(Guid.CreateVersion7())) name
+
                 match! repo.Transact((Tx.insert equipment: Tx<Equipment, unit>), cancellationToken = cancellationToken) with
                 | Ok stored -> return AddOutcome(View.equipment stored)
                 | Error { Failure = TxFailure.InvalidChanges(_, errors) } -> return AddOutcome { Problems = [| for e in errors -> View.problem e |] }
@@ -253,7 +269,7 @@ type BookingData private (repo: Repo, clock: unit -> DateTimeOffset) =
         changed id (Db.change (EquipmentId id) version (Equipment.book (BookingId(Guid.CreateVersion7())) who from until)) cancellationToken
 
     member _.TakeOutOfServiceAsync(id: Guid, version: int, reason: string, cancellationToken: CancellationToken) =
-        changed id (Db.change (EquipmentId id) version (Equipment.takeOutOfService reason (clock ()))) cancellationToken
+        changed id (Db.change (EquipmentId id) version (Equipment.takeOutOfService reason (time.GetUtcNow()))) cancellationToken
 
     member _.ReturnToServiceAsync(id: Guid, version: int, cancellationToken: CancellationToken) =
         changed id (Db.change (EquipmentId id) version Equipment.returnToService) cancellationToken

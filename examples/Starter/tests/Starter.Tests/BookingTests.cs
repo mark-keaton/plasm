@@ -10,18 +10,25 @@ public sealed class Database : IAsyncLifetime
 {
     readonly PostgreSqlContainer container = new PostgreSqlBuilder("postgres:18").Build();
 
+    public NpgsqlDataSource DataSource { get; private set; } = null!;
     public BookingData Data { get; private set; } = null!;
 
     public async ValueTask InitializeAsync()
     {
         await container.StartAsync();
-        var dataSource = NpgsqlDataSource.Create(container.GetConnectionString());
-        await using (var create = dataSource.CreateCommand(BookingData.Ddl))
+        DataSource = NpgsqlDataSource.Create(container.GetConnectionString());
+        await using (var create = DataSource.CreateCommand(BookingData.Ddl))
             await create.ExecuteNonQueryAsync();
-        Data = await BookingData.OpenAsync(dataSource, CancellationToken.None);
+        Data = await BookingData.OpenAsync(DataSource, TimeProvider.System, CancellationToken.None);
     }
 
     public ValueTask DisposeAsync() => container.DisposeAsync();
+}
+
+/// A clock that says what the test chose.
+sealed class FixedTime(DateTimeOffset now) : TimeProvider
+{
+    public override DateTimeOffset GetUtcNow() => now;
 }
 
 public class BookingTests(Database db)
@@ -93,6 +100,37 @@ public class BookingTests(Database db)
         Assert.Equal("lamp broken", Assert.IsType<Withdrawn>(withdrawn.Condition.Value).Reason);
         var refused = Assert.IsType<Refused>((await data.BookAsync(withdrawn.Id, withdrawn.Version, "Ada", Nine, Nine.AddHours(1), CancellationToken.None)).Value);
         Assert.Equal("NotAvailable", refused.Code);
+    });
+
+    [Fact]
+    public async Task Out_of_service_since_the_time_the_clock_says()
+    {
+        var data = await BookingData.OpenAsync(db.DataSource, new FixedTime(Nine), CancellationToken.None);
+        await data.SandboxAsync(async data =>
+        {
+            var projector = await Add(data, "Projector");
+            var withdrawn = Stored(await data.TakeOutOfServiceAsync(projector.Id, projector.Version, "lamp broken", CancellationToken.None));
+            Assert.Equal(Nine, Assert.IsType<Withdrawn>(withdrawn.Condition.Value).Since);
+            return true;
+        }, TestContext.Current.CancellationToken);
+    }
+
+    [Theory]
+    [InlineData("   ", "is required")]
+    [InlineData("A name far longer than sixty characters, which no label would hold", "must be at most 60 characters")]
+    public Task A_name_that_is_not_one_is_invalid_with_its_field(string name, string message) => Sandboxed(async data =>
+    {
+        var invalid = Assert.IsType<Invalid>((await data.AddEquipmentAsync(name, CancellationToken.None)).Value);
+        var problem = Assert.Single(invalid.Problems);
+        Assert.Equal(("name", message), (problem.Field, problem.Message));
+    });
+
+    [Fact]
+    public Task A_name_is_read_back_as_it_was_made() => Sandboxed(async data =>
+    {
+        var projector = await Add(data, "  Projector  ");
+        var read = Assert.IsType<EquipmentView>((await data.EquipmentAsync(projector.Id, CancellationToken.None)).Value);
+        Assert.Equal("Projector", read.Name);
     });
 
     [Fact]

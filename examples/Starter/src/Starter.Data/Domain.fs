@@ -8,6 +8,23 @@ open Plasm
 type EquipmentId = EquipmentId of Guid
 type BookingId = BookingId of Guid
 
+/// What equipment is called: 1 to 60 characters, trimmed. Made only by
+/// create, which Plasm also reads every stored name through.
+type EquipmentName =
+    private
+    | EquipmentName of string
+
+    member n.Value =
+        let (EquipmentName v) = n
+        v
+
+    static member create(text: string | null) : Result<EquipmentName, string> =
+        let t = (match text with null -> "" | t -> t).Trim()
+
+        if t.Length = 0 then Error "is required"
+        elif t.Length > 60 then Error "must be at most 60 characters"
+        else Ok(EquipmentName t)
+
 /// Whether the equipment can be booked. Out of service says why, and since when.
 type Condition =
     | Available
@@ -27,7 +44,7 @@ type Booking =
 type Equipment =
     { Id: EquipmentId
       [<Unique>]
-      Name: string
+      Name: EquipmentName
       Condition: Condition
       [<OrderedBy(nameof the<Booking>.From)>]
       Bookings: Booking list
@@ -36,7 +53,6 @@ type Equipment =
 
 /// Why the rules refuse.
 type Refusal =
-    | NameRequired
     | WhoRequired
     | ReasonRequired
     | EndsBeforeItStarts
@@ -48,7 +64,6 @@ type Refusal =
 module Refusal =
     let describe refusal =
         match refusal with
-        | NameRequired -> "Equipment needs a name."
         | WhoRequired -> "A booking needs the name of who it is for."
         | ReasonRequired -> "Taking equipment out of service needs a reason."
         | EndsBeforeItStarts -> "A booking must end after it starts."
@@ -59,16 +74,12 @@ module Refusal =
 
 module Equipment =
 
-    let create (id: EquipmentId) (name: string) =
-        if String.IsNullOrWhiteSpace name then
-            Error NameRequired
-        else
-            Ok
-                { Id = id
-                  Name = name.Trim()
-                  Condition = Available
-                  Bookings = []
-                  Version = 1 }
+    let create (id: EquipmentId) (name: EquipmentName) =
+        { Id = id
+          Name = name
+          Condition = Available
+          Bookings = []
+          Version = 1 }
 
     /// Books the equipment for `who` from `from` until `until`, if it is
     /// available and nobody has any of that time.

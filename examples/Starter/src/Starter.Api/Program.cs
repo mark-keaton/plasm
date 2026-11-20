@@ -24,7 +24,11 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 
 var connectionString = builder.Configuration.GetConnectionString("Starter")
     ?? throw new InvalidOperationException("Set the connection string 'Starter' (ConnectionStrings__Starter).");
-var data = await BookingData.OpenAsync(NpgsqlDataSource.Create(connectionString), CancellationToken.None);
+var dataSource = NpgsqlDataSource.Create(connectionString);
+// LogSql=true prints each command Plasm sends, its BEGIN and COMMIT included.
+var data = bool.TryParse(builder.Configuration["LogSql"], out var logSql) && logSql
+    ? await BookingData.OpenAsync(dataSource, sql => Console.WriteLine("SQL: " + sql.Replace('\n', ' ')), TimeProvider.System, CancellationToken.None)
+    : await BookingData.OpenAsync(dataSource, TimeProvider.System, CancellationToken.None);
 builder.Services.AddSingleton(data);
 
 var app = builder.Build();
@@ -33,7 +37,6 @@ app.MapPost("/equipment", async (NewEquipment input, BookingData d, Cancellation
     await d.AddEquipmentAsync(input.Name, ct) switch
     {
         EquipmentView e => Results.Created($"/equipment/{e.Id}", e),
-        Refused refused => Results.UnprocessableEntity(refused),
         Invalid invalid => Results.BadRequest(invalid),
     });
 

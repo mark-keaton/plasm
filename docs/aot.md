@@ -212,6 +212,14 @@ So those two lines are expected in a publish, and the honest check is the
 `warning IL` lines other than them: none. Searching the log for the library's
 name is not that check, since a path in any other warning may contain it too.
 
+On macOS a publish also prints four lines that are not IL warnings, from
+`dsymutil`, which writes the binary's debug symbols. They are expected too and
+concern the `.dSYM` alone: twice `warning: (arm64)  skipping debug map object
+with duplicate name and timestamp`, naming an object in the runtime's
+`libRuntime.WorkstationGC.a` (or `ServerGC`), and twice `warning:
+…/ModuleCache/….pcm: No such file or directory`, each with a note that a
+static library was built with `-gmodules`.
+
 ## Cold start and size
 
 `tests/Plasm.Aot/coldstart.sh` runs the check program's `coldstart` mode as
