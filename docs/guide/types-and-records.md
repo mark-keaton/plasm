@@ -56,8 +56,10 @@ table's own columns for its parts, as every part of an Id has.
 `[<NotReference>]` says a field of a key type refers to no row, as for a typed
 id. A list of records holding the owner's key is owned, as for a key of one
 part; each level is loaded in one command, with the owners' keys sent as an
-array per part. Not yet: linked lists on either side, an owned list of records
-keyed by several parts, and upserts keyed by such a key, each refused by name.
+array per part. An upsert, or an insert of the missing records, takes the
+whole key as its conflict target, every part. Not yet: linked lists on either
+side, and an owned list of records keyed by several parts, each refused by
+name.
 
 ## Validated values
 
