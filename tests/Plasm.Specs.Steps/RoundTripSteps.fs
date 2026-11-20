@@ -351,6 +351,125 @@ type RoundTripSteps(w: World) =
         }
         |> unit
 
+    // -- Tx.traverse ----------------------------------------------------------
+
+    member private _.Sheets(rows: int) =
+        [ for i in 1..3 ->
+              let id = SheetId(Guid.NewGuid())
+              { Id = id
+                Name = $"sheet {i}"
+                Rows = [ for r in 1..rows -> { Id = SheetRowId(Guid.NewGuid()); SheetId = id; Text = $"row {r}" } ] } ]
+
+    [<StepDefinition("I insert three Sheets with two Rows each by Tx.traverse")>]
+    member this.TraverseSheets() =
+        task {
+            let sheets = this.Sheets 2
+            w.MarkCommands()
+            let! r = rtRepo().Transact(sheets |> Tx.traverse (fun s -> Tx.insert s): Tx<Sheet list, unit>)
+            ok r |> ignore
+        }
+        |> unit
+
+    [<StepDefinition("three Sheets read back with two Rows each")>]
+    member _.SheetsBack() =
+        task {
+            let! r = rtRepo().All(Query.from (tableOf<Sheet>))
+            equal [ 2; 2; 2 ] (ok r |> List.map (fun s -> s.Rows.Length)) "rows of each sheet"
+        }
+        |> unit
+
+    [<StepDefinition("I insert three Orders with a Line each by Tx.traverse")>]
+    member _.TraverseOrders() =
+        task {
+            let! p = product ()
+            let orders = [ for i in 1..3 -> { New.order None Published (decimal i) with Lines = [ New.line p i 1m ] } ]
+            w.MarkCommands()
+            let! r = repo().Transact(orders |> Tx.traverse (fun o -> Tx.insert o): Tx<Order list, unit>)
+            ok r |> ignore
+        }
+        |> unit
+
+    [<StepDefinition("three Orders read back with a Line each")>]
+    member _.OrdersBack() =
+        task {
+            let! r = w.Repo.All(Query.from (tableOf<Order>))
+            equal [ 1; 1; 1 ] (ok r |> List.map (fun o -> o.Lines.Length)) "lines of each order"
+        }
+        |> unit
+
+    [<StepDefinition("^I insert Customers with the emails \"(.*)\", \"(.*)\" and \"(.*)\" by Tx.traverse$")>]
+    member _.TraverseCustomers(a: string, b: string, c: string) =
+        task {
+            w.MarkCommands()
+            let! r = repo().Transact([ a; b; c ] |> Tx.traverse (fun e -> Tx.insert (New.customer e e)): Tx<Customer list, unit>)
+            w.Set("rtTraverse", r)
+        }
+        |> unit
+
+    [<StepDefinition("the transaction fails with the Email field's error, at the insert of a Customer")>]
+    member _.TraverseFailed() =
+        match w.Get<Result<Customer list, TransactionError<unit>>> "rtTraverse" with
+        | Error e ->
+            equal "insert Customer" e.Step.Action "the failed step"
+
+            match e.Failure with
+            | TxFailure.InvalidChanges(_, errors) -> equal [ "Email" ] (errors |> List.map (fun x -> x.Field)) "fields"
+            | other -> failwithf "expected the Email field's error, got %A" other
+        | Ok v -> failwithf "expected a failure, got %A" v
+
+    [<StepDefinition("the insert of the first Customer is what was rolled back")>]
+    member _.TraverseRolledBack() =
+        match w.Get<Result<Customer list, TransactionError<unit>>> "rtTraverse" with
+        | Error e -> equal [ "insert Customer" ] (e.RolledBack |> List.map (fun s -> s.Action)) "rolled back"
+        | Ok _ -> failwith "expected a failure"
+
+    [<StepDefinition("^no Customer with the email \"(.*)\" or \"(.*)\" is written$")>]
+    member _.NoneWritten(a: string, b: string) =
+        task {
+            let! n = w.Db.Scalar<int64>($"select count(*) from customers where email in ('{a}', '{b}')")
+            equal 0L n "customers written"
+        }
+        |> unit
+
+    [<StepDefinition("I update both Orders by Tx.traverse, the second given another version")>]
+    member _.TraverseInvalid() =
+        task {
+            let first = w.Get<Order> "rtOrder"
+            let second = w.Get<Order> "rtOther"
+
+            let changes =
+                [ first, { first with Total = first.Total + 1m }
+                  second, { second with Version = second.Version + 5 } ]
+
+            w.MarkCommands()
+            let! r = repo().Transact(changes |> Tx.traverse (fun (o, c) -> Tx.update (o, c)): Tx<Order list, unit>)
+            w.Set("rtTraverseOrders", r)
+        }
+        |> unit
+
+    [<StepDefinition("the transaction is refused, and nothing was sent")>]
+    member _.RefusedUnsent() =
+        match w.Get<Result<Order list, TransactionError<unit>>> "rtTraverseOrders" with
+        | Error _ -> equal 0 w.CommandsSinceMark.Length "statements sent"
+        | Ok v -> failwithf "expected a refusal, got %A" v
+
+    [<StepDefinition("I insert three Sheets by Tx.traverse, each item an insert followed by a step of its own")>]
+    member this.TraverseSteps() =
+        task {
+            let sheets = this.Sheets 0
+            w.MarkCommands()
+
+            let item (s: Sheet) : Tx<Sheet, unit> =
+                transaction {
+                    let! stored = Tx.insert s
+                    return stored
+                }
+
+            let! r = rtRepo().Transact(sheets |> Tx.traverse item)
+            ok r |> ignore
+        }
+        |> unit
+
     [<StepDefinition("each statement took a round trip of its own")>]
     member _.OneEach() =
         let commands = w.CommandsSinceMark

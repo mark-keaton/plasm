@@ -89,6 +89,43 @@ Feature: A write, and each level of loads, is one round trip
       When I read the Customers binding their Orders, each binding its Payments
       Then the read took 3 round trips
 
+  Rule: Tx.traverse sends its items' writes together
+
+    The items of Tx.traverse are independent: what one writes cannot depend on
+    what another wrote. When each item is one write (Tx.insert, Tx.update or
+    Tx.delete), their statements travel together, a round trip for each level
+    a write needs. Every item is checked before anything is sent. A failure
+    is the first item's, in order, whose write failed, and the items before it
+    are what was rolled back, as if they had run one after another. An item of
+    more than one step runs after the one before it.
+
+    Scenario: Three Sheets inserted by Tx.traverse are one round trip
+      When I insert three Sheets with two Rows each by Tx.traverse
+      Then the write took 1 round trip
+      And three Sheets read back with two Rows each
+
+    Scenario: Orders whose keys the database generates take two round trips, however many
+      When I insert three Orders with a Line each by Tx.traverse
+      Then the write took 2 round trips
+      And three Orders read back with a Line each
+
+    Scenario: A failed item fails the transaction at that item, and nothing is written
+      Given a Customer with the email "ada@example.com"
+      When I insert Customers with the emails "bo@example.com", "ada@example.com" and "cy@example.com" by Tx.traverse
+      Then the transaction fails with the Email field's error, at the insert of a Customer
+      And the insert of the first Customer is what was rolled back
+      And no Customer with the email "bo@example.com" or "cy@example.com" is written
+
+    Scenario: An item its own checks refuse is refused before anything is sent
+      Given an Order with three Lines
+      And another Order with a Line
+      When I update both Orders by Tx.traverse, the second given another version
+      Then the transaction is refused, and nothing was sent
+
+    Scenario: Items of more than one step run one after another
+      When I insert three Sheets by Tx.traverse, each item an insert followed by a step of its own
+      Then the write took 3 round trips
+
   Rule: A provider that cannot send statements together sends them one at a time
 
     Scenario: The same statements, one round trip each, with the same results
@@ -97,3 +134,9 @@ Feature: A write, and each level of loads, is one round trip
       When I change its first Line's quantity and remove its last Line
       Then each statement took a round trip of its own
       And the Order reads back with two Lines, the first of quantity 5
+
+    Scenario: Tx.traverse's writes, one round trip each
+      Given a provider that sends one statement at a time
+      When I insert three Orders with a Line each by Tx.traverse
+      Then each statement took a round trip of its own
+      And three Orders read back with a Line each

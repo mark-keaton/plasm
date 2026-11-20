@@ -834,22 +834,39 @@ and private keyArray (target: SchemaInfo) (keys: obj list) =
     keys |> List.iteri (fun i k -> arr.SetValue(target.Key.ScalarToDb k, i))
     arr
 
+/// The write of `s` as round trips, once its checks pass: Error when they
+/// refuse it, before anything is sent. The round's value is the written
+/// record, or why not; None when its statements were not sent because an
+/// earlier one failed (Tx.traverse sends several writes together).
+let plan (model: Model) (sess: Session) (s: CsState) : Result<Round<Result<obj, Failure option>>, Failure> =
+    let s = check model s
+
+    if not (isValid s) then
+        Error(Invalid s)
+    else
+        Ok(
+            write model sess s
+            |> Round.map (
+                Result.mapError (function
+                    | Fail f -> Some f
+                    | NotSent -> None)
+            )
+        )
+
 /// Validates then writes `s`: one round trip for it and what it owns, after
 /// any generated key that needs.
 let run (model: Model) (sess: Session) (s: CsState) : Task<Result<obj, Failure>> =
     task {
-        let s = check model s
-
-        if not (isValid s) then
-            return Error(Invalid s)
-        else
-            let! written = Round.run sess (write model sess s)
+        match plan model sess s with
+        | Error f -> return Error f
+        | Ok round ->
+            let! written = Round.run sess round
 
             return
                 written
                 |> Result.mapError (function
-                    | Fail f -> f
-                    | NotSent -> invalidOp "a write's statements were not sent, and none failed")
+                    | Some f -> f
+                    | None -> invalidOp "a write's statements were not sent, and none failed")
     }
 
 let needsTransaction (s: CsState) = not s.Children.IsEmpty || not s.Links.IsEmpty

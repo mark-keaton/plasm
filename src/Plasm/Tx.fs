@@ -193,6 +193,10 @@ type Tx<'T, 'E> =
     internal
     | Pure of 'T
     | Effect of (TxRuntime -> Task<Result<'T, TxStep * TxFailure<'E>>>)
+    /// One write, as round trips that can travel with other writes'
+    /// (Tx.traverse): refused before anything is sent when its checks fail,
+    /// and None when its statements were not sent because another's failed.
+    | Write of TxStep * (TxRuntime -> Result<Execution.Round<Result<'T, TxFailure<'E>> option>, TxFailure<'E>>)
 
 /// Retry behaviour for transactions. The default is no retries: application
 /// steps are never re-run silently.
@@ -232,38 +236,25 @@ type RetryPolicy =
 /// The internals shared by the steps.
 module internal TxCore =
 
-    let run' (rt: TxRuntime) (tx: Tx<'T, 'E>) =
-        match tx with
-        | Pure v -> Task.FromResult(Ok v)
-        | Effect f -> f rt
-
-    let bind (f: 'T -> Tx<'U, 'E>) (tx: Tx<'T, 'E>) : Tx<'U, 'E> =
-        match tx with
-        | Pure v -> f v
-        | Effect run ->
-            Effect(fun rt ->
-                task {
-                    match! run rt with
-                    | Ok v -> return! run' rt (f v)
-                    | Error e -> return Error e
-                })
+    /// `body`, with what it throws that is a failure as that failure.
+    let guarded (rt: TxRuntime) (body: unit -> Task<Result<'T, TxFailure<'E>>>) : Task<Result<'T, TxFailure<'E>>> =
+        task {
+            try
+                return! body ()
+            with
+            | :? OperationCanceledException as ex -> return Err.rethrow ex
+            | Execution.MaterializationFailure m -> return Error(TxFailure.Failed(DbError.Materialization m))
+            | Translate.TranslationFailure t -> return Error(TxFailure.Failed(DbError.Translation t))
+            | ex ->
+                match rt.Session.Provider.Classify ex with
+                | Some f -> return Error(TxFailure.Failed(DbError.Database f))
+                | None -> return Err.rethrow ex
+        }
 
     let step (at: TxStep) (body: TxRuntime -> Task<Result<'T, TxFailure<'E>>>) : Tx<'T, 'E> =
         Effect(fun rt ->
             task {
-                let! outcome =
-                    task {
-                        try
-                            return! body rt
-                        with
-                        | :? OperationCanceledException as ex -> return Err.rethrow ex
-                        | Execution.MaterializationFailure m -> return Error(TxFailure.Failed(DbError.Materialization m))
-                        | Translate.TranslationFailure t -> return Error(TxFailure.Failed(DbError.Translation t))
-                        | ex ->
-                            match rt.Session.Provider.Classify ex with
-                            | Some f -> return Error(TxFailure.Failed(DbError.Database f))
-                            | None -> return Err.rethrow ex
-                    }
+                let! outcome = guarded rt (fun () -> body rt)
 
                 match outcome with
                 | Ok v ->
@@ -272,21 +263,62 @@ module internal TxCore =
                 | Error f -> return Error(at, f)
             })
 
+    /// A write on its own: its round trips, then its outcome.
+    let private alone (at: TxStep) (plan: TxRuntime -> Result<Execution.Round<Result<'T, TxFailure<'E>> option>, TxFailure<'E>>) =
+        step at (fun rt ->
+            task {
+                match plan rt with
+                | Error f -> return Error f
+                | Ok round ->
+                    match! Execution.Round.run rt.Session round with
+                    | Some outcome -> return outcome
+                    | None -> return invalidOp "a write's statements were not sent, and none failed"
+            })
+
+    let run' (rt: TxRuntime) (tx: Tx<'T, 'E>) =
+        match tx with
+        | Pure v -> Task.FromResult(Ok v)
+        | Effect f -> f rt
+        | Write(at, plan) ->
+            match alone at plan with
+            | Effect f -> f rt
+            | _ -> invalidOp "a step is an effect"
+
+    let bind (f: 'T -> Tx<'U, 'E>) (tx: Tx<'T, 'E>) : Tx<'U, 'E> =
+        match tx with
+        | Pure v -> f v
+        | _ ->
+            Effect(fun rt ->
+                task {
+                    match! run' rt tx with
+                    | Ok v -> return! run' rt (f v)
+                    | Error e -> return Error e
+                })
+
     let at (file: string) (line: int) (action: string) = { File = file; Line = line; Action = action }
 
     let write (at: TxStep) (cs: Changeset<'T>) : Tx<'T, 'E> =
-        step at (fun rt ->
-            task {
-                match! Writes.run rt.Model rt.Session cs.State with
-                | Ok v -> return Ok(unbox<'T> v)
-                | Error(Writes.Invalid s) ->
-                    let c = Changeset<'T>(s)
-                    return Error(TxFailure.InvalidChanges(typeof<'T>.Name, c.Errors))
-                | Error(Writes.Stale _) -> return Error(TxFailure.Conflict typeof<'T>.Name)
-                | Error(Writes.Failed f) -> return Error(TxFailure.Failed(DbError.Database f))
-                | Error(Writes.Unsupported op) ->
-                    return Error(TxFailure.Failed(DbError.Translation(TranslationError.UnsupportedByProvider(op, rt.Session.Provider.Dialect.Name))))
-            })
+        let failure (rt: TxRuntime) (f: Writes.Failure) : TxFailure<'E> =
+            match f with
+            | Writes.Invalid s -> TxFailure.InvalidChanges(typeof<'T>.Name, (Changeset<'T>(s)).Errors)
+            | Writes.Stale _ -> TxFailure.Conflict typeof<'T>.Name
+            | Writes.Failed f -> TxFailure.Failed(DbError.Database f)
+            | Writes.Unsupported op -> TxFailure.Failed(DbError.Translation(TranslationError.UnsupportedByProvider(op, rt.Session.Provider.Dialect.Name)))
+
+        Write(
+            at,
+            fun rt ->
+                match Writes.plan rt.Model rt.Session cs.State with
+                | Error f -> Error(failure rt f)
+                | Ok round ->
+                    Ok(
+                        round
+                        |> Execution.Round.map (function
+                            | Ok v -> Some(Ok(unbox<'T> v))
+                            | Error(Some f) -> Some(Error(failure rt f))
+                            | Error None -> None)
+                    )
+        )
 
     /// The rows of a query, inside the transaction.
     let rows (rt: TxRuntime) (query: Query<'T>) : Task<Result<'T list, TxFailure<'E>>> =
@@ -580,14 +612,70 @@ type Tx =
                     return Error(TxFailure.Misused m)
             })
 
-    /// Runs `f` for each item, in order.
+    /// Runs `f` for each item, in order. The items are independent, so when
+    /// each is one write their statements travel together, a round trip for
+    /// each level a write needs (round-trips.feature): every item is checked
+    /// first, and a failure is the first failed item's, the items before it
+    /// rolled back as if they had run one after another. An item of more than
+    /// one step runs after the one before it.
     static member traverse (f: 'a -> Tx<'b, 'E>) : 'a list -> Tx<'b list, 'E> =
-        let rec go acc items =
-            match items with
-            | [] -> Pure(List.rev acc)
-            | x :: rest -> f x |> TxCore.bind (fun v -> go (v :: acc) rest)
+        fun items ->
+            let txs = items |> List.map f
+            let writes = txs |> List.filter (function Write _ -> true | _ -> false)
+            let together = txs |> List.forall (function Pure _ | Write _ -> true | Effect _ -> false)
 
-        go []
+            if not together || writes.Length < 2 then
+                // One at a time, each item after the one before.
+                let rec chain acc (rest: Tx<'b, 'E> list) =
+                    match rest with
+                    | [] -> Pure(List.rev acc)
+                    | tx :: more -> tx |> TxCore.bind (fun v -> chain (v :: acc) more)
+
+                chain [] txs
+            else
+                Effect(fun rt ->
+                    task {
+                        // Every item is checked before anything is sent.
+                        let planned =
+                            txs
+                            |> List.map (function
+                                | Pure v -> Ok(None, Execution.Round.Done(Some(Ok v)))
+                                | Write(at, plan) -> plan rt |> Result.map (fun round -> Some at, round) |> Result.mapError (fun f -> at, f)
+                                | Effect _ -> invalidOp "only writes travel together")
+
+                        match planned |> List.tryPick (function Error e -> Some e | Ok _ -> None) with
+                        | Some(at, f) -> return Error(at, f)
+                        | None ->
+                            let steps = planned |> List.map (function Ok(at, _) -> at | Error _ -> None)
+                            let rounds = planned |> List.map (function Ok(_, round) -> round | Error _ -> Execution.Round.Done None)
+                            let first = steps |> List.pick id
+
+                            match! TxCore.guarded rt (fun () -> task { let! all = Execution.Round.run rt.Session (Execution.Round.all rounds) in return Ok all }) with
+                            | Error f -> return Error(first, f)
+                            | Ok outcomes ->
+                                let items = List.zip steps outcomes
+                                let failedAt = items |> List.tryFindIndex (fun (_, o) -> match o with Some(Error _) -> true | _ -> false)
+
+                                match failedAt with
+                                | Some i ->
+                                    // The items before it count as run, as one after another.
+                                    for at, _ in List.take i items do
+                                        at |> Option.iter rt.Completed.Add
+
+                                    match items.[i] with
+                                    | Some at, Some(Error f) -> return Error(at, f)
+                                    | _ -> return invalidOp "a failed item is a write"
+                                | None ->
+                                    let values =
+                                        [ for at, o in items ->
+                                              match o with
+                                              | Some(Ok v) ->
+                                                  at |> Option.iter rt.Completed.Add
+                                                  v
+                                              | _ -> invalidOp "a write's statements were not sent, and none failed" ]
+
+                                    return Ok values
+                    })
 
 type TxBuilder() =
     member _.Return(v: 'T) : Tx<'T, 'E> = Pure v

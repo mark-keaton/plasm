@@ -665,7 +665,7 @@ type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
         task {
             match tx with
             | Pure v -> return Ok v
-            | Effect _ ->
+            | _ ->
                 let mutable attempt = 0
                 let mutable outcome = None
                 let mutable waited = TimeSpan.Zero
