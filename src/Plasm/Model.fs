@@ -303,7 +303,10 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, registered:
               for f in s.Fields do
                   match f.References with
                   | Some target -> yield { Model = s.Type.Name; Field = f.Name; Target = target.Name }
-                  | None -> () ]
+                  | None -> ()
+
+                  for leaf in f.CaseReferences do
+                      yield { Model = s.Type.Name; Field = $"{f.Name}.{leaf.Name}"; Target = leaf.References.Value.Name } ]
 
     /// The record types this model can persist.
     member _.Types = schemas.Keys |> Seq.toList
@@ -1188,7 +1191,18 @@ module Model =
                 |> Array.map (fun f ->
                     match keysOf.TryGetValue f.ScalarType with
                     | true, target when f.Name <> s.Key.Name && not (defs.[t].NotReference.Contains f.Name) -> { f with References = Some target }
-                    | _ -> f)
+                    | _ ->
+                        // A typed id among a union's case fields references
+                        // its record too (union-references.feature).
+                        match f.Union with
+                        | Some u when not (defs.[t].NotReference.Contains f.Name) ->
+                            let refer (leaf: FieldMap) =
+                                match keysOf.TryGetValue leaf.ScalarType with
+                                | true, target -> { leaf with References = Some target }
+                                | _ -> leaf
+
+                            { f with Union = Some(u.MapLeaves refer) }
+                        | _ -> f)
 
             resolved.[t] <- { s with Fields = fields; Key = fields |> Array.find (fun f -> f.Name = s.Key.Name) }
 

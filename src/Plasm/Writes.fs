@@ -302,8 +302,11 @@ let private conventional (schema: SchemaInfo) (name: string) =
         let columns = if f.Composite then f.Parts |> List.map (fun p -> p.Name) |> String.concat "_" else f.Column
         let stem = $"{table}_{columns}"
 
+        // A union's case field that refers to a record is the union field's.
+        let caseReference = f.CaseReferences |> List.exists (fun l -> name = $"{table}_{l.Column}_fkey")
+
         if name = stem + "_key" then Some(f.Name, FieldErrorKind.UniqueConstraint name, "has already been taken")
-        elif name = stem + "_fkey" then Some(f.Name, FieldErrorKind.ForeignKeyConstraint name, "does not exist")
+        elif name = stem + "_fkey" || caseReference then Some(f.Name, FieldErrorKind.ForeignKeyConstraint name, "does not exist")
         elif name = stem + "_check" then Some(f.Name, FieldErrorKind.CheckConstraint name, "is invalid")
         else None)
 

@@ -33,6 +33,7 @@ Feature: Plasm prints the DDL its model expects
         | Invoices with their lines |
         | Cards linked to tags      |
         | Records named by keywords |
+        | Shelves lent to members   |
 
   Rule: It states the model's constraints by the names Plasm maps
 

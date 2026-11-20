@@ -357,6 +357,40 @@ module internal SchemaCheck =
                                 | None -> ()
                             | _ -> ()
 
+                    // A typed id among a union's case fields, in its own column
+                    // (union-references.feature).
+                    for f in sc.Fields do
+                        for leaf in f.CaseReferences do
+                            let label = $"{f.Name}.{leaf.Name}"
+
+                            match model.Schemas.TryGetValue leaf.References.Value with
+                            | true, target when columns |> List.exists (fun c -> c.Name = leaf.Column) ->
+                                if not (references |> List.contains ((sc.Table, leaf.Column), target.Table)) then
+                                    add
+                                        SchemaIssueKind.MissingReference
+                                        sc.Name
+                                        (Some label)
+                                        sc.Table
+                                        (Some leaf.Column)
+                                        $"{sc.Name}.{label} holds a {target.Name} key, but no foreign key references {target.Table}; add `references {target.Table}`"
+                                else
+                                    let holders =
+                                        referenceNames
+                                        |> List.filter (fun (k, _) -> k = ((sc.Table, leaf.Column), target.Table))
+                                        |> List.map (fun (_, n) -> n, true)
+
+                                    match misnamed holders $"{bare sc.Table}_{leaf.Column}_fkey" sc.Table with
+                                    | Some(actual, fix) ->
+                                        add
+                                            SchemaIssueKind.MisnamedConstraint
+                                            sc.Name
+                                            (Some label)
+                                            sc.Table
+                                            (Some leaf.Column)
+                                            $"{actual} holds the reference from {sc.Name}.{label} to {target.Table}, but a violation is mapped to the field by its default name; {fix}"
+                                    | None -> ()
+                            | _ -> ()
+
             for sc, a, j in joinTables do
                 let target = model.Schemas.[a.Target]
 
@@ -569,6 +603,11 @@ module internal Ddl =
 
                   for f in s.Fields do
                       yield! within f
+
+                      for leaf in f.CaseReferences do
+                          match byType.TryGetValue leaf.References.Value with
+                          | true, r -> yield s.Table, [ leaf.Column ], r
+                          | _ -> ()
 
                   for a in s.Assocs do
                       match a.Kind with

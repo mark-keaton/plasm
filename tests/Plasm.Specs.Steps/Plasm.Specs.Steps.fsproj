@@ -30,6 +30,7 @@
     <Compile Include="ConstraintSteps.fs" />
     <Compile Include="ConcurrencySteps.fs" />
     <Compile Include="UnionFieldSteps.fs" />
+    <Compile Include="UnionReferenceSteps.fs" />
     <Compile Include="OwnedSteps.fs" />
     <Compile Include="LinkedSteps.fs" />
     <Compile Include="ProviderSteps.fs" />

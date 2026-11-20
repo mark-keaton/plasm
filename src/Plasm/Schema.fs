@@ -367,6 +367,13 @@ type internal FieldMap =
     /// Stored in more than one column (a union with fields, or a value).
     member f.Composite = f.Union.IsSome || f.Value.IsSome
 
+    /// The case fields of a union field that hold another record's key, once
+    /// per column: each is a reference (union-references.feature).
+    member f.CaseReferences: FieldMap list =
+        match f.Union with
+        | Some u -> u.Leaves |> List.filter (fun l -> l.References.IsSome) |> List.distinctBy (fun l -> l.Column)
+        | None -> []
+
     /// Whether a column of Parts must hold a value (NOT NULL).
     member f.Requires(column: string) : bool =
         match f.Union, f.Value with
@@ -470,6 +477,29 @@ and internal UnionLayout =
             match values.TryGetValue c.Name with
             | true, v -> v
             | _ -> box DBNull.Value)
+
+    /// Every case field stored in a column of its own, a nested union's too.
+    member u.Leaves: FieldMap list =
+        u.Cases
+        |> Array.toList
+        |> List.collect (fun c ->
+            c.Parts
+            |> List.collect (function
+                | Leaf f -> [ f ]
+                | Nested(_, n) -> n.Leaves))
+
+    /// The layout with `change` made to every case field in a column.
+    member u.MapLeaves(change: FieldMap -> FieldMap) : UnionLayout =
+        { u with
+            Cases =
+                u.Cases
+                |> Array.map (fun c ->
+                    { c with
+                        Parts =
+                            c.Parts
+                            |> List.map (function
+                                | Leaf f -> Leaf(change f)
+                                | Nested(name, n) -> Nested(name, n.MapLeaves change)) }) }
 
     /// The columns a case stores values in (its case-name column excluded).
     member u.ColumnsOf(c: UnionCaseLayout) : string list =
