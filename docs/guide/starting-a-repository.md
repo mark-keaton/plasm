@@ -24,7 +24,10 @@ start-up, naming every one.
 ```
 
 `OnCommand` is called with each command sent: its SQL, its duration and its
-row count.
+row count. A transaction's own commands are reported too, BEGIN with its
+isolation level, COMMIT, ROLLBACK and a sandbox's savepoints, each with a
+`Kind` of `Begin`, `Commit` or `Rollback`; a statement's `Kind` is `Statement`,
+so count statements by that, not by their SQL.
 
 ## Turning a check down
 
