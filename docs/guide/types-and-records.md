@@ -58,13 +58,13 @@ keyed by several parts, and upserts keyed by such a key, each refused by name.
 
 ## Validated values
 
-A type with a `create` function is read back through it:
-`create: 'P -> Result<'T, string>`, a static member or a function in the
-type's module, where `'P` is the type it wraps (`int` here; `string | null`
-for text under nullable checking) and the error is a string. A `create` of
-another shape is refused when the model is built, saying why. A stored value
-the domain refuses is an error when it is read, never a value in your
-program.
+A type with a `create` function is read back through it. Plasm looks for one
+function: public, static, named `create`, on the type or in its same-named
+module, of exactly `'P -> Result<'T, string>`, where `'P` is the type it wraps
+(`int` here; `string | null` for text under nullable checking). One of
+another shape is refused when the model is built, saying why; a function by
+any other name, such as `tryCreate`, is not looked for. A stored value the
+domain refuses is an error when it is read, never a value in your program.
 
 <!-- from: examples/Plasm.Examples/Model.fs -->
 ```fsharp
