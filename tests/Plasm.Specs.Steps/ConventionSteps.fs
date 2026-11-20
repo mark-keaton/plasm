@@ -67,6 +67,64 @@ module Conventions =
     [<Table "doubled">]
     type Doubled = { Id: TicketId; Twice: Twice }
 
+    /// Why a grade is refused: an error of the domain's own, not a string.
+    type GradeError = | NotAGrade
+
+    type PrivateGrade =
+        private
+        | PrivateGrade of int
+
+        static member create(v: int) : Result<PrivateGrade, GradeError> =
+            if v > 0 then Ok(PrivateGrade v) else Error NotAGrade
+
+    type PublicGrade =
+        | PublicGrade of int
+
+        static member create(v: int) : Result<PublicGrade, GradeError> =
+            if v > 0 then Ok(PublicGrade v) else Error NotAGrade
+
+    [<Table "privately_graded">]
+    type PrivatelyGraded = { Id: TicketId; Grade: PrivateGrade }
+
+    [<Table "publicly_graded">]
+    type PubliclyGraded = { Id: TicketId; Grade: PublicGrade }
+
+    // Functions named create that Plasm cannot read a stored int through.
+    type TwoArgs =
+        private
+        | TwoArgs of int
+
+        static member create(v: int, _scale: int) : Result<TwoArgs, string> = Ok(TwoArgs v)
+
+    type FromText =
+        private
+        | FromText of int
+
+        static member create(text: string) : Result<FromText, string> = Ok(FromText(int text))
+
+    type Optional =
+        private
+        | Optional of int
+
+        static member create(v: int) : Optional option = if v > 0 then Some(Optional v) else None
+
+    type Plain =
+        | Plain of int
+
+        static member create(v: int) : Plain = Plain v
+
+    [<Table "two_args">]
+    type WithTwoArgs = { Id: TicketId; Value: TwoArgs }
+
+    [<Table "from_text">]
+    type WithFromText = { Id: TicketId; Value: FromText }
+
+    [<Table "optional">]
+    type WithOptional = { Id: TicketId; Value: Optional }
+
+    [<Table "plain">]
+    type WithPlain = { Id: TicketId; Value: Plain }
+
     let table =
         "drop table if exists tickets;
          create table tickets (
@@ -280,6 +338,23 @@ type ConventionSteps(w: World) =
     [<StepDefinition("I build a model of a record with a field of a private wrapper type without create")>]
     member _.BuildPrivate() =
         refusal (fun () -> Model.build [] [ typeof<Locked> ])
+
+    [<StepDefinition("^I build a model of a record with a field of a (private|public) wrapper type whose create returns another error$")>]
+    member _.BuildOtherError(representation: string) =
+        let t = if representation = "private" then typeof<PrivatelyGraded> else typeof<PubliclyGraded>
+        refusal (fun () -> Model.build [] [ t ])
+
+    [<StepDefinition("^I build a model of a record with a field of a wrapper type whose create (.*)$")>]
+    member _.BuildUnreadable(shape: string) =
+        let t =
+            match shape with
+            | "takes two arguments" -> typeof<WithTwoArgs>
+            | "takes a string, not int" -> typeof<WithFromText>
+            | "returns an option" -> typeof<WithOptional>
+            | "returns the type itself" -> typeof<WithPlain>
+            | other -> failwith $"no type for {other}"
+
+        refusal (fun () -> Model.build [] [ t ])
 
     [<StepDefinition("I build a model of a record with a field of a type with a create function in a member and in its module")>]
     member _.BuildTwice() =

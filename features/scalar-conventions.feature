@@ -49,6 +49,26 @@ Feature: Domain scalars are stored by convention
       When I build a model of a record with a field of a private wrapper type without create
       Then the model is refused for that field, saying the type has a private representation and no create function
 
+    Scenario Outline: A create function whose error is not a string is refused
+      When I build a model of a record with a field of a <representation> wrapper type whose create returns another error
+      Then the model is refused for that field, saying the type has a create function whose error is not a string
+
+      Examples:
+        | representation |
+        | private        |
+        | public         |
+
+    Scenario Outline: A create function Plasm cannot read through is refused
+      When I build a model of a record with a field of a wrapper type whose create <shape>
+      Then the model is refused for that field, saying the type has a create function Plasm cannot read through, because <why>
+
+      Examples:
+        | shape                    | why                          |
+        | takes two arguments      | it takes 2 arguments         |
+        | takes a string, not int  | its argument is a String     |
+        | returns an option        | it returns Optional option, not a Result |
+        | returns the type itself  | it returns Plain, not a Result           |
+
     Scenario: Two create functions for one type are refused
       When I build a model of a record with a field of a type with a create function in a member and in its module
       Then the model is refused for that field, saying the type has more than one create function

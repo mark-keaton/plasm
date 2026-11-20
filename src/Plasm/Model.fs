@@ -28,6 +28,49 @@ module internal Conventions =
 
         Array.append onType inModule
 
+    /// The functions named create on `t` or in its module that make a `t`
+    /// (a Result of it, an option or voption of it, or `t` itself) but are not
+    /// `'P -> Result<'T, string>`: each with why.
+    let private misfits (t: Type) (p: Type) =
+        let generic (m: MethodInfo) (definition: Type) =
+            m.ReturnType.IsGenericType
+            && m.ReturnType.GetGenericTypeDefinition() = definition
+            && m.ReturnType.GetGenericArguments().[0] = t
+
+        let isResult m = generic m typedefof<Result<_, _>>
+
+        let makesT (m: MethodInfo) =
+            m.Name = "create"
+            && (isResult m || generic m typedefof<option<_>> || generic m typedefof<voption<_>> || m.ReturnType = t)
+
+        let why (m: MethodInfo) =
+            let ps = m.GetParameters()
+
+            if not (isResult m) then
+                let made =
+                    if m.ReturnType = t then t.Name
+                    elif generic m typedefof<option<_>> then $"{t.Name} option"
+                    else $"{t.Name} voption"
+
+                Some $"it returns {made}, not a Result"
+            elif ps.Length <> 1 then
+                Some $"it takes {ps.Length} arguments"
+            elif ps.[0].ParameterType <> p then
+                Some $"its argument is a {ps.[0].ParameterType.Name}, not the stored {p.Name}"
+            else
+                let error = m.ReturnType.GetGenericArguments().[1]
+                if error <> typeof<string> then Some $"its error is a {error.Name}, not a string" else None
+
+        let found (ms: MethodInfo[]) =
+            ms |> Array.filter makesT |> Array.choose why
+
+        let inModule =
+            match t.Assembly.GetType(t.FullName + "Module") with
+            | null -> [||]
+            | m -> found (m.GetMethods(BindingFlags.Public ||| BindingFlags.Static))
+
+        Array.append (found (t.GetMethods(BindingFlags.Public ||| BindingFlags.Static))) inModule
+
     // Each conversion is compiled once per type, so a value read by convention
     // costs what a registered mapping costs (no reflection per value).
     type private X = System.Linq.Expressions.Expression
@@ -94,17 +137,27 @@ module internal Conventions =
               StoreType = None
               Description = description }
 
-        match creates t p with
-        | [| _, create |] ->
-            let create = compileCreate create p
-            Ok(mapping create.Invoke $"{t.Name} as {p.Name}, read through {t.Name}.create")
-        | [||] when u.Private ->
+        let found = creates t p
+        let misfit = misfits t p
+
+        if found.Length = 0 && misfit.Length > 0 then
+            let whys = String.concat "; " misfit
+            let kind = if misfit |> Array.exists (fun w -> w.StartsWith "its error") then "whose error is not a string" else "Plasm cannot read through"
+
             Error
-                $"type {t.Name} has a private representation and no create function, so Plasm cannot read it without bypassing the domain; give it `static member create: {p.Name} -> Result<{t.Name}, string>`, or register Scalar.tryWrap"
-        | [||] -> Ok(mapping (fun v -> Ok(case.Wrap v)) $"{t.Name} as {p.Name}, by convention")
-        | several ->
-            let names = several |> Array.map fst |> String.concat " and "
-            Error $"type {t.Name} has more than one create function ({names}); keep one, or register a mapping"
+                $"type {t.Name} has a create function {kind}, because {whys}; Plasm reads a stored value through `create: {p.Name} -> Result<{t.Name}, string>`, so give it that signature, or register a mapping"
+        else
+            match found with
+            | [| _, create |] ->
+                let create = compileCreate create p
+                Ok(mapping create.Invoke $"{t.Name} as {p.Name}, read through {t.Name}.create")
+            | [||] when u.Private ->
+                Error
+                    $"type {t.Name} has a private representation and no create function, so Plasm cannot read it without bypassing the domain; give it `static member create: {p.Name} -> Result<{t.Name}, string>`, or register Scalar.tryWrap"
+            | [||] -> Ok(mapping (fun v -> Ok(case.Wrap v)) $"{t.Name} as {p.Name}, by convention")
+            | several ->
+                let names = several |> Array.map fst |> String.concat " and "
+                Error $"type {t.Name} has more than one create function ({names}); keep one, or register a mapping"
 
     /// The mapping `t` gets by convention: Some(Ok) for a single-case union over
     /// a built-in type or a fieldless union, Some(Error) for one Plasm must not
