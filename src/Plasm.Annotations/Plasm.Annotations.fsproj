@@ -6,8 +6,9 @@
   <ItemGroup>
     <Compile Include="Annotations.fs" />
   </ItemGroup>
-  <!-- Fable compiles F# sources, not assemblies: the package carries them in fable/. -->
+  <!-- Fable compiles F# sources, not assemblies: the package carries them in
+       fable/, and not what a build writes under obj/ and bin/. -->
   <ItemGroup>
-    <Content Include="*.fsproj; **/*.fs" PackagePath="fable/" />
+    <Content Include="*.fsproj; **/*.fs" Exclude="obj/**; bin/**" PackagePath="fable/" />
   </ItemGroup>
 </Project>

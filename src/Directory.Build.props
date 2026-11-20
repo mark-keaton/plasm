@@ -28,6 +28,8 @@
 
   <ItemGroup>
     <PackageReference Include="FSharp.Core" VersionOverride="$(PlasmFSharpCoreFloor)" />
-    <None Include="$(MSBuildThisFileDirectory)../README.md" Pack="true" PackagePath="/" Visible="false" />
+    <!-- The repository's README links relative paths, which lead nowhere on
+         nuget.org; the packages carry their own, with absolute links. -->
+    <None Include="$(MSBuildThisFileDirectory)PACKAGE.md" Pack="true" PackagePath="/README.md" Visible="false" />
   </ItemGroup>
 </Project>
