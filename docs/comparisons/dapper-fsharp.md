@@ -115,7 +115,7 @@ Roughly, MSSQL and PostgreSQL get the most attention. All four cover the same ba
 - **Near-zero abstraction:** no model to declare; any record (including anonymous records and view records) maps by name. Ad-hoc reads need no setup beyond `table<T>`.
 - **Seamless fallback to plain Dapper** via `Deconstructor` (`sql, Map<string,obj>`), with your own `IDbConnection` / `IDbTransaction` usable everywhere.
 - **Plain ADO.NET transactions:** any connection or transaction, including one shared with other libraries, works without an adapter. Plasm deliberately hides the connection and transaction (only `TxContext.CreateCommand()`).
-- **MSSQL `OUTPUT` / PG `RETURNING` on update and delete** (`UpdateOutputAsync`, `DeleteOutputAsync`). Plasm lists `RETURNING` from bulk updates as not built.
+- **MSSQL `OUTPUT` / PG `RETURNING` on update and delete** (`UpdateOutputAsync`, `DeleteOutputAsync`). Plasm has both since: `Bulk.updateReturning` and `Bulk.deleteReturning`, PostgreSQL only.
 - MSSQL query hints.
 - **Lower per-query overhead** is likely (a thin reflection-based generator over Dapper). *Unverified, no benchmark run.*
 

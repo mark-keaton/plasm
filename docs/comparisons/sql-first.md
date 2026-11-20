@@ -98,6 +98,6 @@ A generic ADO.NET wrapper for any provider: `conn |> Db.newCommand sql |> Db.set
 ### Takeaways for Plasm (candidate feature files)
 
 1. ~~Native PostgreSQL enum columns~~ (done as `Scalar.asPgEnum`): `Scalar.pgEnum "order_status" [ ... ]`, sending `DataTypeName` and accepting `USER-DEFINED` in `CheckSchema`. No library here does this for F# unions.
-2. An optional check of `repo.Sql` text: a `CheckSchema`-time or test-time "describe" of registered raw queries against the live database (PostgreSQL can describe a prepared statement without running it). That would close most of the gap with Facil and the analyzer without code generation.
+2. An optional check of `repo.Sql` text: a `CheckSchema`-time or test-time "describe" of registered raw queries against the live database (PostgreSQL can describe a prepared statement without running it). That would close most of the gap with Facil and the analyzer without code generation. Since built: `Repo.Start` has the database describe every module-level query, bulk write and hand-written statement, parsed and not run (`features/statement-check.feature`).
 3. Streaming (`IAsyncEnumerable`) for `repo.Sql`, and for `repo.All` over records that own nothing.
 4. A per-hole type override in interpolated SQL (e.g. `{Sql.typed "jsonb" v}`) for PostgreSQL types the model does not map.

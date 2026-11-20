@@ -102,18 +102,19 @@ In rough order of importance for teams leaving EF Core:
    table is stored in its owner's row (a value, like EF Core's complex types).
    A field marked `[<Json>]` is one jsonb document, and a list of scalars one
    array column. A key of several fields is a record of them, with
-   references, owned lists, upserts and linked lists by it. No inheritance, or keyless and view entities.
+   references, owned lists, upserts and linked lists by it. No inheritance, or keyless and view
+   entities.
    A join table cannot carry columns of its own.
-5. **Querying.** No set operations, no subquery in a `select`, no right,
-   full or non-equi joins, no streaming, a fixed set of translated functions,
+5. **Querying.** No subquery in a `select`, no right, full or non-equi
+   joins, no streaming, a fixed set of translated functions,
    and raw SQL that cannot be composed further. A result can hold nested
    lists: a `let!` load binds a list to each record, with its own `where`,
    order and `take` per record.
 6. **Writing.** Only what an aggregate owns or links is written with it;
    another aggregate is written by its own transaction step, and there is no
-   unit of work across arbitrary records. Bulk updates have no `RETURNING`.
-7. **Operations.** No OpenTelemetry, interceptors or connection resiliency
-   beyond a transaction retry policy.
+   unit of work across arbitrary records.
+7. **Operations.** No interceptors or connection resiliency beyond a
+   transaction retry policy.
 8. **Maturity.** No releases or users yet.
 
 ## Native AOT

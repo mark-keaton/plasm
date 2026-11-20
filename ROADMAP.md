@@ -24,9 +24,10 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 ## Shipped
 
 - Stored records by convention, owned and linked lists, unions with fields, array columns, composite keys
-- Typed queries: joins, grouping, exists, prepared queries, hand-written SQL
-- Typed transactions with optimistic concurrency: a record read as the caller saw it, a stale copy refused at the read
-- Start-up checks of every query and of the schema
+- Typed queries: joins, grouping, exists, set operations, window functions, filtered aggregates, prepared queries, hand-written SQL
+- Typed transactions with optimistic concurrency: a record read as the caller saw it, a stale copy refused at the read; row locks, and a step that may fail under a savepoint
+- Start-up checks of every query and of the schema, every statement described by the database before any runs
+- Each command as an OpenTelemetry activity
 - Native AOT, with a Lambda function in F# and one in C# over F#
 - Plasm.HotChocolate: filters, order, paging, selection, a page per parent
 - The Kanban reference application and its C# host

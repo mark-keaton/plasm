@@ -195,11 +195,11 @@ ctx.CommitTransaction()          // failwith "No transaction was started." if no
 
 - `Tx.update (original, changed)` writes only the columns that differ; no validation layer either (the domain's constructors validate).
 - Optimistic concurrency by a version column or by the original record's columns (`TxFailure.Conflict`).
-- `transaction { }` values with typed steps, `RetryPolicy` for serialisation failures, and savepoints in sandboxes.
+- `transaction { }` values with typed steps, `RetryPolicy` for serialisation failures, a savepoint around one step with `Tx.attempt`, and savepoints in sandboxes.
 - `Bulk.insert` split above 65,000 parameters in one transaction.
 - `Bulk.update`/`delete`/`upsert`/`insertMissing`.
 - Owned rows written with their owner by difference, and links as the new set.
-- Plasm lacks `RETURNING` from bulk updates, `INSERT ... SELECT`, and `UPDATE ... FROM`. SqlHydra has `returning` on update and delete, and `fromSelect`.
+- Plasm lacks `INSERT ... SELECT` and `UPDATE ... FROM`; SqlHydra has `fromSelect`. Both return rows from an update or delete: SqlHydra with `returning`, Plasm with `Bulk.updateReturning` and `Bulk.deleteReturning`.
 
 ## 5. Schema and migrations
 
@@ -328,7 +328,6 @@ That is three major versions in about nine months. It is active, but expect brea
   - lateral joins
   - predicate joins with arbitrary AND/OR (`join'`/`on'`)
   - `INSERT ... SELECT`
-  - `RETURNING` on update and delete
   - SQL Server `OUTPUT`
   - `nullsFirst`/`nullsLast`
   - per-query `timeout`

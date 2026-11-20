@@ -168,7 +168,7 @@ Download counts per package (`SQLProvider.Oracle` 8,659, `.Firebird` 8,694, `.Du
 - **Stored procedures and functions** as typed members, including refcursors and multiple result sets (`programmability.fsx`, sproc fixes #877/#878). Plasm has `repo.Sql` only **[unverified whether Plasm calls functions beyond raw SQL]**.
 - **Views and materialized views** typed automatically. Composite keys are at least representable (entity per table) **[unverified for writes]**. Plasm has composite keys (`features/composite-keys.feature`) and no views.
 - **A mock data context** for testing query logic without a database.
-- **Row locking** (`Seq.lockForUpdate`, 1.5.31) across five databases; Plasm has a `RowLocking` capability flag **[unverified whether Plasm exposes FOR UPDATE to users]**.
+- **Row locking** (`Seq.lockForUpdate`, 1.5.31) across five databases; Plasm locks on PostgreSQL only: `locking RowLock.ForUpdate` and the other three strengths, waiting, `NoWait` or `SkipLocked`, read only inside a transaction (`features/row-locks.feature`).
 - **Maturity**: about 11 years, ~918k downloads, a responsive maintainer, and fixes shipped within days.
 - Set unions, `groupJoin` and sub-queries in more positions through LINQ **[doc]**. Of these Plasm has only `exists` over a correlated query; it has `selectDistinct`.
 

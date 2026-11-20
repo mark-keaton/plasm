@@ -306,7 +306,7 @@ The gap list for an EF Core replacement. Plasm status is from `docs/status.md` (
 3. Reverse engineering of a whole database into a context, with relationships (`dotnet ef dbcontext scaffold`; EFCore.FSharp emits F#). Plasm's `Scaffold` does one table and no relationships.
 4. Compiled models (startup), DbContext pooling, `AddDbContext`/`AddDbContextFactory` DI integration, health checks. The compiled model is also half of EF Core's Native AOT path, with precompiled queries, which its documentation calls "highly experimental" and "not yet suited for production use" ([NativeAOT Support and Precompiled Queries (Experimental)](https://learn.microsoft.com/en-us/ef/core/performance/nativeaot-and-precompiled-queries), read 2026-11-19).
 5. Ecosystem built on `IQueryable` and DbContext: ASP.NET Core Identity stores, OData, HotChocolate GraphQL projections and filtering, Aspire integration, EF Core Power Tools, many books and Stack Overflow answers.
-6. Logging through `ILogger`, `EnableSensitiveDataLogging`, `TagWith` query tags, event IDs, `DiagnosticSource` and OpenTelemetry-friendly instrumentation, interceptors for commands, connections, transactions, `SaveChanges` and materialisation. Plasm has a diagnostics callback only; OpenTelemetry is listed as a next step.
+6. Logging through `ILogger`, `EnableSensitiveDataLogging`, `TagWith` query tags, event IDs, `DiagnosticSource` and OpenTelemetry-friendly instrumentation, interceptors for commands, connections, transactions, `SaveChanges` and materialisation. Plasm has a diagnostics callback, `OnCommand`, and the same events as activities of the ActivitySource "Plasm", tagged by OpenTelemetry's database conventions (`features/activities.feature`); it has no interceptors.
 7. Transient-fault execution strategies (connection resiliency). Plasm has only an opt-in `RetryPolicy` for transactions.
 
 **Modelling**
@@ -328,7 +328,7 @@ The gap list for an EF Core replacement. Plasm status is from `docs/status.md` (
 18. Index, constraint, collation and comment declarations in the model (feeding migrations).
 
 **Querying**
-19. Set operations (`Union`, `Concat`, `Except`, `Intersect`) and `Distinct`. Subqueries in projections, including **nested collections projected into DTOs** (`Select(fun o -> {| o.Id; Lines = o.Lines.Select(...) |})`). `GroupBy` final operator. `MaxBy`/`MinBy` (EF 11). Right and full joins (EF 10 and 11 operators). Non-equi joins, `SelectMany`, correlated subqueries. Of these Plasm has `selectDistinct`, `exists` over a correlated query, and nested lists in a result through `let!` loads; the rest it lacks.
+19. Set operations (`Union`, `Concat`, `Except`, `Intersect`) and `Distinct`. Subqueries in projections, including **nested collections projected into DTOs** (`Select(fun o -> {| o.Id; Lines = o.Lines.Select(...) |})`). `GroupBy` final operator. `MaxBy`/`MinBy` (EF 11). Right and full joins (EF 10 and 11 operators). Non-equi joins, `SelectMany`, correlated subqueries. Of these Plasm has `Query.union`, `unionAll`, `intersect` and `except` (`features/set-operations.feature`), `selectDistinct`, `exists` over a correlated query, and nested lists in a result through `let!` loads; the rest it lacks.
 20. Eager loading combined with joins and projections. A choice of single-query JOIN loading or split loading, per query or globally. Plasm always batches, always loads what a record owns, and lets no query choose what to load.
 21. Identity resolution (`AsNoTrackingWithIdentityResolution`, the tracked identity map).
 22. Lazy loading (proxies, `ILazyLoader`), explicit loading through `Entry`.
@@ -339,9 +339,9 @@ The gap list for an EF Core replacement. Plasm status is from `docs/status.md` (
 **Writing**
 26. A unit of work across arbitrary entity types in one `SaveChanges`, with statement batching, FK fix-up, and graph inserts or updates at any depth. That covers belongs-to and has-one writes and nested children. Plasm writes an aggregate with what it owns and links; another aggregate is written by its own step.
 27. Cascade delete and delete-orphans configuration, and `DeleteBehavior` in the model and the DDL.
-28. Bulk `ExecuteUpdate`/`ExecuteDelete` over navigations or joins (`UPDATE ... FROM`). Plasm's bulk writes reject joins and lack `RETURNING` from bulk updates.
+28. Bulk `ExecuteUpdate`/`ExecuteDelete` over navigations or joins (`UPDATE ... FROM`). Plasm's bulk writes reject joins; `Bulk.updateReturning` and `Bulk.deleteReturning` give back the rows written (`features/bulk-writes.feature`).
 29. Conflict-resolution APIs (`GetDatabaseValues`, `Reload`, `OriginalValues`), `SaveChanges` events and interceptors (auditing).
-30. Ambient and distributed transactions (`TransactionScope`), savepoints exposed (`CreateSavepoint`), sharing a connection or transaction with ADO.NET or Dapper (`UseTransaction`). Plasm hides the transaction inside `Tx.run`.
+30. Ambient and distributed transactions (`TransactionScope`), savepoints exposed (`CreateSavepoint`), sharing a connection or transaction with ADO.NET or Dapper (`UseTransaction`). Plasm hides the transaction inside `Tx.run`; `Tx.attempt` runs one step under a savepoint (`features/tx-attempt.feature`).
 
 **Testing**
 31. Swappable in-memory and SQLite providers for tests. Plasm's `Sandbox` is real-database only, which is arguably better but is a different choice.
