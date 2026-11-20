@@ -74,7 +74,9 @@ Feature: Transactions are typed, and their steps need no names
     its key and the version it was read at. A change made from a copy a caller
     saw earlier, such as one that came back from a client, reads the record
     with `Tx.oneAsSeen (query, seen)`: the record as stored, if its version is
-    still `seen`, so a stale caller is told so before anything is decided.
+    still `seen`, so a stale caller is told so before anything is decided. The
+    version is checked on the record's own row, before what it owns is read, so
+    a stale copy costs one SELECT.
 
     Scenario: Inserting a record gives it back with its key
       When a transaction inserts the Customer "Ada" as a record
@@ -95,6 +97,12 @@ Feature: Transactions are typed, and their steps need no names
       Given a draft Order whose version is 2
       When a transaction reads that Order as seen at version 1 and would then refuse the change
       Then the failure is a conflict, and the Order is unchanged
+
+    Scenario: A stale copy is refused in one SELECT
+      Given a draft Order whose version is 2
+      When a transaction reads that Order as seen at version 1, counting what it sends
+      Then the failure is a conflict, and the Order is unchanged
+      And the read sent one SELECT, of the Order's own row, and none of its Lines
 
     Scenario: A change landing between the read and the write is stale
       Given a draft Order whose version is 2

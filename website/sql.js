@@ -298,13 +298,6 @@ window.PLASM_SQL = {
         ],
         "rows": 1,
         "sql": "SELECT \u0022o\u0022.\u0022id\u0022, \u0022o\u0022.\u0022customer_id\u0022, \u0022o\u0022.\u0022status\u0022, \u0022o\u0022.\u0022status_reason\u0022, \u0022o\u0022.\u0022total\u0022, \u0022o\u0022.\u0022placed_at\u0022, \u0022o\u0022.\u0022version\u0022\nFROM \u0022orders\u0022 AS \u0022o\u0022\nWHERE \u0022o\u0022.\u0022id\u0022 = @p0\nLIMIT 2"
-      },
-      {
-        "parameters": [
-          "@p0 = [1]"
-        ],
-        "rows": 1,
-        "sql": "SELECT \u0022order_lines\u0022.\u0022id\u0022, \u0022order_lines\u0022.\u0022order_id\u0022, \u0022order_lines\u0022.\u0022product_id\u0022, \u0022order_lines\u0022.\u0022quantity\u0022, \u0022order_lines\u0022.\u0022unit_price\u0022\nFROM \u0022order_lines\u0022\nWHERE \u0022order_lines\u0022.\u0022order_id\u0022 = ANY(@p0)\nORDER BY \u0022order_lines\u0022.\u0022id\u0022"
       }
     ],
     "empty": "isLucky o.Total: no command was sent; translation failed first.",

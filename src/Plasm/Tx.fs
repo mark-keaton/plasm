@@ -520,6 +520,21 @@ type Tx =
                             TxFailure.Misused
                                 $"{typeof<'T>.Name} has no version field, so there is no version a caller saw to check; read it with Tx.one, and the update made from it checks every column it was read with"
                         )
+                | Ok schema when query.Def.Joins.IsEmpty ->
+                    // The version is checked on the row as read, before what the
+                    // record owns is loaded: a stale copy costs one SELECT.
+                    let v = schema.Version.Value
+                    let limited = Query<'T>(OneRow.limit rt.Model query.Def)
+                    let session = { rt.Session with Args = limited.Def.Args }
+
+                    match Planner.plan session.Provider.Dialect rt.Model limited.Def with
+                    | Error e -> return Error(TxFailure.Failed(DbError.Translation e))
+                    | Ok plan ->
+                        match! Execution.readRootIf session plan (fun rows -> rows.Count <> 1 || unbox<int> rows.[0].[v.Index] = seen) with
+                        | None -> return Error(TxFailure.Conflict typeof<'T>.Name)
+                        | Some [] -> return Ok None
+                        | Some [ row ] -> return Ok(Some(unbox<'T> row))
+                        | Some _ -> return Error(TxFailure.Failed DbError.MoreThanOneRow)
                 | found ->
                     let limited = Query<'T>(OneRow.limit rt.Model query.Def)
 

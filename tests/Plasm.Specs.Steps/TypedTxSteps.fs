@@ -281,6 +281,27 @@ let readBack (name: string) : Tx<Customer option, string> =
         )
         |> unit
 
+    [<StepDefinition("^a transaction reads that Order as seen at version (\\d+), counting what it sends$")>]
+    member _.ReadStaleCounted(seen: int) =
+        let o = w.Get<Order> "order"
+        w.MarkCommands()
+
+        task {
+            let! _ = transact (Tx.oneAsSeen (plasm { for x in tableOf<Order> do where (x.Id = o.Id) }, seen) |> Tx.orReject (Missing "order"))
+            // What the transaction sent, before later steps read the Order.
+            w.Set("sentByRead", w.CommandsSinceMark)
+        }
+        |> unit
+
+    [<StepDefinition("the read sent one SELECT, of the Order's own row, and none of its Lines")>]
+    member _.OneSelect() =
+        let selects =
+            w.Get<CommandEvent list> "sentByRead" |> List.filter (fun c -> c.Kind = CommandKind.Statement && c.Sql.StartsWith "SELECT")
+
+        match selects with
+        | [ c ] -> check (c.Sql.Contains "FROM \"orders\"" && not (c.Sql.Contains "order_lines")) c.Sql
+        | other -> failwithf "expected one SELECT, got %A" (other |> List.map (fun c -> c.Sql))
+
     [<StepDefinition("the failure is a conflict, and the Order is unchanged")>]
     member _.ConflictUnchanged() =
         task {

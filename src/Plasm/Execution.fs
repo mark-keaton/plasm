@@ -774,6 +774,18 @@ let readRoot (s: Session) (plan: Planner.Plan) : Task<obj list> =
     |> Round.bind (fun rows -> loads s rows plan.Loads |> Round.map (fun () -> rows |> Seq.map plan.RootSchema.Shape.Construct |> List.ofSeq))
     |> Round.run s
 
+/// The root's rows, and then their loads only when `proceed` accepts the rows
+/// as read (their fields' values, before what they own is read); None when it
+/// does not, and nothing more is sent (typed-transactions.feature).
+let readRootIf (s: Session) (plan: Planner.Plan) (proceed: IReadOnlyList<obj[]> -> bool) : Task<obj list option> =
+    Round.rows s (Sql.renderSelect s.Provider.Dialect plan.Root) (readEntity plan.RootSchema)
+    |> Round.bind (fun rows ->
+        if proceed rows then
+            loads s rows plan.Loads |> Round.map (fun () -> Some(rows |> Seq.map plan.RootSchema.Shape.Construct |> List.ofSeq))
+        else
+            Done None)
+    |> Round.run s
+
 /// The lists a record owns or links, for records read as field values (a
 /// join's or hand-written SQL's rows): loaded as a query of the records loads
 /// them, one batched command per list (owned-collections.feature).
