@@ -1,4 +1,4 @@
-# Lesson 15 of the Plasm Koans. Each row is one koan: what the learner discovers,
+# Lesson 16 of the Plasm Koans. Each row is one koan: what the learner discovers,
 # and the acceptance scenario of Plasm it teaches (feature: scenario).
 Feature: About aggregates and grouping
   Aggregates are typed values computed in the database; grouping summarises without transferring rows.

@@ -88,7 +88,7 @@ let lesson =
                       // Every koan runs in a sandbox: a transaction that is rolled
                       // back when the koan ends. Inside it, changes are real.
                       // (repo.Transact runs a transaction, and Tx.insert is a step
-                      // that inserts a record; lessons 11 and 13 explain them.)
+                      // that inserts a record; lessons 10 and 13 explain them.)
                       let addDan: Tx<Customer, unit> = Tx.insert (New.customer "Dan" "dan@example.com")
                       let! _ = repo.Transact addDan
                       let! customers = repo.Count(Query.from (tableOf<Customer>))

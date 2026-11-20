@@ -1,5 +1,5 @@
-/// Lesson 18: About hand-written SQL.
-module Plasm.Koans.Lessons.L18_HandWrittenSql
+/// Lesson 19: About hand-written SQL.
+module Plasm.Koans.Lessons.L19_HandWrittenSql
 
 open Plasm
 open Plasm.Koans

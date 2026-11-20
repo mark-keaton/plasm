@@ -79,7 +79,7 @@ let main argv =
 
     let commands = ResizeArray<CommandEvent>()
 
-    // The koans' own queries include ones Plasm refuses on purpose (lesson 21
+    // The koans' own queries include ones Plasm refuses on purpose (lesson 22
     // checks them), so the course's repository is written as unchecked.
     let repo =
         Repo

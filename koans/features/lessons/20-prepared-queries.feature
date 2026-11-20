@@ -1,4 +1,4 @@
-# Lesson 19 of the Plasm Koans. Each row is one koan: what the learner discovers,
+# Lesson 20 of the Plasm Koans. Each row is one koan: what the learner discovers,
 # and the acceptance scenario of Plasm it teaches (feature: scenario).
 # Caveat: there are no prepared projections yet.
 Feature: About prepared queries

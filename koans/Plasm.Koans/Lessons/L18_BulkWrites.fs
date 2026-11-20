@@ -1,5 +1,5 @@
-/// Lesson 17: About bulk writes.
-module Plasm.Koans.Lessons.L17_BulkWrites
+/// Lesson 18: About bulk writes.
+module Plasm.Koans.Lessons.L18_BulkWrites
 
 open Plasm
 open Plasm.Koans

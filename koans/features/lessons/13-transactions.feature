@@ -3,7 +3,7 @@
 Feature: About transactions
   A transaction is a value made of steps, of type Tx<'T, 'E>: it gives a 'T, or fails with a rejection of its own error type 'E. Running it is explicit; it reads and writes inside one database transaction; the domain decides and the transaction writes what it decided; a failure says where its step is written; retries are opt-in.
 
-  Prerequisites: lesson 11.
+  Prerequisites: lesson 10.
 
   Background:
     Given the koans database with its starting data

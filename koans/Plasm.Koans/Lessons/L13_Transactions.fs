@@ -139,7 +139,8 @@ let lesson =
                       // A failure gives the step that failed: what it did (Action), and
                       // where it is written (File and Line), so steps need no names.
                       // Action is a text: the step's verb and its record type, as
-                      // "update Product" is for a Tx.update of a product.
+                      // "update Product" is for a Tx.update of a product. RolledBack lists
+                      // the steps that ran before it, each undone.
                       e.Step.Action |> shouldBe __
                       e.RolledBack |> List.map (fun s -> s.Action) |> shouldBe __
                       let! n = customers repo

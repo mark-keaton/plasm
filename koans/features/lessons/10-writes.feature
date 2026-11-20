@@ -1,9 +1,9 @@
-# Lesson 11 of the Plasm Koans. Each row is one koan: what the learner discovers,
+# Lesson 10 of the Plasm Koans. Each row is one koan: what the learner discovers,
 # and the acceptance scenario of Plasm it teaches (feature: scenario).
 Feature: About writes
   Every write is a step of a transaction: Tx.insert, Tx.update and Tx.delete take the records themselves, and repo.Transact runs them. An update writes only what differs from the record read, and refuses a change made from a stale copy.
 
-  Prerequisites: lesson 10.
+  Prerequisites: lesson 08.
 
   Background:
     Given the koans database with its starting data

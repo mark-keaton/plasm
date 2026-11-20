@@ -1,5 +1,5 @@
-/// Lesson 21: About testing with Plasm.
-module Plasm.Koans.Lessons.L21_TestingWithPlasm
+/// Lesson 22: About testing with Plasm.
+module Plasm.Koans.Lessons.L22_TestingWithPlasm
 
 open Plasm
 open Plasm.Koans

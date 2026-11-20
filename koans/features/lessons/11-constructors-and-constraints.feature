@@ -1,9 +1,9 @@
-# Lesson 10 of the Plasm Koans. Each row is one koan: what the learner discovers,
+# Lesson 11 of the Plasm Koans. Each row is one koan: what the learner discovers,
 # and the acceptance scenario of Plasm it teaches (feature: scenario).
 Feature: About constructors and constraints
   Plasm validates no input. What a value may be is the domain's: its constructors (create) refuse bad input, and Plasm reads stored values back through them. What the data may be is the database's: a constraint with PostgreSQL's default name comes back as that field's error, and any other as a database failure.
 
-  Prerequisites: lesson 08.
+  Prerequisites: lesson 10.
 
   Background:
     Given the koans database with its starting data

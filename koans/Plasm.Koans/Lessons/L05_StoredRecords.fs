@@ -98,7 +98,7 @@ let lesson =
                       // 'draft', Published as 'published', and so on. Nothing registers it.
                       // Here the status column of Order 2 is changed with SQL, as text.
                       // (Tx.executeSql is a step running SQL, in a transaction that
-                      // repo.Transact runs; lesson 18 goes deeper. The change is made
+                      // repo.Transact runs; lesson 19 goes deeper. The change is made
                       // in this koan's sandbox and vanishes when it ends.)
                       let cancel: Tx<int, unit> = Tx.executeSql $"update orders set status = 'cancelled', cancellation_reason = 'test' where id = 2"
                       let! _ = repo.Transact cancel
@@ -130,7 +130,8 @@ let lesson =
                       Quantity.create 0 |> Result.isOk |> shouldBe __
 
                       // Plasm reads a Quantity back through Quantity.create, so a zero
-                      // stored in the database is refused on the way in, with its field named.
+                      // stored in the database is refused on the way in, with its field named:
+                      // DbError.Materialization, a row Plasm could not make into the record.
                       let zero: Tx<int, unit> = Tx.executeSql $"update order_lines set quantity = 0 where id = 1"
                       let! _ = repo.Transact zero
                       let! lines = repo.All(Query.from (tableOf<OrderLine>))

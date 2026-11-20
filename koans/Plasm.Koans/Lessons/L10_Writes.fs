@@ -1,5 +1,5 @@
-/// Lesson 11: About writes.
-module Plasm.Koans.Lessons.L11_Writes
+/// Lesson 10: About writes.
+module Plasm.Koans.Lessons.L10_Writes
 
 open Plasm
 open Plasm.Koans

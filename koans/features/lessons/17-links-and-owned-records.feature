@@ -1,4 +1,4 @@
-# Lesson 16 of the Plasm Koans. Each row is one koan: what the learner discovers,
+# Lesson 17 of the Plasm Koans. Each row is one koan: what the learner discovers,
 # and the acceptance scenario of Plasm it teaches (feature: scenario).
 Feature: About links and owned records
   An article links to shared tags through a join table: its Tags are read with it, and writing the article writes only its links. An account owns at most one profile, its own row, read and written with it as an option.

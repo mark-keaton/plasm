@@ -3,7 +3,7 @@
 Feature: About writing an aggregate
   An aggregate is written whole, as it is read: inserting an order inserts its lines, an update from an order read writes the difference by key (new lines inserted, changed ones updated, missing ones deleted), and deleting an order deletes its lines. A line's error is the order's.
 
-  Prerequisites: lesson 11, lesson 09.
+  Prerequisites: lesson 10, lesson 09.
 
   Background:
     Given the koans database with its starting data

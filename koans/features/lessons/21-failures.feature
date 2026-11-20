@@ -1,9 +1,9 @@
-# Lesson 20 of the Plasm Koans. Each row is one koan: what the learner discovers,
+# Lesson 21 of the Plasm Koans. Each row is one koan: what the learner discovers,
 # and the acceptance scenario of Plasm it teaches (feature: scenario).
 Feature: About failures
   Expected failures are values you can match on; Plasm's error cases are always qualified, so your domain keeps its own names.
 
-  Prerequisites: lesson 11, lesson 13.
+  Prerequisites: lesson 10, lesson 13.
 
   Background:
     Given the koans database with its starting data

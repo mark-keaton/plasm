@@ -61,35 +61,43 @@ the reference application in the same style.
 | 06 | Query values | A query is a value: `Query.from`, `plasm { }`, composing, captured values as parameters. |
 | 07 | Filters and ordering | `where` and `orderBy` with F#'s meaning, including options and negation. |
 | 08 | Reading | `All`, `One`, `Count`, `Exists`, and where the database work ends. |
-| 09 | Aggregates and references | An order is read with its lines, in one more command for any number of orders; filtering by the lines with `List.exists` and `List.forall`; a customer referred to by id and reached with a query or a join; `exists` over another aggregate; a second prepared query for a page of orders. |
+| 09 | Aggregates and references | An order is read with its lines, in one more command for any number of orders; filtering by the lines with `List.exists` and `List.forall`; a page of orders reads only its own lines; a customer referred to by id and reached with a query or a join; `exists` over another aggregate. |
 
 ### Part 3: writing (lessons 10 to 13)
 
 | # | Lesson | What it is for |
 |---|---|---|
-| 10 | Constructors and constraints | Plasm validates no input: the domain's constructors (`Email.create`) do, and stored values are read back through them. A duplicate, a missing reference or a broken check comes back as the field's error, by the constraint's default name; any other constraint is a database failure. |
-| 11 | Writes | Every write is a transaction step: `Tx.insert`, `Tx.update (original, changed)`, `Tx.delete`, run by `repo.Transact`. Only what differs is written; a stale copy is a `Conflict`, checked by version or, without one, by every column; `Tx.oneAsSeen` for a caller's copy. |
+| 10 | Writes | Every write is a transaction step: `Tx.insert`, `Tx.update (original, changed)`, `Tx.delete`, run by `repo.Transact`. Only what differs is written; a stale copy is a `TxFailure.Conflict`, checked by version or, without one, by every column; `Tx.oneAsSeen` for a caller's copy. |
+| 11 | Constructors and constraints | Plasm validates no input: the domain's constructors (`Email.create`) do, and stored values are read back through them. A duplicate, a missing reference or a broken check comes back as the field's error, by the constraint's default name; any other constraint is a database failure. |
 | 12 | Writing an aggregate | Inserting an order inserts its lines; an update writes the difference by key; a line left out is deleted; a line's error is the order's; deleting an order deletes its lines. |
 | 13 | Transactions | `Tx<'T, 'E>` as a value; steps compose with `let!`; reading inside with `Tx.one` and `Tx.count`; the transaction's own rejections (`Tx.fail`, `Tx.orReject`, `Tx.ofResult`); where a failed step is written; retries; custom steps. |
 
-### Part 4: more queries (lessons 14 to 19)
+Writes come before constructors and constraints, since a constraint's error is
+met through a write. Each error case is named where a koan first meets it
+(`TransactionError` and `TxFailure.InvalidChanges` in lesson 04,
+`DbError.Translation` in 02, `DbError.Materialization` in 05,
+`TxFailure.Conflict` in 10, `TxFailure.Failed` and `DbError.Database` in 11,
+`RolledBack` and `TxFailure.Rejected` in 13); lesson 21 gathers them.
+
+### Part 4: more queries (lessons 14 to 20)
 
 | # | Lesson | What it is for |
 |---|---|---|
 | 14 | Joins | Inner and left joins, selecting fields or whole records (a whole Order comes with its lines), typed keys, filters and composition. |
-| 15 | Aggregates and grouping | `Agg.count`, `sum`, `max`, grouping and `having`. |
-| 16 | Links and owned records | An article's tags, shared through a join table: read with it, filtered with `List.exists`, written as links only. An account's optional profile: read as an option, inserted and deleted by changing it. |
-| 17 | Bulk writes | `Bulk.update`, `delete`, `insert`, `insertMissing` as `Tx.execute` steps, and inspecting them. |
-| 18 | Hand-written SQL | `repo.Sql<'R>`, interpolation as parameters, fragments, `Tx.executeSql` and `Tx.sql` inside a transaction. |
-| 19 | Prepared queries | `Query.prepare`: built once, typed arguments, paging, composing, and arguments inside an `exists`. |
+| 15 | Loads | `let!` binds what another query finds for each record, `and!` one more beside it, and `return` builds the row: each load one more command for every record, a load's query with loads of its own, `referredBy` for the one record a key finds, and a relationship that says more written once as a function. |
+| 16 | Aggregates and grouping | `Agg.count`, `sum`, `max`, grouping and `having`. |
+| 17 | Links and owned records | An article's tags, shared through a join table: read with it, filtered with `List.exists`, written as links only. An account's optional profile: read as an option, inserted and deleted by changing it. Its last koan counts a join table with `repo.Sql`, which lesson 19 teaches. |
+| 18 | Bulk writes | `Bulk.update`, `delete`, `insert`, `insertMissing` as `Tx.execute` steps, and inspecting them. |
+| 19 | Hand-written SQL | `repo.Sql<'R>`, interpolation as parameters, fragments, `Tx.executeSql` and `Tx.sql` inside a transaction. |
+| 20 | Prepared queries | `Query.prepare`: built once, typed arguments, paging, composing, and arguments inside an `exists`. |
 
-### Part 5: living with it (lessons 20 to 22)
+### Part 5: living with it (lessons 21 to 23)
 
 | # | Lesson | What it is for |
 |---|---|---|
-| 20 | Failures | Results, `TxFailure`, the database's failures and the transaction's own rejections, read errors, qualified cases. |
-| 21 | Testing with Plasm | Sandboxes; `Repo.Start` checking the app's query values, `repo.CheckSchema()`, and `repo.Ddl()`. |
-| 22 | Unions with fields | A union whose cases carry facts, stored across columns, and the domain's own members in queries. |
+| 21 | Failures | Results, `TxFailure`, the database's failures and the transaction's own rejections, read errors, qualified cases. |
+| 22 | Testing with Plasm | Sandboxes; `Repo.Start` checking the app's query values, `repo.CheckSchema()`, and `repo.Ddl()`. |
+| 23 | Unions with fields | A union whose cases carry facts, stored across columns, and the domain's own members in queries. |
 
 ## Writing a koan
 

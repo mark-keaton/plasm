@@ -65,7 +65,7 @@ let lesson =
                       // repo.Provider. Repo.Start makes it and checks it: every query
                       // value in queriesIn translates and the database fits the model,
                       // or start-up fails. The shop holds a query written wrong on
-                      // purpose (lesson 21), so this repo writes its query check as
+                      // purpose (lesson 22), so this repo writes its query check as
                       // Ignore: a repo that is not checked always says so.
                       let! mine =
                           Repo.Start(
@@ -173,7 +173,9 @@ let lesson =
                       let! customers = narrow.All(Query.from (tableOf<Customer>))
 
                       // It cannot read customers: it returns an Error, it does not throw.
-                      // UnmappedType names the record by its type's short name.
+                      // A read's Error is a DbError; DbError.Translation is a query Plasm
+                      // could not turn into SQL, and UnmappedType names the record by its
+                      // type's short name.
                       match err customers with
                       | DbError.Translation(TranslationError.UnmappedType name) -> name |> shouldBe __
                       | other -> failwithf "expected an unmapped type, got %A" other

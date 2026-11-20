@@ -1,5 +1,5 @@
-/// Lesson 16: About links and owned records.
-module Plasm.Koans.Lessons.L16_LinksAndOwnedRecords
+/// Lesson 17: About links and owned records.
+module Plasm.Koans.Lessons.L17_LinksAndOwnedRecords
 
 open Plasm
 open Plasm.Koans
@@ -121,7 +121,7 @@ let lesson =
                   task {
                       // There is no tag 99. The join table's foreign key, by its default
                       // name article_tags_tag_id_fkey, refuses the link, and it comes back
-                      // as the Tags field's error, its Kind as in lesson 10. fieldErrors is
+                      // as the Tags field's error, its Kind as in lesson 11. fieldErrors is
                       // at the top of this lesson.
                       let! intro = article repo 1L
                       let! r = repo.Transact(Tx.update (intro, { intro with Tags = [ tag 99L "nope" ] }): Tx<Article, unit>)
@@ -147,7 +147,7 @@ let lesson =
               fun repo ->
                   task {
                       // article_tags has no record of its own; hand-written SQL counts it.
-                      // repo.Sql (lesson 18) returns the rows it reads, as a list.
+                      // repo.Sql (lesson 19) returns the rows it reads, as a list.
                       let! intro = article repo 1L
                       let! _ = repo.Transact(Tx.delete intro: Tx<Article, unit>)
                       let! links = repo.Sql<int64>($"select count(*) from article_tags")

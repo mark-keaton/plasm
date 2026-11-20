@@ -1,5 +1,5 @@
-/// Lesson 22: About unions with fields.
-module Plasm.Koans.Lessons.L22_UnionsWithFields
+/// Lesson 23: About unions with fields.
+module Plasm.Koans.Lessons.L23_UnionsWithFields
 
 open Plasm
 open Plasm.Koans

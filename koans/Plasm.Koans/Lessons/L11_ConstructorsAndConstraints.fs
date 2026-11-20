@@ -1,5 +1,5 @@
-/// Lesson 10: About constructors and constraints.
-module Plasm.Koans.Lessons.L10_ConstructorsAndConstraints
+/// Lesson 11: About constructors and constraints.
+module Plasm.Koans.Lessons.L11_ConstructorsAndConstraints
 
 open Plasm
 open Plasm.Koans
@@ -56,7 +56,7 @@ let lesson =
                       // constraint broke: FieldErrorKind.UniqueConstraint, ForeignKeyConstraint
                       // or CheckConstraint, each carrying the constraint's name.
                       // (repo.Transact runs a transaction and Tx.insert is a step that
-                      // inserts a record: lesson 11 goes deeper.)
+                      // inserts a record: lesson 10 goes deeper.)
                       let addAdaAgain: Tx<Customer, unit> = Tx.insert (New.customer "Ada again" "ada@example.com")
                       let! r = repo.Transact addAdaAgain
                       fieldErrors r |> List.map (fun e -> e.Field, e.Kind) |> shouldBe __
@@ -110,8 +110,9 @@ let lesson =
                       // The orders table has a rule across two columns: a cancelled order
                       // needs a reason. Its constraint, orders_cancelled_has_reason, has no
                       // field's default name, so breaking it stays a database failure.
-                      // A failure's Constraint is an option: Some with the name the
-                      // database gave, when it gave one.
+                      // TxFailure.Failed carries a DbError, and DbError.Database is a
+                      // failure the database reported. Its Constraint is an option: Some
+                      // with the name the database gave, when it gave one.
                       let order: Tx<Order, unit> = Tx.insert (New.order None Cancelled 5m)
                       let! r = repo.Transact order
 

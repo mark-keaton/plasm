@@ -1,5 +1,5 @@
-/// Lesson 19: About prepared queries.
-module Plasm.Koans.Lessons.L19_PreparedQueries
+/// Lesson 20: About prepared queries.
+module Plasm.Koans.Lessons.L20_PreparedQueries
 
 open System
 open Plasm

@@ -1,5 +1,5 @@
-/// Lesson 20: About failures.
-module Plasm.Koans.Lessons.L20_Failures
+/// Lesson 21: About failures.
+module Plasm.Koans.Lessons.L21_Failures
 
 open System.Threading.Tasks
 open Plasm

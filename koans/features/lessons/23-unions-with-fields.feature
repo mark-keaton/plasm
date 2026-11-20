@@ -1,10 +1,10 @@
-# Lesson 22 of the Plasm Koans. Each row is one koan: what the learner discovers,
+# Lesson 23 of the Plasm Koans. Each row is one koan: what the learner discovers,
 # and the acceptance scenario of Plasm it teaches (feature: scenario).
 Feature: About unions with fields
   A union whose cases carry facts is stored across columns and queried as F#
   reads it, through the domain's own members.
 
-  Prerequisites: lesson 07, lesson 13, lesson 15.
+  Prerequisites: lesson 07, lesson 13, lesson 16.
 
   Background:
     Given the koans database with its starting data

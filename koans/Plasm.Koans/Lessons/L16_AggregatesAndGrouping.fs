@@ -1,5 +1,5 @@
-/// Lesson 15: About aggregates and grouping.
-module Plasm.Koans.Lessons.L15_AggregatesAndGrouping
+/// Lesson 16: About aggregates and grouping.
+module Plasm.Koans.Lessons.L16_AggregatesAndGrouping
 
 open Plasm
 open Plasm.Koans

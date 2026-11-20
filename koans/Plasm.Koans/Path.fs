@@ -13,16 +13,17 @@ let lessons: Lesson list =
       L07_FiltersAndOrdering.lesson
       L08_Reading.lesson
       L09_AggregatesAndReferences.lesson
-      L10_ConstructorsAndConstraints.lesson
-      L11_Writes.lesson
+      L10_Writes.lesson
+      L11_ConstructorsAndConstraints.lesson
       L12_WritingAnAggregate.lesson
       L13_Transactions.lesson
       L14_Joins.lesson
-      L15_AggregatesAndGrouping.lesson
-      L16_LinksAndOwnedRecords.lesson
-      L17_BulkWrites.lesson
-      L18_HandWrittenSql.lesson
-      L19_PreparedQueries.lesson
-      L20_Failures.lesson
-      L21_TestingWithPlasm.lesson
-      L22_UnionsWithFields.lesson ]
+      L15_Loads.lesson
+      L16_AggregatesAndGrouping.lesson
+      L17_LinksAndOwnedRecords.lesson
+      L18_BulkWrites.lesson
+      L19_HandWrittenSql.lesson
+      L20_PreparedQueries.lesson
+      L21_Failures.lesson
+      L22_TestingWithPlasm.lesson
+      L23_UnionsWithFields.lesson ]

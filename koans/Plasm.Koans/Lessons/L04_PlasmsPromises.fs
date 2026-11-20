@@ -73,10 +73,11 @@ let lesson =
               fun repo ->
                   task {
                       // Ada's email is taken, and Customer's Email is marked [<Unique>] in
-                      // Shop.fs. The failure comes back as an Error you can match on,
-                      // here as invalid changes naming the field as the record spells it;
-                      // nothing is thrown.
-                      // (Lessons 10 and 20 go deeper.)
+                      // Shop.fs. The failure comes back as an Error you can match on, and
+                      // nothing is thrown: a TransactionError, whose Failure says what went
+                      // wrong as a TxFailure. Here it is TxFailure.InvalidChanges, naming
+                      // the field as the record spells it.
+                      // (Lessons 11 and 21 go deeper.)
                       let addAdaAgain: Tx<Customer, unit> = Tx.insert (New.customer "Ada again" "ada@example.com")
                       let! r = repo.Transact addAdaAgain
 
@@ -91,7 +92,7 @@ let lesson =
               fun repo ->
                   task {
                       // Tx.update (original, changed) describes a change to a record you
-                      // read. The UPDATE sets only the fields that differ. (Lesson 11
+                      // read. The UPDATE sets only the fields that differ. (Lesson 10
                       // goes deeper.)
                       let! drafts = repo.All(plasm { for o in tableOf<Order> do where (o.Status = Draft) })
                       let draft = ok drafts |> List.head
@@ -148,7 +149,7 @@ let lesson =
               fun repo ->
                   task {
                       // repo.Sandbox runs code in a transaction that is rolled back
-                      // when it ends: every koan runs in one. (Lesson 21 goes deeper.)
+                      // when it ends: every koan runs in one. (Lesson 22 goes deeper.)
                       let! inside =
                           repo.Sandbox(fun repo ->
                               task {

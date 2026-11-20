@@ -1,4 +1,4 @@
-# Lesson 18 of the Plasm Koans. Each row is one koan: what the learner discovers,
+# Lesson 19 of the Plasm Koans. Each row is one koan: what the learner discovers,
 # and the acceptance scenario of Plasm it teaches (feature: scenario).
 Feature: About hand-written SQL
   When a query is easier in SQL, write SQL; interpolated values are always parameters and rows still come back typed.
