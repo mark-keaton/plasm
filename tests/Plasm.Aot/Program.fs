@@ -341,6 +341,24 @@ let main argv =
             | Ok rows -> String.Join("; ", rows |> List.map (fun r -> r.Customer + " " + r.Ticket + " " + (match r.Who with Some w -> w | None -> "-")))
             | Error e -> "failed: " + refusal e)
 
+        // streaming.feature: rows read as they are asked for, one connection.
+        let drain (stream: Collections.Generic.IAsyncEnumerable<Result<'T, DbError>>) (show: 'T -> string) =
+            let e = stream.GetAsyncEnumerator()
+            let shown = Collections.Generic.List<string>()
+
+            try
+                while e.MoveNextAsync().AsTask().Result do
+                    match e.Current with
+                    | Ok v -> shown.Add(show v)
+                    | Error err -> shown.Add("failed: " + refusal err)
+            finally
+                e.DisposeAsync().AsTask().Wait()
+
+            String.Join("; ", shown)
+
+        step "a stream of records" (fun () -> drain (repo.Stream(plasm { for c in tableOf<Customer> do orderBy c.Name })) customer)
+        step "a stream of a projection" (fun () -> drain (repo.Stream Queries.titlesAndSizes) (fun (title, size) -> title + " " + string size))
+
         step "a page" (fun () -> all (Queries.page 1 1) ticket)
 
         step "grouped by an int" (fun () -> selected Queries.bySize (fun (size, n) -> string size + ": " + string n))

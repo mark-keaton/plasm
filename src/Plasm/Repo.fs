@@ -246,6 +246,51 @@ type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
                         return Ok(rows |> List.map unbox<'T>)
             })
 
+    /// A query's rows as a stream (streaming.feature), read from the database
+    /// as the caller asks for the next, never gathered into a list. Nothing is
+    /// sent until the first row is asked for; from then one connection is held,
+    /// and given back when the rows end, when the caller disposes of the stream
+    /// (stopping early), and when the token is cancelled. A failure is the last
+    /// element, an Error; a query that cannot be streamed is a single Error. A
+    /// stream is one command: records that own or link a list are refused, with
+    /// the list named. It reads outside a transaction.
+    member _.Stream(query: Query<'T>, ?cancellationToken: CancellationToken) : Collections.Generic.IAsyncEnumerable<Result<'T, DbError>> =
+        let source =
+            try
+                if not query.Def.Joins.IsEmpty then
+                    match Translate.projection model (ref false) query.Def None with
+                    | Error e -> Error(DbError.Translation e)
+                    | Ok(select, shape) -> Execution.streamProjection provider.Dialect select shape query.Def.Root.Name query.Def.Args
+                else
+                    match planFor query.Def with
+                    | Error e -> Error(DbError.Translation e)
+                    | Ok plan -> Execution.streamRoot provider.Dialect plan query.Def.Args
+            with Translate.TranslationFailure t ->
+                Error(DbError.Translation t)
+
+        Execution.Stream<'T>(provider, options, source, defaultArg cancellationToken CancellationToken.None)
+
+    /// A projection's rows as a stream (streaming.feature): as a query's, when
+    /// it selects no list and no record that owns or links one.
+    member _.Stream(projection: Projection<'R>, ?cancellationToken: CancellationToken) : Collections.Generic.IAsyncEnumerable<Result<'R, DbError>> =
+        let source =
+            if not projection.Def.Includings.IsEmpty then
+                Error(
+                    DbError.Translation(
+                        TranslationError.InvalidQuery
+                            "a projection with loads is read by more than one command, and a stream is one command: stream the projection without them, or read it a page at a time with All"
+                    )
+                )
+            else
+                try
+                    match Translate.projection model (ref false) projection.Def (Some projection.Select) with
+                    | Error e -> Error(DbError.Translation e)
+                    | Ok(select, shape) -> Execution.streamProjection provider.Dialect select shape projection.Def.Root.Name projection.Def.Args
+                with Translate.TranslationFailure t ->
+                    Error(DbError.Translation t)
+
+        Execution.Stream<'R>(provider, options, source, defaultArg cancellationToken CancellationToken.None)
+
     /// Executes a projection. Only the projected columns are read.
     member _.All(projection: Projection<'R>, ?cancellationToken: CancellationToken) =
         let ct = defaultArg cancellationToken CancellationToken.None

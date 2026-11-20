@@ -851,7 +851,10 @@ let rec private build (shape: Translate.Shape) (row: obj[]) (entity: unit -> obj
                 record
 
 /// A projection's rows, then what the records in them own, a round trip later.
-let private projection (s: Session) (model: Model) (select: Sql.Select) (shape: Translate.Shape) (label: string) : Round<obj list> =
+/// What a projection's row is read as: its whole records (where each starts,
+/// its schema, whether it may be missing), its lists selected on their own
+/// (the key's column, the owner, the list), and how a row's columns are read.
+let private columnsOf (select: Sql.Select) (shape: Translate.Shape) (label: string) =
     let leaves = ResizeArray<int * Type * (obj -> Result<obj, string>) * string>()
     let entities = ResizeArray<int * SchemaInfo * bool>()
     let lists = ResizeArray<int * SchemaInfo * string>()
@@ -899,6 +902,11 @@ let private projection (s: Session) (model: Model) (select: Sql.Select) (shape: 
                 )
 
         values
+
+    entities, lists, read
+
+let private projection (s: Session) (model: Model) (select: Sql.Select) (shape: Translate.Shape) (label: string) : Round<obj list> =
+    let entities, lists, read = columnsOf select shape label
 
     Round.rows s (Sql.renderSelect s.Provider.Dialect select) read
     |> Round.bind (fun rows ->
@@ -1279,3 +1287,216 @@ let rawRecords (s: Session) (model: Model) (t: Type) (cmd: Sql.Command) : Task<o
             return values |> List.map schema.Shape.Construct
         | _ -> return List.ofSeq rows
     }
+
+// ---------------------------------------------------------------------------
+// Streams (streaming.feature)
+// ---------------------------------------------------------------------------
+
+/// What a stream sends and how each row is read, or why it cannot be one.
+type StreamSource =
+    { Command: Sql.Command
+      Args: obj[]
+      Read: DbDataReader -> obj }
+
+/// The lists a stream would leave unread, as Owner.List.
+let private refusedLists (names: string list) =
+    let listed = String.concat ", " names
+    let verb, pronoun = if names.Length = 1 then "is", "it" else "are", "them"
+
+    Error(
+        DbError.Translation(
+            TranslationError.InvalidQuery
+                $"{listed} {verb} read by another command, and a stream is one command: stream a projection that leaves {pronoun} out, or read the records a page at a time with All"
+        )
+    )
+
+let private listsOf (schema: SchemaInfo) =
+    [ for a in schema.Assocs do
+          if a.Owned || a.Linked then
+              yield $"{schema.Name}.{a.Name}" ]
+
+/// A query of records, read as a stream: its root's rows, when it loads nothing.
+let streamRoot (dialect: ISqlDialect) (plan: Planner.Plan) (args: obj[]) : Result<StreamSource, DbError> =
+    if not plan.Loads.IsEmpty then
+        refusedLists [ for l in plan.Loads -> $"{plan.RootSchema.Name}.{l.Path}" ]
+    else
+        let read = readEntity plan.RootSchema
+
+        Ok
+            { Command = Sql.renderSelect dialect plan.Root
+              Args = args
+              Read = fun r -> plan.RootSchema.Shape.Construct(read r) }
+
+/// A projection (or a joined query), read as a stream: when none of the
+/// records it selects owns or links a list, and it selects no list.
+let streamProjection (dialect: ISqlDialect) (select: Sql.Select) (shape: Translate.Shape) (label: string) (args: obj[]) : Result<StreamSource, DbError> =
+    let entities, lists, read = columnsOf select shape label
+
+    let unread =
+        [ for _, schema, assoc in lists -> $"{schema.Name}.{assoc}" ]
+        @ [ for _, schema, _ in entities do
+                yield! listsOf schema ]
+        |> List.distinct
+
+    if not unread.IsEmpty then
+        refusedLists unread
+    else
+        let records = entities.ToArray()
+
+        Ok
+            { Command = Sql.renderSelect dialect select
+              Args = args
+              Read =
+                fun r ->
+                    let row = read r
+                    let mutable next = 0
+
+                    build
+                        shape
+                        row
+                        (fun () ->
+                            let start, schema, optional = records.[next]
+                            next <- next + 1
+                            entityValues start schema optional row)
+                        (fun () -> invalidOp "a stream selects no list") }
+
+/// One stream's reading (streaming.feature): the connection is opened at the
+/// first row asked for and given back when the rows end, when a failure ends
+/// them, when the caller disposes of it, and when its token is cancelled. The
+/// command is reported once, when it ends, with the rows read.
+type RowStream<'T>(provider: IProvider, options: RepoOptions, source: Result<StreamSource, DbError>, given: CancellationToken, asked: CancellationToken) =
+    let linked =
+        if given.CanBeCanceled && asked.CanBeCanceled then
+            Some(CancellationTokenSource.CreateLinkedTokenSource(given, asked))
+        else
+            None
+
+    let ct =
+        match linked with
+        | Some l -> l.Token
+        | None -> if given.CanBeCanceled then given else asked
+
+    let mutable current = Unchecked.defaultof<Result<'T, DbError>>
+    let mutable finished = false
+    let mutable session: Session option = None
+    let mutable command: DbCommand = null
+    let mutable reader: DbDataReader = null
+    let mutable rows = 0
+    let mutable trip = 0L
+    let sw = Stopwatch()
+
+    /// Ends the stream: the reader, the command, the report, the connection.
+    let close (failure: exn option) =
+        task {
+            finished <- true
+
+            if not (isNull reader) then
+                try
+                    do! reader.DisposeAsync()
+                with _ ->
+                    ()
+
+                reader <- null
+
+            if not (isNull command) then
+                command.Dispose()
+                command <- null
+
+            match session with
+            | Some s ->
+                session <- None
+
+                match source with
+                | Ok src -> report s src.Command sw.Elapsed rows failure trip
+                | Error _ -> ()
+
+                do! s.Connection.DisposeAsync()
+            | None -> ()
+
+            linked |> Option.iter (fun l -> l.Dispose())
+        }
+
+    let next () : Task<bool> =
+        task {
+            if finished then
+                return false
+            else
+                match source with
+                | Error e ->
+                    finished <- true
+                    linked |> Option.iter (fun l -> l.Dispose())
+                    current <- Error e
+                    return true
+                | Ok src ->
+                    let mutable outcome = None
+
+                    try
+                        // A row already received is not read again once the
+                        // caller has cancelled.
+                        ct.ThrowIfCancellationRequested()
+
+                        if session.IsNone then
+                            let! conn = provider.OpenConnection ct
+
+                            let s =
+                                { Provider = provider
+                                  Options = options
+                                  Connection = conn
+                                  Transaction = None
+                                  Ct = ct
+                                  Args = src.Args }
+
+                            session <- Some s
+                            trip <- RoundTrips.next ()
+                            command <- prepare s src.Command
+                            sw.Start()
+                            let! r = command.ExecuteReaderAsync(ct)
+                            reader <- r
+
+                        let! more = reader.ReadAsync(ct)
+
+                        if more then
+                            current <- Ok(unbox<'T> (src.Read reader))
+                            rows <- rows + 1
+                            outcome <- Some(Ok true)
+                        else
+                            outcome <- Some(Ok false)
+                    with ex ->
+                        outcome <- Some(Error ex)
+
+                    match outcome with
+                    | Some(Ok true) -> return true
+                    | Some(Ok false) ->
+                        do! close None
+                        return false
+                    | Some(Error(MaterializationFailure m)) ->
+                        // The command did not fail: a value it returned cannot be read back.
+                        do! close None
+                        current <- Error(DbError.Materialization m)
+                        return true
+                    | Some(Error(:? OperationCanceledException as ex)) ->
+                        do! close (Some ex)
+                        return Err.rethrow ex
+                    | Some(Error ex) ->
+                        do! close (Some ex)
+
+                        match provider.Classify ex with
+                        | Some f ->
+                            current <- Error(DbError.Database f)
+                            return true
+                        | None -> return Err.rethrow ex
+                    | None -> return false
+        }
+
+    interface IAsyncEnumerator<Result<'T, DbError>> with
+        member _.Current = current
+        member _.MoveNextAsync() = ValueTask<bool>(next ())
+
+        member _.DisposeAsync() =
+            if finished then ValueTask.CompletedTask else ValueTask(close None :> Task)
+
+/// A stream's rows, read afresh each time it is enumerated.
+type Stream<'T>(provider: IProvider, options: RepoOptions, source: Result<StreamSource, DbError>, given: CancellationToken) =
+    interface IAsyncEnumerable<Result<'T, DbError>> with
+        member _.GetAsyncEnumerator(asked) =
+            new RowStream<'T>(provider, options, source, given, asked) :> IAsyncEnumerator<Result<'T, DbError>>
