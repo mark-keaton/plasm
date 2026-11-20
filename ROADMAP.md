@@ -5,11 +5,13 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
 ## Now: going public
 
-- Plasm and Plasm.Postgres on NuGet
+- Plasm and Plasm.Postgres on NuGet: `0.1.0-alpha.1`, a pre-release, is published; 0.1.0 is not
 - A `dotnet new` template
 
 ## Next: in the library
 
+- Streaming reads
+- Recursive queries
 - Selection inside a GraphQL card's comments and labels
 - Kanban's own F# server as a native binary
 - Kanban's C# host and Lambda on the FSharp.Core a new project gets (they run on 10.1 today)

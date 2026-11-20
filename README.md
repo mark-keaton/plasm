@@ -199,8 +199,16 @@ dotnet fsi website/build.fsx       # the site, into _site/; fails if a documente
 
 ## Packages
 
-`Plasm` and `Plasm.Postgres` are versioned `0.1.0-alpha`. They are not on
-NuGet yet. `dotnet pack Plasm.slnx -c Release -o artifacts` builds them.
+`Plasm.Postgres`, with `Plasm` and `Plasm.Annotations` under it, and
+`Plasm.HotChocolate` are on NuGet as a pre-release, `0.1.0-alpha.1`:
+
+```sh
+dotnet add package Plasm.Postgres --prerelease
+```
+
+It is an alpha: experimental, and not a stable release. A GitHub release
+tagged `vX.Y.Z` publishes them
+([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
 ## Licence
 

@@ -2,7 +2,7 @@ Use Plasm (https://mark-keaton.github.io/plasm) to build a library lending desk 
 
 Start from the starter; do not start from nothing:
 - Clone https://github.com/mark-keaton/plasm and copy examples/Starter to a folder of its own outside the clone, reached by its real path: on macOS /tmp and /var are symlinks, and NuGet drops packages through one.
-- Do what its README says under Packages. Then run dotnet test before you change anything. It needs Docker, and it must be green first.
+- Run dotnet test before you change anything. It needs Docker, and it must be green first.
 - PostgreSQL for the running host can come from Docker too: postgres:18.
 - Read https://mark-keaton.github.io/plasm/llms-full.txt, every docs page in one file. Read docs/start, docs/guide and docs/csharp.md; the rest can wait. Where the site and the clone differ, the clone is right.
 

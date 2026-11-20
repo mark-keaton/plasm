@@ -9,6 +9,12 @@ compiles ahead of time (native AOT), and every commit is checked natively.
 It is experimental and not production-ready. [Status](../status.md) says what
 is verified and what is missing.
 
+The packages are on NuGet as a pre-release, `0.1.0-alpha.1`:
+
+```sh
+dotnet add package Plasm.Postgres --prerelease
+```
+
 The code on this page is from
 [`examples/Plasm.Examples`](../../examples/Plasm.Examples), a runnable tour.
 
