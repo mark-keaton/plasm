@@ -135,12 +135,17 @@ module internal Sql =
     and Source =
         | Table of name: string * alias: string
         | Subquery of Select * alias: string
+        /// Two selects combined (UNION, UNION ALL, INTERSECT, EXCEPT) and read
+        /// as one table named `alias` (set-operations.feature).
+        | Compound of kind: string * left: Select * right: Select * alias: string
 
     and Join =
         { Left: bool
           Table: string
           Alias: string
-          On: Expr }
+          On: Expr
+          /// A query joined in place of the table (set-operations.feature).
+          Sub: Select option }
 
     and Select =
         { Columns: (Expr * string) list
@@ -611,12 +616,43 @@ module internal Sql =
                 w indent
                 w ") AS "
                 w (q a)
+            | Compound(kind, left, right, a) ->
+                let outer = indent
+                indent <- outer + "    "
+                w "("
+                w "\n"
+                w indent
+                r.Select left
+                w "\n"
+                w indent
+                w kind
+                w "\n"
+                w indent
+                r.Select right
+                indent <- outer
+                w "\n"
+                w indent
+                w ") AS "
+                w (q a)
 
             for j in s.Joins do
                 clause (if j.Left then "LEFT JOIN " else "INNER JOIN ")
-                w (q j.Table)
 
-                if j.Alias <> j.Table then
+                match j.Sub with
+                | Some sub ->
+                    let outer = indent
+                    indent <- outer + "    "
+                    w "("
+                    w "\n"
+                    w indent
+                    r.Select sub
+                    indent <- outer
+                    w "\n"
+                    w indent
+                    w ")"
+                | None -> w (q j.Table)
+
+                if j.Alias <> j.Table || j.Sub.IsSome then
                     w " AS "
                     w (q j.Alias)
 

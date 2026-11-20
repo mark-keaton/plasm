@@ -1498,7 +1498,8 @@ and relationship ctx (whole: Expr) (pv: Var) (body: Expr) (assoc: Expr) (all: bo
                     On =
                       List.zip (Joins.targets j target.Key) target.Key.Parts
                       |> List.map (fun ((column, _), part) -> Sql.Binary("=", Sql.Column(link, column), Sql.Column(alias, part.Name)))
-                      |> Sql.conj } ]
+                      |> Sql.conj
+                    Sub = None } ]
             | None -> []
 
         let inner =
@@ -1852,6 +1853,38 @@ let private schemaOf (model: Model) (t: Type) =
     | Ok s -> s
     | Error e -> raise (TranslationFailure e)
 
+/// A query of records as a select (rootSelect, defined below): what a join
+/// to a query and a set operation's operands read (set-operations.feature).
+let mutable private recordsOf: Model -> bool ref -> QueryDef -> Sql.Select =
+    fun _ _ _ -> invalidOp "rootSelect is not yet defined"
+
+let mutable private projectionOf: Model -> bool ref -> QueryDef -> Expr -> Sql.Select =
+    fun _ _ _ _ -> invalidOp "projection is not yet defined"
+
+/// What a query reads from, named `alias`: its table, or the set operation it
+/// is formed from (set-operations.feature), whose operands neither order nor
+/// page: the combined rows are ordered and paged.
+let private sourceOf (model: Model) (vol: bool ref) (def: QueryDef) (table: string) (alias: string) : Sql.Source =
+    match def.SetOp with
+    | None -> Sql.Table(table, alias)
+    | Some(kind, left, right) ->
+        let operand (d: QueryDef, select: Expr option) =
+            if not d.Orders.IsEmpty || d.Paged then
+                invalid "order and page the combined rows, not an operand: a set operation's operands are sets, and the query formed from them orders and pages what they combine"
+
+            match select with
+            | Some s -> projectionOf model vol d s
+            | None -> recordsOf model vol d
+
+        let word =
+            match kind with
+            | Union -> "UNION"
+            | UnionAll -> "UNION ALL"
+            | Intersect -> "INTERSECT"
+            | Except -> "EXCEPT"
+
+        Sql.Compound(word, operand left, operand right, alias)
+
 /// The variable space of a query: the root, then each joined source, with the
 /// SQL joins that bring them in.
 let private joinSpace (ctx: Ctx) (def: QueryDef) (select: Expr option) (root: SchemaInfo) : Binding list * Sql.Join list =
@@ -1890,7 +1923,8 @@ let private joinSpace (ctx: Ctx) (def: QueryDef) (select: Expr option) (root: Sc
             @ [ { Left = (j.Kind = LeftJoin)
                   Table = target.Table
                   Alias = b.Alias
-                  On = on } ])
+                  On = on
+                  Sub = j.Source |> Option.map (recordsOf ctx.Model ctx.Volatile) } ])
         ([ rootBinding ], [])
 
 /// Keeps the rows whose number among their value's rows (`__rn`, numbered in
@@ -1962,8 +1996,12 @@ let rootSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Selec
         if not def.GroupBy.IsEmpty || not def.Havings.IsEmpty then
             invalid "a grouped query returns summaries, not records; finish it with select (grouped keys and Agg functions)"
 
+        if def.SetOp.IsSome && def.Lock.IsSome then
+            invalid "a set operation's rows cannot be locked: lock each operand's rows with a query of its own"
+
         let ctx = newCtxWith model vol
         let alias = ctx.Name(Naming.root def None, schema.Table)
+        let source = sourceOf model vol def schema.Table alias
         let wheres, orders = translateBody ctx def alias schema
 
         if def.Paged && orders.IsEmpty && not def.ReadsTwo then
@@ -2001,7 +2039,7 @@ let rootSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Selec
 
         match def.PageEach with
         | None ->
-            { Sql.select (Sql.Table(schema.Table, alias)) with
+            { Sql.select source with
                 Columns = entityColumns alias schema
                 Where = wheres
                 OrderBy = orders
@@ -2054,6 +2092,8 @@ let rec private ungrouped (groups: Sql.Expr list) (e: Sql.Expr) =
 type private Core =
     { Ctx: Ctx
       Schema: SchemaInfo
+      /// The root's table, or the set operation it is formed from.
+      Source: Sql.Source
       Space: Binding list
       Joins: Sql.Join list
       Wheres: Sql.Expr list
@@ -2068,7 +2108,7 @@ type private Core =
 
     member c.Select(columns) =
         let select =
-            { Sql.select (Sql.Table(c.Schema.Table, c.Space.Head.Alias)) with
+            { Sql.select c.Source with
                 Columns = columns
                 Joins = c.Joins
                 Where = c.Wheres
@@ -2134,6 +2174,7 @@ let private core (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr op
 
     { Ctx = ctx
       Schema = schema
+      Source = sourceOf model vol def schema.Table space.Head.Alias
       Space = space
       Joins = joins
       Wheres = wheres
@@ -2298,7 +2339,18 @@ let private distinct (def: QueryDef) (sel: Sql.Select) (shape: Shape) : Sql.Sele
             OrderBy = orders },
         shape
 
-let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr option) : Result<Sql.Select * Shape, TranslationError> =
+let rec projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr option) : Result<Sql.Select * Shape, TranslationError> =
+    match def.SetOp, select with
+    // Two projections combined (set-operations.feature): their rows, read by
+    // the left operand's shape, by position.
+    | Some(_, (left, Some leftSelect), _), Some _ ->
+        wrap (fun () ->
+            match projection model vol left (Some leftSelect) with
+            | Error e -> raise (TranslationFailure e)
+            | Ok(leftSql, shape) ->
+                let source = sourceOf model vol def "" "u"
+                ({ Sql.select source with Columns = [ for _, name in leftSql.Columns -> Sql.Column("u", name), name ] }, shape))
+    | _ ->
     wrap (fun () ->
         let c = core model vol def select
         let ctx, space = c.Ctx, c.Space
@@ -2497,6 +2549,21 @@ let projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr opti
             distinct def sel s
         else
             sel, s)
+
+// The forward references a join to a query and a set operation's operands
+// read through (set-operations.feature).
+do
+    recordsOf <-
+        fun model vol def ->
+            match rootSelect model vol def with
+            | Ok(select, _) -> select
+            | Error e -> raise (TranslationFailure e)
+
+    projectionOf <-
+        fun model vol def select ->
+            match projection model vol def (Some select) with
+            | Ok(sql, _) -> sql
+            | Error e -> raise (TranslationFailure e)
 
 /// One field of the row `return` builds (loads.feature).
 type ReturnField =

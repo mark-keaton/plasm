@@ -77,11 +77,12 @@ type internal JoinKind =
 
 /// One `join` / `leftJoin`: keys are lambdas over the variable space so far
 /// (outer) and over the joined record (inner).
-type internal JoinDef =
-    { Kind: JoinKind
-      Target: Type
-      OuterKey: Expr
-      InnerKey: Expr }
+/// A set operation of two queries (set-operations.feature).
+type internal SetKind =
+    | Union
+    | UnionAll
+    | Intersect
+    | Except
 
 /// One load bound by `let!` or `and!` (loads.feature): its query, a lambda
 /// over the query's record.
@@ -173,7 +174,10 @@ type internal QueryDef =
       PageEach: (Expr * int * int) option
       /// `locking`: the rows read are locked until the transaction ends
       /// (row-locks.feature).
-      Lock: RowLock option }
+      Lock: RowLock option
+      /// The set operation this query reads from, its operands each a query
+      /// and, for projections, its select (set-operations.feature).
+      SetOp: (SetKind * (QueryDef * Expr option) * (QueryDef * Expr option)) option }
 
     member d.Paged =
         d.Limit.IsSome || d.Offset.IsSome || d.LimitArg.IsSome || d.OffsetArg.IsSome || d.PageEach.IsSome
@@ -197,7 +201,16 @@ type internal QueryDef =
           Return = None
           ReadsTwo = false
           PageEach = None
-          Lock = None }
+          Lock = None
+          SetOp = None }
+
+and internal JoinDef =
+    { Kind: JoinKind
+      Target: Type
+      OuterKey: Expr
+      InnerKey: Expr
+      /// A query joined in place of its table (set-operations.feature).
+      Source: QueryDef option }
 
 /// Something that can describe a query for display: a `Repo`.
 type internal IQueryDescriber =
@@ -455,6 +468,17 @@ module internal QueryOps =
 
             { d with PageEach = Some(key, skip, take) })
 
+    /// A join to a query's rows, read as a subquery (set-operations.feature).
+    let joinQuery (outer: QueryDef) kind (inner: QueryDef) (outerKey: Expr) (innerKey: Expr) : QueryDef =
+        { outer with
+            Joins =
+                outer.Joins
+                @ [ { Kind = kind
+                      Target = inner.Root
+                      OuterKey = outerKey
+                      InnerKey = innerKey
+                      Source = Some { inner with Template = None } } ] }
+
     let join (outer: QueryDef) kind (target: Type) (outerKey: Expr) (innerKey: Expr) : QueryDef =
         { outer with
             Joins =
@@ -462,7 +486,8 @@ module internal QueryOps =
                 @ [ { Kind = kind
                       Target = target
                       OuterKey = outerKey
-                      InnerKey = innerKey } ] }
+                      InnerKey = innerKey
+                      Source = None } ] }
 
 /// A query whose body binds loads with `let!` and `and!` and ends in `return`
 /// (loads.feature), read from the body's quotation: each load is one more
@@ -695,6 +720,31 @@ type QueryBuilder() =
         ) : Query<'R> =
         Query<'R>(QueryOps.join { outer.Def with Template = None } InnerJoin typeof<'U> outerKey innerKey)
 
+    /// Inner join with a query's rows in place of a table's
+    /// (set-operations.feature): a subquery named by the join's variable.
+    [<CustomOperation("join", IsLikeJoin = true, JoinConditionWord = "on")>]
+    member _.Join
+        (
+            outer: Table<'T>,
+            inner: Query<'U>,
+            [<ReflectedDefinition>] outerKey: Expr<'T -> 'K>,
+            [<ReflectedDefinition>] innerKey: Expr<'U -> 'K>,
+            _result: 'T -> 'U -> 'R
+        ) : Query<'R> =
+        ignore outer
+        Query<'R>(QueryOps.joinQuery (QueryDef.Empty typeof<'T>) InnerJoin inner.Def outerKey innerKey)
+
+    [<CustomOperation("join", IsLikeJoin = true, JoinConditionWord = "on")>]
+    member _.Join
+        (
+            outer: Query<'T>,
+            inner: Query<'U>,
+            [<ReflectedDefinition>] outerKey: Expr<'T -> 'K>,
+            [<ReflectedDefinition>] innerKey: Expr<'U -> 'K>,
+            _result: 'T -> 'U -> 'R
+        ) : Query<'R> =
+        Query<'R>(QueryOps.joinQuery { outer.Def with Template = None } InnerJoin inner.Def outerKey innerKey)
+
     /// Left join: every row of the outer side once per match, or once with the
     /// joined record as `None` when nothing matches.
     [<CustomOperation("leftJoin", IsLikeJoin = true, JoinConditionWord = "on")>]
@@ -861,6 +911,29 @@ type Query =
         PreparedQuery3<'A, 'B, 'C, 'T>(t) :> obj :?> ('A -> 'B -> 'C -> Query<'T>)
 
     static member from(_schema: Table<'T>) : Query<'T> = Query<'T>(QueryDef.Empty typeof<'T>)
+
+    static member private combine (kind: SetKind) (a: QueryDef, sa: Expr option) (b: QueryDef, sb: Expr option) (t: Type) =
+        { QueryDef.Empty t with SetOp = Some(kind, (a, sa), (b, sb)) }
+
+    /// The rows of `a` or `b`, each once (UNION, set-operations.feature): a
+    /// query like any other, filtered, ordered and paged after it is formed.
+    static member union(a: Query<'T>, b: Query<'T>) : Query<'T> = Query<'T>(Query.combine Union (a.Def, None) (b.Def, None) typeof<'T>)
+    /// The rows of `a` and of `b`, duplicates kept (UNION ALL).
+    static member unionAll(a: Query<'T>, b: Query<'T>) : Query<'T> = Query<'T>(Query.combine UnionAll (a.Def, None) (b.Def, None) typeof<'T>)
+    /// The rows of `a` that `b` also has (INTERSECT).
+    static member intersect(a: Query<'T>, b: Query<'T>) : Query<'T> = Query<'T>(Query.combine Intersect (a.Def, None) (b.Def, None) typeof<'T>)
+    /// The rows of `a` that `b` does not have (EXCEPT).
+    static member except(a: Query<'T>, b: Query<'T>) : Query<'T> = Query<'T>(Query.combine Except (a.Def, None) (b.Def, None) typeof<'T>)
+
+    /// The rows of two projections of one type, each once, in no order.
+    static member union(a: Projection<'R>, b: Projection<'R>) : Projection<'R> =
+        Projection<'R>(Query.combine Union (a.Def, Some a.Select) (b.Def, Some b.Select) a.Def.Root, a.Select)
+    static member unionAll(a: Projection<'R>, b: Projection<'R>) : Projection<'R> =
+        Projection<'R>(Query.combine UnionAll (a.Def, Some a.Select) (b.Def, Some b.Select) a.Def.Root, a.Select)
+    static member intersect(a: Projection<'R>, b: Projection<'R>) : Projection<'R> =
+        Projection<'R>(Query.combine Intersect (a.Def, Some a.Select) (b.Def, Some b.Select) a.Def.Root, a.Select)
+    static member except(a: Projection<'R>, b: Projection<'R>) : Projection<'R> =
+        Projection<'R>(Query.combine Except (a.Def, Some a.Select) (b.Def, Some b.Select) a.Def.Root, a.Select)
 
 
 [<AutoOpen; Trimming.QuerySurface>]

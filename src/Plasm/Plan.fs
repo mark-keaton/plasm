@@ -160,7 +160,8 @@ module internal Planner =
                       [ ({ Left = false
                            Table = j.Table
                            Alias = link
-                           On = on }: Sql.Join) ],
+                           On = on
+                           Sub = None }: Sql.Join) ],
                       owners |> List.mapi (fun i (column, _) -> Sql.Column(link, column), (if i = 0 then "__owner" else $"__owner{i}"))
                   | None -> alias, matchField.Parts |> List.map (fun p -> p.Name, p), [], []
 
