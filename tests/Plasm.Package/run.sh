@@ -28,13 +28,21 @@ if [ -n "${PLASM_FEED:-}" ]; then
   feed="$(cd "$PLASM_FEED" && pwd -P)"
   echo "pack: none; the feed is PLASM_FEED, packed already"
 else
-  echo "pack: $packages and Plasm.Templates into a local feed, built first and packed without building, as CI packs"
+  # At a version of the check's own, unlike the default a local pack makes
+  # (0.1.0-alpha) and unlike the Starter's, so nothing passes because two
+  # versions happen to be the same.
+  checked="0.0.1-packagecheck"
+  # Without reference assemblies: a build at another version (the AOT check's,
+  # at the default) leaves ref/ assemblies that a version alone does not
+  # replace, and Plasm would be compiled against Plasm.Annotations 0.1.0.0.
+  noref="-p:ProduceReferenceAssembly=false"
+  echo "pack: $packages and Plasm.Templates into a local feed at $checked, built first and packed without building, as CI packs"
   for p in $packages; do
-    dotnet build "$repo/src/$p" -c Release -v q > "$work/build-$p.log" 2>&1 || { cat "$work/build-$p.log"; exit 1; }
-    dotnet pack "$repo/src/$p" -c Release --no-build -o "$feed" -v q > "$work/pack-$p.log" 2>&1 || { cat "$work/pack-$p.log"; exit 1; }
+    dotnet build "$repo/src/$p" -c Release -p:Version="$checked" $noref -v q > "$work/build-$p.log" 2>&1 || { cat "$work/build-$p.log"; exit 1; }
+    dotnet pack "$repo/src/$p" -c Release --no-build -p:Version="$checked" $noref -o "$feed" -v q > "$work/pack-$p.log" 2>&1 || { cat "$work/pack-$p.log"; exit 1; }
   done
   # The template has no build output; it packs the Starter's files.
-  dotnet pack "$repo/src/Plasm.Templates" -c Release -o "$feed" -v q > "$work/pack-Plasm.Templates.log" 2>&1 || { cat "$work/pack-Plasm.Templates.log"; exit 1; }
+  dotnet pack "$repo/src/Plasm.Templates" -c Release -p:Version="$checked" -o "$feed" -v q > "$work/pack-Plasm.Templates.log" 2>&1 || { cat "$work/pack-Plasm.Templates.log"; exit 1; }
 fi
 version=$(ls "$feed" | sed -n 's/^Plasm\.Postgres\.\(.*\)\.nupkg$/\1/p' | head -1)
 if [ -z "$version" ]; then echo "pack: no Plasm.Postgres package in $feed"; exit 1; fi
@@ -45,6 +53,14 @@ for p in $packages; do
   if [ -n "$leaked" ]; then echo "pack: $p carries build output:"; echo "$leaked"; exit 1; fi
 done
 echo "pack: version $version; no package carries obj/ or bin/"
+# The template's projects reference Plasm at the template's version: its
+# template.json replaces the Starter's version with this one.
+tplconfig=$(unzip -p "$feed/Plasm.Templates.$version.nupkg" content/Starter/.template.config/template.json 2>/dev/null || true)
+starterversion=$(sed -n 's/.*Include="Plasm.Postgres" Version="\([^"]*\)".*/\1/p' "$repo/examples/Starter/Directory.Packages.props")
+if ! printf '%s' "$tplconfig" | grep -q "\"value\": \"$version\"" || ! printf '%s' "$tplconfig" | grep -q "\"replaces\": \"$starterversion\""; then
+  echo "pack: Plasm.Templates' template.json does not replace the Starter's $starterversion with $version:"; printf '%s\n' "$tplconfig" | grep -E '"(value|replaces)"'; exit 1
+fi
+echo "pack: Plasm.Templates replaces the Starter's Plasm.Postgres $starterversion with $version"
 # The packages depend on the floor, FSharp.Core $(PlasmFSharpCoreFloor) or later,
 # whatever the repository's own suites run on (docs/status.md).
 floor=$(sed -n 's/.*<PlasmFSharpCoreFloor>\(.*\)<\/PlasmFSharpCoreFloor>.*/\1/p' "$repo/Directory.Build.props")

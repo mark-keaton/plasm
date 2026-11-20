@@ -18,7 +18,6 @@
     <!-- NU5128: a template has no lib/ to match its dependency groups. -->
     <NoWarn>$(NoWarn);NU5128</NoWarn>
     <Starter>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..', 'examples', 'Starter'))</Starter>
-    <TemplateConfig>$(IntermediateOutputPath)template.json</TemplateConfig>
   </PropertyGroup>
 
   <ItemGroup>
@@ -34,7 +33,11 @@
       <Output TaskParameter="Result" PropertyName="StarterPlasmVersion" />
     </XmlPeek>
     <Error Condition="'$(StarterPlasmVersion)' == ''" Text="examples/Starter/Directory.Packages.props names no Plasm.Postgres version." />
+    <Error Condition="!$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)template.json').Contains('@VERSION@'))" Text="src/Plasm.Templates/template.json has lost its @VERSION@ placeholder." />
     <PropertyGroup>
+      <!-- Set here, not in the project's body, where IntermediateOutputPath is
+           still empty: there it named template.json itself, its source. -->
+      <TemplateConfig>$(BaseIntermediateOutputPath)plasm-template/template.json</TemplateConfig>
       <TemplateJson>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)template.json').Replace('@STARTER_VERSION@', '$(StarterPlasmVersion)').Replace('@VERSION@', '$(PackageVersion)'))</TemplateJson>
     </PropertyGroup>
     <WriteLinesToFile File="$(TemplateConfig)" Lines="$(TemplateJson)" Overwrite="true" WriteOnlyWhenDifferent="true" />

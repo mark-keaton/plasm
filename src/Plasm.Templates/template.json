@@ -13,8 +13,8 @@
     "plasmVersion": {
       "type": "generated",
       "generator": "constant",
-      "parameters": { "value": "0.1.0-alpha" },
-      "replaces": "0.1.0-alpha.1"
+      "parameters": { "value": "@VERSION@" },
+      "replaces": "@STARTER_VERSION@"
     }
   }
 }
