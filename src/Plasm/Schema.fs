@@ -44,11 +44,17 @@ module internal Paths =
         sb.ToString()
 
 /// A many-to-many join table: its name and the columns referencing the owner's
-/// and the target's primary keys.
+/// and the target's primary keys. A side whose key has several parts has a
+/// column per part, `<prefix>_<part>` (composite-links.feature; Joins).
 type internal JoinTable =
     { Table: string
       OwnerColumn: string
-      TargetColumn: string }
+      TargetColumn: string
+      /// The owner's side's columns are named from this when its key has
+      /// several parts: the JoinTable attribute's OwnerColumn, else the
+      /// owner's name in snake case.
+      OwnerPrefix: string
+      TargetPrefix: string }
 
 type internal AssocDef =
     { Property: PropertyInfo
@@ -563,6 +569,19 @@ and internal UnionPart =
     | Leaf of FieldMap
     /// The case field's name, and its union.
     | Nested of string * UnionLayout
+
+/// A join table's columns for each side (composite-links.feature): the side's
+/// one column for a key of one part, else one per part of its key, in the
+/// key's order, `<prefix>_<part>`, each with the part it holds.
+module internal Joins =
+    let private side (column: string) (prefix: string) (key: FieldMap) : (string * ColumnPart) list =
+        if key.Composite then
+            key.Parts |> List.map (fun p -> $"{prefix}_{p.Name}", p)
+        else
+            [ column, key.Parts.Head ]
+
+    let owners (j: JoinTable) (ownerKey: FieldMap) = side j.OwnerColumn j.OwnerPrefix ownerKey
+    let targets (j: JoinTable) (targetKey: FieldMap) = side j.TargetColumn j.TargetPrefix targetKey
 
 type internal Cardinality =
     | Many

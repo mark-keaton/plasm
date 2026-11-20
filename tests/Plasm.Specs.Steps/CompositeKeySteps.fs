@@ -62,15 +62,6 @@ module Unclear =
     [<Table "generated_key">]
     type GeneratedKey = { [<Generated>] Id: GeneratedKeyParts; Title: string }
 
-    type ThreadKey = { Forum: string; Number: int }
-    type TagId = TagId of int64
-
-    [<Table "keyed_tags">]
-    type Tag = { Id: TagId; Name: string }
-
-    [<Table "keyed_threads">]
-    type Thread = { Id: ThreadKey; [<JoinTable "keyed_thread_tags">] Tags: Tag list }
-
     type BoardId = BoardId of int64
     type CardKey = { Lane: string; Position: int }
 
@@ -87,7 +78,6 @@ module Unclear =
               "a key holding a list", [ typeof<ListPart> ]
               "a key holding a value", [ typeof<ValuePart> ]
               "a generated key", [ typeof<GeneratedKey> ]
-              "a linked list under a key of parts", [ typeof<Thread>; typeof<Tag> ]
               "an owned list of records keyed by parts", [ typeof<Board> ] ]
 
 namespace Plasm.Specs

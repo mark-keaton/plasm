@@ -1481,8 +1481,13 @@ and relationship ctx (whole: Expr) (pv: Var) (body: Expr) (assoc: Expr) (all: bo
                     Sql.Column(parent.Alias, parent.Schema.Key.Column)
                 )
             | AssocKind.ManyToMany ->
+                // Every column of each side, for a key of several parts
+                // (composite-links.feature).
                 let j, link = through.Value
-                Sql.Binary("=", Sql.Column(link, j.OwnerColumn), Sql.Column(parent.Alias, parent.Schema.Key.Column))
+
+                List.zip (Joins.owners j parent.Schema.Key) parent.Schema.Key.Parts
+                |> List.map (fun ((column, _), part) -> Sql.Binary("=", Sql.Column(link, column), Sql.Column(parent.Alias, part.Name)))
+                |> Sql.conj
 
         let throughJoin: Sql.Join list =
             match through with
@@ -1490,7 +1495,10 @@ and relationship ctx (whole: Expr) (pv: Var) (body: Expr) (assoc: Expr) (all: bo
                 [ { Left = false
                     Table = j.Table
                     Alias = link
-                    On = Sql.Binary("=", Sql.Column(link, j.TargetColumn), Sql.Column(alias, target.Key.Column)) } ]
+                    On =
+                      List.zip (Joins.targets j target.Key) target.Key.Parts
+                      |> List.map (fun ((column, _), part) -> Sql.Binary("=", Sql.Column(link, column), Sql.Column(alias, part.Name)))
+                      |> Sql.conj } ]
             | None -> []
 
         let inner =

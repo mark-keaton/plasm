@@ -396,15 +396,26 @@ module internal SchemaCheck =
                 match byTable.TryFind j.Table with
                 | None -> add SchemaIssueKind.MissingTable sc.Name (Some a.Name) j.Table None "join table does not exist"
                 | Some columns ->
-                    for column, key in [ j.OwnerColumn, sc.Key; j.TargetColumn, target.Key ] do
+                    // Each side's columns: one, or one per part of a key of
+                    // several parts (composite-links.feature).
+                    let owners = Joins.owners j sc.Key
+                    let targets = Joins.targets j target.Key
+
+                    for column, part in owners @ targets do
                         match columns |> List.tryFind (fun c -> c.Name = column) with
                         | None -> add SchemaIssueKind.MissingColumn sc.Name (Some a.Name) j.Table (Some column) "join table column does not exist"
-                        | Some c -> typeCheck sc.Name (Some a.Name) j.Table c key.ProviderType
+                        | Some c -> typeCheck sc.Name (Some a.Name) j.Table c part.ProviderType
 
-                    unwritable sc.Name j.Table columns [ j.OwnerColumn; j.TargetColumn ]
+                    unwritable sc.Name j.Table columns (owners @ targets |> List.map fst)
 
-                    // Each side of the join table references its record's table.
-                    for column, table in [ j.OwnerColumn, sc.Table; j.TargetColumn, target.Table ] do
+                    // Each side of the join table references its record's table;
+                    // a side of several columns is checked with the other
+                    // references over several columns, below.
+                    let single =
+                        [ if not sc.Key.Composite then yield fst owners.Head, sc.Table
+                          if not target.Key.Composite then yield fst targets.Head, target.Table ]
+
+                    for column, table in single do
                         if columns |> List.exists (fun c -> c.Name = column) && not (references |> List.contains ((j.Table, column), table)) then
                             add
                                 SchemaIssueKind.MissingReference
@@ -416,7 +427,7 @@ module internal SchemaCheck =
 
                     // A linked list maps a link to a missing record by the
                     // target side's default name.
-                    if a.Linked then
+                    if a.Linked && not target.Key.Composite then
                         let holders =
                             referenceNames
                             |> List.filter (fun (k, _) -> k = ((j.Table, j.TargetColumn), target.Table))
@@ -492,8 +503,22 @@ module internal SchemaCheck =
 
                       for f, path in candidates do
                           match f.References |> Option.bind (fun t -> model.Schemas.TryGetValue t |> function | true, r -> Some r | _ -> None) with
-                          | Some target when f.Composite -> yield sc, f, path, target
-                          | _ -> () ]
+                          | Some target when f.Composite -> yield sc.Name, path, sc.Table, f.Parts |> List.map (fun p -> p.Name), target
+                          | _ -> ()
+
+                  // A join table's side for a key of several parts
+                  // (composite-links.feature), where the table has every column.
+                  for sc, a, j in joinTables do
+                      let target = model.Schemas.[a.Target]
+
+                      match byTable.TryFind j.Table with
+                      | Some columns ->
+                          for key, side, referred in [ sc.Key, Joins.owners j sc.Key, sc; target.Key, Joins.targets j target.Key, target ] do
+                              let names = side |> List.map fst
+
+                              if key.Composite && names |> List.forall (fun n -> columns |> List.exists (fun c -> c.Name = n)) then
+                                  yield sc.Name, a.Name, j.Table, names, referred
+                      | None -> () ]
 
             if not compositeReferences.IsEmpty then
                 let! foreignRows =
@@ -506,25 +531,23 @@ module internal SchemaCheck =
                             + "WHERE c.contype = 'f' AND n.nspname = current_schema() AND t.relname::text = ANY("
                             + dialect.ParameterName 0
                             + ")"
-                          Parameters = [ box (compositeReferences |> List.map (fun (sc, _, _, _) -> bare sc.Table) |> List.distinct |> Array.ofList) ] }
+                          Parameters = [ box (compositeReferences |> List.map (fun (_, _, table, _, _) -> bare table) |> List.distinct |> Array.ofList) ] }
                         (fun r -> r.GetString 0, r.GetString 1, r.GetString 2)
 
                 let foreign = foreignRows |> List.ofSeq
 
-                for sc, f, path, target in compositeReferences do
-                    let columns = f.Parts |> List.map (fun p -> p.Name)
-
-                    if not (foreign |> List.contains (bare sc.Table, bare target.Table, String.concat "," columns)) then
+                for name, path, table, columns, target in compositeReferences do
+                    if not (foreign |> List.contains (bare table, bare target.Table, String.concat "," columns)) then
                         let listed = String.concat ", " columns
                         let keyColumns = target.Key.Parts |> List.map (fun p -> p.Name) |> String.concat ", "
 
                         add
                             SchemaIssueKind.MissingReference
-                            sc.Name
+                            name
                             (Some path)
-                            sc.Table
+                            table
                             None
-                            $"{sc.Name}.{path} refers to {target.Name}, but no foreign key over ({listed}) references {target.Table}; add `foreign key ({listed}) references {target.Table} ({keyColumns})`"
+                            $"{name}.{path} refers to {target.Name}, but no foreign key over ({listed}) of {table} references {target.Table}; add `foreign key ({listed}) references {target.Table} ({keyColumns})`"
 
             return List.ofSeq issues
         }
@@ -674,18 +697,25 @@ module internal Ddl =
                       | None -> () ]
             |> List.distinctBy (fun (j, _, _) -> j.Table)
 
+        // A column per part of a key of several parts (composite-links.feature).
+        let sides (j: JoinTable) (owner: SchemaInfo) (target: SchemaInfo) = Joins.owners j owner.Key, Joins.targets j target.Key
+
         for j, owner, target in joins do
-            let keyType (s: SchemaInfo) = columnType s.Key.Parts.Head
+            let owners, targets = sides j owner target
             line $"create table {name j.Table} ("
-            line $"  {name j.OwnerColumn} {keyType owner} not null,"
-            line $"  {name j.TargetColumn} {keyType target} not null,"
-            line $"  primary key ({name j.OwnerColumn}, {name j.TargetColumn})"
+
+            for column, part in owners @ targets do
+                line $"  {name column} {columnType part} not null,"
+
+            let key = owners @ targets |> List.map (fst >> name) |> String.concat ", "
+            line $"  primary key ({key})"
             line ");"
 
         let joinReferences =
             [ for j, owner, target in joins do
-                  yield j.Table, [ j.OwnerColumn ], owner
-                  yield j.Table, [ j.TargetColumn ], target ]
+                  let owners, targets = sides j owner target
+                  yield j.Table, owners |> List.map fst, owner
+                  yield j.Table, targets |> List.map fst, target ]
 
         let listed (columns: string list) = columns |> List.map name |> String.concat ", "
 
@@ -708,8 +738,9 @@ module internal Ddl =
                   for f in s.Fields do
                       if f.Unique then
                           yield s.Table, [ f.Column ]
-              for j, _, _ in joins do
-                  yield j.Table, [ j.OwnerColumn; j.TargetColumn ] ]
+              for j, owner, target in joins do
+                  let owners, targets = sides j owner target
+                  yield j.Table, owners @ targets |> List.map fst ]
 
         let led (table: string, columns: string list) =
             leads |> List.exists (fun (t, l) -> t = table && List.truncate columns.Length l = columns)

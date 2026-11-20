@@ -615,7 +615,15 @@ and private load (s: Session) (rows: IReadOnlyList<obj[]>) (node: Planner.LoadNo
         | Some _ ->
             let read = readEntity node.Target
             let ownerAt = node.Target.Fields |> Array.sumBy (fun f -> f.Parts.Length)
-            let ownerReader = columnReader node.KeyField.ProviderType
+            // The owner's key follows the target's columns: one column, or one
+            // per part of a key of several parts (composite-links.feature).
+            let ownerReaders = node.KeyField.Parts |> List.map (fun p -> columnReader p.ProviderType)
+
+            let ownerOf (r: DbDataReader) =
+                if node.KeyField.Composite then
+                    node.KeyField.FromColumns(ownerReaders |> List.mapi (fun i reader -> reader.Invoke(r, ownerAt + i)))
+                else
+                    node.KeyField.FromDb(ownerReaders.Head.Invoke(r, ownerAt))
 
             commands
             |> List.map (fun cmd ->
@@ -623,7 +631,7 @@ and private load (s: Session) (rows: IReadOnlyList<obj[]>) (node: Planner.LoadNo
                     let row = read r
 
                     let owner =
-                        match node.KeyField.FromDb(ownerReader.Invoke(r, ownerAt)) with
+                        match ownerOf r with
                         | Ok v -> v
                         | Error m ->
                             raise (

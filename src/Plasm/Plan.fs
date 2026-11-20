@@ -68,9 +68,9 @@ module internal Planner =
     /// `keys`, values of the owner's key of several parts: one array per part,
     /// read back in rows by unnest, so the command's text does not grow with
     /// the keys (composite-references.feature).
-    let compositeKeys (alias: string) (keyField: FieldMap) (matchField: FieldMap) (keys: Array) : Sql.Expr =
+    let compositeKeys (alias: string) (keyField: FieldMap) (matched: (string * ColumnPart) list) (keys: Array) : Sql.Expr =
         let values = [ for k in keys -> keyField.ToColumns k ]
-        let parts = matchField.Parts
+        let parts = matched |> List.map snd
 
         let arrays =
             parts
@@ -83,7 +83,7 @@ module internal Planner =
                     | None -> a
                 | None -> raiseT (TranslationError.InvalidQuery $"a key part of {p.ProviderType.Name} cannot be sent as an array"))
 
-        let columns = parts |> List.map (fun p -> Choice2Of2(Sql.Column(alias, p.Name)))
+        let columns = matched |> List.map (fun (name, _) -> Choice2Of2(Sql.Column(alias, name)))
         let comma = Choice1Of2 ", "
         let listed (xs: Choice<string, Sql.Expr> list) = xs |> List.collect (fun x -> [ comma; x ]) |> List.tail
 
@@ -109,14 +109,21 @@ module internal Planner =
                   | Ok s -> s
                   | Error e -> raiseT e
 
-              let order =
+              // By the key, else by its parts, for a key of several parts has no
+              // order of its own (composite-links.feature).
+              let orders =
                   match assoc.Order with
-                  | Some o -> o
+                  | Some o -> [ o ]
                   | None ->
                       let v = Quotations.Var("x", target.Type)
-                      Quotations.Expr.Lambda(v, Reflection.Quoted.propertyGet (Quotations.Expr.Var v) target.Shape.Fields.[target.Key.Index])
+                      let key = Reflection.Quoted.propertyGet (Quotations.Expr.Var v) target.Shape.Fields.[target.Key.Index]
 
-              let def = { QueryDef.Empty target.Type with Orders = [ order, SortDirection.Ascending ] }
+                      if target.Key.Composite then
+                          [ for part in (Shape.record target.Key.FieldType).Fields -> Quotations.Expr.Lambda(v, Reflection.Quoted.propertyGet key part) ]
+                      else
+                          [ Quotations.Expr.Lambda(v, key) ]
+
+              let def = { QueryDef.Empty target.Type with Orders = [ for o in orders -> o, SortDirection.Ascending ] }
               let strategy = LoadStrategy.BatchedByKeys caps.MaxKeysPerCommand
 
               let keyField, matchField =
@@ -134,26 +141,38 @@ module internal Planner =
               let ranked = Translate.stableOrder alias target orders
 
               // A linked list's rows come through the join table, which supplies
-              // the owner key as a trailing column.
-              let matchExpr, joins, ownerColumn =
+              // the owner key as trailing columns, one per part
+              // (composite-links.feature).
+              let matchAlias, matched, joins, ownerColumns =
                   match assoc.Through with
                   | Some j ->
                       let link = ctx.Name(None, j.Table)
+                      let owners = Joins.owners j parent.Key
+                      let targets = Joins.targets j target.Key
 
-                      Sql.Column(link, j.OwnerColumn),
+                      let on =
+                          List.zip targets target.Key.Parts
+                          |> List.map (fun ((column, _), part) -> Sql.Binary("=", Sql.Column(link, column), Sql.Column(alias, part.Name)))
+                          |> Sql.conj
+
+                      link,
+                      owners,
                       [ ({ Left = false
                            Table = j.Table
                            Alias = link
-                           On = Sql.Binary("=", Sql.Column(link, j.TargetColumn), Sql.Column(alias, target.Key.Column)) }: Sql.Join) ],
-                      [ Sql.Column(link, j.OwnerColumn), "__owner" ]
-                  | None -> Sql.Column(alias, matchField.Column), [], []
+                           On = on }: Sql.Join) ],
+                      owners |> List.mapi (fun i (column, _) -> Sql.Column(link, column), (if i = 0 then "__owner" else $"__owner{i}"))
+                  | None -> alias, matchField.Parts |> List.map (fun p -> p.Name, p), [], []
 
-              let columns = Translate.entityColumns alias target @ ownerColumn
+              let columns = Translate.entityColumns alias target @ ownerColumns
 
               let build (keys: Array) : Sql.Select =
                   let keyFilter =
-                      if keyField.Composite then compositeKeys alias keyField matchField keys
-                      else Sql.AnyOf(matchExpr, keys, Sql.storeType matchField)
+                      if keyField.Composite then
+                          compositeKeys matchAlias keyField matched keys
+                      else
+                          let column, _ = matched.Head
+                          Sql.AnyOf(Sql.Column(matchAlias, column), keys, Sql.storeType matchField)
 
                   { Sql.select (Sql.Table(target.Table, alias)) with
                       Columns = columns

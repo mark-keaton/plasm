@@ -843,13 +843,12 @@ module Model =
 
                         let verb = if a.Linked then "links" else "owns"
 
-                        if composite def && a.Linked then
-                            err (Some prop.Name) $"links {target.Name}, but its key has several parts: a linked list under such a key is not supported yet"
-                        else
-                            match defs.TryGetValue target with
-                            | true, td when composite td ->
-                                err (Some prop.Name) $"{verb} {target.Name}, whose key has several parts: an owned or linked list of such records is not supported yet"
-                            | _ -> ()
+                        // A linked list joins keys of several parts too
+                        // (composite-links.feature); an owned one does not yet.
+                        match defs.TryGetValue target with
+                        | true, td when composite td && not a.Linked ->
+                            err (Some prop.Name) $"{verb} {target.Name}, whose key has several parts: an owned list of such records is not supported yet"
+                        | _ -> ()
 
                         let kindOk =
                             match a.Kind, cardinality with

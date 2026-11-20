@@ -209,7 +209,9 @@ module internal Derive =
                                               Some
                                                   { Table = j.Name
                                                     OwnerColumn = (if isNull j.OwnerColumn then snake t.Name + "_id" else j.OwnerColumn)
-                                                    TargetColumn = (if isNull j.TargetColumn then snake target.Name + "_id" else j.TargetColumn) }
+                                                    TargetColumn = (if isNull j.TargetColumn then snake target.Name + "_id" else j.TargetColumn)
+                                                    OwnerPrefix = (if isNull j.OwnerColumn then snake t.Name else j.OwnerColumn)
+                                                    TargetPrefix = (if isNull j.TargetColumn then snake target.Name else j.TargetColumn) }
                                             Owned = false
                                             Linked = true
                                             Order = o }

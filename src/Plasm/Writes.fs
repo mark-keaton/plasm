@@ -586,31 +586,84 @@ and private writeLinks model (sess: Session) (schema: SchemaInfo) (s: CsState) (
         let a = (schema.TryAssoc l.Field).Value
         let j = a.Through.Value
         let target = schemaOf model a.Target
-        let owner = schema.Key.ScalarToDb parentKey
 
         let keys =
             l.Targets
             |> List.map (fun t -> target.Shape.Deconstruct t |> fun vs -> vs.[target.Key.Index])
             |> List.distinct
 
-        let arr = keyArray target keys
         let p i = d.ParameterName i
-        let jt, oc, tc = q j.Table, q j.OwnerColumn, q j.TargetColumn
+        let jt = q j.Table
         let run (sql: string) (ps: obj list) = Round.exec sess { Sql = sql; Parameters = ps }
+
+        // Each side's columns: one, or one per part of a key of several parts
+        // (composite-links.feature). The owner is bound once per column.
+        let owners = Joins.owners j schema.Key |> List.map (fst >> q)
+        let targets = Joins.targets j target.Key
+        let ownerValues = if schema.Key.Composite then schema.Key.ToColumns parentKey else [ schema.Key.ScalarToDb parentKey ]
+        let n = owners.Length
+        let ownedBy (table: string) = owners |> List.mapi (fun i c -> table + c + " = " + p i) |> String.concat " AND "
+        let ownerColumns = String.concat ", " owners
+        let ownerParameters = List.init n p |> String.concat ", "
 
         // Written in the hand of the other statements: quoted names, the
         // owner bound once (readable-sql.feature).
-        let u, k = q "u", q "k"
+        let u = q "u"
+
+        let removeSql, insertSql, targetParameters =
+            let owned = ownedBy ""
+            let ownedInJoin = ownedBy (jt + ".")
+
+            if not target.Key.Composite then
+                let tc, k = q (fst targets.Head), q "k"
+
+                $"DELETE FROM {jt}\nWHERE {owned} AND {tc} <> ALL({p n})",
+                $"INSERT INTO {jt} ({ownerColumns}, {tc})\nSELECT {ownerParameters}, {u}.{k}\nFROM unnest({p n}) AS {u}({k})\nWHERE NOT EXISTS (SELECT 1 FROM {jt} WHERE {ownedInJoin} AND {jt}.{tc} = {u}.{k})",
+                [ box (keyArray target keys) ]
+            else
+                // An array per part, read back in rows by unnest.
+                let values = [ for k in keys -> target.Key.ToColumns k ]
+
+                let arrays =
+                    targets
+                    |> List.mapi (fun i (_, part) ->
+                        match Model.arrayOf part.ProviderType with
+                        | Some(_, make) -> make [ for v in values -> v.[i] ]
+                        | None -> invalidOp ("a key part of " + part.ProviderType.Name + " cannot be sent as an array"))
+
+                let arrayParameters =
+                    targets
+                    |> List.mapi (fun i (_, part) ->
+                        match Sql.partStoreType part with
+                        | Some t -> "CAST(" + p (n + i) + " AS " + (t |> List.map q |> String.concat ".") + "[])"
+                        | None -> p (n + i))
+                    |> String.concat ", "
+
+                let tcs = targets |> List.map (fst >> q)
+                let ks = targets |> List.mapi (fun i _ -> q ("k" + string (i + 1)))
+                let matches = List.zip tcs ks |> List.map (fun (tc, k) -> jt + "." + tc + " = " + u + "." + k) |> String.concat " AND "
+                let targetColumns = String.concat ", " tcs
+                let read = ks |> List.map (fun k -> u + "." + k) |> String.concat ", "
+                let named = String.concat ", " ks
+
+                $"DELETE FROM {jt}\nWHERE {owned} AND ({targetColumns}) NOT IN (SELECT * FROM unnest({arrayParameters}))",
+                $"INSERT INTO {jt} ({ownerColumns}, {targetColumns})\nSELECT {ownerParameters}, {read}\nFROM unnest({arrayParameters}) AS {u}({named})\nWHERE NOT EXISTS (SELECT 1 FROM {jt} WHERE {ownedInJoin} AND {matches})",
+                arrays
+
+        // A link to a record that does not exist is the field's error, by the
+        // target side's default name, over every column of a key of several parts.
+        let linkKey = j.Table + "_" + (targets |> List.map fst |> String.concat "_") + "_fkey"
+
+        let failed (f: DbFailure) =
+            match f.Constraint with
+            | Some name when name = linkKey -> Fail(Invalid(Cs.addError s a.Name (FieldErrorKind.ForeignKeyConstraint name) "does not exist"))
+            | _ -> failedWrite schema s f
 
         match l.Mode with
         | PutLinks ->
-            Round.both
-                (run $"DELETE FROM {jt}\nWHERE {oc} = {p 0} AND {tc} <> ALL({p 1})" [ owner; box arr ])
-                (run
-                    $"INSERT INTO {jt} ({oc}, {tc})\nSELECT {p 0}, {u}.{k}\nFROM unnest({p 1}) AS {u}({k})\nWHERE NOT EXISTS (SELECT 1 FROM {jt} WHERE {jt}.{oc} = {p 0} AND {jt}.{tc} = {u}.{k})"
-                    [ owner; box arr ])
+            Round.both (run removeSql (ownerValues @ targetParameters)) (run insertSql (ownerValues @ targetParameters))
             |> Round.map (fun (removed, added) ->
-                pair (replied sess (failedWrite schema s) removed) (replied sess (failedWrite schema s) added)
+                pair (replied sess failed removed) (replied sess failed added)
                 |> Result.map (fun _ -> a.Name, a.Ctors.Loaded(a.MakeList l.Targets))))
     |> Round.all
     |> Round.map (together >> Result.map Map.ofList)

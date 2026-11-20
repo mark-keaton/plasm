@@ -23,8 +23,9 @@ Feature: A record whose Id is a record has a key of several columns
   which is every part (ON CONFLICT (repo, number)).
 
   References to such a key, and owned lists under it, are
-  composite-references.feature's. Refused by name for now: linked lists on
-  either side, and an owned list of records keyed by several parts.
+  composite-references.feature's; linked lists on either side are
+  composite-links.feature's. Refused by name for now: an owned list of records
+  keyed by several parts.
 
   # IssueKey = { Repo: string; Number: int }
   # Issue = { Id: IssueKey; Title: string; [<Version>] Version: int }
@@ -137,5 +138,4 @@ Feature: A record whose Id is a record has a key of several columns
         | a key holding a list                     | ListPart     | a part of a key is a scalar                     |
         | a key holding a value                    | ValuePart    | a part of a key is a scalar                     |
         | a generated key                          | GeneratedKey | a key of several parts is given by the insert   |
-        | a linked list under a key of parts       | Thread       | links Tag, but its key has several parts        |
         | an owned list of records keyed by parts  | Board        | owns Card, whose key has several parts          |
