@@ -151,6 +151,15 @@ And a stale copy is a conflict:
         | other -> show "unexpected" other
 ```
 
+A conflict names the record that was stale: `TxFailure.Conflict (entity, key)`
+carries its type's name and its key, the value of its key field, boxed. F#
+reads it with a type test (`:? OrderId as id`), C# with a pattern
+(`key is OrderId id`). Of two records of one type read from the same line,
+through a helper or `Tx.traverse`, the failure says which was stale, and
+`TransactionError.Step` gives the file and line of the read or write. The
+scenario "Of two Orders read as seen by one helper, the conflict names the
+stale one" in `features/typed-transactions.feature` shows it.
+
 ## Linked records
 
 Making a list the article's complete set of tags inserts the missing tags

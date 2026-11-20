@@ -271,7 +271,7 @@ let! cancelled = repo.Transact(changeOrder order.Id trimmed.Version (Order.cance
 | Ok _ -&gt; ...
 | Error { Failure = TxFailure.Rejected refusal } -&gt; ...         // the domain said no
 | Error { Failure = TxFailure.InvalidChanges(entity, errors) } -&gt; showErrors errors
-| Error { Failure = TxFailure.Conflict entity } -&gt; reloadAndRetry ()   // a newer version is stored
+| Error { Failure = TxFailure.Conflict(entity, key) } -&gt; reloadAndRetry key   // a newer version is stored: key is the stale record's
 | Error { Failure = TxFailure.Failed e } -&gt; report e             // undeclared constraint, timeout, ...
 | Error { Failure = TxFailure.Misused m } -&gt; ...                // a Tx.run step tried to end the transaction</pre>
 <pre class="code output">("Customer", [{ Field = "Email"; Message = "has already been taken"
