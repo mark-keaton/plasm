@@ -45,7 +45,9 @@ let private surface =
 let private notNamed =
     Map.ofList
         [ "Plasm.QueryBuilder.Zero",
-          "the builder's value for a body that yields nothing; a query always yields its rows, so only a body like `do ()` reaches it, read as an empty query" ]
+          "the builder's value for a body that yields nothing; a query always yields its rows, so only a body like `do ()` reaches it, read as an empty query"
+          "Plasm.QueryBuilder.Locking",
+          "a lock is a value the query keeps (QueryDef.Lock), not an expression a quotation names; the check reads a locked query natively in its step `a locked read in a transaction` (row-locks.feature)" ]
 
 /// Every Plasm member named in an expression, its quoted arguments and the
 /// queries it captures included.

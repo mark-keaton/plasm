@@ -317,6 +317,11 @@ let main argv =
                 (fun (r: TicketLine) -> r.Title + " " + (match r.Points with Some p -> string p | None -> "-")))
 
         step "a prepared query by typed id" (fun () -> all (Queries.ticketById first.Id) ticket)
+
+        step "a locked read in a transaction" (fun () ->
+            match repo.Transact(Tx.one Queries.claimTicket: Tx<_, unit>).Result with
+            | Ok(Some t) -> ticket t
+            | other -> "not read: " + string other)
         step "a prepared query through a reflected member over a case's field" (fun () -> all (CaseFieldQueries.assignedTo "ada") ticket)
         step "a list over owned rows" (fun () -> all Queries.withOpenNotes ticket)
         step "a list in a JSON document" (fun () -> all Queries.withOpenItems ticket)

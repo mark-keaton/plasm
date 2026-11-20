@@ -105,6 +105,38 @@ type internal ReturnDef =
       /// Why the body is not loads followed by `return`, when it is not.
       Shape: string option }
 
+/// How strongly a lock holds the rows it takes (row-locks.feature), as
+/// PostgreSQL's FOR UPDATE, FOR NO KEY UPDATE, FOR SHARE and FOR KEY SHARE.
+[<RequireQualifiedAccess>]
+type LockStrength =
+    | Update
+    | NoKeyUpdate
+    | Share
+    | KeyShare
+
+/// What a locked read does with a row another transaction holds: waits for
+/// it, fails at once (NOWAIT), or leaves it out (SKIP LOCKED).
+[<RequireQualifiedAccess>]
+type LockWait =
+    | Wait
+    | NoWait
+    | SkipLocked
+
+/// A row lock, the last clause of a query (`locking RowLock.ForUpdate.SkipLocked`):
+/// the rows the query reads are held until the transaction ends.
+type RowLock =
+    { Strength: LockStrength
+      Wait: LockWait }
+
+    static member ForUpdate = { Strength = LockStrength.Update; Wait = LockWait.Wait }
+    static member ForNoKeyUpdate = { Strength = LockStrength.NoKeyUpdate; Wait = LockWait.Wait }
+    static member ForShare = { Strength = LockStrength.Share; Wait = LockWait.Wait }
+    static member ForKeyShare = { Strength = LockStrength.KeyShare; Wait = LockWait.Wait }
+    /// Fail at once on a row another transaction holds (DbFailureKind.LockNotAvailable).
+    member l.NoWait = { l with Wait = LockWait.NoWait }
+    /// Leave out the rows another transaction holds: a job queue's claim.
+    member l.SkipLocked = { l with Wait = LockWait.SkipLocked }
+
 type internal QueryDef =
     { Root: Type
       Wheres: Expr list
@@ -138,7 +170,10 @@ type internal QueryDef =
       ReadsTwo: bool
       /// BuildQuery.pageEach (build-query.feature): the rows paged per value
       /// of the key, from skip, take of them.
-      PageEach: (Expr * int * int) option }
+      PageEach: (Expr * int * int) option
+      /// `locking`: the rows read are locked until the transaction ends
+      /// (row-locks.feature).
+      Lock: RowLock option }
 
     member d.Paged =
         d.Limit.IsSome || d.Offset.IsSome || d.LimitArg.IsSome || d.OffsetArg.IsSome || d.PageEach.IsSome
@@ -161,7 +196,8 @@ type internal QueryDef =
           Distinct = false
           Return = None
           ReadsTwo = false
-          PageEach = None }
+          PageEach = None
+          Lock = None }
 
 /// Something that can describe a query for display: a `Repo`.
 type internal IQueryDescriber =
@@ -256,6 +292,17 @@ type Projection<'R> internal (def: QueryDef, select: Expr) =
         member _.Select = Some select
 
     interface IRows<'R>
+
+/// A query whose rows are locked until the transaction that reads it ends
+/// (row-locks.feature): it ends in `locking`, and only Tx.all and Tx.one read
+/// it, so a lock cannot be taken outside a transaction.
+[<Sealed>]
+type Locked<'T> internal (def: QueryDef) =
+    member internal _.Def = def
+
+    interface ICheckable with
+        member _.Def = def
+        member _.Select = None
 
 /// The one record a tie can find (`referredBy<Customer> o`): at most one row,
 /// so a `let!` of it binds an option (loads.feature). `select` reads part of
@@ -676,6 +723,12 @@ type QueryBuilder() =
     /// Projects each row, keeping each selected value once (as `List.distinct`;
     /// None is one value). Order by selected values only; `take` and `skip`
     /// are refused with it. Must be the last operation.
+    /// Locks the rows the query reads until the transaction ends, the last
+    /// clause of a query of records: `locking RowLock.ForUpdate.SkipLocked`.
+    /// Only Tx.all and Tx.one read a locked query (row-locks.feature).
+    [<CustomOperation("locking")>]
+    member _.Locking(q: Query<'T>, lock: RowLock) : Locked<'T> = Locked<'T>({ q.Def with Lock = Some lock })
+
     [<CustomOperation("selectDistinct")>]
     member _.SelectDistinct(q: Query<'T>, [<ProjectionParameter; ReflectedDefinition>] projection: Expr<'T -> 'R>) : Projection<'R> =
         Projection<'R>({ q.Def with Distinct = true }, projection)

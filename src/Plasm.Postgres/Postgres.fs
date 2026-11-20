@@ -113,6 +113,7 @@ module internal Classify =
         | "23502" -> DbFailureKind.NotNullViolation
         | "40001" -> DbFailureKind.SerializationFailure
         | "40P01" -> DbFailureKind.Deadlock
+        | "55P03" -> DbFailureKind.LockNotAvailable
         | "57014" -> DbFailureKind.Timeout
         | s when s.StartsWith "08" -> DbFailureKind.ConnectionFailure
         | "57P01"

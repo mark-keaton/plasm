@@ -149,8 +149,18 @@ module internal Sql =
           /// Row count expressions (a parameter, possibly bound per execution).
           Limit: Expr option
           Offset: Expr option
-          ForUpdate: bool
+          /// FOR UPDATE and its kin (row-locks.feature).
+          Lock: Lock option
           Distinct: bool }
+
+    /// A row lock: FOR <Strength> [OF <alias>] [<Wait>].
+    and Lock =
+        { /// UPDATE, NO KEY UPDATE, SHARE or KEY SHARE.
+          Strength: string
+          /// The alias whose rows are locked, when not every table's.
+          Of: string option
+          /// NOWAIT or SKIP LOCKED; None waits.
+          Wait: string option }
 
     let select source =
         { Columns = []
@@ -162,7 +172,7 @@ module internal Sql =
           OrderBy = []
           Limit = None
           Offset = None
-          ForUpdate = false
+          Lock = None
           Distinct = false }
 
     /// A fixed row count, sent as a 64-bit parameter.
@@ -642,7 +652,18 @@ module internal Sql =
                 r.Expr o
             | None -> ()
 
-            if s.ForUpdate then clause "FOR UPDATE"
+            match s.Lock with
+            | Some l ->
+                clause $"FOR {l.Strength}"
+
+                match l.Of with
+                | Some alias -> w $" OF {q alias}"
+                | None -> ()
+
+                match l.Wait with
+                | Some wait -> w $" {wait}"
+                | None -> ()
+            | None -> ()
 
         member r.Insert(i: Insert) =
             let w (x: string) = sb.Append(x) |> ignore

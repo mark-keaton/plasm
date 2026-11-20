@@ -320,6 +320,15 @@ module internal TxCore =
                     )
         )
 
+    /// Why this provider cannot take a row lock, if it cannot (row-locks.feature).
+    let lockable (rt: TxRuntime) : TxFailure<'E> option =
+        let dialect = rt.Session.Provider.Dialect
+
+        if dialect.Capabilities.RowLocking then
+            None
+        else
+            Some(TxFailure.Failed(DbError.Translation(TranslationError.UnsupportedByProvider("row locks", dialect.Name))))
+
     /// The rows of a query, inside the transaction.
     let rows (rt: TxRuntime) (query: Query<'T>) : Task<Result<'T list, TxFailure<'E>>> =
         let rt = { rt with Session = { rt.Session with Args = query.Def.Args } }
@@ -418,6 +427,42 @@ type Tx =
             [<CallerLineNumber; Optional; DefaultParameterValue(0)>] line: int
         ) : Tx<'T list, 'E> =
         TxCore.step (TxCore.at file line $"all {typeof<'T>.Name}") (fun rt -> TxCore.rows rt query)
+
+    /// Every row a locked query matches, each held until the transaction ends
+    /// (row-locks.feature).
+    static member all
+        (
+            locked: Locked<'T>,
+            [<CallerFilePath; Optional; DefaultParameterValue("")>] file: string,
+            [<CallerLineNumber; Optional; DefaultParameterValue(0)>] line: int
+        ) : Tx<'T list, 'E> =
+        TxCore.step (TxCore.at file line $"all {typeof<'T>.Name}") (fun rt ->
+            match TxCore.lockable rt with
+            | Some refused -> Task.FromResult(Error refused)
+            | None -> TxCore.rows rt (Query<'T>(locked.Def)))
+
+    /// The one row a locked query matches, or None, held until the transaction
+    /// ends; more than one is a failure (DbError.MoreThanOneRow).
+    static member one
+        (
+            locked: Locked<'T>,
+            [<CallerFilePath; Optional; DefaultParameterValue("")>] file: string,
+            [<CallerLineNumber; Optional; DefaultParameterValue(0)>] line: int
+        ) : Tx<'T option, 'E> =
+        TxCore.step (TxCore.at file line $"one {typeof<'T>.Name}") (fun rt ->
+            task {
+                let limited = Query<'T>(OneRow.limit rt.Model locked.Def)
+
+                match TxCore.lockable rt with
+                | Some refused -> return Error refused
+                | None ->
+
+                match! TxCore.rows rt limited with
+                | Ok [] -> return Ok None
+                | Ok [ row ] -> return Ok(Some row)
+                | Ok _ -> return Error(TxFailure.Failed DbError.MoreThanOneRow)
+                | Error e -> return Error e
+            })
 
     /// Every row a projection (a query ending in `select`, or binding loads)
     /// returns, inside the transaction.

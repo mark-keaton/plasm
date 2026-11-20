@@ -345,7 +345,7 @@ type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
         let isQueryType (t: Type) =
             t.IsGenericType
             && (let d = t.GetGenericTypeDefinition()
-                d = typedefof<Query<_>> || d = typedefof<Projection<_>> || d = typedefof<One<_>> || d = typedefof<OneProjection<_>>)
+                d = typedefof<Query<_>> || d = typedefof<Projection<_>> || d = typedefof<One<_>> || d = typedefof<OneProjection<_>> || d = typedefof<Locked<_>>)
 
         let rec isQuery (t: Type) =
             if isQueryType t then true

@@ -1954,6 +1954,9 @@ let rootSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Selec
         let schema = schemaOf model def.Root
 
         if not def.Joins.IsEmpty then
+            if def.Lock.IsSome then
+                invalid "a joined query cannot be locked: lock each record's rows with a query of its own"
+
             invalid "a joined query returns combined rows; execute it with repo.All (it is read as a projection)"
 
         if not def.GroupBy.IsEmpty || not def.Havings.IsEmpty then
@@ -1974,6 +1977,28 @@ let rootSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Selec
 
         let limit, offset = limitExprs def
 
+        // A lock holds the query's own rows (FOR UPDATE OF its alias): what
+        // they own or link is read by commands of their own, unlocked
+        // (row-locks.feature).
+        let lock =
+            def.Lock
+            |> Option.map (fun l ->
+                if def.PageEach.IsSome then
+                    invalid "a query paged per key cannot be locked: lock the rows with a query of their own"
+
+                ({ Strength =
+                    match l.Strength with
+                    | LockStrength.Update -> "UPDATE"
+                    | LockStrength.NoKeyUpdate -> "NO KEY UPDATE"
+                    | LockStrength.Share -> "SHARE"
+                    | LockStrength.KeyShare -> "KEY SHARE"
+                   Of = Some alias
+                   Wait =
+                    match l.Wait with
+                    | LockWait.Wait -> None
+                    | LockWait.NoWait -> Some "NOWAIT"
+                    | LockWait.SkipLocked -> Some "SKIP LOCKED" }: Sql.Lock))
+
         match def.PageEach with
         | None ->
             { Sql.select (Sql.Table(schema.Table, alias)) with
@@ -1981,7 +2006,8 @@ let rootSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Selec
                 Where = wheres
                 OrderBy = orders
                 Limit = limit
-                Offset = offset },
+                Offset = offset
+                Lock = lock },
             schema
         | Some(key, skip, take) ->
             // Numbered with the stored columns, read as the record's outside.

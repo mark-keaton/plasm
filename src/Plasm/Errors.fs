@@ -52,6 +52,8 @@ type DbFailureKind =
     | NotNullViolation
     | SerializationFailure
     | Deadlock
+    /// A NOWAIT lock on a row another transaction holds (row-locks.feature).
+    | LockNotAvailable
     | OtherDatabaseError
     /// The repository can no longer be used: its sandbox ended or its
     /// playground was closed. Nothing was sent to the database.

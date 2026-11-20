@@ -9,6 +9,16 @@ open Plasm.Aot.App
 
 let ticketById = Query.prepare (fun (id: Arg<TicketId>) -> plasm { for t in tableOf<Ticket> do where (t.Id = id.Value) })
 
+/// The first ticket, locked for update and skipped when another transaction
+/// holds it: a job queue's claim, read only in a transaction (row-locks.feature).
+let claimTicket =
+    plasm {
+        for t in tableOf<Ticket> do
+            orderBy t.Id
+            take 1
+            locking RowLock.ForUpdate.SkipLocked
+    }
+
 let withOpenNotes =
     plasm {
         for t in tableOf<Ticket> do

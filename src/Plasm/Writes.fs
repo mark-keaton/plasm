@@ -716,7 +716,7 @@ and private writeChildWrite model sess (schema: SchemaInfo) (s: CsState) (wi: in
                 { Sql.select (Sql.Table(target.Table, target.Table)) with
                     Columns = [ Sql.Column(target.Table, target.Key.Column), target.Key.Column ]
                     Where = ownedBy :: scopeWheres
-                    ForUpdate = true }
+                    Lock = Some { Strength = "UPDATE"; Of = None; Wait = None } }
 
             let reader = columnReader target.Key.ProviderType
 
