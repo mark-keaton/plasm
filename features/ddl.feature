@@ -36,6 +36,7 @@ Feature: Plasm prints the DDL its model expects
         | Shelves lent to members   |
         | People with addresses     |
         | Threads linked to labels  |
+        | Tags unique within a tenant |
 
   Rule: It states the model's constraints by the names Plasm maps
 

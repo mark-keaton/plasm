@@ -586,8 +586,8 @@ window.PLASM_SQL = {
         "parameters": [
           "@p0 = ?"
         ],
-        "rows": 10,
-        "sql": "SELECT t.relname::text, a.attname::text, ic.relname::text, EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = i.indexrelid AND c.conrelid = t.oid AND c.contype IN (\u0027u\u0027, \u0027p\u0027))\nFROM pg_index i JOIN pg_class t ON t.oid = i.indrelid JOIN pg_namespace n ON n.oid = t.relnamespace JOIN pg_class ic ON ic.oid = i.indexrelid JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = i.indkey[0]\nWHERE i.indisunique AND i.indnkeyatts = 1 AND n.nspname = current_schema() AND t.relname::text = ANY(@p0)"
+        "rows": 11,
+        "sql": "SELECT t.relname::text, (SELECT string_agg(a.attname::text, \u0027,\u0027 ORDER BY k.ord) FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord) JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum WHERE k.ord \u003C= i.indnkeyatts), ic.relname::text, EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = i.indexrelid AND c.conrelid = t.oid AND c.contype IN (\u0027u\u0027, \u0027p\u0027))\nFROM pg_index i JOIN pg_class t ON t.oid = i.indrelid JOIN pg_namespace n ON n.oid = t.relnamespace JOIN pg_class ic ON ic.oid = i.indexrelid\nWHERE i.indisunique AND n.nspname = current_schema() AND t.relname::text = ANY(@p0)"
       },
       {
         "parameters": [
@@ -607,8 +607,8 @@ window.PLASM_SQL = {
         "parameters": [
           "@p0 = [articles, customers, orders, order_lines, payments, products, tags, article_tags]"
         ],
-        "rows": 10,
-        "sql": "SELECT t.relname::text, a.attname::text, ic.relname::text, EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = i.indexrelid AND c.conrelid = t.oid AND c.contype IN (\u0027u\u0027, \u0027p\u0027))\nFROM pg_index i JOIN pg_class t ON t.oid = i.indrelid JOIN pg_namespace n ON n.oid = t.relnamespace JOIN pg_class ic ON ic.oid = i.indexrelid JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = i.indkey[0]\nWHERE i.indisunique AND i.indnkeyatts = 1 AND n.nspname = current_schema() AND t.relname::text = ANY(@p0)"
+        "rows": 11,
+        "sql": "SELECT t.relname::text, (SELECT string_agg(a.attname::text, \u0027,\u0027 ORDER BY k.ord) FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord) JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum WHERE k.ord \u003C= i.indnkeyatts), ic.relname::text, EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = i.indexrelid AND c.conrelid = t.oid AND c.contype IN (\u0027u\u0027, \u0027p\u0027))\nFROM pg_index i JOIN pg_class t ON t.oid = i.indrelid JOIN pg_namespace n ON n.oid = t.relnamespace JOIN pg_class ic ON ic.oid = i.indexrelid\nWHERE i.indisunique AND n.nspname = current_schema() AND t.relname::text = ANY(@p0)"
       },
       {
         "parameters": [

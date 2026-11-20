@@ -30,10 +30,14 @@ type ColumnAttribute([<ParamArray>] names: string[]) =
 
 /// The field's values are unique in the table. The database holds it with a
 /// unique constraint named <table>_<column>_key, and a duplicate comes back as
-/// the field's error.
+/// the field's error. With Within, unique within the fields it names
+/// (`Within = [| nameof the<Tag>.Tenant |]`): one uniqueness over them and
+/// then this field, <table>_<columns>_key (unique-within.feature).
 [<AttributeUsage(AttributeTargets.Property, AllowMultiple = false)>]
 type UniqueAttribute() =
     inherit Attribute()
+    /// The fields of the same record this field's values are unique within.
+    member val Within: string[] = [||] with get, set
 
 /// An integer version: a change or delete requires the stored version to be
 /// the one read, and increments it. Without one, a change is checked against

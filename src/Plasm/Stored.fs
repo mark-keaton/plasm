@@ -238,6 +238,13 @@ module internal Derive =
                       Version = Array.tryHead versions
                       Generated = named has<GeneratedAttribute>
                       Unique = named has<UniqueAttribute>
+                      UniqueWithin =
+                        fields t
+                        |> Array.choose (fun p ->
+                            attr<UniqueAttribute> p
+                            |> Option.bind (fun u ->
+                                if isNull u.Within || u.Within.Length = 0 then None else Some(p.Name, List.ofArray u.Within)))
+                        |> Map.ofArray
                       NotReference = named has<NotReferenceAttribute>
                       Assocs = assocs }
 
@@ -313,6 +320,7 @@ module StoredExtensions =
                   Version = None
                   Generated = Set.empty
                   Unique = Set.empty
+                  UniqueWithin = Map.empty
                   NotReference = Set.empty
                   Assocs = [] }
             )

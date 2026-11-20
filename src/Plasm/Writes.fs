@@ -308,7 +308,12 @@ let private conventional (schema: SchemaInfo) (name: string) =
             f.Name <> schema.Key.Name
             && f.NestedReferences |> List.exists (fun (_, l) -> name = $"{table}_{l.Column}_fkey")
 
-        if name = stem + "_key" then Some(f.Name, FieldErrorKind.UniqueConstraint name, "has already been taken")
+        // A field unique within others is named by all its columns
+        // (unique-within.feature).
+        let uniqueName = $"""{table}_{String.concat "_" f.UniqueColumns}_key"""
+
+        if f.Unique && name = uniqueName then Some(f.Name, FieldErrorKind.UniqueConstraint name, "has already been taken")
+        elif name = stem + "_key" then Some(f.Name, FieldErrorKind.UniqueConstraint name, "has already been taken")
         elif name = stem + "_fkey" || caseReference then Some(f.Name, FieldErrorKind.ForeignKeyConstraint name, "does not exist")
         elif name = stem + "_check" then Some(f.Name, FieldErrorKind.CheckConstraint name, "is invalid")
         else None)

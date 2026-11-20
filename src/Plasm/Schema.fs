@@ -85,6 +85,9 @@ type SchemaDef =
           Generated: Set<string>
           /// Fields whose values are unique in the table (constraints.feature).
           Unique: Set<string>
+          /// The fields a unique field is unique within ([<Unique(Within = ...)>],
+          /// unique-within.feature), by field name.
+          UniqueWithin: Map<string, string list>
           /// Fields of a key type that refer to no row ([<NotReference>]).
           NotReference: Set<string>
           Assocs: AssocDef list }
@@ -300,6 +303,9 @@ type internal FieldMap =
       Generated: bool
       /// Its values are unique in the table (`unique` in the schema).
       Unique: bool
+      /// The columns its uniqueness also spans, before its own: unique within
+      /// them (unique-within.feature); empty for a field unique on its own.
+      Within: string list
       /// The record type whose key this field holds: a typed id that is the
       /// key type of exactly one other schema (inferred by Model.build).
       References: Type option
@@ -372,6 +378,10 @@ type internal FieldMap =
 
     /// Stored in more than one column (a union with fields, or a value).
     member f.Composite = f.Union.IsSome || f.Value.IsSome
+
+    /// The columns of its uniqueness, in the constraint's order: those it is
+    /// unique within, then its own; empty when it is not unique.
+    member f.UniqueColumns: string list = if f.Unique then f.Within @ [ f.Column ] else []
 
     /// The columns inside a union or a value field that hold another
     /// record's key, once per column, each with the path that names it

@@ -109,17 +109,20 @@ module internal SchemaCheck =
             let enumLabels =
                 labelRows |> List.ofSeq |> List.groupBy fst |> List.map (fun (k, rs) -> k, rs |> List.map snd) |> Map.ofList
 
-            // Single-column unique indexes (constraints included), and
-            // single-column foreign keys with the table they reference.
+            // Unique indexes (constraints included) with their key columns in
+            // order, joined by commas (one column for most; several for a field
+            // unique within others, unique-within.feature), and single-column
+            // foreign keys with the table they reference.
             let! uniqueRows =
                 Execution.query
                     s
                     { Sql =
-                        "SELECT t.relname::text, a.attname::text, ic.relname::text, EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = i.indexrelid AND c.conrelid = t.oid AND c.contype IN ('u', 'p')) FROM pg_index i "
+                        "SELECT t.relname::text, (SELECT string_agg(a.attname::text, ',' ORDER BY k.ord) FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord) "
+                        + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum WHERE k.ord <= i.indnkeyatts), ic.relname::text, "
+                        + "EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = i.indexrelid AND c.conrelid = t.oid AND c.contype IN ('u', 'p')) FROM pg_index i "
                         + "JOIN pg_class t ON t.oid = i.indrelid JOIN pg_namespace n ON n.oid = t.relnamespace "
                         + "JOIN pg_class ic ON ic.oid = i.indexrelid "
-                        + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = i.indkey[0] "
-                        + "WHERE i.indisunique AND i.indnkeyatts = 1 AND n.nspname = current_schema() AND t.relname::text = ANY("
+                        + "WHERE i.indisunique AND n.nspname = current_schema() AND t.relname::text = ANY("
                         + dialect.ParameterName 0
                         + ")"
                       Parameters = [ box tables ] }
@@ -305,10 +308,14 @@ module internal SchemaCheck =
 
                     for f in sc.Fields do
                         if columns |> List.exists (fun c -> c.Name = f.Column) then
-                            if f.Unique then
-                                let holders = uniqueNames |> List.filter (fun (k, _) -> k = (sc.Table, f.Column)) |> List.map snd
+                            // A uniqueness is held by an index over its columns, in order.
+                            let unique = String.concat "," f.UniqueColumns
+                            let listed = String.concat ", " f.UniqueColumns
 
-                                match misnamed holders $"{bare sc.Table}_{f.Column}_key" sc.Table with
+                            if f.Unique then
+                                let holders = uniqueNames |> List.filter (fun (k, _) -> k = (sc.Table, unique)) |> List.map snd
+
+                                match misnamed holders $"""{bare sc.Table}_{String.concat "_" f.UniqueColumns}_key""" sc.Table with
                                 | Some(actual, fix) ->
                                     add
                                         SchemaIssueKind.MisnamedConstraint
@@ -319,14 +326,16 @@ module internal SchemaCheck =
                                         $"{actual} holds the uniqueness of {sc.Name}.{f.Name}, but a violation is mapped to the field by its default name; {fix}"
                                 | None -> ()
 
-                            if f.Unique && not (uniques.Contains(sc.Table, f.Column)) then
+                            if f.Unique && not (uniques.Contains(sc.Table, unique)) then
+                                let within = if f.Within.IsEmpty then "" else $""" within {String.concat ", " f.Within}"""
+
                                 add
                                     SchemaIssueKind.MissingUnique
                                     sc.Name
                                     (Some f.Name)
                                     sc.Table
                                     (Some f.Column)
-                                    $"the schema states {sc.Name}.{f.Name} is unique, but no unique constraint or index holds it; add `constraint {sc.Table}_{f.Column}_key unique ({f.Column})`"
+                                    $"""the schema states {sc.Name}.{f.Name} is unique{within}, but no unique constraint or index holds it; add `constraint {sc.Table}_{String.concat "_" f.UniqueColumns}_key unique ({listed})`"""
 
                             // A reference over several columns is checked below.
                             match f.References |> Option.bind (fun t -> model.Schemas.TryGetValue t |> function | true, target -> Some target | _ -> None) with
@@ -675,8 +684,9 @@ module internal Ddl =
 
                   for f in s.Fields do
                       if f.Unique then
-                          let constraintName = name (s.Table + "_" + f.Column + "_key")
-                          yield $"  constraint {constraintName} unique ({name f.Column})"
+                          let columns = f.UniqueColumns
+                          let constraintName = name (s.Table + "_" + String.concat "_" columns + "_key")
+                          yield $"""  constraint {constraintName} unique ({columns |> List.map name |> String.concat ", "})"""
 
                   // A key of several parts (composite-keys.feature): one
                   // primary key over them, in the key record's order.
@@ -737,7 +747,7 @@ module internal Ddl =
 
                   for f in s.Fields do
                       if f.Unique then
-                          yield s.Table, [ f.Column ]
+                          yield s.Table, f.UniqueColumns
               for j, owner, target in joins do
                   let owners, targets = sides j owner target
                   yield j.Table, owners @ targets |> List.map fst ]

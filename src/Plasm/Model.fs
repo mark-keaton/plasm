@@ -343,6 +343,7 @@ module Model =
           IsOption = isOpt
           Generated = false
           Unique = false
+          Within = []
           References = None
           Mapping = mapping
           ProviderType =
@@ -1041,6 +1042,7 @@ module Model =
                                     def.Generated.Contains prop.Name
                                     || (keyGenerated && Some prop.Name = keyName)
                                   Unique = def.Unique.Contains prop.Name
+                                  Within = []
                                   References = None
                                   Mapping = mapping
                                   ProviderType =
@@ -1061,6 +1063,35 @@ module Model =
             for a in def.Assocs do
                 if not (shape.Fields |> Array.exists (fun f -> f.Name = a.Property.Name)) then
                     err (Some a.Property.Name) "declared relationship is not a field of the record"
+
+            // A field unique within others (unique-within.feature): each one
+            // column and required, as is the field itself.
+            for KeyValue(name, within) in def.UniqueWithin do
+                match fields |> Seq.tryFind (fun f -> f.Name = name) with
+                | None -> ()
+                | Some carrier ->
+                    if carrier.IsOption then
+                        err
+                            (Some name)
+                            $"""is optional, and unique within {String.concat ", " within}: PostgreSQL counts absent values as distinct, so two rows with no {name} would both be kept; make {name} required"""
+
+                    let columns =
+                        [ for w in within do
+                              match fields |> Seq.tryFind (fun f -> f.Name = w) with
+                              | None ->
+                                  err (Some name) $"is unique within {w}, which is not a field of {def.Type.Name}"
+                              | Some f when f.Composite ->
+                                  err
+                                      (Some name)
+                                      $"is unique within {w}, which is stored in several columns (a value, a union, or a reference to a key of several parts): a uniqueness within it is not supported yet"
+                              | Some f when f.IsOption ->
+                                  err
+                                      (Some name)
+                                      $"is unique within {w}, which is optional: PostgreSQL counts absent values as distinct, so two rows with no {w} and the same {name} would both be kept; make {w} required"
+                              | Some f -> yield f.Column ]
+
+                    let i = fields.FindIndex(fun f -> f.Name = name)
+                    fields.[i] <- { fields.[i] with Within = columns }
 
             let fieldArr = fields.ToArray()
 
