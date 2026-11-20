@@ -113,9 +113,10 @@ required, or set `PLASM_TEST_PG`): 543 scenarios and 128 unit tests.
   key is read in one command a level, its owners' keys sent as an array per part
   through `unnest` (the composite index is used: 3,000 keys, 9,000 rows, 6.7
   ms). `Ddl()` prints the foreign keys over several columns, and `CheckSchema`
-  reports one that is missing. Not yet: linked lists on either side, an owned
-  list of records keyed by several parts, and upserts keyed by such a key, each
-  refused by name.
+  reports one that is missing. An upsert, or an insert of the missing records,
+  takes the whole key as its conflict target, every part; bulk updates and
+  deletes find rows by any part. Not yet: linked lists on either side, and an
+  owned list of records keyed by several parts, each refused by name.
 - `[<Json>]` on a field stores it as one jsonb document: a record with no
   table and no Id, a list of them, a list of scalars, or an option of these
   (`json-columns.feature`). Plasm owns the mapping: a record is an object keyed
@@ -822,6 +823,7 @@ Changes that break code written against an earlier alpha, newest first.
 | 2026-11-19 | A wrapper's `create` that Plasm cannot read a stored value through is refused when the model is built, naming why (scalar-conventions.feature). The convention reads through exactly `create: 'P -> Result<'T, string>`; a `create` that makes the type another way was passed over without a word. Its error not a string, two arguments, an argument other than the stored type, or a return of `'T option`, `'T voption` or `'T` itself were all affected. A private type was then refused as having no create function, and a public one was read past its `create`, unchecked. Still not looked for: a `create` that is not public and static, one in a module not named after the type, and other names. 6 scenarios, red first | `src/Plasm/Model.fs` |
 | 2026-11-19 | An id inside a union case is a reference (union-references.feature): a typed id among a case's fields references the record whose key it is, as a record field of that type does. The DDL declares its foreign key, `<table>_<column>_fkey`, and indexes the column. The schema check reports the key missing or misnamed under `<Field>.<case field>`, and a violation is the union field's error. The column is NULL for the cases without that field, which the key allows; cases that share a field of one name share its column and its one reference. `Model.References` lists it as `Status.borrower`. 4 scenarios red first, a fifth (NULL for another case) and a DDL example as guards | `src/Plasm/Model.fs`, `src/Plasm/SchemaCheck.fs` |
 | 2026-11-19 | An id inside a value is a reference (union-references.feature): a typed id among the fields of a value (a record with no table, stored in its owner's row) references the record whose key it is, named by its path (`Home.City`, `Work.Near`). Its foreign key is printed, checked and mapped to the value's field, as an id in a union case is; the column is NULL, which the key allows, when the value or the field is optional and absent. A key's own parts are references already. Also pinned: a list of a type stored as a PostgreSQL enum is refused when the model is built (array-columns.feature), its message naming the type as F# writes it; docs/comparisons/enums.md said such a column would come back as raw text. 4 scenarios red first, a fifth as a guard, a DDL example, and the enum row red on its wording | `src/Plasm/Schema.fs`, `src/Plasm/Model.fs` |
+| 2026-11-20 | Upserts by a key of several parts (composite-keys.feature): `Bulk.upsert` and `Bulk.insertMissing` take the whole key, `fun i -> i.Id`, as their conflict target, which is every part, `ON CONFLICT ("repo", "number")`; it was refused by name. A tuple of the parts already worked, and so did bulk insert, update and delete, which find rows by any part; a scenario now pins the update and delete by the whole key. 2 scenarios red first, one guard | `src/Plasm/Translate.fs` |
 
 ## Suggested next steps
 

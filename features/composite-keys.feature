@@ -18,10 +18,13 @@ Feature: A record whose Id is a record has a key of several columns
   and its version, and a part cannot be changed. Ddl prints PRIMARY KEY over
   the parts and the schema check compares the primary key's columns.
 
+  A bulk update or delete finds rows by any of the parts, and an upsert or an
+  insert of the missing records takes the whole key as its conflict target,
+  which is every part (ON CONFLICT (repo, number)).
+
   References to such a key, and owned lists under it, are
   composite-references.feature's. Refused by name for now: linked lists on
-  either side, an owned list of records keyed by several parts, and upserts
-  keyed by such a key.
+  either side, and an owned list of records keyed by several parts.
 
   # IssueKey = { Repo: string; Number: int }
   # Issue = { Id: IssueKey; Title: string; [<Version>] Version: int }
@@ -74,6 +77,26 @@ Feature: A record whose Id is a record has a key of several columns
       Given the keyed Issues plasm#7 "Crash", plasm#8 "Docs" and other#7 "Elsewhere"
       When the keyed Issue plasm#7 is deleted
       Then the keyed Issues read are other#7 "Elsewhere" and plasm#8 "Docs"
+
+  Rule: Bulk writes and upserts take the whole key
+
+    Scenario: Issues are upserted on their whole key
+      Given the keyed Issues plasm#7 "Crash"
+      When I upsert the keyed Issues plasm#7 "Crashes" and plasm#8 "Docs" on their key
+      Then one command is sent, conflicting on "repo" and "number"
+      And the keyed Issues read are plasm#7 "Crashes" and plasm#8 "Docs"
+
+    Scenario: Issues missing by their whole key are inserted, the rest kept
+      Given the keyed Issues plasm#7 "Crash"
+      When I insert the keyed Issues plasm#7 "Duplicate" and plasm#8 "Docs" where missing by their key
+      Then only plasm#8 "Docs" is returned as inserted
+      And the keyed Issues read are plasm#7 "Crash" and plasm#8 "Docs"
+
+    Scenario: A bulk update and a bulk delete find Issues by every part of the key
+      Given the keyed Issues plasm#7 "Crash", plasm#8 "Docs" and other#7 "Elsewhere"
+      When I retitle the keyed Issue plasm#7 "Crashes" and delete other#7, each in one bulk write
+      Then the bulk update and the bulk delete each compare "repo" and "number"
+      And the keyed Issues read are plasm#7 "Crashes" and plasm#8 "Docs"
 
   Rule: A key has no order of its own
 

@@ -2915,18 +2915,19 @@ let conflictTarget (model: Model) (t: Type) (on: Expr) : Result<string list, Tra
                                 Schema = schema
                                 Optional = false } ] }
 
-            let column (x: Expr) =
+            // A key of several parts is every part, the primary key's columns
+            // (composite-keys.feature).
+            let columns (x: Expr) =
                 match x with
-                | RowField ctx (b, f) when f.Composite && f.Name = b.Schema.Key.Name ->
-                    fail x $"{b.Schema.Name}.{f.Name} is a key of several parts: an insert that skips or updates on a conflict with it is not supported yet"
+                | RowField ctx (b, f) when f.Composite && f.Name = b.Schema.Key.Name -> f.Parts |> List.map (fun p -> p.Name)
                 | RowField ctx (b, f) when f.Composite ->
                     fail x $"{b.Schema.Name}.{f.Name} is stored in several columns: a conflict target is one column, or a tuple of them"
-                | RowField ctx (_, f) -> f.Column
+                | RowField ctx (_, f) -> [ f.Column ]
                 | _ -> fail x "a conflict target must be a field (or a tuple of fields) with a unique constraint"
 
             match body with
-            | NewTuple xs -> xs |> List.map column
-            | x -> [ column x ]
+            | NewTuple xs -> xs |> List.collect columns
+            | x -> columns x
         | other -> fail other "expected a lambda")
 
 /// Assignments for `ON CONFLICT DO UPDATE` from `fun current incoming -> ...`.

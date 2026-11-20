@@ -176,6 +176,55 @@ type CompositeKeySteps(w: World) =
         }
         |> unit
 
+    [<StepDefinition("^I upsert the keyed Issues ((?:\\w+#\\d+ \"[^\"]+\"(?:, | and )?)+) on their key$")>]
+    member _.Upsert(text: string) =
+        task {
+            w.MarkCommands()
+            let! r = repo().Transact(Tx.execute (Bulk.upsert (issues text, (fun i -> i.Id), fun current incoming -> { current with Title = incoming.Title })): Tx<_, unit>)
+            w.Set("keyedBulk", ok r)
+        }
+        |> unit
+
+    [<StepDefinition("^I insert the keyed Issues ((?:\\w+#\\d+ \"[^\"]+\"(?:, | and )?)+) where missing by their key$")>]
+    member _.InsertMissing(text: string) =
+        task {
+            w.MarkCommands()
+            let! r = repo().Transact(Tx.execute (Bulk.insertMissing (issues text, fun i -> i.Id)): Tx<_, unit>)
+            w.Set("keyedBulk", ok r)
+        }
+        |> unit
+
+    [<StepDefinition("^one command is sent, conflicting on \"(\\w+)\" and \"(\\w+)\"$")>]
+    member _.Conflicting(first: string, second: string) =
+        let sql = w.CommandsSinceMark |> List.map (fun e -> e.Sql)
+        equal 1 sql.Length $"commands: %A{sql}"
+        check (sql.[0].Contains $"ON CONFLICT (\"{first}\", \"{second}\")") sql.[0]
+
+    [<StepDefinition("^only (\\w+#\\d+ \"[^\"]+\") is returned as inserted$")>]
+    member _.OnlyInserted(text: string) =
+        equal (issues text |> List.map show) (w.Get<Issue list> "keyedBulk" |> List.map show) "inserted"
+
+    [<StepDefinition("^I retitle the keyed Issue (\\w+#\\d+) \"(.*)\" and delete (\\w+#\\d+), each in one bulk write$")>]
+    member _.BulkByKey(retitled: string, title: string, deleted: string) =
+        task {
+            let k = key retitled
+            let d = key deleted
+            w.MarkCommands()
+            let! u = repo().Transact(Tx.execute (Bulk.update (plasm { for i in tableOf<Issue> do where (i.Id = k) }, fun i -> { i with Title = title })): Tx<_, unit>)
+            equal 1 (ok u) "rows updated"
+            let! r = repo().Transact(Tx.execute (Bulk.delete (plasm { for i in tableOf<Issue> do where (i.Id = d) })): Tx<_, unit>)
+            equal 1 (ok r) "rows deleted"
+        }
+        |> unit
+
+    [<StepDefinition("^the bulk update and the bulk delete each compare \"(\\w+)\" and \"(\\w+)\"$")>]
+    member _.BulkCompare(first: string, second: string) =
+        let sql = w.CommandsSinceMark |> List.map (fun e -> e.Sql)
+        equal 2 sql.Length $"commands: %A{sql}"
+
+        for s in sql do
+            check (s.Contains $"\"keyed_issues\".\"{first}\" = @p" && s.Contains $"\"keyed_issues\".\"{second}\" = @p") s
+
     [<StepDefinition("^I read the keyed Issue (\\w+#\\d+) by its key, through a prepared query$")>]
     member _.ByKey(k: string) = readAll (KeyedGood.byKey (key k))
 
