@@ -70,6 +70,12 @@ let claimDraft: Tx<Order option, Refusal> =
         }
     )
 
+/// Several orders, each with its lines, written together. Each item is one
+/// insert, so their statements travel together: two round trips however many
+/// orders, the orders and then their lines, which need the generated keys.
+let placeAll (orders: Order list) : Tx<Order list, Refusal> =
+    orders |> Tx.traverse (fun o -> Tx.insert o)
+
 // -- Bulk writes ----------------------------------------------------------------
 
 /// One UPDATE for every stale draft; versions are incremented.

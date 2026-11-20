@@ -179,6 +179,10 @@ let tour (connectionString: string) (ddl: string) =
         let! expired = repo.Transact(Tx.execute (expireDraftsReturning (DateTime.UtcNow.AddDays 1.0)): Tx<Order list, Refusal>)
         show "expired, as they are now" (ok expired |> List.map (fun o -> o.Id, o.Status))
 
+        let batch = [ for n in 1..3 -> Order.create ada.Id [ Order.line gadget.Id (qty n) 3m ] DateTime.UtcNow |> ok ]
+        let! placed = repo.Transact(placeAll batch)
+        show "placed together (Tx.traverse)" (ok placed |> List.map (fun o -> o.Id, o.Lines.Length))
+
         match repo.Explain page with
         | Ok plan -> show "plan (no database access)" (plan.LoadPaths, plan.Sql)
         | Error e -> show "plan error" e
