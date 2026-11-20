@@ -320,6 +320,11 @@ module internal TxCore =
                     )
         )
 
+    let mutable private savepoints = 0L
+
+    /// A savepoint's name, never one in use (tx-attempt.feature).
+    let savepoint () = $"plasm_attempt_{System.Threading.Interlocked.Increment(&savepoints)}"
+
     /// Why this provider cannot take a row lock, if it cannot (row-locks.feature).
     let lockable (rt: TxRuntime) : TxFailure<'E> option =
         let dialect = rt.Session.Provider.Dialect
@@ -600,6 +605,66 @@ type Tx =
                 let cmd = Execution.rawCommand rt.Model rt.Session.Provider.Dialect sql
                 let! n = Execution.execute rt.Session cmd
                 return Ok n
+            })
+
+    /// Tries `step` under a savepoint (tx-attempt.feature): Ok with what it
+    /// gave, its writes kept, or Error with its failure, everything it wrote
+    /// undone and the transaction able to go on. A failure that ends the
+    /// transaction itself (a serialization failure, a deadlock, a lost
+    /// connection, a misused step) is the transaction's, not the attempt's.
+    /// Attempts nest, each its own savepoint.
+    static member attempt
+        (
+            step: Tx<'T, 'E>,
+            [<CallerFilePath; Optional; DefaultParameterValue("")>] file: string,
+            [<CallerLineNumber; Optional; DefaultParameterValue(0)>] line: int
+        ) : Tx<Result<'T, TxFailure<'E>>, 'E> =
+        let at = TxCore.at file line "attempt"
+
+        let caught (f: TxFailure<'E>) =
+            match f with
+            | TxFailure.Misused _ -> false
+            | TxFailure.Failed(DbError.Database d) ->
+                match d.Kind with
+                | DbFailureKind.SerializationFailure
+                | DbFailureKind.Deadlock
+                | DbFailureKind.ConnectionFailure
+                | DbFailureKind.RepositoryClosed -> false
+                | _ -> true
+            | _ -> true
+
+        Effect(fun rt ->
+            task {
+                let transaction = rt.Session.Transaction.Value
+                let name = TxCore.savepoint ()
+                let before = rt.Completed.Count
+
+                let around (send: unit -> unit) =
+                    TxCore.guarded rt (fun () ->
+                        task {
+                            send ()
+                            return Ok()
+                        })
+
+                match! around (fun () -> transaction.Save name) with
+                | Error f -> return Error(at, f)
+                | Ok() ->
+                    match! TxCore.run' rt step with
+                    | Ok v ->
+                        match! around (fun () -> transaction.Release name) with
+                        | Error f -> return Error(at, f)
+                        | Ok() ->
+                            rt.Completed.Add at
+                            return Ok(Ok v)
+                    | Error(_, f) when caught f ->
+                        match! around (fun () -> transaction.Rollback name) with
+                        | Error f -> return Error(at, f)
+                        | Ok() ->
+                            // What the attempt did is undone: no later failure reports it.
+                            rt.Completed.RemoveRange(before, rt.Completed.Count - before)
+                            rt.Completed.Add at
+                            return Ok(Error f)
+                    | Error e -> return Error e
             })
 
     /// Fails the transaction here with `reason`, its own error type.

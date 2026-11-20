@@ -33,6 +33,7 @@
     <Compile Include="UnionReferenceSteps.fs" />
     <Compile Include="CompositeLinkSteps.fs" />
     <Compile Include="RowLockSteps.fs" />
+    <Compile Include="TxAttemptSteps.fs" />
     <Compile Include="OwnedSteps.fs" />
     <Compile Include="LinkedSteps.fs" />
     <Compile Include="ProviderSteps.fs" />
