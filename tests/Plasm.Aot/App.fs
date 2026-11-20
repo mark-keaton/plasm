@@ -38,6 +38,15 @@ type Shipment =
 /// two parts (composite-references.feature).
 and [<Table "shipment_events">] ShipmentEvent = { Id: EventId; Shipment: ShipmentKey; Text: string }
 
+/// A record that refers to its own kind, read as a tree (recursive-queries.feature).
+type CategoryId = CategoryId of int64
+
+[<Table "categories">]
+type Category =
+    { Id: CategoryId
+      Name: string
+      Parent: CategoryId option }
+
 [<Table "tickets">]
 type Ticket =
     { Id: TicketId

@@ -66,11 +66,13 @@
     <Compile Include="CompositeReferenceSteps.fs" />
     <Compile Include="TransactionEventSteps.fs" />
     <Compile Include="StreamSteps.fs" />
+    <Compile Include="RecursiveSteps.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Plasm.TestDomain/Plasm.TestDomain.fsproj" />
     <ProjectReference Include="../Plasm.Specs.Queries.Good/Plasm.Specs.Queries.Good.fsproj" />
     <ProjectReference Include="../Plasm.Specs.Queries.Bad/Plasm.Specs.Queries.Bad.fsproj" />
+    <ProjectReference Include="../Plasm.Specs.Queries.Recursive/Plasm.Specs.Queries.Recursive.fsproj" />
     <PackageReference Include="Reqnroll" />
   </ItemGroup>
 </Project>

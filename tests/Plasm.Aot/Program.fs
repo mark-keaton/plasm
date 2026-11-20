@@ -13,7 +13,7 @@ open Plasm.Aot.Shop
 open Plasm.Aot.App
 
 let schema =
-    "drop table if exists shipment_events; drop table if exists shipments; drop table if exists notes; drop table if exists tickets; drop table if exists customers;
+    "drop table if exists categories; drop table if exists shipment_events; drop table if exists shipments; drop table if exists notes; drop table if exists tickets; drop table if exists customers;
      create table shipments (
        carrier text not null,
        number integer not null,
@@ -26,6 +26,13 @@ let schema =
        shipment_number integer not null,
        text text not null,
        foreign key (shipment_carrier, shipment_number) references shipments (carrier, number));
+     create table categories (
+       id bigint generated always as identity primary key,
+       name text not null,
+       parent bigint references categories(id));
+     insert into categories (name) values ('Tools');
+     insert into categories (name, parent) values ('Saws', 1), ('Drills', 1);
+     insert into categories (name, parent) values ('Hand saws', 2);
      create table customers (
        id bigint generated always as identity primary key,
        name text not null,
@@ -133,7 +140,7 @@ let coldStart (cs: string) (queries: StartupCheck) (schemaCheck: bool) =
         cmd.CommandText <- "select 1"
         cmd.ExecuteScalar() |> ignore
     mark "npgsql first connection"
-    let m = Model.buildOrFail [] [ typeof<Customer>; typeof<Ticket>; typeof<Shipment> ]
+    let m = Model.buildOrFail [] [ typeof<Customer>; typeof<Ticket>; typeof<Shipment>; typeof<Category> ]
     mark "model build"
     let repo = Repo.Start(m, provider cs, typeof<Ticket>.Assembly, { RepoOptions.Unchecked with Queries = queries }).Result
     mark "repo start"
@@ -174,7 +181,7 @@ let main argv =
     let mutable model = None
 
     step "model" (fun () ->
-        let m = Model.buildOrFail [] [ typeof<Customer>; typeof<Ticket>; typeof<Shipment> ]
+        let m = Model.buildOrFail [] [ typeof<Customer>; typeof<Ticket>; typeof<Shipment>; typeof<Category> ]
         model <- Some m
         "built, " + string m.Types.Length + " records")
 
@@ -358,6 +365,20 @@ let main argv =
 
         step "a stream of records" (fun () -> drain (repo.Stream(plasm { for c in tableOf<Customer> do orderBy c.Name })) customer)
         step "a stream of a projection" (fun () -> drain (repo.Stream Queries.titlesAndSizes) (fun (title, size) -> title + " " + string size))
+
+        step "a recursive query with depth" (fun () ->
+            let under =
+                Query.recursive (
+                    plasm { for c in tableOf<Category> do where (c.Parent = None) },
+                    fun found ->
+                        plasm {
+                            for c in tableOf<Category> do
+                            join p in found on (c.Parent = Some p.Id)
+                            select c
+                        }
+                )
+
+            selected (plasm { for c in under do orderBy (Query.depth c); thenBy c.Name; select (c.Name, Query.depth c) }) (fun (name, depth) -> name + " " + string depth))
 
         step "a page" (fun () -> all (Queries.page 1 1) ticket)
 

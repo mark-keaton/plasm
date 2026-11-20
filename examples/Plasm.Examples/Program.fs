@@ -183,6 +183,21 @@ let tour (connectionString: string) (ddl: string) =
         let! placed = repo.Transact(placeAll batch)
         show "placed together (Tx.traverse)" (ok placed |> List.map (fun o -> o.Id, o.Lines.Length))
 
+        // -- Streaming ------------------------------------------------------------
+        // The rows as they are read, never gathered: one connection, given back
+        // when the rows end or the stream is disposed. A failure is the last element.
+        let stream = repo.Stream(plasm { for p in tableOf<Product> do orderBy p.Sku; select p.Sku })
+        let e = stream.GetAsyncEnumerator()
+        let skus = ResizeArray<string>()
+
+        while! e.MoveNextAsync() do
+            match e.Current with
+            | Ok sku -> skus.Add sku
+            | Error failure -> printfn "the stream ended with %O" failure
+
+        do! e.DisposeAsync()
+        show "streamed (repo.Stream)" (List.ofSeq skus)
+
         match repo.Explain page with
         | Ok plan -> show "plan (no database access)" (plan.LoadPaths, plan.Sql)
         | Error e -> show "plan error" e

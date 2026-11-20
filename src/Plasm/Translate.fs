@@ -76,7 +76,10 @@ type Ctx =
       Volatile: bool ref
       /// Translating a select's columns: where a window function may be read
       /// (window-functions.feature).
-      InSelect: bool }
+      InSelect: bool
+      /// The sources that are recursive queries, whose rows have a depth
+      /// (recursive-queries.feature).
+      Recursive: Collections.Generic.HashSet<string> }
 
     /// A source's name: the variable that reads it, or `otherwise` (its
     /// table) when it has none, numbered if a source of the statement or a
@@ -104,7 +107,8 @@ let newCtxWith model (vol: bool ref) =
       Docs = Map.empty
       Taken = Collections.Generic.HashSet<string>()
       Volatile = vol
-      InSelect = false }
+      InSelect = false
+      Recursive = Collections.Generic.HashSet<string>() }
 
 let newCtx model = newCtxWith model (ref false)
 
@@ -961,6 +965,10 @@ let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
         // `let (Title v) = t in v`) is what the wrapper stores: its column
         // (scalar-conventions.feature).
         | PropertyGet(Some w, p, []) when isWrapperField w.Type p -> scalar ctx w
+        | Call(None, mi, [ row ]) when mi.Name = "depth" && mi.DeclaringType = typeof<Query> ->
+            match row with
+            | RowBinding ctx b when ctx.Recursive.Contains b.Alias -> Sql.Column(b.Alias, "plasm_depth")
+            | _ -> fail e "Query.depth reads the rows of a recursive query (Query.recursive), and this source is not one"
         | Call(None, mi, args) when isAggCall mi -> aggregate ctx e mi args
         | Call(None, mi, args) when isWinCall mi -> windowed ctx e mi args
         | Call(None, mi, [ sql; args ]) when isRawCall mi -> fragment ctx e sql args
@@ -1976,6 +1984,47 @@ let mutable private projectionOf: Model -> bool ref -> QueryDef -> Expr -> Sql.S
 /// is formed from (set-operations.feature), whose operands neither order nor
 /// page: the combined rows are ordered and paged.
 let private sourceOf (model: Model) (vol: bool ref) (def: QueryDef) (table: string) (alias: string) : Sql.Source =
+    if def.Found then
+        invalid "found is the rows a recursive query has found so far: the step of a recursive query joins found, and reads the rows it reaches"
+
+    match def.Recursive with
+    | Some(start, step, reach) ->
+        let name = "plasm_found"
+
+        if not start.Orders.IsEmpty || start.Paged then
+            invalid "order and page the rows a recursive query finds, not its start: the query made from it orders and pages them all"
+
+        if not step.Orders.IsEmpty || step.Paged then
+            invalid "order and page the rows a recursive query finds, not its step: the query made from it orders and pages them all"
+
+        if step.Distinct || not step.GroupBy.IsEmpty || not step.Havings.IsEmpty || step.Lock.IsSome || not step.Includings.IsEmpty then
+            invalid "the step of a recursive query reads the next rows as they are: it neither groups, takes distinct rows, locks nor binds loads"
+
+        let joinsFound = step.Joins |> List.filter (fun j -> j.Source |> Option.exists (fun d -> d.Found))
+
+        if joinsFound.Length <> 1 || step.Found then
+            invalid "the step of a recursive query joins found, once: `join p in found on (...)`, and selects the record it reaches"
+
+        let schema = schemaOf model def.Root
+        let startSql = recordsOf model vol start
+        let stepSql = projectionOf model vol step reach
+
+        let foundAlias =
+            stepSql.Joins
+            |> List.tryFind (fun j -> j.Table = name && j.Sub.IsNone)
+            |> Option.map (fun j -> j.Alias)
+            |> Option.defaultWith (fun () -> invalidOp "the step's join to found was not rendered")
+
+        let key = [ for p in schema.Key.Parts -> p.Name ]
+
+        Sql.Recursive(
+            name,
+            { startSql with Columns = startSql.Columns @ [ Sql.Literal "0", "plasm_depth" ] },
+            { stepSql with Columns = stepSql.Columns @ [ Sql.Binary("+", Sql.Column(foundAlias, "plasm_depth"), Sql.Literal "1"), "plasm_depth" ] },
+            key,
+            alias
+        )
+    | None ->
     match def.SetOp with
     | None -> Sql.Table(table, alias)
     | Some(kind, left, right) ->
@@ -2029,13 +2078,16 @@ let private joinSpace (ctx: Ctx) (def: QueryDef) (select: Expr option) (root: Sc
 
                     Sql.Binary("=", scalar outerCtx x, scalar innerCtx y)
 
+            // The rows a recursive query has found so far are its own name.
+            let found = j.Source |> Option.exists (fun d -> d.Found)
+
             space @ [ b ],
             joins
             @ [ { Left = (j.Kind = LeftJoin)
-                  Table = target.Table
+                  Table = (if found then "plasm_found" else target.Table)
                   Alias = b.Alias
                   On = on
-                  Sub = j.Source |> Option.map (recordsOf ctx.Model ctx.Volatile) } ])
+                  Sub = (if found then None else j.Source |> Option.map (recordsOf ctx.Model ctx.Volatile)) } ])
         ([ rootBinding ], [])
 
 /// Keeps the rows whose number among their value's rows (`__rn`, numbered in
@@ -2110,8 +2162,14 @@ let rootSelect (model: Model) (vol: bool ref) (def: QueryDef) : Result<Sql.Selec
         if def.SetOp.IsSome && def.Lock.IsSome then
             invalid "a set operation's rows cannot be locked: lock each operand's rows with a query of its own"
 
+        if def.Recursive.IsSome && def.Lock.IsSome then
+            invalid "a recursive query's rows cannot be locked: lock the rows it finds with a query of their own, by their keys"
+
         let ctx = newCtxWith model vol
         let alias = ctx.Name(Naming.root def None, schema.Table)
+
+        if def.Recursive.IsSome then
+            ctx.Recursive.Add alias |> ignore
         let source = sourceOf model vol def schema.Table alias
         let wheres, orders = translateBody ctx def alias schema
 
@@ -2240,6 +2298,9 @@ let private core (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr op
 
     let ctx = newCtxWith model vol
     let space, joins = joinSpace ctx def select schema
+
+    if def.Recursive.IsSome then
+        ctx.Recursive.Add space.Head.Alias |> ignore
     let wheres = def.Wheres |> List.map (translateWhereOver ctx space)
 
     let groups =

@@ -261,7 +261,12 @@ type internal QueryDef =
       Lock: RowLock option
       /// The set operation this query reads from, its operands each a query
       /// and, for projections, its select (set-operations.feature).
-      SetOp: (SetKind * (QueryDef * Expr option) * (QueryDef * Expr option)) option }
+      SetOp: (SetKind * (QueryDef * Expr option) * (QueryDef * Expr option)) option
+      /// The recursive query this query reads from (recursive-queries.feature):
+      /// its start, and its step with the select that reaches the next rows.
+      Recursive: (QueryDef * QueryDef * Expr) option
+      /// The rows a recursive query has found so far, which its step joins.
+      Found: bool }
 
     member d.Paged =
         d.Limit.IsSome || d.Offset.IsSome || d.LimitArg.IsSome || d.OffsetArg.IsSome || d.PageEach.IsSome
@@ -286,7 +291,9 @@ type internal QueryDef =
           ReadsTwo = false
           PageEach = None
           Lock = None
-          SetOp = None }
+          SetOp = None
+          Recursive = None
+          Found = false }
 
 and internal JoinDef =
     { Kind: JoinKind
@@ -995,6 +1002,23 @@ type Query =
         PreparedQuery3<'A, 'B, 'C, 'T>(t) :> obj :?> ('A -> 'B -> 'C -> Query<'T>)
 
     static member from(_schema: Table<'T>) : Query<'T> = Query<'T>(QueryDef.Empty typeof<'T>)
+
+    /// The rows `start` finds and, again and again, the rows `step` finds from
+    /// the rows found so far (recursive-queries.feature): `step` is given them
+    /// as `found`, joins it as any query is joined, and selects the record it
+    /// reaches. One statement, WITH RECURSIVE ... UNION ALL; a cycle in the data
+    /// ends, since a row already on the path that reached it is not followed
+    /// again. A query like any other: filtered, ordered and paged as a whole.
+    static member recursive(start: Query<'T>, step: Query<'T> -> Projection<'T>) : Query<'T> =
+        let found = Query<'T>({ QueryDef.Empty typeof<'T> with Found = true })
+        let next = step found
+        Query<'T>({ QueryDef.Empty typeof<'T> with Recursive = Some(start.Def, next.Def, next.Select) })
+
+    /// How many steps of a recursive query found `row`: 0 for the rows its
+    /// start finds (recursive-queries.feature). Only inside a query.
+    static member depth(row: 'T) : int =
+        ignore row
+        invalidOp "Query.depth is read inside a query of a recursive query's rows, translated to SQL; it has no value of its own"
 
     static member private combine (kind: SetKind) (a: QueryDef, sa: Expr option) (b: QueryDef, sb: Expr option) (t: Type) =
         { QueryDef.Empty t with SetOp = Some(kind, (a, sa), (b, sb)) }

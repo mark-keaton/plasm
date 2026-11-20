@@ -143,6 +143,10 @@ module internal Sql =
         /// Two selects combined (UNION, UNION ALL, INTERSECT, EXCEPT) and read
         /// as one table named `alias` (set-operations.feature).
         | Compound of kind: string * left: Select * right: Select * alias: string
+        /// A recursive query (recursive-queries.feature): WITH RECURSIVE `name`
+        /// AS (start UNION ALL step), with CYCLE on `key`, read as one table
+        /// named `alias`, without the rows that closed a cycle.
+        | Recursive of name: string * start: Select * step: Select * key: string list * alias: string
 
     and Join =
         { Left: bool
@@ -675,6 +679,37 @@ module internal Sql =
                 w "\n"
                 w indent
                 r.Select inner
+                indent <- outer
+                w "\n"
+                w indent
+                w ") AS "
+                w (q a)
+            | Recursive(name, start, step, key, a) ->
+                let outer = indent
+                indent <- outer + "    "
+                w "("
+                w "\n"
+                w indent
+                w ("WITH RECURSIVE " + q name + " AS (")
+                indent <- outer + "        "
+                w "\n"
+                w indent
+                r.Select start
+                w "\n"
+                w indent
+                w "UNION ALL"
+                w "\n"
+                w indent
+                r.Select step
+                indent <- outer + "    "
+                w "\n"
+                w indent
+                w ") CYCLE "
+                w (key |> List.map q |> String.concat ", ")
+                w (" SET " + q "plasm_cycle" + " USING " + q "plasm_path")
+                w "\n"
+                w indent
+                w ("SELECT * FROM " + q name + " WHERE NOT " + q "plasm_cycle")
                 indent <- outer
                 w "\n"
                 w indent
