@@ -135,6 +135,36 @@ let orderById =
 let customerNamed =
     Query.prepare (fun (name: Arg<string>) -> plasm { for c in tableOf<Customer> do where (c.Name = name.Value) })
 
+// -- Combining queries, windows and filtered aggregates ------------------------
+
+/// A customer's drafts and unpaid orders, each once: the union is a query
+/// like any other, filtered after it is formed.
+let needsAttention customerId =
+    Query.union (plasm { for o in tableOf<Order> do where (o.Status = Draft) }, unpaid (Query.from (tableOf<Order>)))
+    |> forCustomer customerId
+
+/// Each customer's orders numbered by date, with the total so far.
+let orderHistory =
+    plasm {
+        for o in tableOf<Order> do
+            orderBy o.CustomerId
+            thenBy o.PlacedAt
+            select (
+                o.Id,
+                Win.rowNumber (Win.partition o.CustomerId |> Win.orderBy o.PlacedAt),
+                Win.runningSum o.Total (Win.partition o.CustomerId |> Win.orderBy o.PlacedAt)
+            )
+    }
+
+/// Per customer: the drafts, what is published, and the orders by date.
+let customerSummary =
+    plasm {
+        for o in tableOf<Order> do
+            groupBy o.CustomerId
+            orderBy o.CustomerId
+            select (o.CustomerId, Agg.countWhere (o.Status = Draft), Agg.sumWhere (o.Status = Published) o.Total, Agg.listBy o.Id o.PlacedAt)
+    }
+
 // -- SQL fragments ---------------------------------------------------------------
 
 /// Literal SQL inside a typed query: the pattern is still a parameter.

@@ -43,11 +43,45 @@ let retag (article: Article) (names: string list) : Tx<Article, Refusal> =
         return! Tx.update (article, { article with Tags = tags })
     }
 
+/// Registers a customer, or gives the one who already has the email. The
+/// insert is tried under a savepoint, so its failure is a value and the
+/// transaction goes on.
+let register (customer: Customer) : Tx<Customer, Refusal> =
+    transaction {
+        let! tried = Tx.attempt (Tx.insert customer)
+
+        match tried with
+        | Ok stored -> return stored
+        | Error _ ->
+            return!
+                Tx.one (plasm { for c in tableOf<Customer> do where (c.Email = customer.Email) })
+                |> Tx.orReject (Missing "customer")
+    }
+
+/// The oldest draft no other worker holds, locked until the transaction ends.
+let claimDraft: Tx<Order option, Refusal> =
+    Tx.one (
+        plasm {
+            for o in tableOf<Order> do
+                where (o.Status = Draft)
+                orderBy o.PlacedAt
+                take 1
+                locking RowLock.ForUpdate.SkipLocked
+        }
+    )
+
 // -- Bulk writes ----------------------------------------------------------------
 
 /// One UPDATE for every stale draft; versions are incremented.
 let expireDrafts (before: DateTime) =
     Bulk.update (
+        plasm { for o in tableOf<Order> do where (o.Status = Draft && o.PlacedAt < before) },
+        fun o -> { o with Status = Cancelled "expired" }
+    )
+
+/// As expireDrafts, giving back the orders as they are now, read whole.
+let expireDraftsReturning (before: DateTime) =
+    Bulk.updateReturning (
         plasm { for o in tableOf<Order> do where (o.Status = Draft && o.PlacedAt < before) },
         fun o -> { o with Status = Cancelled "expired" }
     )

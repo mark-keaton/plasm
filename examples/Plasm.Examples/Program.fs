@@ -161,6 +161,24 @@ let tour (connectionString: string) (ddl: string) =
         let! latest = repo.All(latestOrdersOf ada.Id 5)
         show "prepared" (ok latest |> List.map (fun o -> o.Id))
 
+        let! attention = repo.All(needsAttention ada.Id)
+        show "union: drafts and unpaid orders, each once" (ok attention |> List.map (fun o -> o.Id))
+
+        let! history = repo.All orderHistory
+        show "window: number and total so far" (ok history)
+
+        let! summary = repo.All customerSummary
+        show "filtered aggregates" (ok summary)
+
+        let! registered = repo.Transact(register { ada with Id = CustomerId 0L })
+        show "register: the email is taken, so the customer who has it" (ok registered).Name
+
+        let! claimed = repo.Transact(claimDraft, retry = RetryPolicy.OnSerializationFailure 3)
+        show "claimed draft (FOR UPDATE SKIP LOCKED)" (ok claimed |> Option.map (fun o -> o.Id))
+
+        let! expired = repo.Transact(Tx.execute (expireDraftsReturning (DateTime.UtcNow.AddDays 1.0)): Tx<Order list, Refusal>)
+        show "expired, as they are now" (ok expired |> List.map (fun o -> o.Id, o.Status))
+
         match repo.Explain page with
         | Ok plan -> show "plan (no database access)" (plan.LoadPaths, plan.Sql)
         | Error e -> show "plan error" e
