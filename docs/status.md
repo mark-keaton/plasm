@@ -859,17 +859,16 @@ Changes that break code written against an earlier alpha, newest first.
 3. A second provider, to prove the `IProvider` / `ISqlDialect` boundary
    (SQLite or SQL Server); move the catalogue queries and the link SQL behind
    it.
-4. Diagnostics as OpenTelemetry activities.
-4a. Open question: hosting. `Repo.Start` is asynchronous, and ASP.NET Core's
+4. Open question: hosting. `Repo.Start` is asynchronous, and ASP.NET Core's
    service registration is synchronous, so Kanban's Host.fs starts the
    repository after the migrations and hands it to the services through a
    `TaskCompletionSource`. Whether Plasm should offer something for that (a
    hosted service, or a registration helper in a `Plasm.AspNetCore` package)
    is undecided; nothing is built.
-4b. Bring the browser koans' first runnable koan back under 20 s on a 25 Mbit/s
+5. Bring the browser koans' first runnable koan back under 20 s on a 25 Mbit/s
    connection. Measured 2026-11-15 at 19.2 to 20.1 s with 24.1 MB transferred
    (about 7.7 s of transfer); the budget in `course-in-the-browser.feature` is
    25 s until then.
-5. Close the gaps found by the comparison with the F# data-access libraries
+6. Close the gaps found by the comparison with the F# data-access libraries
    ([comparison.md](comparison.md)): typed parameters (such as `jsonb`) and
    several result sets in raw SQL; then the larger EF Core gaps listed there.
