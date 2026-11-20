@@ -166,6 +166,81 @@ type BulkSteps(w: World) =
         }
         |> unit
 
+    // Rule: Updates and deletes can return the rows they wrote
+
+    [<StepDefinition("the first draft Order has a Line")>]
+    member _.DraftLine() =
+        task {
+            let! p = Seed.product w.Db "LINE-1"
+            let! _ = Seed.line w.Db (w.Get<OrderId list> "drafts").Head p 1 1m
+            ()
+        }
+        |> unit
+
+    [<StepDefinition("I cancel every draft Order with one bulk update that returns them")>]
+    member _.CancelReturning() =
+        task {
+            w.MarkCommands()
+            let! r = w.Write(Tx.execute (Bulk.updateReturning (drafts, fun o -> { o with Status = Cancelled })))
+            w.Set("returned", ok r)
+        }
+        |> unit
+
+    [<StepDefinition("the 3 draft Orders are returned cancelled, the first with its Line")>]
+    member _.ReturnedCancelled() =
+        let returned = w.Get<Order list> "returned" |> List.sortBy (fun o -> let (OrderId v) = o.Id in v)
+        equal (w.Get<OrderId list> "drafts") (returned |> List.map (fun o -> o.Id)) "orders returned"
+        check (returned |> List.forall (fun o -> o.Status = Cancelled)) $"statuses returned: %A{returned |> List.map (fun o -> o.Status)}"
+        equal [ 1; 0; 0 ] (returned |> List.map (fun o -> o.Lines.Length)) "lines of each order returned"
+
+    [<StepDefinition("the update returns its rows from its own command")>]
+    member _.UpdateReturns() =
+        let update = w.CommandsSinceMark |> List.find (fun c -> c.Sql.StartsWith "UPDATE")
+        check (update.Sql.Contains "RETURNING") update.Sql
+
+    [<StepDefinition("^I delete the Product \"(.*)\" with one bulk delete that returns it$")>]
+    member _.DeleteProductReturning(sku: string) =
+        task {
+            let! r = w.Write(Tx.execute (Bulk.deleteReturning (plasm { for p in tableOf<Product> do where (p.Sku = sku) })))
+            w.Set("deletedProducts", ok r)
+        }
+        |> unit
+
+    [<StepDefinition("^the Product \"(.*)\" named \"(.*)\" is returned$")>]
+    member _.ProductReturned(sku: string, name: string) =
+        equal [ sku, name ] (w.Get<Product list> "deletedProducts" |> List.map (fun p -> p.Sku, p.Name)) "products returned"
+
+    [<StepDefinition("^only the Product \"(.*)\" remains$")>]
+    member _.OnlyProduct(sku: string) =
+        task {
+            let! rest = w.Repo.All(Query.from (tableOf<Product>))
+            equal [ sku ] (ok rest |> List.map (fun p -> p.Sku)) "products remaining"
+        }
+        |> unit
+
+    [<StepDefinition("I delete every draft Order with one bulk delete that returns them")>]
+    member _.DeleteDraftsReturning() =
+        task {
+            w.MarkCommands()
+            let! r = w.Write(Tx.execute (Bulk.deleteReturning drafts))
+            w.Set("deleteReturning", r)
+        }
+        |> unit
+
+    [<StepDefinition("^the request is refused, saying \"(.*)\"$")>]
+    member _.RefusedSaying(saying: string) =
+        match w.Get<Result<Order list, TransactionError<unit>>> "deleteReturning" with
+        | Error { Failure = TxFailure.Failed(DbError.Translation e) } -> check ((string e).Contains saying) (string e)
+        | other -> failwithf "expected a refusal, got %A" other
+
+    [<StepDefinition("no draft Order was deleted")>]
+    member _.NoDraftDeleted() =
+        task {
+            let! n = w.Db.Scalar<int64>("select count(*) from orders where status = 'draft'")
+            equal 3L n "draft orders"
+        }
+        |> unit
+
     [<StepDefinition("only the published Orders remain")>]
     member _.OnlyPublished() =
         task {

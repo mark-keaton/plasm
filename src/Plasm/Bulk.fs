@@ -9,8 +9,9 @@ type internal ConflictDef =
     | UpdateOnConflict of target: Expr * change: Expr
 
 type internal BulkDef =
-    | UpdateAll of QueryDef * change: Expr
-    | DeleteAll of QueryDef
+    /// `returning`: the rows written, not their count (bulk-writes.feature).
+    | UpdateAll of QueryDef * change: Expr * returning: bool
+    | DeleteAll of QueryDef * returning: bool
     | InsertAll of Type * rows: obj list * conflict: ConflictDef option
 
 /// A set-based write: one statement over every row a query matches, or many
@@ -29,11 +30,22 @@ type Bulk =
     /// Assigned values may be computed from the current row (`o.Total + 10m`).
     /// Returns the number of rows updated.
     static member update(query: Query<'T>, [<ReflectedDefinition>] change: Expr<'T -> 'T>) : BulkWrite<int> =
-        BulkWrite<int>(UpdateAll(query.Def, change), unbox<int>)
+        BulkWrite<int>(UpdateAll(query.Def, change, false), unbox<int>)
 
     /// Deletes every row the query matches. Returns the number of rows deleted.
     static member delete(query: Query<'T>) : BulkWrite<int> =
-        BulkWrite<int>(DeleteAll query.Def, unbox<int>)
+        BulkWrite<int>(DeleteAll(query.Def, false), unbox<int>)
+
+    /// As Bulk.update, returning the rows it changed as they are after it,
+    /// each read whole with what it owns and links (bulk-writes.feature).
+    static member updateReturning(query: Query<'T>, [<ReflectedDefinition>] change: Expr<'T -> 'T>) : BulkWrite<'T list> =
+        BulkWrite<'T list>(UpdateAll(query.Def, change, true), (fun v -> v :?> obj list |> List.map unbox<'T>))
+
+    /// As Bulk.delete, returning the rows it deleted, as they were. Only for
+    /// records that own or link nothing: what a deleted row owned cannot be
+    /// read back (bulk-writes.feature).
+    static member deleteReturning(query: Query<'T>) : BulkWrite<'T list> =
+        BulkWrite<'T list>(DeleteAll(query.Def, true), (fun v -> v :?> obj list |> List.map unbox<'T>))
 
     /// Inserts records with as few commands as possible; returns them with
     /// their generated values, in order.
@@ -81,8 +93,35 @@ module internal BulkExec =
             let vol = ref false
 
             match def with
-            | UpdateAll(q, change) -> [ Count(Sql.renderUpdate dialect (ok (Translate.bulkUpdate model vol q change))) ]
-            | DeleteAll q -> [ Count(Sql.renderDelete dialect (ok (Translate.bulkDelete model vol q))) ]
+            | UpdateAll(q, change, false) -> [ Count(Sql.renderUpdate dialect (ok (Translate.bulkUpdate model vol q change))) ]
+            | DeleteAll(q, false) -> [ Count(Sql.renderDelete dialect (ok (Translate.bulkDelete model vol q))) ]
+            | UpdateAll(q, _, true)
+            | DeleteAll(q, true) ->
+                if not dialect.Capabilities.Returning then
+                    raiseT (TranslationError.UnsupportedByProvider("RETURNING (reading back the rows a bulk write wrote)", dialect.Name))
+
+                let schema =
+                    match model.Schema q.Root with
+                    | Ok s -> s
+                    | Error e -> raiseT e
+
+                let returning = Sql.returningFields schema.Table schema.Fields
+
+                match def with
+                | UpdateAll(_, change, _) ->
+                    let update = ok (Translate.bulkUpdate model vol q change)
+                    [ Rows(Sql.renderUpdate dialect { update with Returning = returning }, schema) ]
+                | _ ->
+                    if schema.Assocs.Length > 0 then
+                        let names = schema.Assocs |> Array.map (fun a -> a.Name) |> String.concat ", "
+
+                        raiseT (
+                            TranslationError.InvalidQuery
+                                $"a bulk delete returns only records that own or link nothing, and {schema.Name} has {names}, which a delete cannot read back; delete it with Bulk.delete, or read the rows before deleting them"
+                        )
+
+                    let delete = ok (Translate.bulkDelete model vol q)
+                    [ Rows(Sql.renderDelete dialect { delete with Returning = returning }, schema) ]
             | InsertAll(t, rows, conflict) ->
                 let caps = dialect.Capabilities
 
@@ -132,9 +171,33 @@ module internal BulkExec =
 
     /// Runs the commands in a session; the caller provides atomicity when there
     /// is more than one.
-    let run (s: Execution.Session) (def: BulkDef) (cmds: Command list) : Task<obj> =
+    let run (s: Execution.Session) (model: Model) (def: BulkDef) (cmds: Command list) : Task<obj> =
         task {
             match def with
+            | UpdateAll(_, _, true)
+            | DeleteAll(_, true) ->
+                // The rows written, then (an update's) what they own and link,
+                // read in the same transaction.
+                let all = ResizeArray<obj>()
+
+                for c in cmds do
+                    match c with
+                    | Rows(cmd, schema) ->
+                        let! rows = Execution.query s cmd (Execution.readEntity schema)
+                        let nodes = Planner.planLoads s.Provider.Dialect model schema
+
+                        match nodes with
+                        | Ok nodes when not nodes.IsEmpty -> do! Execution.Round.run s (Execution.loads s rows nodes)
+                        | Ok _ -> ()
+                        | Error e -> raiseT e
+
+                        for r in rows do
+                            all.Add(schema.Shape.Construct r)
+                    | Count cmd ->
+                        let! _ = Execution.execute s cmd
+                        ()
+
+                return box (List.ofSeq all)
             | InsertAll _ ->
                 let all = ResizeArray<obj>()
 

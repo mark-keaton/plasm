@@ -571,11 +571,11 @@ type Tx =
                 | Ok cmds ->
                     let args =
                         match write.Def with
-                        | UpdateAll(q, _)
-                        | DeleteAll q -> q.Args
+                        | UpdateAll(q, _, _)
+                        | DeleteAll(q, _) -> q.Args
                         | InsertAll _ -> [||]
 
-                    let! v = BulkExec.run { rt.Session with Args = args } write.Def cmds
+                    let! v = BulkExec.run { rt.Session with Args = args } rt.Model write.Def cmds
                     return Ok(write.Finish v)
             })
 

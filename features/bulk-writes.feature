@@ -54,6 +54,36 @@ Feature: Bulk writes and upserts
       Then the request is rejected with an explanation
       And no database command is executed
 
+  Rule: Updates and deletes can return the rows they wrote
+
+    Bulk.updateReturning and Bulk.deleteReturning are the same writes giving
+    the rows instead of their count, as Bulk.insert gives the rows it
+    inserted: the update's rows as they are after it, read whole with what
+    they own and link, in the same transaction; the delete's rows as they
+    were. A delete cannot read what the rows it removes owned or linked, so it
+    returns rows only of records that own or link nothing, and refuses others
+    by name before anything is sent.
+
+    Scenario: A bulk update returns the rows it changed, as they are after it
+      Given 3 draft Orders and 2 published Orders
+      And the first draft Order has a Line
+      When I cancel every draft Order with one bulk update that returns them
+      Then the 3 draft Orders are returned cancelled, the first with its Line
+      And the update returns its rows from its own command
+
+    Scenario: A bulk delete returns the rows it deleted
+      Given a Product "SKU-1" named "First"
+      And a Product "SKU-2" named "Second"
+      When I delete the Product "SKU-1" with one bulk delete that returns it
+      Then the Product "SKU-1" named "First" is returned
+      And only the Product "SKU-2" remains
+
+    Scenario: A bulk delete of records that own others does not return them
+      Given 3 draft Orders and 2 published Orders
+      When I delete every draft Order with one bulk delete that returns them
+      Then the request is refused, saying "a bulk delete returns only records that own or link nothing"
+      And no draft Order was deleted
+
   Rule: Inserts and upserts take many records at once
 
     Scenario: Inserting many records in one command
