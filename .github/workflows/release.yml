@@ -40,9 +40,11 @@ permissions: {}
 env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
-  # What is published, in dependency order. Plasm.PGlite is a spike and is not
-  # packed; Plasm.FieldGetters travels inside Plasm's package.
+  # The libraries published, in dependency order. Plasm.PGlite is a spike and
+  # is not packed; Plasm.FieldGetters travels inside Plasm's package.
   PACKAGES: Plasm.Annotations Plasm Plasm.Postgres Plasm.HotChocolate
+  # The dotnet new template: examples/Starter as a package, with no assembly.
+  TEMPLATES: Plasm.Templates
 
 jobs:
   version:
@@ -112,13 +114,15 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
           global-json-file: global.json
+      # Without reference assemblies, which a build keeps when only the version
+      # changes: each assembly then names its siblings at the version packed.
       - name: Pack every package at the one version
         env:
           PKG_VERSION: ${{ needs.version.outputs.version }}
         run: |
-          for p in $PACKAGES; do
+          for p in $PACKAGES $TEMPLATES; do
             echo "::group::$p"
-            dotnet pack "src/$p" -c Release -o nupkg -p:Version="$PKG_VERSION"
+            dotnet pack "src/$p" -c Release -o nupkg -p:Version="$PKG_VERSION" -p:ProduceReferenceAssembly=false
             echo "::endgroup::"
           done
       - name: The packages are the ones named, complete, at the version
@@ -129,11 +133,12 @@ jobs:
         run: |
           failed=0
           problem() { echo "::error::$1"; failed=1; }
-          expected=$(for p in $PACKAGES; do echo "$p.$PKG_VERSION.nupkg"; echo "$p.$PKG_VERSION.snupkg"; done | sort)
+          expected=$( (for p in $PACKAGES; do echo "$p.$PKG_VERSION.nupkg"; echo "$p.$PKG_VERSION.snupkg"; done
+                       for p in $TEMPLATES; do echo "$p.$PKG_VERSION.nupkg"; done) | sort)
           if [ "$(cd nupkg && ls | sort)" != "$expected" ]; then
             problem "Packed: $(cd nupkg && ls | tr '\n' ' '). Expected: $(echo "$expected" | tr '\n' ' ')"
           fi
-          for p in $PACKAGES; do
+          for p in $PACKAGES $TEMPLATES; do
             file="nupkg/$p.$PKG_VERSION.nupkg"
             [ -f "$file" ] || continue
             nuspec=$(unzip -p "$file" "$p.nuspec")
@@ -147,18 +152,40 @@ jobs:
             has "<repository type=\"git\" url=\"https://github.com/$GITHUB_REPOSITORY\" commit=\"$GITHUB_SHA\""
             files=$(unzip -Z1 "$file")
             printf '%s\n' "$files" | grep -qx 'README.md' || problem "$p: no README.md in the package"
-            printf '%s\n' "$files" | grep -qx "lib/net11.0/$p.dll" || problem "$p: no lib/net11.0/$p.dll"
-            printf '%s\n' "$files" | grep -qx "lib/net11.0/$p.xml" || problem "$p: no documentation file"
             if printf '%s\n' "$files" | grep -Eq '(^|/)(obj|bin)/'; then
               problem "$p: carries build output: $(printf '%s\n' "$files" | grep -E '(^|/)(obj|bin)/' | tr '\n' ' ')"
             fi
+          done
+          for p in $PACKAGES; do
+            file="nupkg/$p.$PKG_VERSION.nupkg"
+            [ -f "$file" ] || continue
+            nuspec=$(unzip -p "$file" "$p.nuspec")
+            files=$(unzip -Z1 "$file")
+            printf '%s\n' "$files" | grep -qx "lib/net11.0/$p.dll" || problem "$p: no lib/net11.0/$p.dll"
+            printf '%s\n' "$files" | grep -qx "lib/net11.0/$p.xml" || problem "$p: no documentation file"
             # Every Plasm package it depends on is at this version.
             others=$(printf '%s' "$nuspec" | grep -o '<dependency id="Plasm[^"]*" version="[^"]*"' | grep -v "version=\"$PKG_VERSION\"" || true)
             [ -z "$others" ] || problem "$p: depends on another version of a Plasm package: $others"
-            unzip -Z1 "nupkg/$p.$PKG_VERSION.snupkg" | grep -qx "lib/net11.0/$p.pdb" || problem "$p: no symbols in its snupkg"
+            symbols=$(unzip -Z1 "nupkg/$p.$PKG_VERSION.snupkg")
+            grep -qx "lib/net11.0/$p.pdb" <<<"$symbols" || problem "$p: no symbols in its snupkg"
           done
+          # A listing is read into a variable first: grep -q stops at the first
+          # match, and a listing still being written to it would fail the pipe.
+          files=$(unzip -Z1 "nupkg/Plasm.$PKG_VERSION.nupkg")
           for f in build/Plasm.targets buildTransitive/Plasm.targets tools/Plasm.FieldGetters.dll; do
-            unzip -Z1 "nupkg/Plasm.$PKG_VERSION.nupkg" | grep -qx "$f" || problem "Plasm: no $f"
+            grep -qx "$f" <<<"$files" || problem "Plasm: no $f"
+          done
+          # A template has no assembly: it is a template package, holding the
+          # Starter, and the project it makes references Plasm at this version.
+          for p in $TEMPLATES; do
+            file="nupkg/$p.$PKG_VERSION.nupkg"
+            [ -f "$file" ] || continue
+            nuspec=$(unzip -p "$file" "$p.nuspec")
+            files=$(unzip -Z1 "$file")
+            config=$(unzip -p "$file" content/Starter/.template.config/template.json)
+            grep -Fq '<packageType name="Template"' <<<"$nuspec" || problem "$p: not a template package"
+            if grep -Eq '^lib/|\.dll$' <<<"$files"; then problem "$p: carries an assembly"; fi
+            grep -Fq "\"value\": \"$PKG_VERSION\"" <<<"$config" || problem "$p: its template.json does not name $PKG_VERSION"
           done
           exit $failed
       - name: Record package digests
