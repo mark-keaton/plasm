@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "Plasm contributors",
+  "classifications": [ "Web", "API", "Plasm", "Native AOT" ],
+  "identity": "Plasm.Templates.Api",
+  "name": "Plasm API (F# domain, C# minimal API and tests)",
+  "description": "An F# domain and its data access on Plasm.Postgres, called by a C# minimal API through one type, with C# tests in a sandbox. Native AOT.",
+  "shortName": "plasm-api",
+  "sourceName": "Starter",
+  "preferNameDirectory": true,
+  "tags": { "language": "C#", "type": "solution" },
+  "symbols": {
+    "plasmVersion": {
+      "type": "generated",
+      "generator": "constant",
+      "parameters": { "value": "0.1.0-alpha" },
+      "replaces": "0.1.0-alpha.1"
+    }
+  }
+}

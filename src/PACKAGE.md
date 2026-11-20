@@ -18,6 +18,7 @@ dotnet add package Plasm.Postgres
 - **Plasm**: records stored as the domain declares them, compiler-checked queries and typed transactions, with no provider.
 - **Plasm.Annotations**: the attributes a record uses, with their F# sources for Fable.
 - **Plasm.HotChocolate**: GraphQL filter and sort types from F# fields, applied in the database.
+- **Plasm.Templates**: `dotnet new plasm-api -n Name`, an F# domain on Plasm.Postgres with a C# minimal API that publishes with native AOT, and C# tests.
 
 The guide, the examples and the koans in the browser:
 <https://mark-keaton.github.io/plasm/>. The source, the roadmap and the

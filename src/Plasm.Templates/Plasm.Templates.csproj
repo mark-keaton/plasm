@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- `dotnet new plasm-api`: examples/Starter as a template. Its content is the
+       Starter's own files, taken at pack time, so there is no copy to keep in
+       step; tests/Plasm.Package checks the package's files against the
+       Starter's and builds a project made from it. -->
+  <PropertyGroup>
+    <PackageId>Plasm.Templates</PackageId>
+    <PackageType>Template</PackageType>
+    <Description>dotnet new plasm-api: an F# domain and its data access on Plasm.Postgres, a C# minimal API that publishes with native AOT, and C# tests, each in a sandbox.</Description>
+    <PackageTags>$(PackageTags);dotnet-new;templates</PackageTags>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IncludeSymbols>false</IncludeSymbols>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <!-- The Starter's .gitignore is part of it. -->
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <!-- NU5128: a template has no lib/ to match its dependency groups. -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+    <Starter>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..', 'examples', 'Starter'))</Starter>
+    <TemplateConfig>$(IntermediateOutputPath)template.json</TemplateConfig>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Remove="FSharp.Core" />
+    <None Include="$(Starter)**" Exclude="$(Starter)**/bin/**;$(Starter)**/obj/**;$(Starter)**/TestResults/**;$(Starter)packages/**;$(Starter).nuget/**" Pack="true" PackagePath="content/Starter/%(RecursiveDir)%(Filename)%(Extension)" Visible="false" />
+  </ItemGroup>
+
+  <!-- template.json, with the Starter's Plasm.Postgres version (the text the
+       template replaces) and the template's own (what replaces it): a project
+       made from Plasm.Templates X references Plasm.Postgres X. -->
+  <Target Name="PlasmTemplateConfig" BeforeTargets="_GetPackageFiles">
+    <XmlPeek XmlInputPath="$(Starter)Directory.Packages.props" Query="/Project/ItemGroup/PackageVersion[@Include='Plasm.Postgres']/@Version">
+      <Output TaskParameter="Result" PropertyName="StarterPlasmVersion" />
+    </XmlPeek>
+    <Error Condition="'$(StarterPlasmVersion)' == ''" Text="examples/Starter/Directory.Packages.props names no Plasm.Postgres version." />
+    <PropertyGroup>
+      <TemplateJson>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)template.json').Replace('@STARTER_VERSION@', '$(StarterPlasmVersion)').Replace('@VERSION@', '$(PackageVersion)'))</TemplateJson>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(TemplateConfig)" Lines="$(TemplateJson)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <None Include="$(TemplateConfig)" Pack="true" PackagePath="content/Starter/.template.config/template.json" />
+    </ItemGroup>
+  </Target>
+</Project>

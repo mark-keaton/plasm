@@ -9,7 +9,8 @@
 # build cost is measured: the publish's time with and without it, and the
 # step's own. examples/Starter, an F# library with a C# API and C# tests over
 # it, is built from the same feed: its API natively, and its tests under the
-# runtime and natively (Docker).
+# runtime and natively (Docker). Plasm.Templates is that Starter as a
+# `dotnet new` template; a project made from it is tested and published too.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
@@ -23,15 +24,17 @@ feed="$work/feed"; app="$work/app"; export NUGET_PACKAGES="$work/packages"
 packages="Plasm.Annotations Plasm Plasm.Postgres Plasm.HotChocolate"
 if [ -n "${PLASM_FEED:-}" ]; then
   # A release checks the packages it will push: PLASM_FEED is a folder holding
-  # the four, packed already, and nothing is packed here.
+  # the four and Plasm.Templates, packed already, and nothing is packed here.
   feed="$(cd "$PLASM_FEED" && pwd -P)"
   echo "pack: none; the feed is PLASM_FEED, packed already"
 else
-  echo "pack: $packages into a local feed, built first and packed without building, as CI packs"
+  echo "pack: $packages and Plasm.Templates into a local feed, built first and packed without building, as CI packs"
   for p in $packages; do
     dotnet build "$repo/src/$p" -c Release -v q > "$work/build-$p.log" 2>&1 || { cat "$work/build-$p.log"; exit 1; }
     dotnet pack "$repo/src/$p" -c Release --no-build -o "$feed" -v q > "$work/pack-$p.log" 2>&1 || { cat "$work/pack-$p.log"; exit 1; }
   done
+  # The template has no build output; it packs the Starter's files.
+  dotnet pack "$repo/src/Plasm.Templates" -c Release -o "$feed" -v q > "$work/pack-Plasm.Templates.log" 2>&1 || { cat "$work/pack-Plasm.Templates.log"; exit 1; }
 fi
 version=$(ls "$feed" | sed -n 's/^Plasm\.Postgres\.\(.*\)\.nupkg$/\1/p' | head -1)
 if [ -z "$version" ]; then echo "pack: no Plasm.Postgres package in $feed"; exit 1; fi
@@ -151,6 +154,46 @@ echo "Starter's tests, runtime: $(grep -E '^\s+(total|failed):' "$work/st-test.l
 dotnet publish tests/Starter.Tests -c Release -r "$rid" -o "$work/st-tests-native" -v m > "$work/st-tests-native.log" 2>&1 || { tail -30 "$work/st-tests-native.log"; exit 1; }
 "$work/st-tests-native/Starter.Tests" > "$work/st-tests-native.txt" 2>&1 || { echo "Starter's native tests failed"; tail -30 "$work/st-tests-native.txt"; failed=1; }
 echo "Starter's tests, native: $(grep -o 'Total: [0-9]*, Errors: [0-9]*, Failed: [0-9]*' "$work/st-tests-native.txt")"
+cd "$repo"
+
+# Plasm.Templates (`dotnet new plasm-api`): its content is examples/Starter's
+# own files, byte for byte, and nothing else. Installed into a hive of its own,
+# a project is made from it under another name outside the repository; the
+# names are replaced and it references Plasm at the template's version, from
+# nuget.org alone. The check, not the project, then adds this feed (the
+# consumer's nuget.config), since the version is not on nuget.org yet; its
+# tests pass and its API publishes natively.
+tpl="$feed/Plasm.Templates.$version.nupkg"
+if [ ! -f "$tpl" ]; then echo "template: $feed has no Plasm.Templates.$version.nupkg"; exit 1; fi
+# The Starter's tracked files; in an exported tree, with no git, its files
+# but what a build or a run leaves (bin, obj, TestResults, packages, .nuget).
+if git -C "$repo" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+  want=$(git -C "$repo" ls-files examples/Starter | sed 's|^examples/Starter/||' | sort)
+else
+  want=$(cd "$repo/examples/Starter" && find . -type f -not -path '*/bin/*' -not -path '*/obj/*' -not -path '*/TestResults/*' -not -path './packages/*' -not -path './.nuget/*' | sed 's|^\./||' | sort)
+fi
+have=$(unzip -Z1 "$tpl" | sed -n 's|^content/Starter/||p' | grep -v '^\.template\.config/' | grep -v '/$' | sort)
+if [ "$want" != "$have" ]; then echo "template: its files are not the Starter's"; diff <(echo "$want") <(echo "$have"); exit 1; fi
+for f in $want; do
+  if ! unzip -p "$tpl" "content/Starter/$f" | cmp -s - "$repo/examples/Starter/$f"; then echo "template: content/Starter/$f differs from examples/Starter/$f"; exit 1; fi
+done
+echo "template: version $version; its $(echo "$want" | wc -l | tr -d ' ') files are examples/Starter's"
+hive="$work/hive"; gen="$work/made"
+dotnet new install "$tpl" --debug:custom-hive "$hive" > "$work/tpl-install.log" 2>&1 || { cat "$work/tpl-install.log"; exit 1; }
+dotnet new plasm-api -n Lending -o "$gen" --debug:custom-hive "$hive" > "$work/tpl-new.log" 2>&1 || { cat "$work/tpl-new.log"; exit 1; }
+left=$(grep -r -l -i starter "$gen" || true; find "$gen" -iname '*starter*')
+if [ -n "$left" ]; then echo "template: Starter is left in:"; echo "$left"; exit 1; fi
+if ! grep -q "Include=\"Plasm.Postgres\" Version=\"$version\"" "$gen/Directory.Packages.props"; then echo "template: the project does not reference Plasm.Postgres $version"; cat "$gen/Directory.Packages.props"; exit 1; fi
+if [ "$(grep -c '<add key=' "$gen/nuget.config")" != 1 ] || ! grep -q 'api.nuget.org' "$gen/nuget.config"; then echo "template: the project's nuget.config is not nuget.org alone"; cat "$gen/nuget.config"; exit 1; fi
+echo "template: Lending, from plasm-api: no Starter left, Plasm.Postgres $version, nuget.org alone"
+cp "$app/nuget.config" "$gen/nuget.config"
+cd "$gen"
+dotnet test --project tests/Lending.Tests > "$work/tpl-test.log" 2>&1 || { echo "the made project's tests failed"; tail -30 "$work/tpl-test.log"; failed=1; }
+echo "the made project's tests: $(grep -E '^\s+(total|failed):' "$work/tpl-test.log" | tr -s ' ' | tr '\n' ' ')"
+dotnet publish src/Lending.Api -c Release -r "$rid" -o "$work/tpl-native" -v m > "$work/tpl-native.log" 2>&1 || { tail -30 "$work/tpl-native.log"; exit 1; }
+"$work/tpl-native/Lending.Api" ddl > "$work/tpl-native.txt" 2>&1 || true
+if ! grep -q '^create table equipment' "$work/tpl-native.txt"; then echo "the made project's native binary did not print its DDL"; cat "$work/tpl-native.txt"; failed=1; fi
+if grep 'warning IL' "$work/tpl-native.log" | grep -v -E 'IL2104|IL3053' | grep -q .; then echo "the made project's publish warns beyond the summary lines"; grep 'warning IL' "$work/tpl-native.log" | sort -u; failed=1; else echo "the made project's API publishes natively, warning only FSharp.Core's two summary lines"; fi
 cd "$repo"
 
 # A GraphQL application on Plasm.HotChocolate, from the same feed.
