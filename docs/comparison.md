@@ -106,10 +106,14 @@ In rough order of importance for teams leaving EF Core:
    entities.
    A join table cannot carry columns of its own.
 5. **Querying.** No subquery in a `select`, no right, full or non-equi
-   joins, no streaming, a fixed set of translated functions,
+   joins, a fixed set of translated functions,
    and raw SQL that cannot be composed further. A result can hold nested
    lists: a `let!` load binds a list to each record, with its own `where`,
-   order and `take` per record.
+   order and `take` per record. `repo.Stream` gives rows as they are
+   read, for records without lists and for projections; a query of
+   records that own or link a list is refused, where EF Core streams
+   any query. `Query.recursive` reads a tree in one statement
+   (`WITH RECURSIVE`).
 6. **Writing.** Only what an aggregate owns or links is written with it;
    another aggregate is written by its own transaction step, and there is no
    unit of work across arbitrary records.

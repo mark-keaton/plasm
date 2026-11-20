@@ -9,7 +9,7 @@ page is taken from. Send it to `dotnet fsi` a submission at a time. It needs
 `dotnet build -c Release` and `PLASM_PG` pointing at a database built from the
 DDL its first submission prints. It references the assemblies this
 repository builds; in a script of your own,
-`#r "nuget: Plasm.Postgres, 0.1.0-alpha.1"` takes their place.
+`#r "nuget: Plasm.Postgres, 0.1.0-alpha.2"` takes their place.
 
 ## Start unchecked
 

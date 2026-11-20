@@ -200,7 +200,7 @@ dotnet fsi website/build.fsx       # the site, into _site/; fails if a documente
 ## Packages
 
 `Plasm.Postgres`, with `Plasm` and `Plasm.Annotations` under it, and
-`Plasm.HotChocolate` are on NuGet as a pre-release, `0.1.0-alpha.1`:
+`Plasm.HotChocolate` are on NuGet as a pre-release, `0.1.0-alpha.2`:
 
 ```sh
 dotnet add package Plasm.Postgres --prerelease

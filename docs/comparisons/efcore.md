@@ -332,7 +332,7 @@ The gap list for an EF Core replacement. Plasm status is from `docs/status.md` (
 20. Eager loading combined with joins and projections. A choice of single-query JOIN loading or split loading, per query or globally. Plasm always batches, always loads what a record owns, and lets no query choose what to load.
 21. Identity resolution (`AsNoTrackingWithIdentityResolution`, the tracked identity map).
 22. Lazy loading (proxies, `ILazyLoader`), explicit loading through `Entry`.
-23. Streaming with `AsAsyncEnumerable`. Plasm has no streaming.
+23. Streaming with `AsAsyncEnumerable`. Plasm streams with `repo.Stream` (an `IAsyncEnumerable` of `Result`), for queries of records without lists and for projections; EF Core streams any query, includes too.
 24. Compiled queries (`EF.CompileAsyncQuery`), parameter-mode control for collections (`EF.Constant`, `EF.Parameter`, `UseParameterizedCollectionMode`). Plasm has `Query.prepare`, with prepared projections for one and two arguments.
 25. A large, provider-extensible method-translation catalogue: date and time parts, math, string functions, `EF.Functions.*`, user-mapped functions. Plasm translates a fixed subset (comparisons, `StartsWith`/`EndsWith`/`Contains`, `ToLower`/`ToUpper`/`Trim`/`Length`) plus `Raw.fragment`.
 

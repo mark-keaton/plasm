@@ -189,6 +189,56 @@ let needsAttention customerId =
 
 A join takes a query where it takes a table: `join c in (plasm { ... }) on (...)`.
 
+## A tree, read in one statement
+
+A record that refers to its own kind is a tree: a category with a parent
+category.
+
+<!-- from: tests/Plasm.Aot/App.fs -->
+```fsharp
+type CategoryId = CategoryId of int64
+
+[<Table "categories">]
+type Category =
+    { Id: CategoryId
+      Name: string
+      Parent: CategoryId option }
+```
+
+`Query.recursive` takes a start and a step. The start is the rows to begin
+from, here the categories with no parent. The step joins a table to what has
+been found so far, here each category whose parent is among them.
+
+<!-- from: tests/Plasm.Aot/Program.fs -->
+```fsharp
+            let under =
+                Query.recursive (
+                    plasm { for c in tableOf<Category> do where (c.Parent = None) },
+                    fun found ->
+                        plasm {
+                            for c in tableOf<Category> do
+                            join p in found on (c.Parent = Some p.Id)
+                            select c
+                        }
+                )
+
+            selected (plasm { for c in under do orderBy (Query.depth c); thenBy c.Name; select (c.Name, Query.depth c) }) (fun (name, depth) -> name + " " + string depth))
+```
+
+- It is one statement: `WITH RECURSIVE ... UNION ALL`, with `CYCLE` on the
+  record's key. A cycle in the data ends.
+- The query made from it filters, orders and pages the whole result, never
+  a single step.
+- `Query.depth c` is 0 for the start's rows.
+- Everything above a row is the same form with the join turned round:
+  `join c in found on (Some p.Id = c.Parent)`, selecting `p`.
+- Each path to a row is a row. In a tree there is one.
+- The start and the step neither order nor page. The step joins `found`
+  exactly once, and does not group, take distinct rows or lock. A recursive
+  query cannot be locked. Each refusal says what to do instead.
+- It needs PostgreSQL 14 or later, because of `CYCLE`. On 13 the query
+  fails with the database's syntax error (`DbError.Database`, 42601).
+
 ## Prepared queries
 
 A prepared query is built and planned once; each call only binds its
@@ -234,3 +284,45 @@ the database.
 
 The site's examples page shows the SQL Plasm generated for each of these,
 captured from a real run.
+
+## Reading rows as a stream
+
+`repo.Stream` gives a query's rows as they are read, for an export or a scan
+that should not hold the whole result in memory.
+
+<!-- from: examples/Plasm.Examples/Program.fs -->
+```fsharp
+        let stream = repo.Stream(plasm { for p in tableOf<Product> do orderBy p.Sku; select p.Sku })
+        let e = stream.GetAsyncEnumerator()
+        let skus = ResizeArray<string>()
+
+        while! e.MoveNextAsync() do
+            match e.Current with
+            | Ok sku -> skus.Add sku
+            | Error failure -> printfn "the stream ended with %O" failure
+
+        do! e.DisposeAsync()
+```
+
+The loop is inside a `task`, and `while!` needs F# 8. This stream is of a
+projection; `repo.Stream` takes a query of records too.
+
+- Nothing is sent until the first row is asked for. From then the stream
+  holds one connection.
+- It gives the connection back when the rows end, when it is disposed
+  early, and when its token is cancelled. Cancellation raises
+  `OperationCanceledException`, as every read does.
+- Each element is a `Result<'T, DbError>`. A failure is the last element: a
+  database failure part-way through, or a value that cannot be read back.
+  Nothing is thrown for either.
+- A query that cannot be translated is a single `Error`, and opens no
+  connection.
+- A stream is one command, so a query of records that own or link a list is
+  refused, naming the list. Stream a projection of the fields you need, or
+  read the records a page at a time with `repo.All`.
+- A stream reads outside a transaction. In a sandbox it reads the sandbox's
+  rows.
+- `OnCommand` and the activity report it once, when it ends, with the rows
+  read.
+- From C# it is an `IAsyncEnumerable` of `FSharpResult<T, DbError>`, read
+  with `await foreach`. Behind a facade, map each to the facade's own type.
