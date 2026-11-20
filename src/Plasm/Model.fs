@@ -305,8 +305,9 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, registered:
                   | Some target -> yield { Model = s.Type.Name; Field = f.Name; Target = target.Name }
                   | None -> ()
 
-                  for leaf in f.CaseReferences do
-                      yield { Model = s.Type.Name; Field = $"{f.Name}.{leaf.Name}"; Target = leaf.References.Value.Name } ]
+                  if f.Name <> s.Key.Name then
+                      for path, leaf in f.NestedReferences do
+                          yield { Model = s.Type.Name; Field = path; Target = leaf.References.Value.Name } ]
 
     /// The record types this model can persist.
     member _.Types = schemas.Keys |> Seq.toList
@@ -727,7 +728,7 @@ module Model =
     let private arrayField (scalars: IReadOnlyDictionary<Type, ScalarMapping>) (prop: Reflection.PropertyInfo) (i: int) (column: string) : Result<FieldMap, string> =
         let t = prop.PropertyType
         let e = Reflection.elementType t
-        let name = Reflection.typeName t
+        let name = Reflection.fsharpTypeName t
         let asDocument = "mark it [<Json>] to store it as one document"
 
         if Reflection.isOption e then
@@ -1192,17 +1193,23 @@ module Model =
                     match keysOf.TryGetValue f.ScalarType with
                     | true, target when f.Name <> s.Key.Name && not (defs.[t].NotReference.Contains f.Name) -> { f with References = Some target }
                     | _ ->
-                        // A typed id among a union's case fields references
-                        // its record too (union-references.feature).
-                        match f.Union with
-                        | Some u when not (defs.[t].NotReference.Contains f.Name) ->
-                            let refer (leaf: FieldMap) =
-                                match keysOf.TryGetValue leaf.ScalarType with
-                                | true, target -> { leaf with References = Some target }
-                                | _ -> leaf
+                        // A typed id among a union's case fields or a value's
+                        // fields references its record too
+                        // (union-references.feature). A key's own parts are
+                        // references already (composite-references.feature).
+                        let rec refer (g: FieldMap) =
+                            match g.Value, g.Union with
+                            | Some v, _ -> { g with Value = Some { v with Fields = v.Fields |> List.map refer } }
+                            | None, Some u -> { g with Union = Some(u.MapLeaves refer) }
+                            | None, None ->
+                                match keysOf.TryGetValue g.ScalarType with
+                                | true, target -> { g with References = Some target }
+                                | _ -> g
 
-                            { f with Union = Some(u.MapLeaves refer) }
-                        | _ -> f)
+                        if f.Composite && f.Name <> s.Key.Name && not (defs.[t].NotReference.Contains f.Name) then
+                            refer f
+                        else
+                            f)
 
             resolved.[t] <- { s with Fields = fields; Key = fields |> Array.find (fun f -> f.Name = s.Key.Name) }
 

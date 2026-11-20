@@ -34,6 +34,7 @@ Feature: Plasm prints the DDL its model expects
         | Cards linked to tags      |
         | Records named by keywords |
         | Shelves lent to members   |
+        | People with addresses     |
 
   Rule: It states the model's constraints by the names Plasm maps
 

@@ -367,12 +367,21 @@ type internal FieldMap =
     /// Stored in more than one column (a union with fields, or a value).
     member f.Composite = f.Union.IsSome || f.Value.IsSome
 
-    /// The case fields of a union field that hold another record's key, once
-    /// per column: each is a reference (union-references.feature).
-    member f.CaseReferences: FieldMap list =
-        match f.Union with
-        | Some u -> u.Leaves |> List.filter (fun l -> l.References.IsSome) |> List.distinctBy (fun l -> l.Column)
-        | None -> []
+    /// The columns inside a union or a value field that hold another
+    /// record's key, once per column, each with the path that names it
+    /// (`Status.borrower`, `Home.City`): each is a reference
+    /// (union-references.feature).
+    member f.NestedReferences: (string * FieldMap) list =
+        let rec within (path: string) (g: FieldMap) =
+            match g.Value, g.Union with
+            | Some v, _ -> v.Fields |> List.collect (fun s -> within $"{path}.{s.Name}" s)
+            | None, Some u -> u.Leaves |> List.collect (fun l -> within $"{path}.{l.Name}" l)
+            | None, None -> if g.References.IsSome then [ path, g ] else []
+
+        if f.Composite then
+            within f.Name f |> List.distinctBy (fun (_, l) -> l.Column)
+        else
+            []
 
     /// Whether a column of Parts must hold a value (NOT NULL).
     member f.Requires(column: string) : bool =

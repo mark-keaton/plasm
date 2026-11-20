@@ -357,11 +357,10 @@ module internal SchemaCheck =
                                 | None -> ()
                             | _ -> ()
 
-                    // A typed id among a union's case fields, in its own column
-                    // (union-references.feature).
-                    for f in sc.Fields do
-                        for leaf in f.CaseReferences do
-                            let label = $"{f.Name}.{leaf.Name}"
+                    // A typed id among a union's case fields or a value's
+                    // fields, in its own column (union-references.feature).
+                    for f in sc.Fields |> Array.filter (fun f -> f.Name <> sc.Key.Name) do
+                        for label, leaf in f.NestedReferences do
 
                             match model.Schemas.TryGetValue leaf.References.Value with
                             | true, target when columns |> List.exists (fun c -> c.Name = leaf.Column) ->
@@ -604,10 +603,11 @@ module internal Ddl =
                   for f in s.Fields do
                       yield! within f
 
-                      for leaf in f.CaseReferences do
-                          match byType.TryGetValue leaf.References.Value with
-                          | true, r -> yield s.Table, [ leaf.Column ], r
-                          | _ -> ()
+                      if f.Name <> s.Key.Name then
+                          for _, leaf in f.NestedReferences do
+                              match byType.TryGetValue leaf.References.Value with
+                              | true, r -> yield s.Table, [ leaf.Column ], r
+                              | _ -> ()
 
                   for a in s.Assocs do
                       match a.Kind with

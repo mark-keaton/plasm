@@ -98,9 +98,24 @@ module Unclear =
     [<Table "union_list">]
     type UnionList = { Id: UnionListId; Shapes: Shape list }
 
+    /// A fieldless union stored as a PostgreSQL enum (Scalar.asPgEnum).
+    type Stage =
+        | Draft
+        | Done
+
+    type EnumListId = EnumListId of int64
+
+    [<Table "enum_list">]
+    type EnumList = { Id: EnumListId; Stages: Stage list }
+
+    /// The mappings a model is built with, where it needs one.
+    let scalars =
+        Map [ "a list of a PostgreSQL enum", [ Scalar.enum [ Draft, "draft"; Done, "done" ] |> Scalar.asPgEnum "stage" ] ]
+
     let models =
         Map
-            [ "a list of optional strings", [ typeof<OptionalItems> ]
+            [ "a list of a PostgreSQL enum", [ typeof<EnumList> ]
+              "a list of optional strings", [ typeof<OptionalItems> ]
               "an optional list", [ typeof<OptionalList> ]
               "an array field", [ typeof<ArrayField> ]
               "a list of values", [ typeof<ValueList> ]
@@ -382,4 +397,5 @@ type ArraySteps(w: World) =
 
     [<StepDefinition("I build an array model of (.*)")>]
     member _.Build(records: string) =
-        w.Set("storedBuild", Model.build [] Unclear.models.[records])
+        let scalars = Unclear.scalars |> Map.tryFind records |> Option.defaultValue []
+        w.Set("storedBuild", Model.build scalars Unclear.models.[records])

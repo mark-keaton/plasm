@@ -74,7 +74,7 @@ The "type created after first connection" row is the trap for Plasm users. It hi
 - Same errors as Npgsql for `text` (OID 25) parameters: 42883 on `=`/`ANY`, 42804 on insert.
 - `$1::order_status` and `ANY($1::order_status[])` with text/`text[]` parameters work.
 - OID 0 (let the server infer) works for scalars. For arrays it fails, with 22P02 "malformed array literal: "shipped,pending"", because the JS serializer flattens the array.
-- Results come back with the enum's runtime OID (16385, array 16384). The .NET side's `Values.ofText` falls through to `box s`, so scalars read as `string`, which is fine. An enum **array** column would come back as raw `{a,b}` text, which is harmless since Plasm has no array columns.
+- Results come back with the enum's runtime OID (16385, array 16384). The .NET side's `Values.ofText` falls through to `box s`, so scalars read as `string`, which is fine. An enum **array** column would come back as raw `{a,b}` text. Plasm never reads one: a list of a type stored as an enum is refused when the model is built, by name (array-columns.feature), though a list of the same union stored as text is a `text[]` column.
 
 ### EF Core provider (Npgsql.EntityFrameworkCore.PostgreSQL) [docs]
 - **Before 9.0** you needed three steps: `HasPostgresEnum<Mood>()` in `OnModelCreating` (creates the type in migrations), plus `NpgsqlDataSourceBuilder.MapEnum<Mood>()` or `GlobalTypeMapper.MapEnum` at the ADO level, plus a static constructor ordering gotcha with several contexts. ([EF enum docs](https://www.npgsql.org/efcore/mapping/enum.html))

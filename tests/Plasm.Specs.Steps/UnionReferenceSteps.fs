@@ -26,7 +26,30 @@ module UnionReferences =
 
     let model = Model.buildOrFail [] [ typeof<Member>; typeof<Shelf> ]
 
+/// union-references.feature: people whose addresses, values stored in
+/// their row, name a city.
+module ValueReferences =
+    type CityId = CityId of int64
+    type PersonId = PersonId of int64
+
+    [<Table "cities">]
+    type City = { Id: CityId; Name: string }
+
+    type Address =
+        { Street: string
+          City: CityId
+          Near: CityId option }
+
+    [<Table "people">]
+    type Person =
+        { Id: PersonId
+          Home: Address
+          Work: Address option }
+
+    let model = Model.buildOrFail [] [ typeof<City>; typeof<Person> ]
+
 open UnionReferences
+open ValueReferences
 
 [<Binding>]
 type UnionReferenceSteps(w: World) =
@@ -109,4 +132,96 @@ type UnionReferenceSteps(w: World) =
                  && i.Field = Some "Status.borrower"
                  && i.Column = Some "status_borrower"
                  && i.Message.Contains "members"))
+            $"the issues are %A{issues}"
+
+    // -- An id in a value ----------------------------------------------------
+
+    member private _.People() = w.Db.RepoWith(model = ValueReferences.model)
+
+    [<StepDefinition("^I list the references the model of people infers$")>]
+    member _.PeopleReferences() =
+        w.Set("references", ValueReferences.model.References)
+
+    [<StepDefinition("^Person.Home.City, Person.Home.Near, Person.Work.City and Person.Work.Near reference City, each once$")>]
+    member _.PeopleCity() =
+        let refs = w.Get<ModelReference list> "references"
+
+        for field in [ "Home.City"; "Home.Near"; "Work.City"; "Work.Near" ] do
+            let found = refs |> List.filter (fun r -> r.Model = "Person" && r.Field = field && r.Target = "City")
+            equal 1 found.Length $"references of Person.{field} in %A{refs}"
+
+    [<StepDefinition("^the people tables as Plasm's DDL creates them, with a city$")>]
+    member this.PeopleTables() =
+        task {
+            let! _ = w.Db.Exec(this.People().Ddl())
+            let! city = w.Db.Scalar<int64>("insert into cities (name) values ('Leeds') returning id")
+            w.Set("city", city)
+        }
+        :> Threading.Tasks.Task
+
+    [<StepDefinition("^the people tables as Plasm's DDL creates them, without the foreign key on home_city$")>]
+    member this.PeopleWithoutKey() =
+        task {
+            let! _ = w.Db.Exec(this.People().Ddl())
+            let! _ = w.Db.Exec "alter table people drop constraint if exists people_home_city_fkey"
+            ()
+        }
+        :> Threading.Tasks.Task
+
+    member private this.InsertPerson(city: int64) =
+        task {
+            let person =
+                { Id = PersonId 0L
+                  Home = { Street = "1 Park Row"; City = CityId city; Near = None }
+                  Work = None }
+
+            let! r = this.People().Transact(Tx.insert person: Tx<Person, unit>)
+            w.Set("person", r)
+        }
+        :> Threading.Tasks.Task
+
+    [<StepDefinition("^I insert a Person at home in that city, near no city, with no work address$")>]
+    member this.HomeOnly() = this.InsertPerson(w.Get<int64> "city")
+
+    [<StepDefinition("^I insert a Person at home in the city with id (\\d+)$")>]
+    member this.HomeIn(city: int64) = this.InsertPerson city
+
+    [<StepDefinition("^the Person is stored, with NULL in home_near, work_city and work_near$")>]
+    member _.PersonStored() =
+        task {
+            ok (w.Get<Result<Person, TransactionError<unit>>> "person") |> ignore
+            let! n = w.Db.Scalar<int64>("select count(*) from people where home_near is null and work_city is null and work_near is null")
+            equal 1L n "people with NULL in the absent references"
+        }
+        :> Threading.Tasks.Task
+
+    [<StepDefinition("^the Person is refused with a reference error on (\\w+), naming (\\w+)$")>]
+    member _.PersonRefused(field: string, name: string) =
+        match w.Get<Result<Person, TransactionError<unit>>> "person" with
+        | Error { Failure = TxFailure.InvalidChanges(_, errors) } ->
+            check
+                (errors |> List.exists (fun e -> e.Field = field && e.Kind = FieldErrorKind.ForeignKeyConstraint name))
+                $"the errors are %A{errors}"
+        | other -> failwithf "expected the field's reference error, got %A" other
+
+    [<StepDefinition("^I check the people against the database$")>]
+    member this.CheckPeople() =
+        task {
+            let! r = this.People().CheckSchema()
+            w.Set("issues", ok r)
+        }
+        :> Threading.Tasks.Task
+
+    [<StepDefinition("^the missing reference from Person's Home\\.City to cities is reported$")>]
+    member _.PeopleMissing() =
+        let issues = w.Get<SchemaIssue list> "issues"
+
+        check
+            (issues
+             |> List.exists (fun i ->
+                 i.Kind = SchemaIssueKind.MissingReference
+                 && i.Model = "Person"
+                 && i.Field = Some "Home.City"
+                 && i.Column = Some "home_city"
+                 && i.Message.Contains "cities"))
             $"the issues are %A{issues}"

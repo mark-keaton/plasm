@@ -35,6 +35,7 @@ type DdlSteps(w: World) =
         | "Cards linked to tags" -> LinkedTags.model
         | "Records named by keywords" -> KeywordNames.model
         | "Shelves lent to members" -> UnionReferences.model
+        | "People with addresses" -> ValueReferences.model
         | other -> failwith $"no model named {other}"
 
     let repoFor name = w.Db.RepoWith(model = modelNamed name)

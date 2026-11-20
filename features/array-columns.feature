@@ -162,3 +162,4 @@ Feature: A list of scalars is stored as one array column
         | an array field             | ArrayField    | use a list                                    |
         | a list of values           | ValueList     | mark it [<Json>] to store it as one document  |
         | a list of unions of fields | UnionList     | mark it [<Json>] to store it as one document  |
+        | a list of a PostgreSQL enum | EnumList     | is a Stage list: an array of a type stored as stage is not supported |
