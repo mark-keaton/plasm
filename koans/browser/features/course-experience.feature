@@ -64,12 +64,15 @@ Feature: Walking the path in the browser
       When a koan is shown
       Then each blank in its code is highlighted
 
-    Scenario: The course links back to Plasm's specification
+    Scenario: The course links back to Plasm's specification, once the koan is passed
       When the learner opens the koan "Wrapped keys keep their meaning"
+      Then the scenario it teaches is not shown yet
+      When the learner passes it with its reference answer
       Then it links to the acceptance scenario it teaches
 
-    Scenario: The first lesson names the F# it teaches
+    Scenario: The first lesson names the F# it teaches, once the koan is passed
       When the learner opens the first koan
+      And the learner passes it with its reference answer
       Then it names the F# topic it teaches, without a link
 
     Scenario: Code is coloured as F#

@@ -4,7 +4,7 @@
 [ "Widget", 10m; "Gadget", 10m ]
 # Counting joined rows
 3L
-# A left join's missing side is None
+# An order without a customer, through a left join
 None
 # An inner join gives pairs
 [ OrderId 1L, "Ada"; OrderId 2L, "Ada"; OrderId 3L, "Bob" ]

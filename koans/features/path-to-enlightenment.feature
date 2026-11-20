@@ -21,7 +21,7 @@ Feature: The path to enlightenment
       When the learner runs the koans
       Then the first koan of the first lesson is reported as the next step
       And the report names the lesson, the koan and the file and line of its first blank
-      And the report shows the lesson's guidance for that koan
+      And the report shows no Meditate line
       And no later koan is run
 
     Scenario: Filling in a blank correctly advances to the next koan
@@ -30,11 +30,13 @@ Feature: The path to enlightenment
       Then the first koan is reported as passed
       And the second koan is reported as the next step
       And progress shows 1 of the total number of koans
+      And the report shows the first koan's Meditate line, what it found
 
-    Scenario: A wrong answer shows what was expected and what happened
+    Scenario: A wrong answer shows what the learner wrote and what Plasm gave
       Given the learner has filled in the first koan with a wrong value
       When the learner runs the koans
-      Then the report shows the expected and the actual value, displayed as F# Interactive would
+      Then the report shows what the learner wrote and what Plasm gave, displayed as F# Interactive would
+      And the report shows no Meditate line
       And the koan is still the next step
 
     Scenario: A wrong answer shows the koan's hint

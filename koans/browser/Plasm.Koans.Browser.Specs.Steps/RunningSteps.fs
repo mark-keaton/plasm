@@ -142,6 +142,22 @@ type RunningSteps(w: BrowserWorld) =
         }
         |> unit
 
+    [<StepDefinition("the learner passes it with its reference answer")>]
+    member _.PassShown() =
+        task {
+            let koan = w.Koan.Value
+            do! runWith koan (answered koan)
+        }
+        |> unit
+
+    [<StepDefinition("the scenario it teaches is not shown yet")>]
+    member _.TeachesHidden() =
+        task {
+            let! visible = w.Page.IsVisibleAsync "p.teaches"
+            check (not visible) "the scenario a koan teaches is shown before it has passed"
+        }
+        |> unit
+
     [<StepDefinition("the koan shows that it passed")>]
     member _.Passed() =
         task {
@@ -170,13 +186,23 @@ type RunningSteps(w: BrowserWorld) =
         }
         |> unit
 
-    [<StepDefinition("the koan shows the expected and the actual value, displayed as F# Interactive would")>]
-    member _.ExpectedActual() =
+    [<StepDefinition("the koan shows what the learner wrote and what Plasm gave, displayed as F# Interactive would")>]
+    member _.WroteGave() =
         task {
             let! _, text = result w.Page
-            let! expected = w.Page.TextContentAsync "#result .expected pre"
-            let! actual = w.Page.TextContentAsync "#result .actual pre"
-            check (expected = "\"Gadget\"" && actual = "\"Widget\"") $"the koan shows expected {expected} and actual {actual}:\n{text}"
+            let! wrote = w.Page.TextContentAsync "#result .expected pre"
+            let! gave = w.Page.TextContentAsync "#result .actual pre"
+            let! labels = w.Page.Locator("#result .compare .label").AllTextContentsAsync()
+            check (wrote = "\"Gadget\"" && gave = "\"Widget\"") $"the koan shows {wrote} written and {gave} given:\n{text}"
+            check (List.ofSeq labels = [ "You wrote"; "Plasm gave" ]) $"the labels are %A{labels}"
+        }
+        |> unit
+
+    [<StepDefinition("it shows no Meditate line")>]
+    member _.NoMeditate() =
+        task {
+            let! lines = w.Page.Locator("#result .meditate:not(.hint)").CountAsync()
+            check (lines = 0) "the koan shows its Meditate line before it has passed"
         }
         |> unit
 

@@ -71,8 +71,14 @@ type PathSteps(w: KoansWorld) =
         let line, _ = (blanksIn lines start last).Head
         contains $"Fill in the blank (__) at Lessons/{Path.GetFileName file}:{line + 1}" w.Last.Output
 
-    [<StepDefinition("the report shows the lesson's guidance for that koan")>]
-    member _.Guidance() = contains $"Meditate on this: {(firstLessonKoans ()).Head.Discovers}" w.Last.Output
+    // The Meditate line is what a koan found: shown once it passes, never
+    // before an attempt or after a wrong answer, where it would give the
+    // answer away.
+    [<StepDefinition("the report shows no Meditate line")>]
+    member _.NoMeditate() = lacks "Meditate on this" w.Last.Output
+
+    [<StepDefinition("the report shows the first koan's Meditate line, what it found")>]
+    member _.Meditate() = contains $"Meditate on this: {(firstLessonKoans ()).Head.Discovers}" w.Last.Output
 
     [<StepDefinition("no later koan is run")>]
     member _.NoLater() = lacks (firstLessonKoans ()).[1].Koan w.Last.Output
@@ -100,10 +106,10 @@ type PathSteps(w: KoansWorld) =
         let rest = (answers ()).[first] |> List.tail
         w.Program <- fun () -> variant "first-wrong" (fun k -> if k = first then Some("\"Gadget\"" :: rest) else None)
 
-    [<StepDefinition("the report shows the expected and the actual value, displayed as F# Interactive would")>]
-    member _.ExpectedActual() =
-        contains "Expected:\n    \"Gadget\"" w.Last.Output
-        contains "Actual:\n    \"Widget\"" w.Last.Output
+    [<StepDefinition("the report shows what the learner wrote and what Plasm gave, displayed as F# Interactive would")>]
+    member _.WroteGave() =
+        contains "You wrote:\n    \"Gadget\"" w.Last.Output
+        contains "Plasm gave:\n    \"Widget\"" w.Last.Output
 
     [<StepDefinition("the report shows the first koan's hint")>]
     member _.HintShown() =

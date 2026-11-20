@@ -127,6 +127,15 @@ let main argv =
             let ok = mine |> List.filter (fun r -> r.Outcome = Passed) |> List.length
             printfn "  %02d %-40s %d of %d koans pass" (i + 1) lesson.Title ok lesson.Koans.Length
     else
+        // The koan the learner last passed, just before where they stopped:
+        // what it found.
+        match stopped |> Option.bind (fun _ -> results |> Seq.filter (fun r -> r.Outcome = Passed) |> Seq.tryLast) |> Option.bind (meditation guidance) with
+        | Some line ->
+            printfn "\"%s\", passed." (results |> Seq.filter (fun r -> r.Outcome = Passed) |> Seq.last).Koan.Name
+            printfn "%s" line
+            printfn ""
+        | None -> ()
+
         match stopped with
         | Some r ->
             printfn "%s" (describeNext guidance r)

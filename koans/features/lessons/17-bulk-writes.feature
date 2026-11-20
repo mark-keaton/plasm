@@ -1,7 +1,7 @@
 # Lesson 17 of the Plasm Koans. Each row is one koan: what the learner discovers,
 # and the acceptance scenario of Plasm it teaches (feature: scenario).
 Feature: About bulk writes
-  Bulk updates and deletes are driven by typed queries; inserts take many records in one command.
+  Bulk updates and deletes are driven by typed queries; inserts take many records at once.
 
   Prerequisites: lesson 11, lesson 07.
 

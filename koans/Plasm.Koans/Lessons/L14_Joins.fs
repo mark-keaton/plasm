@@ -63,10 +63,10 @@ let lesson =
           )
 
           Koan.Task(
-              "A left join's missing side is None",
+              "An order without a customer, through a left join",
               fun repo ->
                   task {
-                      // leftJoin keeps rows with no match; the other side is an option, None when missing.
+                      // leftJoin keeps rows with no match, so the other side is an option.
                       let fourth =
                           plasm {
                               for o in tableOf<Order> do

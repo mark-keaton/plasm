@@ -136,9 +136,10 @@ let describeNext (guidance: Guidance.LessonGuidance list) (r: KoanResult) =
     | Unanswered(file, line) -> lines.Add $"  Fill in the blank (__) at {relative file}:{line}"
     | Failed(expected, actual) ->
         if r.Koan.File <> "" then lines.Add $"  At {relative r.Koan.File}:{r.Koan.Line}"
-        lines.Add "  Expected:"
+        // shouldBe's expected is the learner's blank; its actual is Plasm's.
+        lines.Add "  You wrote:"
         lines.Add(indent "    " (formatSql expected))
-        lines.Add "  Actual:"
+        lines.Add "  Plasm gave:"
         lines.Add(indent "    " (formatSql actual))
     | Threw(t, m) ->
         if r.Koan.File <> "" then lines.Add $"  At {relative r.Koan.File}:{r.Koan.Line}"
@@ -155,18 +156,22 @@ let describeNext (guidance: Guidance.LessonGuidance list) (r: KoanResult) =
             lines.Add(indent "    " (formatSql s))
     | _ -> ()
 
-    match guidanceFor guidance r with
-    | Some g ->
+    // The hint waits for a wrong answer: a blank not yet tried gets none. The
+    // Meditate line, what the koan finds, waits until it passes (meditation).
+    match guidanceFor guidance r, r.Outcome with
+    | Some g, (Failed _ | Threw _) when g.Hint <> "" ->
         lines.Add ""
-        lines.Add $"  Meditate on this: {g.Discovers}"
-
-        // The hint waits for a wrong answer: a blank not yet tried gets none.
-        match r.Outcome with
-        | (Failed _ | Threw _) when g.Hint <> "" -> lines.Add $"  A hint: {g.Hint}"
-        | _ -> ()
-    | None -> ()
+        lines.Add $"  A hint: {g.Hint}"
+    | _ -> ()
 
     String.concat "\n" lines
+
+/// What a passed koan found, its Meditate line: shown once it passes, since
+/// it states what the koan's blanks are.
+let meditation (guidance: Guidance.LessonGuidance list) (r: KoanResult) =
+    match r.Outcome, guidanceFor guidance r with
+    | Passed, Some g when g.Discovers <> "" -> Some $"  Meditate on this: {g.Discovers}"
+    | _ -> None
 
 let progressBar (passed: int) (total: int) =
     let width = 30

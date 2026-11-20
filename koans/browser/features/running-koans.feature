@@ -14,16 +14,18 @@ Feature: Running a koan in the browser
       Then the koan shows that it is not yet passed
       And it points at the line of the blank in the editor
       And it shows no hint yet
+      And it shows no Meditate line
 
     Scenario: A correct answer passes
       When the learner fills in the first koan's blanks with its reference answer and runs it
       Then the koan shows that it passed
+      And it shows what the koan teaches
       And the next koan is offered
 
-    Scenario: A wrong answer shows what was expected and what happened
+    Scenario: A wrong answer shows what the learner wrote and what Plasm gave
       When the learner fills in the first koan's first blank with a wrong value and runs it
-      Then the koan shows the expected and the actual value, displayed as F# Interactive would
-      And it shows what the koan teaches
+      Then the koan shows what the learner wrote and what Plasm gave, displayed as F# Interactive would
+      And it shows no Meditate line
 
     Scenario: A wrong answer shows the koan's hint
       When the learner fills in the first koan's first blank with a wrong value and runs it

@@ -141,12 +141,15 @@ function render(r, lessonIndex, koanIndex) {
   }
   box.append(headline);
   if (r.status === 'failed') box.append(el('div', { class: 'part compare' }, ...['expected', 'actual'].map((k) =>
-    el('div', { class: k }, el('div', { class: 'label' }, k === 'expected' ? 'Expected' : 'Actual'), el('pre', {}, r[k])))));
+    // shouldBe's expected is the learner's blank; its actual is Plasm's.
+    el('div', { class: k }, el('div', { class: 'label' }, k === 'expected' ? 'You wrote' : 'Plasm gave'), el('pre', {}, r[k])))));
   if (r.status === 'threw') box.append(part('threw', 'The exception', r.threw));
   if (r.status === 'compile') box.append(part('errors', r.errors.length === 1 ? 'The error' : 'The errors',
     r.errors.map((e) => `Line ${e.line}, column ${e.column}: ${e.code} ${e.message}`).join('\n')));
   if (r.shownSql?.length) box.append(part('sql', r.shownSql.length === 1 ? 'Plasm generated 1 command' : `Plasm generated ${r.shownSql.length} commands`, r.shownSql.join('\n\n')));
-  if (r.status !== 'stopped' && r.status !== 'compile' && koan.discovers)
+  // What the koan finds waits until it passes: before then it would give the answer away.
+  if (r.status === 'passed') document.querySelector('p.teaches').hidden = false;
+  if (r.status === 'passed' && koan.discovers)
     box.append(el('div', { class: 'meditate' }, el('strong', {}, 'Meditate on this'), el('span', {}, koan.discovers)));
   // The hint waits for a wrong answer: a blank not yet tried gets none.
   if (['failed', 'threw', 'compile'].includes(r.status) && koan.hint)
@@ -270,6 +273,8 @@ function show(lessonIndex, koanIndex) {
   // The orientation lesson teaches F# itself, not a scenario of Plasm.
   if (feature === 'F#') { $('teaches').textContent = koan.teaches; $('teaches').removeAttribute('href'); }
   else { $('teaches').textContent = `${feature}.feature: ${scenario}`; $('teaches').href = `spec/${feature}.feature`; }
+  // The scenario a koan teaches is its conclusion, as the Meditate line is: shown once it passes.
+  document.querySelector('p.teaches').hidden = !isPassed(lessonIndex, koanIndex);
   renderGiven(koan);
   // The address always names the koan shown (go() adds the history entry first).
   const url = new URL(location.href);

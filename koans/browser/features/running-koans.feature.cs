@@ -179,6 +179,9 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 16
       await testRunner.AndAsync("it shows no hint yet", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
+#line 17
+      await testRunner.AndAsync("it shows no Meditate line", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
+#line hidden
             }
             await this.ScenarioCleanupAsync();
         }
@@ -194,7 +197,7 @@ namespace Plasm.Koans.Browser.Specs.Features
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A correct answer passes", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Results read like the terminal version", null, tagsOfRule);
-#line 18
+#line 19
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -207,32 +210,35 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 7
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 19
+#line 20
       await testRunner.WhenAsync("the learner fills in the first koan\'s blanks with its reference answer and runs i" +
                         "t", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 20
+#line 21
       await testRunner.ThenAsync("the koan shows that it passed", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 21
+#line 22
+      await testRunner.AndAsync("it shows what the koan teaches", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
+#line hidden
+#line 23
       await testRunner.AndAsync("the next koan is offered", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
         }
         
-        [global::Xunit.FactAttribute(DisplayName="A wrong answer shows what was expected and what happened")]
+        [global::Xunit.FactAttribute(DisplayName="A wrong answer shows what the learner wrote and what Plasm gave")]
         [global::Xunit.TraitAttribute("FeatureTitle", "Running a koan in the browser")]
-        [global::Xunit.TraitAttribute("Description", "A wrong answer shows what was expected and what happened")]
-        public async global::System.Threading.Tasks.Task AWrongAnswerShowsWhatWasExpectedAndWhatHappened()
+        [global::Xunit.TraitAttribute("Description", "A wrong answer shows what the learner wrote and what Plasm gave")]
+        public async global::System.Threading.Tasks.Task AWrongAnswerShowsWhatTheLearnerWroteAndWhatPlasmGave()
         {
             string[] tagsOfScenario = ((string[])(null));
             global::System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new global::System.Collections.Specialized.OrderedDictionary();
             string pickleIndex = "2";
-            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A wrong answer shows what was expected and what happened", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A wrong answer shows what the learner wrote and what Plasm gave", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Results read like the terminal version", null, tagsOfRule);
-#line 23
+#line 25
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -245,15 +251,15 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 7
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 24
+#line 26
       await testRunner.WhenAsync("the learner fills in the first koan\'s first blank with a wrong value and runs it", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 25
-      await testRunner.ThenAsync("the koan shows the expected and the actual value, displayed as F# Interactive wou" +
-                        "ld", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line 27
+      await testRunner.ThenAsync("the koan shows what the learner wrote and what Plasm gave, displayed as F# Intera" +
+                        "ctive would", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 26
-      await testRunner.AndAsync("it shows what the koan teaches", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
+#line 28
+      await testRunner.AndAsync("it shows no Meditate line", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
@@ -270,7 +276,7 @@ namespace Plasm.Koans.Browser.Specs.Features
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A wrong answer shows the koan\'s hint", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Results read like the terminal version", null, tagsOfRule);
-#line 28
+#line 30
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -283,10 +289,10 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 7
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 29
+#line 31
       await testRunner.WhenAsync("the learner fills in the first koan\'s first blank with a wrong value and runs it", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 30
+#line 32
       await testRunner.ThenAsync("the koan shows its hint, as the lesson specification words it", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
             }
@@ -304,7 +310,7 @@ namespace Plasm.Koans.Browser.Specs.Features
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A koan that talks to the database shows the SQL it generated", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Results read like the terminal version", null, tagsOfRule);
-#line 32
+#line 34
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -317,10 +323,10 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 7
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 33
+#line 35
       await testRunner.WhenAsync("the learner runs a database koan with a wrong answer", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 34
+#line 36
       await testRunner.ThenAsync("the koan shows the SQL Plasm generated, formatted by clause", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
             }
@@ -338,7 +344,7 @@ namespace Plasm.Koans.Browser.Specs.Features
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A compile error points at the code", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Results read like the terminal version", null, tagsOfRule);
-#line 36
+#line 38
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -351,13 +357,13 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 7
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 37
+#line 39
       await testRunner.WhenAsync("the learner writes code in a koan that does not compile and runs it", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 38
+#line 40
       await testRunner.ThenAsync("the koan shows the compiler\'s message at its line and column", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 39
+#line 41
       await testRunner.AndAsync("no earlier koan\'s result changes", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
@@ -375,7 +381,7 @@ namespace Plasm.Koans.Browser.Specs.Features
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("The page stays responsive while a koan compiles and runs", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Running is safe for the page", null, tagsOfRule);
-#line 43
+#line 45
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -388,10 +394,10 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 7
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 44
+#line 46
       await testRunner.WhenAsync("the learner runs a koan", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 45
+#line 47
       await testRunner.ThenAsync("the page keeps responding to input while it compiles and runs", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
             }
@@ -409,7 +415,7 @@ namespace Plasm.Koans.Browser.Specs.Features
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("A koan that never finishes can be stopped", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Running is safe for the page", null, tagsOfRule);
-#line 47
+#line 49
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -422,13 +428,13 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 7
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 48
+#line 50
       await testRunner.WhenAsync("the learner runs a koan whose code loops forever", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 49
+#line 51
       await testRunner.ThenAsync("the learner can stop it without reloading the page", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 50
+#line 52
       await testRunner.AndAsync("later koans can still be run", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
@@ -446,7 +452,7 @@ namespace Plasm.Koans.Browser.Specs.Features
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("An exception is reported as the koan\'s failure", null, tagsOfScenario, argumentsOfScenario, featureTags, pickleIndex);
             string[] tagsOfRule = ((string[])(null));
             global::Reqnroll.RuleInfo ruleInfo = new global::Reqnroll.RuleInfo("Running is safe for the page", null, tagsOfRule);
-#line 52
+#line 54
     this.ScenarioInitialize(scenarioInfo, ruleInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -459,13 +465,13 @@ namespace Plasm.Koans.Browser.Specs.Features
 #line 7
   await this.FeatureBackgroundAsync();
 #line hidden
-#line 53
+#line 55
       await testRunner.WhenAsync("the learner fills in a koan with code that throws", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 54
+#line 56
       await testRunner.ThenAsync("the koan shows the exception\'s message", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 55
+#line 57
       await testRunner.AndAsync("the page carries on", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
