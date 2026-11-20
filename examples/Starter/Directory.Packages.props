@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <PlasmVersion Condition="'$(PlasmVersion)' == ''">0.1.0-alpha</PlasmVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="Plasm.Postgres" Version="$(PlasmVersion)" />
+    <PackageVersion Include="FSharp.Core" Version="11.0.101" />
+    <PackageVersion Include="xunit.v3.aot" Version="4.0.3" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.16.0" />
+  </ItemGroup>
+</Project>

@@ -491,10 +491,15 @@ import and no property in the C# project, only its reference to the F#
 project and `PublishAot`. The library's reference to Plasm.Postgres flows to
 the host as packages do, so `buildTransitive/` brings Plasm's targets into the
 host's publish, and the step marks the library's F# getters there.
-`tests/Plasm.Package/csharp` checks that shape too (an F# library on the
-package, and a C# executable referencing only it): the native binary prints
-what the runtime prints, and published without the step it refuses the
-library's typed id by name. Build such a pair through its real path: through a
+`examples/Starter` is that shape, and the package check builds it as a user
+would have it, with Plasm's packages in its `packages/` folder: an F# library
+on the package, a C# minimal API and C# tests referencing only it, each with
+`PublishAot`. The API's native binary prints the DDL the runtime prints,
+published without the step it refuses the library's typed id by name, and its
+publish warns only FSharp.Core's two summary lines. The tests pass under the
+runtime and as a native binary (xunit.v3.aot), against a PostgreSQL that
+Testcontainers starts, whose own two summary lines are the only other
+warnings. Build such a pair through its real path: through a
 symlinked one, such as macOS's `/tmp` and `/var` (links to `/private/tmp` and
 `/private/var`), NuGet's restore of the C# project drops its reference to the
 F# project, and with it every package, with no warning; the build succeeds and

@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src/Starter.Data/Starter.Data.fsproj" />
+  <Project Path="src/Starter.Api/Starter.Api.csproj" />
+  <Project Path="tests/Starter.Tests/Starter.Tests.csproj" />
+</Solution>

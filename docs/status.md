@@ -683,6 +683,15 @@ row's type, not in a field that may be unloaded.
 - `examples/Kanban`, the reference application, is untracked in git until the
   user decides to commit it.
 
+## Changed
+
+Changes that break code written against an earlier alpha, newest first.
+
+- 2026-11-19 (bfc9bda): `Tx.update (original, changed, expectVersion = seen)`
+  is gone. Read a caller's copy with `Tx.oneAsSeen (query, seen)`, a Conflict
+  there if the stored version is no longer `seen`, and update what it gives
+  with `Tx.update (original, changed)`.
+
 ## Decision record
 
 | Date | Decision | Where |
@@ -786,6 +795,7 @@ row's type, not in a field that may be unloaded.
 | 2026-11-19 | The suites run on the FSharp.Core a new project gets (docs/status.md, "Limits"). The packages are still built against the floor 8.0.403 (`PlasmFSharpCoreFloor`), so the nuspecs still say >= 8.0.403, which the package check now asserts. Everything else that runs Plasm here runs on 11.0.101: Plasm.Specs, Plasm.Tests, the native check, the koans and their specs, the browser koans, and the package check's consumers. Until now every F# project here had no FSharp.Core reference of its own, since under central package management the F# SDK makes none, and ran on whatever its references pulled in, mostly the floor through Plasm's. Directory.Build.targets now gives each F# project one that lacks it. Kanban runs on 10.1.202, the newest Fable.Remoting.Server 6.1.0 and Fable.Remoting.Json 3.0.0 allow; its C# host and Lambda reference the F# server for its migrations, so they move to 11 in a later change. A pass with the pin at 11 everywhere found Kanban unbuildable (NU1608) and nothing else: suites, native output, IL warnings (2, both FSharp.Core's) and the trim audit as before. It also found six warnings in tests/Plasm.Aot, under both pins, hiding a match that read every stage as "backlog": that project, and Plasm.Aot.Unpatched, now treat warnings as errors but for FSharp.Core's IL2104 and IL3053, and trim-audit.sh, which counts IL warnings, turns that off for its own publish | `Directory.Build.targets` |
 | 2026-11-19 | **Changed.** `Tx.update`'s `expectVersion` is gone: a change made from a copy a caller saw (one that came back from a client) reads the record with `Tx.oneAsSeen (query, seen)`, which gives None if there is none and is a `TxFailure.Conflict` if its version is no longer `seen`, before anything is decided on it; the update made from it checks the version it was read at again. `expectVersion` checked only at the write, so a decision was made, and could be refused, on a record the caller had not seen. A record without a `[<Version>]` field cannot be read so (`TxFailure.Misused`, naming `Tx.one`). The examples, the koans (lesson 11), Kanban's cards (whose `StaleCopy` refusal is now the Conflict) and the docs read a caller's copy so. typed-transactions.feature: 5 scenarios in place of 2, red first (a stale copy was decided on, and a record without a version was read); 646 in all | `features/typed-transactions.feature` |
 | 2026-11-19 | `repo.Ddl()` quotes a table or column named by a word PostgreSQL reserves, such as `from`, `order`, `user` or `select` (ddl.feature): it quoted only names that are not plain lowercase, so a booking's `From` field printed `from timestamp with time zone`, which PostgreSQL refuses. Queries and the schema check always quoted. Found by examples/Starter's tests. One example added to the outline, red first (a syntax error at "order"); 647 in all | `features/ddl.feature` |
+| 2026-11-19 | `examples/Starter`, what a new application starts from: a booking service for shared equipment, an F# library on Plasm.Postgres's package (a record with a union with fields and an owned list, its rules, and `BookingData`, the one type C# calls, with `OpenAsync`, `SandboxAsync` and a static `Ddl`), a C# minimal API on the slim builder with `PublishAot` and source-generated JSON (`RespectNullableAnnotations` and `RespectRequiredConstructorParameters` both in the context's options and in the host's) and a union-shaped view with its classifier, and C# xunit tests, each in a sandbox, with `PublishAot`; its own nuget.config (Plasm from `packages/`, restored into `.nuget/packages`), global.json and solution. The package check builds it from the packed feed in place of tests/Plasm.Package/csharp: the API's native DDL is the runtime's, without Plasm's step it refuses EquipmentId by name, its publish warns only FSharp.Core's two summary lines, and the 7 tests pass under the runtime and as a native binary (xunit.v3.aot, Testcontainers). Its tests found the DDL's unquoted reserved words (ddl.feature) | `examples/Starter` |
 
 ## Suggested next steps
 

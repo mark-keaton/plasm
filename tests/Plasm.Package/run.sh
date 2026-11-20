@@ -7,7 +7,9 @@
 # must print the same, and the model must be built; published without Plasm's
 # step for union fields, the binary must refuse its union by name. The step's
 # build cost is measured: the publish's time with and without it, and the
-# step's own.
+# step's own. examples/Starter, an F# library with a C# API and C# tests over
+# it, is built from the same feed: its API natively, and its tests under the
+# runtime and natively (Docker).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
@@ -82,28 +84,35 @@ echo "--- native, without Plasm's step"; cat "$work/without.txt"
 if ! grep -q "TicketId.TicketId has fields that this native binary cannot see" "$work/without.txt"; then echo "without the step, the binary did not refuse its union by name"; failed=1; fi
 if diff -u "$work/jit.txt" "$work/native.txt"; then echo "native binary prints what the runtime prints"; else echo "native binary differs from the runtime"; failed=1; fi
 
-# A C# host over an F# library (docs/aot.md, "From the packages"): the F#
-# library references Plasm.Postgres's package, the C# executable only the F#
-# project, with PublishAot and no Plasm reference or import of its own. The
-# library's package carries Plasm's build step to the C# publish.
-cs="$work/csharp"
-mkdir -p "$cs"
-cp -R "$here/csharp/Desk" "$here/csharp/Host" "$cs/"
-cp "$app/nuget.config" "$cs/"
-dotnet build "$cs/Host" -c Release -p:PlasmVersion="$version" -o "$work/cs-jit" -v q > "$work/cs-build.log" 2>&1 || { cat "$work/cs-build.log"; exit 1; }
-dotnet "$work/cs-jit/Host.dll" > "$work/cs-jit.txt" 2>&1 || true
-dotnet publish "$cs/Host" -c Release -r "$rid" -p:PlasmVersion="$version" -o "$work/cs-native" -v m > "$work/cs-native.log" 2>&1 || { tail -30 "$work/cs-native.log"; exit 1; }
-rm -rf "$cs/Host/obj/Release/net11.0/$rid/native" "$cs/Host/obj/Release/net11.0/$rid/plasm-aot"
-dotnet publish "$cs/Host" -c Release -r "$rid" -p:PlasmVersion="$version" -p:PlasmFieldGetters=false -o "$work/cs-without" -v m > "$work/cs-without.log" 2>&1 || { tail -30 "$work/cs-without.log"; exit 1; }
-"$work/cs-native/Host" > "$work/cs-native.txt" 2>&1 || true
-"$work/cs-without/Host" > "$work/cs-without.txt" 2>&1 || true
-echo "--- C# host over an F# library, runtime"; cat "$work/cs-jit.txt"
-echo "--- C# host over an F# library, native ($(grep -c 'warning IL' "$work/cs-native.log" || true) IL warnings, $(grep 'warning IL' "$work/cs-native.log" | grep -c Plasm || true) naming Plasm)"; cat "$work/cs-native.txt"
-if ! grep -q "^model: built" "$work/cs-native.txt"; then echo "the C# host's native binary did not build its model"; failed=1; fi
-if grep 'warning IL' "$work/cs-native.log" | grep -q Plasm; then echo "the C# host's publish warns about Plasm"; failed=1; fi
-echo "--- C# host over an F# library, native, without Plasm's step"; cat "$work/cs-without.txt"
-if ! grep -q "MemberId.MemberId has fields that this native binary cannot see" "$work/cs-without.txt"; then echo "without the step, the C# host's binary did not refuse its union by name"; failed=1; fi
-if diff -u "$work/cs-jit.txt" "$work/cs-native.txt"; then echo "the C# host's native binary prints what the runtime prints"; else echo "the C# host's native binary differs from the runtime"; failed=1; fi
+# examples/Starter (docs/aot.md, "From the packages"): an F# library on
+# Plasm.Postgres's package, and a C# minimal API and C# tests that reference
+# only it, with PublishAot and no Plasm reference of their own; the library's
+# package carries Plasm's build step to their publishes. Copied as a user
+# would have it, with Plasm's packages in its packages/ folder.
+st="$work/starter"
+rsync -a --exclude bin --exclude obj --exclude packages --exclude .nuget "$repo/examples/Starter/" "$st/"
+mkdir -p "$st/packages"
+cp "$feed"/*.nupkg "$st/packages/"
+cd "$st"
+dotnet build src/Starter.Api -c Release -p:PlasmVersion="$version" -o "$work/st-jit" -v q > "$work/st-build.log" 2>&1 || { cat "$work/st-build.log"; exit 1; }
+dotnet "$work/st-jit/Starter.Api.dll" ddl > "$work/st-jit.txt" 2>&1 || true
+dotnet publish src/Starter.Api -c Release -r "$rid" -p:PlasmVersion="$version" -o "$work/st-native" -v m > "$work/st-native.log" 2>&1 || { tail -30 "$work/st-native.log"; exit 1; }
+rm -rf "src/Starter.Api/obj/Release/net11.0/$rid/native" "src/Starter.Api/obj/Release/net11.0/$rid/plasm-aot"
+dotnet publish src/Starter.Api -c Release -r "$rid" -p:PlasmVersion="$version" -p:PlasmFieldGetters=false -o "$work/st-without" -v m > "$work/st-without.log" 2>&1 || { tail -30 "$work/st-without.log"; exit 1; }
+"$work/st-native/Starter.Api" ddl > "$work/st-native.txt" 2>&1 || true
+"$work/st-without/Starter.Api" ddl > "$work/st-without.txt" 2>&1 || true
+echo "--- Starter's API, runtime: its DDL"; cat "$work/st-jit.txt"
+echo "--- Starter's API, native ($(grep 'warning IL' "$work/st-native.log" | sort -u | wc -l | tr -d ' ') IL warnings, $(grep 'warning IL' "$work/st-native.log" | grep -v -E 'IL2104|IL3053' | sort -u | wc -l | tr -d ' ') other than the summary lines)"
+if ! grep -q '^create table equipment' "$work/st-native.txt"; then echo "Starter's native binary did not print its DDL"; cat "$work/st-native.txt"; failed=1; fi
+if grep 'warning IL' "$work/st-native.log" | grep -v -E 'IL2104|IL3053' | grep -q .; then echo "Starter's publish warns beyond the summary lines"; failed=1; fi
+if diff -u "$work/st-jit.txt" "$work/st-native.txt"; then echo "Starter's native binary prints what the runtime prints"; else echo "Starter's native binary differs from the runtime"; failed=1; fi
+if grep -q "EquipmentId.EquipmentId has fields that this native binary cannot see" "$work/st-without.txt"; then echo "without the step, Starter's binary refuses its union by name"; else echo "without the step, Starter's binary did not refuse its union by name"; cat "$work/st-without.txt"; failed=1; fi
+dotnet test --project tests/Starter.Tests -p:PlasmVersion="$version" > "$work/st-test.log" 2>&1 || { echo "Starter's tests failed"; tail -30 "$work/st-test.log"; failed=1; }
+echo "Starter's tests, runtime: $(grep -E '^\s+(total|failed):' "$work/st-test.log" | tr -s ' ' | tr '\n' ' ')"
+dotnet publish tests/Starter.Tests -c Release -r "$rid" -p:PlasmVersion="$version" -o "$work/st-tests-native" -v m > "$work/st-tests-native.log" 2>&1 || { tail -30 "$work/st-tests-native.log"; exit 1; }
+"$work/st-tests-native/Starter.Tests" > "$work/st-tests-native.txt" 2>&1 || { echo "Starter's native tests failed"; tail -30 "$work/st-tests-native.txt"; failed=1; }
+echo "Starter's tests, native: $(grep -o 'Total: [0-9]*, Errors: [0-9]*, Failed: [0-9]*' "$work/st-tests-native.txt")"
+cd "$repo"
 
 # A GraphQL application on Plasm.HotChocolate, from the same feed.
 gql="$work/graphql"
