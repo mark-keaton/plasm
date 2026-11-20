@@ -2,7 +2,7 @@
 
 *Researched 2026-11-13. SqlHydra state: **v5.1.1** (SqlHydra.Query and SqlHydra.Cli, published to NuGet 2026-10-19), repo HEAD `551e1b5` (2026-10-19).
 Sources: GitHub repo https://github.com/JordanMarr/SqlHydra (README, `src/`, `docs/writing-extensions.md`, git history, issues via the GitHub REST API), NuGet https://www.nuget.org/packages/SqlHydra.Query and https://www.nuget.org/packages/SqlHydra.Cli.
-Plasm state: `README.md` and `docs/status.md` as of 2026-11-12 (0.1.0-alpha, unpublished); Plasm-side statements corrected 2026-11-14 for the one style (relationships, preloads, public changesets, validation and repository writes were removed). The findings about SqlHydra are unchanged.
+Plasm state: `README.md` and `docs/status.md` as of 2026-11-12 (0.1.0-alpha, unpublished); Plasm-side statements corrected 2026-11-14 for the one style (relationships, preloads, public changesets, validation and repository writes were removed). The findings about SqlHydra are unchanged. Corrected again 2026-11-20 against `features/`: PostgreSQL enum types, `selectDistinct`, `exists`, the start-up schema check and the licence.
 "Not verified" means I read the code or docs but did not run it.*
 
 ## What SqlHydra is
@@ -75,14 +75,13 @@ module Enums =
 **Plasm:**
 
 - `Scalar.enum [ Pending, "pending"; ... ]` maps a **fieldless F# union** to text through an explicit, complete, duplicate-checked table. Unknown stored text is a materialisation error (`src/Plasm/Scalar.fs` L80–110).
-- No support for PostgreSQL enum *types*: no `MapEnum` registration and no `pg_enum` reading. `Postgres.connect` creates its own `NpgsqlDataSource`; `PostgresProvider(dataSource)` accepts one you built.
-- *Not verified:* whether a `Scalar.enum` text parameter written into a PG enum column fails with "column is of type X but expression is of type text". It probably does, because Npgsql types string parameters as `text`.
+- `Scalar.asPgEnum "type"` stores the same union in a PostgreSQL enum *type*: the value is sent as text with a cast to the type and read as `::text`, so there is no `MapEnum` registration, and the start-up check reads the type's labels and compares them with the union's cases, in order (`features/pg-enums.feature`). `Postgres.connect` creates its own `NpgsqlDataSource`; `PostgresProvider(dataSource)` accepts one you built.
 
 | | SqlHydra | Plasm |
 |---|---|---|
-| F# fieldless union | no | **yes** (`Scalar.enum`, as text) |
+| F# fieldless union | no | **yes** (`Scalar.enum`, as text or as a PostgreSQL enum type) |
 | .NET enum | yes, generated | no built-in mapping |
-| PostgreSQL enum type | **yes**, generated enum plus `MapEnum` registration on the data source | no |
+| PostgreSQL enum type | **yes**, generated enum plus `MapEnum` registration on the data source | **yes**, from an F# union (`Scalar.asPgEnum`), with no `MapEnum` |
 | Single-case wrappers | no | yes (`Scalar.wrap`/`tryWrap`) |
 
 ## 2. Options and nulls
@@ -225,7 +224,7 @@ ctx.CommitTransaction()          // failwith "No transaction was started." if no
 **Plasm:**
 
 - Model-first. You write records with `[<Table>]` and a few field attributes, or use `repo.Scaffold "table"` in FSI to print a starting point (no relationships inferred).
-- `repo.CheckSchema()` returns `SchemaIssue`s at startup: missing tables or columns, incompatible types, nullability mismatches, unmapped NOT NULL columns.
+- The schema is checked as the repository starts (`Repo.Start`), and by default a difference fails start-up, naming every one: missing tables or columns, incompatible types, nullability mismatches, unmapped NOT NULL columns, a unique field without its constraint, a reference without its foreign key, and an enum type whose labels differ from the union's cases.
 - Also no migrations.
 - Trade-off: SqlHydra catches drift at compile time *if you regenerate*. Plasm catches it at startup without generated code, but cannot make a dropped column a compile error.
 
@@ -292,7 +291,7 @@ That is three major versions in about nine months. It is active, but expect brea
 - The 5.0 commit message says the removed `Diff` feature had "zero public GitHub dependents". I could not check the dependents count for the package as a whole.
 - Issue reporters mention professional use ([#67](https://github.com/JordanMarr/SqlHydra/issues/67)).
 
-**Plasm:** unreleased 0.1.0-alpha, no licence chosen, no production use.
+**Plasm:** 0.1.0-alpha, MIT licence, public repository, no package published, no production use.
 
 ## 9. Developer experience
 
@@ -321,11 +320,10 @@ That is three major versions in about nine months. It is active, but expect brea
 
 - **Multiple databases:** SQL Server, SQLite and Oracle are tested; MySQL has no integration tests.
 - **Code generation from the database:** schema drift becomes compile errors after regeneration. Plasm's `Scaffold` is one table at a time, prints source in FSI, and infers no relationships.
-- **PostgreSQL enum types:** generated CLR enums with automatic `NpgsqlDataSourceBuilder.MapEnum` registration, which fits the Npgsql 8+ data-source model.
+- **PostgreSQL enum types as CLR enums:** generated, with automatic `NpgsqlDataSourceBuilder.MapEnum` registration, which fits the Npgsql 8+ data-source model. Plasm maps an F# union to an enum type instead and generates nothing.
 - **Generated read and write records for `GENERATED ALWAYS` columns:** writing a database-owned column is a compile error. In Plasm, assigning a generated field in a bulk write is rejected before execution, not at compile time.
 - **Query features Plasm lacks:**
-  - `distinct`
-  - subqueries in `where` (`subqueryMany`/`subqueryOne`, `whereExists` with `correlate`)
+  - subqueries in `where` other than `exists` (`subqueryMany`/`subqueryOne`); Plasm has `exists` over a correlated query, and `selectDistinct`
   - CTEs
   - lateral joins
   - predicate joins with arbitrary AND/OR (`join'`/`on'`)
@@ -358,5 +356,4 @@ That is three major versions in about nine months. It is active, but expect brea
 - How a DU or single-case-wrapper field behaves at runtime in SqlHydra (inferred from `boxValueOrOption`).
 - Whether SqlHydra chunks large `isIn` or `entities` batches (no code found).
 - MySQL provider quality in practice.
-- Whether Plasm's `Scalar.enum` can write into a PostgreSQL enum column.
 - The overall GitHub "used by" count for SqlHydra.

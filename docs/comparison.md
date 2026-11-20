@@ -19,14 +19,17 @@ lines) and probes run against real databases, are in
 Researched 2026-11-13, against EF Core 11.0.0-rc.3 with Npgsql's EF provider
 11.0.0-rc.3, Npgsql 10.0.3, SqlHydra 5.1.1, SQLProvider 1.5.31,
 Dapper.FSharp 4.10.0, Facil 3.3.0, Npgsql.FSharp 8.0.0 and Donald 10.1.0.
-What this page says about Plasm was brought up to date on 2026-11-14, when
-Plasm became one style (`docs/status.md`); the research notes under
-`comparisons/` each say how they were corrected.
+SQLProvider has since released 1.5.33; the notes were not run again against
+it. What this page and the notes say about Plasm was brought up to date on
+2026-11-20, against the acceptance scenarios in `features/`; the research
+notes under `comparisons/` each say how they were corrected. The
+[Native AOT](#native-aot) section was researched on 2026-11-19.
 
 ## The short version
 
-Only EF Core and Plasm are ORMs: they know about relationships and load them.
-The other libraries are query builders or SQL runners. Their authors say so
+Of the libraries compared here, only EF Core and Plasm are ORMs: they know
+about relationships and load them. The others are query builders or SQL
+runners. Their authors say so
 (SqlHydra: "not an ORM"; Dapper.FSharp declines relationships), and loading a
 parent with its children is left to you: a second `IN` query and grouping in
 memory, or flat join rows.
@@ -41,7 +44,7 @@ constants unless wrapped in `EF.Parameter`, and failures are exceptions.
 Plasm's place is the intersection: an ORM's loading of whole aggregates, with
 F# types and semantics throughout.
 
-## What Plasm does that none of the others do
+## What Plasm does that none of the libraries compared here do
 
 - **Aggregates with plain F# types.** The application's own immutable records,
   without `CLIMutable` or base classes: F# lists, options, single-case
@@ -68,13 +71,14 @@ F# types and semantics throughout.
 - **Failures as values.** A transaction returns a `Result` whose failure is
   the domain's own rejection, a field error (a constraint with PostgreSQL's
   default name, mapped to its field), a concurrency conflict, or a classified
-  database failure. Every other library throws.
+  database failure. Every other library compared here throws.
 - **Writes by difference.** `Tx.update (original, changed)` writes only the
   columns that differ, and what the record owns by key (EF's `Update` on a
   detached record writes every column). Plasm validates no input: the domain's
   constructors do.
 - **Transactions as values** of typed steps, with failures that say what
-  failed and the file and line of the step.
+  failed and the file and line of the step. None of the libraries compared
+  here has them.
 - **Sandboxes for tests** that always roll back, on the real database.
 - **A schema check** against the live database at startup, instead of at
   compile time (SQLProvider, which needs a database in every build) or not at
@@ -97,17 +101,48 @@ In rough order of importance for teams leaving EF Core:
 4. **Modelling.** Owned records live in their own tables; a record with no
    table is stored in its owner's row (a value, like EF Core's complex types).
    A field marked `[<Json>]` is one jsonb document, and a list of scalars one
-   array column. No composite keys, inheritance, or keyless and view entities. A join table cannot carry columns of its own.
-5. **Querying.** No set operations, no nested collections
-   projected into DTOs, no streaming, a
-   fixed set of translated functions, and raw SQL that cannot be composed
-   further.
+   array column. A key of several fields is a record of them, with
+   references, owned lists and upserts by it; a linked list between records
+   keyed that way is not built. No inheritance, or keyless and view entities.
+   A join table cannot carry columns of its own.
+5. **Querying.** No set operations, no subquery in a `select`, no right,
+   full or non-equi joins, no streaming, a fixed set of translated functions,
+   and raw SQL that cannot be composed further. A result can hold nested
+   lists: a `let!` load binds a list to each record, with its own `where`,
+   order and `take` per record.
 6. **Writing.** Only what an aggregate owns or links is written with it;
    another aggregate is written by its own transaction step, and there is no
    unit of work across arbitrary records. Bulk updates have no `RETURNING`.
 7. **Operations.** No OpenTelemetry, interceptors or connection resiliency
    beyond a transaction retry policy.
 8. **Maturity.** No releases or users yet.
+
+## Native AOT
+
+Plasm is built for a native binary first: the application's F# records,
+unions, quotation queries and transactions run under Native AOT, and a native
+publish shows no warning naming Plasm, only FSharp.Core's two summary lines
+(IL2104, IL3053). It needs a publish-time step for the fields of F# union
+cases, and Plasm.HotChocolate runs on the runtime only.
+[Native AOT and Lambda](aot.md) has the measurements and the costs.
+
+What each library says of itself, read from the page cited on 2026-11-19.
+"Makes no statement" means the project's README or documentation says nothing
+of Native AOT or trimming either way; nobody here tested those libraries
+natively.
+
+| Library | Native AOT, in its own words | Source |
+|---|---|---|
+| Npgsql 8.0 and later | "Starting with version 8.0, Npgsql is fully compatible with NativeAOT and trimming." A few incompatible features need an explicit opt-in, which warns. Plasm's PostgreSQL provider is built on it | [Npgsql compatibility notes](https://www.npgsql.org/doc/compatibility.html) |
+| EF Core | The page is titled "NativeAOT Support and Precompiled Queries (Experimental)": "highly experimental", "not yet suited for production use". Queries are precompiled into C# interceptors; dynamic queries and LINQ query expression syntax are not supported, and publishing "currently reports a number of trimming and NativeAOT warnings" | [EF Core documentation](https://learn.microsoft.com/en-us/ef/core/performance/nativeaot-and-precompiled-queries) |
+| Npgsql's EF Core provider | The issue "Precompiled query/NativeAOT work" is open, on the Backlog milestone | [npgsql/efcore.pg #3257](https://github.com/npgsql/efcore.pg/issues/3257) |
+| EFCore.FSharp | Makes no statement | [its documentation](https://efcore.github.io/EFCore.FSharp/) |
+| Dapper, Dapper.AOT | A call Dapper.AOT does not intercept runs plain Dapper, which "works under JIT but is not AOT-safe". "Interceptors are only supported on C# currently - so the AOT bits are C# only" | [Dapper.AOT FAQ](https://aot.dapperlib.dev/faq) |
+| Dapper.FSharp | Makes no statement. It calls Dapper from F#, where Dapper.AOT does not apply | [README](https://github.com/Dzoukr/Dapper.FSharp/blob/master/README.md) |
+| SqlHydra | Its maintainer's open issue of 2026-09-03: "F# reflection over records is the main obstacle to SqlHydra working under them" (Native AOT and trimming), with a plan to generate that code instead | [JordanMarr/SqlHydra #152](https://github.com/JordanMarr/SqlHydra/issues/152) |
+| SQLProvider | Makes no statement | [README](https://github.com/fsprojects/SQLProvider/blob/master/README.md) |
+| Facil, Npgsql.FSharp, Donald | Make no statement | their READMEs: [Facil](https://github.com/cmeeren/Facil/blob/master/README.md), [Npgsql.FSharp](https://github.com/Zaid-Ajaj/Npgsql.FSharp/blob/master/README.md), [Donald](https://github.com/pimbrouwers/Donald/blob/master/README.md) |
+| Marten 9 | Not compared elsewhere on this page. "Marten 9.0 is the first release where AOT publishing is a supported posture", with System.Text.Json; "F# single-case discriminated-union ids" are listed under "Doesn't work in AOT" | [Publishing Marten with Native AOT](https://martendb.io/configuration/aot-publishing) |
 
 ## Enums: the "pain" in detail
 

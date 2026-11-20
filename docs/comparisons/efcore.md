@@ -4,6 +4,8 @@
 
 *Plasm-side statements corrected 2026-11-14 for the one style (`docs/status.md`): relationships, preloads, public changesets, validation, pipeline queries and repository writes were removed. Where the original text described them, it now describes what replaced them. The EF Core findings are unchanged.*
 
+*Plasm-side statements corrected again 2026-11-20 against `features/`: PostgreSQL enum types, unions with fields, composite keys, `let!` loads with `take` per parent, `selectDistinct`, `exists`, and the every-column concurrency check are built. One EF Core statement was added, on its Native AOT support, from its documentation as read on 2026-11-19.*
+
 **Evidence labels.**
 - **[probe]**: verified by running F# code. Sources: `scratchpad/efprobe/Program.fs` and `scratchpad/effsprobe/Program.fs`, with output in `scratchpad/efprobe/probe-output.txt`. The probes used EF Core 11.0.0-rc.3 and Npgsql EF 11.0.0-rc.3 on .NET 11 and PostgreSQL 18.4, and checked SQL with `ToQueryString()` plus a throwaway database.
 - **[docs]** / **[issue]**: taken from the cited source.
@@ -56,8 +58,8 @@ mb.Entity<Order>().Property(fun o -> o.Status)
 
 **Against Plasm:**
 - `Scalar.enum` maps a fieldless union through an explicit, exhaustive table. It checks that every case is listed once and that stored names are distinct, and unknown text is a materialisation error. It is stored as **text**.
-- Plasm has **no PostgreSQL enum type mapping.** Writing a text parameter to a `CREATE TYPE ... AS ENUM` column will probably fail in PostgreSQL ("column is of type mood but expression is of type text") [unverified: needs a scenario].
-- Unions with fields are a configuration error in both.
+- `Scalar.asPgEnum "type"` stores the same union in a PostgreSQL enum type: the value is sent as text with a cast and read as `::text`, with no `MapEnum`, and the start-up check compares the type's labels with the union's cases, in order (`features/pg-enums.feature`).
+- A union with fields is a configuration error in EF Core. Plasm stores one across columns by convention (`features/union-fields.feature`).
 
 ## 2. Options and nulls
 
@@ -137,7 +139,7 @@ ctx.Orders.AsNoTracking()
 - `AsNoTracking` materialises one Product object per line (measured 2026-11-12, when Plasm's benchmark still loaded products: 10,000 instances against Plasm's 200). `AsNoTrackingWithIdentityResolution` fixes that. In the one style a line refers to its product by id, so the current benchmark no longer reads products.
 
 **Filtered include:**
-- `Where`/`OrderBy`/`Skip`/`Take` inside `Include` (EF 5+). `Take` inside a filtered include is per parent [docs; unverified here]. Plasm has no per-parent limit: an owned list always loads whole, and the latest few rows per parent is hand-written SQL.
+- `Where`/`OrderBy`/`Skip`/`Take` inside `Include` (EF 5+). `Take` inside a filtered include is per parent [docs; unverified here]. In Plasm an owned list always loads whole; a `let!` load takes its own `where`, `orderBy` and `take`, applied per parent (`features/loads.feature`).
 
 **Lazy loading:**
 - Proxies need `virtual` navigations with backing fields. F# explicit fields get an `@` suffix that EF can't discover: dotnet/efcore #12923, open since 2018, `area-F#`.
@@ -300,9 +302,9 @@ The gap list for an EF Core replacement. Plasm status is from `docs/status.md` (
 
 **Platform and tooling**
 1. Providers: SQL Server, Azure SQL, SQLite, Cosmos DB, InMemory, plus third-party MySQL/MariaDB (Pomelo), Oracle and others. Plasm is PostgreSQL only.
-2. Migrations: generation from model diffs, snapshots, bundles, idempotent scripts, `database update --add`, seeding (`HasData`, `UseSeeding`), `EnsureCreated`. Plasm has none, by design (only `CheckSchema`).
+2. Migrations: generation from model diffs, snapshots, bundles, idempotent scripts, `database update --add`, seeding (`HasData`, `UseSeeding`), `EnsureCreated`. Plasm has none, by design: it prints the DDL its model expects and checks the schema as the repository starts.
 3. Reverse engineering of a whole database into a context, with relationships (`dotnet ef dbcontext scaffold`; EFCore.FSharp emits F#). Plasm's `Scaffold` does one table and no relationships.
-4. Compiled models (startup), DbContext pooling, `AddDbContext`/`AddDbContextFactory` DI integration, health checks.
+4. Compiled models (startup), DbContext pooling, `AddDbContext`/`AddDbContextFactory` DI integration, health checks. The compiled model is also half of EF Core's Native AOT path, with precompiled queries, which its documentation calls "highly experimental" and "not yet suited for production use" ([NativeAOT Support and Precompiled Queries (Experimental)](https://learn.microsoft.com/en-us/ef/core/performance/nativeaot-and-precompiled-queries), read 2026-11-19).
 5. Ecosystem built on `IQueryable` and DbContext: ASP.NET Core Identity stores, OData, HotChocolate GraphQL projections and filtering, Aspire integration, EF Core Power Tools, many books and Stack Overflow answers.
 6. Logging through `ILogger`, `EnableSensitiveDataLogging`, `TagWith` query tags, event IDs, `DiagnosticSource` and OpenTelemetry-friendly instrumentation, interceptors for commands, connections, transactions, `SaveChanges` and materialisation. Plasm has a diagnostics callback only; OpenTelemetry is listed as a next step.
 7. Transient-fault execution strategies (connection resiliency). Plasm has only an opt-in `RetryPolicy` for transactions.
@@ -310,12 +312,12 @@ The gap list for an EF Core replacement. Plasm status is from `docs/status.md` (
 **Modelling**
 8. Inheritance: TPH, TPT, TPC.
 9. Owned and complex types (table splitting, value objects across several columns, optional complex types, structs) and JSON columns (`ToJson`, query into JSON, `ExecuteUpdate` on JSON). Plasm's owned records live in their own tables; a record with no table is stored in its owner's row (like a complex type), and a field marked `[<Json>]` is one jsonb document that queries can read into. Plasm has no table splitting, structs as values, or bulk updates into a document.
-10. Composite primary and foreign keys, alternate keys, shadow properties, backing fields, property access modes.
+10. Alternate keys, shadow properties, backing fields, property access modes. Composite primary and foreign keys are in both: in Plasm a key of several fields is a record of them, with references, owned lists and upserts by it (`features/composite-keys.feature`, `features/composite-references.feature`), and a linked list between records keyed that way is not built.
 11. Primitive collections as columns, queryable (PostgreSQL arrays: `= ANY`, `@>`). Plasm stores a list of scalars as an array column and translates `List.contains` (`= ANY`) and `List.isEmpty`, nothing more over it.
-12. Many-to-many with payload or skip navigations, and has-through equivalents. Plasm has plain linked lists (`links`) only.
+12. Many-to-many with payload or skip navigations, and has-through equivalents. Plasm has plain linked lists (`[<JoinTable>]`) only.
 13. Keyless entities, views, table-valued and user-defined function mapping (`HasDbFunction`), stored-procedure mapping for inserts, updates and deletes, raw SQL entity sources composable with LINQ (`FromSql(...).Where(...).Include(...)`). Plasm's `repo.Sql` is not composable.
 14. Value generation: sequences, HiLo, identity options, computed columns, defaults, `ValueGeneratedOnAddOrUpdate`.
-15. Concurrency tokens of any type, including PostgreSQL `xmin` without a schema column. Plasm has an integer version only.
+15. Concurrency tokens of any type, including PostgreSQL `xmin` without a schema column. Plasm has an integer `[<Version>]` field or, on a record without one, a check of every column of the record read (`features/concurrency.feature`); it does not use `xmin`.
 16. Global and named query filters (soft delete, multi-tenancy).
 17. Npgsql-specific types and functions:
     - PostgreSQL enums (mapped CLR enums)
@@ -326,7 +328,7 @@ The gap list for an EF Core replacement. Plasm status is from `docs/status.md` (
 18. Index, constraint, collation and comment declarations in the model (feeding migrations).
 
 **Querying**
-19. Set operations (`Union`, `Concat`, `Except`, `Intersect`) and `Distinct`. Subqueries in projections, including **nested collections projected into DTOs** (`Select(fun o -> {| o.Id; Lines = o.Lines.Select(...) |})`). `GroupBy` final operator. `MaxBy`/`MinBy` (EF 11). Right and full joins (EF 10 and 11 operators). Non-equi joins, `SelectMany`, correlated subqueries.
+19. Set operations (`Union`, `Concat`, `Except`, `Intersect`) and `Distinct`. Subqueries in projections, including **nested collections projected into DTOs** (`Select(fun o -> {| o.Id; Lines = o.Lines.Select(...) |})`). `GroupBy` final operator. `MaxBy`/`MinBy` (EF 11). Right and full joins (EF 10 and 11 operators). Non-equi joins, `SelectMany`, correlated subqueries. Of these Plasm has `selectDistinct`, `exists` over a correlated query, and nested lists in a result through `let!` loads; the rest it lacks.
 20. Eager loading combined with joins and projections. A choice of single-query JOIN loading or split loading, per query or globally. Plasm always batches, always loads what a record owns, and lets no query choose what to load.
 21. Identity resolution (`AsNoTrackingWithIdentityResolution`, the tracked identity map).
 22. Lazy loading (proxies, `ILazyLoader`), explicit loading through `Entry`.

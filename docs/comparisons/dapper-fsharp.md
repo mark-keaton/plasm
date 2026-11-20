@@ -1,6 +1,6 @@
 # Dapper.FSharp compared with Plasm
 
-Researched 2026-11-13. Dapper.FSharp **4.10.0** (NuGet, 2026-04-01; depends on Dapper >= 2.1.72 and FSharp.Core >= 10.1.201; targets net6.0 to net10.0). Repository at commit `a83c9d5` (master, 2026-04-01). Plasm as of `docs/status.md` dated 2026-11-12; Plasm-side statements corrected 2026-11-14 for the one style (relationships, preloads, public changesets, validation and repository writes were removed). The findings about Dapper.FSharp are unchanged.
+Researched 2026-11-13. Dapper.FSharp **4.10.0** (NuGet, 2026-04-01; depends on Dapper >= 2.1.72 and FSharp.Core >= 10.1.201; targets net6.0 to net10.0). Repository at commit `a83c9d5` (master, 2026-04-01). Plasm as of `docs/status.md` dated 2026-11-12; Plasm-side statements corrected 2026-11-14 for the one style (relationships, preloads, public changesets, validation and repository writes were removed). The findings about Dapper.FSharp are unchanged. Corrected again 2026-11-20 against `features/`: PostgreSQL enum types, unions with fields, `selectDistinct` and the licence.
 
 Sources: [README](https://github.com/Dzoukr/Dapper.FSharp/blob/master/README.md), [src](https://github.com/Dzoukr/Dapper.FSharp/tree/master/src/Dapper.FSharp), [NuGet](https://www.nuget.org/packages/Dapper.FSharp), [issues](https://github.com/Dzoukr/Dapper.FSharp/issues).
 
@@ -19,10 +19,10 @@ Sources: [README](https://github.com/Dzoukr/Dapper.FSharp/blob/master/README.md)
 - There is no issue about the `MapEnum` / global-mapper change in this repo (searched open and closed issues, 2026-11-13).
 
 **Plasm**
-- `Scalar.enum` maps a fieldless union to text through an explicit, complete table. Missing cases, duplicates and unions with fields are configuration errors, and unknown stored text is a materialisation error (`src/Plasm/Scalar.fs`). `Scalar.wrap` and `Scalar.tryWrap` cover single-case wrappers and validating constructors. Unions with fields are rejected as configuration errors.
-- Native PostgreSQL enum columns: Plasm sends text, and I found no test that uses `CREATE TYPE ... AS ENUM` in `tests/`, `features/` or `koans/`. Whether a text parameter is accepted by a PG enum column under Plasm's parameter typing is **unverified** (Npgsql typically requires an untyped or unknown parameter, or an explicit cast). Plasm builds on `NpgsqlDataSource` (`src/Plasm.Postgres/Postgres.fs`), so data-source-level mapping is where it would hook in. Both libraries have this gap.
+- `Scalar.enum` maps a fieldless union to text through an explicit, complete table. Missing cases, duplicates and unions with fields are configuration errors, and unknown stored text is a materialisation error (`src/Plasm/Scalar.fs`). `Scalar.wrap` and `Scalar.tryWrap` cover single-case wrappers and validating constructors. A union with fields is not a `Scalar.enum`; it is stored across columns by convention (`features/union-fields.feature`).
+- Native PostgreSQL enum columns: `Scalar.asPgEnum "type"` sends the union as text with a cast to the enum type and reads it as `::text`, with no `MapEnum`, and the start-up check compares the type's labels with the union's cases (`features/pg-enums.feature`).
 
-**Verdict:** Plasm is clearly ahead for unions: they are first-class, explicit and validated. Neither has verified PostgreSQL native enum support.
+**Verdict:** Plasm is clearly ahead for unions: they are first-class, explicit and validated, and one can be stored in a PostgreSQL enum type. Dapper.FSharp has no enum-type support of its own.
 
 ## 2. Options and nulls
 
@@ -93,7 +93,7 @@ Roughly, MSSQL and PostgreSQL get the most attention. All four cover the same ba
 - Releases, from NuGet: v4.0.0 2022-11-07, then frequent releases through 4.7.0 (2023-08-28), 4.8.0 (2024-03-27, .NET 8), 4.9.0 (2024-08-26) and 4.10.0 (2026-04-01, an F# 10 / .NET 10 fix contributed in [PR #112](https://github.com/Dzoukr/Dapper.FSharp/pull/112)). That is about one release per year since 2024, mostly fixes. The last push was 2026-04-01. The repository has no GitHub Releases; versions are tags and NuGet only.
 - 407 stars and 35 forks; MIT; a single maintainer (Roman Provazník, Dzoukr) plus occasional contributors (Jordan Marr, Jindřich Ivánek). There are 15 open issues, the oldest from 2021 (#34), and several feature requests have no reply (#99 `IAsyncEnumerable`, #100, #108). The maintainer still answers within days (#113, 2026-04). Open [#105](https://github.com/Dzoukr/Dapper.FSharp/issues/105): 4.8.0 broke the advertised .NET 6 minimum. *Unverified:* the 4.10.0 nuspec's `FSharp.Core >= 10.1.201` may force a recent FSharp.Core on consumers.
 - NuGet downloads: 427.0K in total, 19.6K for 4.10.0 and 143K for 4.9.0. Its user base is real and modest; it is one of the more widely used F# SQL helpers.
-- **Plasm:** pre-release, unpublished, no license yet, no production use (status.md). Dapper.FSharp is far ahead on maturity and real-world use.
+- **Plasm:** pre-release, MIT licensed, public repository, no package published, no production use. Dapper.FSharp is far ahead on maturity and real-world use.
 
 ## 9. Developer experience
 
@@ -111,12 +111,12 @@ Roughly, MSSQL and PostgreSQL get the most attention. All four cover the same ba
 ## What Dapper.FSharp does that Plasm does not
 
 - Supports **four databases** (MSSQL, MySQL, PostgreSQL, SQLite), with a tested Docker matrix.
-- **Maturity and users:** about 6 years old (repo created 2020-01-07), 427K downloads, MIT licensed and published. Plasm is unpublished and unlicensed.
+- **Maturity and users:** about 6 years old (repo created 2020-01-07), 427K downloads, MIT licensed and published. Plasm is MIT licensed and public, with no package published.
 - **Near-zero abstraction:** no model to declare; any record (including anonymous records and view records) maps by name. Ad-hoc reads need no setup beyond `table<T>`.
 - **Seamless fallback to plain Dapper** via `Deconstructor` (`sql, Map<string,obj>`), with your own `IDbConnection` / `IDbTransaction` usable everywhere.
 - **Plain ADO.NET transactions:** any connection or transaction, including one shared with other libraries, works without an adapter. Plasm deliberately hides the connection and transaction (only `TxContext.CreateCommand()`).
 - **MSSQL `OUTPUT` / PG `RETURNING` on update and delete** (`UpdateOutputAsync`, `DeleteOutputAsync`). Plasm lists `RETURNING` from bulk updates as not built.
-- **`distinct`**, a listed Plasm gap, and MSSQL query hints.
+- MSSQL query hints.
 - **Lower per-query overhead** is likely (a thin reflection-based generator over Dapper). *Unverified, no benchmark run.*
 
 ## What Plasm does that Dapper.FSharp does not

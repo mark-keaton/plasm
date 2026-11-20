@@ -1,6 +1,6 @@
 # SQLProvider vs Plasm
 
-*Researched 2026-11-13. SQLProvider at commit `37927f4` (master, 2026-11-13), NuGet `SQLProvider` 1.5.31 (published 2026-11-13). Plasm as described in `README.md` and `docs/status.md` (as of 2026-11-12); Plasm-side statements corrected 2026-11-14 for the one style (relationships, preloads, public changesets, validation and repository writes were removed). The findings about SQLProvider are unchanged.*
+*Researched 2026-11-13. SQLProvider at commit `37927f4` (master, 2026-11-13), NuGet `SQLProvider` 1.5.31 (published 2026-11-13). Plasm as described in `README.md` and `docs/status.md` (as of 2026-11-12); Plasm-side statements corrected 2026-11-14 for the one style (relationships, preloads, public changesets, validation and repository writes were removed). The findings about SQLProvider are unchanged; it has since released 1.5.33, which these notes were not run against. Corrected again 2026-11-20 against `features/`: PostgreSQL enum types, unions with fields, composite keys, `selectDistinct`, `exists` and the start-up schema check.*
 
 Evidence key: **[doc]** the project's docs say so; **[src]** I read it in the source; **[issue]** taken from the issue tracker; **[inferred]** my reading of the source, not run; **[unverified]** not checked.
 
@@ -22,10 +22,10 @@ SQLProvider (https://github.com/fsprojects/SQLProvider) is an *erasing F# type p
 
 **Plasm**
 
-- `Scalar.enum [ (Pending, "pending"); ... ]` maps a fieldless union to text through an explicit table. It is checked: every case listed once, no duplicate names, unknown stored text is a materialisation error (`src/Plasm/Scalar.fs`). Unions with fields are a configuration error (status.md).
-- **PostgreSQL native `CREATE TYPE ... AS ENUM` columns: unverified.** `Scalar.enum` declares `ProviderType = string`. Whether Plasm's Npgsql parameter typing lets a text parameter be written to a native enum column without an explicit cast is not covered in status.md or the features I skimmed. Plasm doesn't use `MapEnum` either **[unverified]**.
+- `Scalar.enum [ (Pending, "pending"); ... ]` maps a fieldless union to text through an explicit table. It is checked: every case listed once, no duplicate names, unknown stored text is a materialisation error (`src/Plasm/Scalar.fs`). A union with fields is stored across columns by convention (`features/union-fields.feature`).
+- **PostgreSQL native `CREATE TYPE ... AS ENUM` columns:** `Scalar.asPgEnum "type"` sends the union as text with a cast to the type and reads it as `::text`, with no `MapEnum`; the start-up check compares the type's labels with the union's cases (`features/pg-enums.feature`).
 
-**Verdict:** Plasm has first-class, explicit union↔text mapping. SQLProvider has none and currently hides PG enum columns. Neither has demonstrated PG native enums.
+**Verdict:** Plasm has first-class, explicit union mapping, to text or to a PostgreSQL enum type. SQLProvider has none and currently hides PG enum columns.
 
 ## 2. Options and nulls
 
@@ -78,7 +78,7 @@ SQLProvider (https://github.com/fsprojects/SQLProvider) is an *erasing F# type p
 
 - Immutable records; every write a typed transaction step (`Tx.insert`, `Tx.update (original, changed)`, `Tx.delete`) that writes only what differs, owned rows by difference; constraint mapping by default names (unique/FK/check → field errors); optimistic concurrency by a `version` field or the original record's columns (`TxFailure.Conflict`); no validation layer (the domain's constructors validate). Also `Bulk.update/delete/insert/upsert` (multi-row, split above 65,000 parameters in one transaction), and an explicit repo with no ambient tracked state.
 
-**Verdict:** SQLProvider's model is EF-style unit-of-work on mutable proxies, with ambient `TransactionScope`. Plasm's is explicit values and results. SQLProvider's typed ``Create(...)`` (compile-time required columns) is something Plasm checks only at run time (`Changeset.check`/`CheckSchema`).
+**Verdict:** SQLProvider's model is EF-style unit-of-work on mutable proxies, with ambient `TransactionScope`. Plasm's is explicit values and results. SQLProvider's typed ``Create(...)`` (compile-time required columns) is something Plasm checks only at run time, by the schema check as the repository starts.
 
 ## 5. Schema, migrations, and compile-time access in builds/CI
 
@@ -162,15 +162,15 @@ Download counts per package (`SQLProvider.Oracle` 8,659, `.Firebird` 8,694, `.Du
 
 ## What SQLProvider does that Plasm does not
 
-- **Compile-time schema checking**: removed/renamed columns break the build, and typed ``Create(...)`` enforces required columns at compile time. Plasm checks at run time (`CheckSchema`).
+- **Compile-time schema checking**: removed/renamed columns break the build, and typed ``Create(...)`` enforces required columns at compile time. Plasm checks at run time: the schema check runs as the repository starts and by default fails start-up.
 - **No mapping code at all**; you can explore an unknown database from IntelliSense or FSI, including column comments and `Individuals` (rows as members).
 - **Many databases**: SQL Server (+ dacpac offline builds), MySQL/MariaDB, SQLite, Oracle, Firebird, DuckDB, Access, ODBC. Plasm has PostgreSQL only.
 - **Stored procedures and functions** as typed members, including refcursors and multiple result sets (`programmability.fsx`, sproc fixes #877/#878). Plasm has `repo.Sql` only **[unverified whether Plasm calls functions beyond raw SQL]**.
-- **Views and materialized views** typed automatically. Composite keys are at least representable (entity per table) **[unverified for writes]**; Plasm has single-column keys only.
+- **Views and materialized views** typed automatically. Composite keys are at least representable (entity per table) **[unverified for writes]**. Plasm has composite keys (`features/composite-keys.feature`) and no views.
 - **A mock data context** for testing query logic without a database.
 - **Row locking** (`Seq.lockForUpdate`, 1.5.31) across five databases; Plasm has a `RowLocking` capability flag **[unverified whether Plasm exposes FOR UPDATE to users]**.
 - **Maturity**: about 11 years, ~918k downloads, a responsive maintainer, and fixes shipped within days.
-- `distinct`, unions, `groupJoin` and sub-queries in more positions through LINQ **[doc]**; Plasm lists these as gaps.
+- Set unions, `groupJoin` and sub-queries in more positions through LINQ **[doc]**. Of these Plasm has only `exists` over a correlated query; it has `selectDistinct`.
 
 ## What Plasm does that SQLProvider does not
 
@@ -185,4 +185,4 @@ Download counts per package (`SQLProvider.Oracle` 8,659, `.Firebird` 8,694, `.Du
 - **Prepared queries**, a rolled-back test sandbox (`repo.Sandbox`), an FSI playground, and typed interpolated raw SQL (`FormattableString` only).
 - **Explicit transactions on the repo**, not ambient `TransactionScope` with a Serializable default.
 
-**Caveat both ways:** Plasm's advantages are verified by its own test suite (337 scenarios and 130 unit tests) but have had no production use and no published release. SQLProvider's weaknesses above come from docs, source reading and issues, not from running it. The PostgreSQL-enum column skip and the partial-failure `_State` behaviour are inferred from source and should be confirmed with a run before anyone relies on them.
+**Caveat both ways:** Plasm's advantages are verified by its own acceptance scenarios and unit tests ([acceptance.md](../acceptance.md)) but have had no production use and no published release. SQLProvider's weaknesses above come from docs, source reading and issues, not from running it. The PostgreSQL-enum column skip and the partial-failure `_State` behaviour are inferred from source and should be confirmed with a run before anyone relies on them.

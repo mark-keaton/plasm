@@ -4,19 +4,21 @@
 Outcomes and failure semantics are compared, not SQL text. Each test is named
 `ecto: <original test name>` or `ecto (deliberate difference): ...` and cites its source.
 
-Since 2026-11-14 Plasm has one style (`docs/status.md`). Ecto's preloads,
-changeset validations and `cast` have no counterpart any more, so the cases that
-tested them were removed; they stay in the table below, marked removed, with
-the reason. What remains (14 tests) is Ecto's repository and `Multi` behaviour,
+Since 2026-11-14 Plasm has one style (`docs/status.md`). Ecto's changeset
+validations and `cast` have no counterpart any more, and `preload` was removed
+then, so the cases that tested them were removed; they stay in the table
+below, marked removed, with the reason. A `let!` load (`loads.feature`) has
+since taken a preload query's place, with `take` per record; the Ecto cases
+have not been adapted to it. What remains (14 tests) is Ecto's repository and `Multi` behaviour,
 expressed as typed transactions: every write is a `Tx.insert`, `Tx.update`
 or `Tx.delete` step run by `repo.Transact`.
 
 | Ecto source | Case | Outcome |
 |---|---|---|
-| preload.exs | preload has_many, multiple times, belongs_to, with shared parent, empty, with no associated entries, optional foreign key, with query, nested, nested via custom query, many assocs | Removed (one style, step a1; `preload` itself left in step a2). What a record owns is always loaded with it, one batched command per list (owned-collections.feature); another aggregate is reached by a join or a second query |
+| preload.exs | preload has_many, multiple times, belongs_to, with shared parent, empty, with no associated entries, optional foreign key, with query, nested, nested via custom query, many assocs | Removed (one style, step a1; `preload` itself left in step a2). What a record owns is always loaded with it, one batched command per list (owned-collections.feature); another aggregate is reached by a join, `exists` or a `let!` load |
 | preload.exs | preload skips already loaded (cardinality one/many) | Removed with `repo.Preload` (it was a deliberate difference: Plasm always reloaded what was asked for) |
-| query.ex docs | limit in a preload query | Removed with `limitPerParent` (it was a deliberate difference: Plasm rejected `take` in a load query). The latest few rows per parent is hand-written SQL |
-| preload.exs | through / many_to_many / embeds / prefixes / functions | Not applicable. Shared records through a join table are a linked list (`links`), always loaded |
+| query.ex docs | limit in a preload query | Removed with `limitPerParent` (it was a deliberate difference: Plasm rejected `take` in a load query). Since then `take` inside a `let!` load applies per record (`loads.feature`); the case has not been adapted |
+| preload.exs | through / many_to_many / embeds / prefixes / functions | Not adapted. Shared records through a join table are a linked list (`[<JoinTable>]`), always loaded; what an embed holds is a record with no table, stored in its owner's row, or a `[<Json>]` field (`value-records.feature`, `json-columns.feature`) |
 | repo.exs | insert, update and delete | Same, as `Tx.insert`, `Tx.update` and `Tx.delete` steps |
 | repo.exs | insert and update with empty changeset | Same: `Tx.update (order, order)` changes nothing, issues no command and is never a conflict |
 | repo.exs | insert and update with changeset read after writes | Same: the generated id is returned in a new value; the submitted value is unchanged |
