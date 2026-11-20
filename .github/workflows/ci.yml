@@ -74,6 +74,27 @@ jobs:
           path: artifacts/*
           if-no-files-found: error
 
+  # examples/Starter as a reader copies it: its packages come from nuget.org,
+  # not from this repository's sources. Not run for a release, whose packages
+  # are not published yet when its check runs.
+  starter:
+    name: The Starter, from nuget.org
+    if: github.event_name != 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: examples/Starter/global.json
+
+      # Its tests run against PostgreSQL in Docker, in a sandbox.
+      - name: Test
+        working-directory: examples/Starter
+        run: dotnet test
+
   website-sql:
     name: Website SQL is up to date
     runs-on: ubuntu-latest
