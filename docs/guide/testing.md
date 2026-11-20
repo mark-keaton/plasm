@@ -12,12 +12,12 @@ its own savepoint, so a database error does not end the sandbox. Sandboxes
 nest.
 
 These are from the koans' lesson on testing,
-[`koans/Plasm.Koans/Lessons/L21_TestingWithPlasm.fs`](../../koans/Plasm.Koans/Lessons/L21_TestingWithPlasm.fs),
+[`koans/Plasm.Koans/Lessons/L22_TestingWithPlasm.fs`](../../koans/Plasm.Koans/Lessons/L22_TestingWithPlasm.fs),
 where `__` is the blank a learner fills in.
 
 An insert is visible inside its sandbox:
 
-<!-- from: koans/Plasm.Koans/Lessons/L21_TestingWithPlasm.fs -->
+<!-- from: koans/Plasm.Koans/Lessons/L22_TestingWithPlasm.fs -->
 ```fsharp
                       let! inside =
                           repo.Sandbox(fun repo ->
@@ -29,7 +29,7 @@ An insert is visible inside its sandbox:
 
 And gone afterwards:
 
-<!-- from: koans/Plasm.Koans/Lessons/L21_TestingWithPlasm.fs -->
+<!-- from: koans/Plasm.Koans/Lessons/L22_TestingWithPlasm.fs -->
 ```fsharp
                       let! _ = repo.Sandbox(fun repo -> repo.Transact addDan)
                       // The sandbox has ended: count with the outer repository.
