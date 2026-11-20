@@ -104,17 +104,40 @@ if diff -u "$work/jit.txt" "$work/native.txt"; then echo "native binary prints w
 # Plasm.Postgres's package, and a C# minimal API and C# tests that reference
 # only it, with PublishAot and no Plasm reference of their own; the library's
 # package carries Plasm's build step to their publishes. Copied as a user
-# would have it, with Plasm's packages in its packages/ folder.
+# would have it, except that it restores Plasm from this feed, copied into its
+# packages/, at the feed's version, in place of nuget.org's.
 st="$work/starter"
-rsync -a --exclude bin --exclude obj --exclude packages --exclude .nuget "$repo/examples/Starter/" "$st/"
+rsync -a --exclude bin --exclude obj --exclude TestResults --exclude packages --exclude .nuget "$repo/examples/Starter/" "$st/"
 mkdir -p "$st/packages"
 cp "$feed"/*.nupkg "$st/packages/"
+cat > "$st/nuget.config" <<XML
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="local" value="packages" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+  <packageSourceMapping>
+    <packageSource key="local">
+      <package pattern="Plasm" />
+      <package pattern="Plasm.*" />
+    </packageSource>
+    <packageSource key="nuget.org">
+      <package pattern="*" />
+    </packageSource>
+  </packageSourceMapping>
+</configuration>
+XML
+sed -i.orig -E 's|(Include="Plasm.Postgres" Version=")[^"]*"|\1'"$version"'"|' "$st/Directory.Packages.props"
+rm "$st/Directory.Packages.props.orig"
+if ! grep -q "Include=\"Plasm.Postgres\" Version=\"$version\"" "$st/Directory.Packages.props"; then echo "Starter's Directory.Packages.props names no Plasm.Postgres version to replace"; exit 1; fi
 cd "$st"
-dotnet build src/Starter.Api -c Release -p:PlasmVersion="$version" -o "$work/st-jit" -v q > "$work/st-build.log" 2>&1 || { cat "$work/st-build.log"; exit 1; }
+dotnet build src/Starter.Api -c Release -o "$work/st-jit" -v q > "$work/st-build.log" 2>&1 || { cat "$work/st-build.log"; exit 1; }
 dotnet "$work/st-jit/Starter.Api.dll" ddl > "$work/st-jit.txt" 2>&1 || true
-dotnet publish src/Starter.Api -c Release -r "$rid" -p:PlasmVersion="$version" -o "$work/st-native" -v m > "$work/st-native.log" 2>&1 || { tail -30 "$work/st-native.log"; exit 1; }
+dotnet publish src/Starter.Api -c Release -r "$rid" -o "$work/st-native" -v m > "$work/st-native.log" 2>&1 || { tail -30 "$work/st-native.log"; exit 1; }
 rm -rf "src/Starter.Api/obj/Release/net11.0/$rid/native" "src/Starter.Api/obj/Release/net11.0/$rid/plasm-aot"
-dotnet publish src/Starter.Api -c Release -r "$rid" -p:PlasmVersion="$version" -p:PlasmFieldGetters=false -o "$work/st-without" -v m > "$work/st-without.log" 2>&1 || { tail -30 "$work/st-without.log"; exit 1; }
+dotnet publish src/Starter.Api -c Release -r "$rid" -p:PlasmFieldGetters=false -o "$work/st-without" -v m > "$work/st-without.log" 2>&1 || { tail -30 "$work/st-without.log"; exit 1; }
 "$work/st-native/Starter.Api" ddl > "$work/st-native.txt" 2>&1 || true
 "$work/st-without/Starter.Api" ddl > "$work/st-without.txt" 2>&1 || true
 echo "--- Starter's API, runtime: its DDL"; cat "$work/st-jit.txt"
@@ -123,9 +146,9 @@ if ! grep -q '^create table equipment' "$work/st-native.txt"; then echo "Starter
 if grep 'warning IL' "$work/st-native.log" | grep -v -E 'IL2104|IL3053' | grep -q .; then echo "Starter's publish warns beyond the summary lines"; failed=1; fi
 if diff -u "$work/st-jit.txt" "$work/st-native.txt"; then echo "Starter's native binary prints what the runtime prints"; else echo "Starter's native binary differs from the runtime"; failed=1; fi
 if grep -q "EquipmentId.EquipmentId has fields that this native binary cannot see" "$work/st-without.txt"; then echo "without the step, Starter's binary refuses its union by name"; else echo "without the step, Starter's binary did not refuse its union by name"; cat "$work/st-without.txt"; failed=1; fi
-dotnet test --project tests/Starter.Tests -p:PlasmVersion="$version" > "$work/st-test.log" 2>&1 || { echo "Starter's tests failed"; tail -30 "$work/st-test.log"; failed=1; }
+dotnet test --project tests/Starter.Tests > "$work/st-test.log" 2>&1 || { echo "Starter's tests failed"; tail -30 "$work/st-test.log"; failed=1; }
 echo "Starter's tests, runtime: $(grep -E '^\s+(total|failed):' "$work/st-test.log" | tr -s ' ' | tr '\n' ' ')"
-dotnet publish tests/Starter.Tests -c Release -r "$rid" -p:PlasmVersion="$version" -o "$work/st-tests-native" -v m > "$work/st-tests-native.log" 2>&1 || { tail -30 "$work/st-tests-native.log"; exit 1; }
+dotnet publish tests/Starter.Tests -c Release -r "$rid" -o "$work/st-tests-native" -v m > "$work/st-tests-native.log" 2>&1 || { tail -30 "$work/st-tests-native.log"; exit 1; }
 "$work/st-tests-native/Starter.Tests" > "$work/st-tests-native.txt" 2>&1 || { echo "Starter's native tests failed"; tail -30 "$work/st-tests-native.txt"; failed=1; }
 echo "Starter's tests, native: $(grep -o 'Total: [0-9]*, Errors: [0-9]*, Failed: [0-9]*' "$work/st-tests-native.txt")"
 cd "$repo"

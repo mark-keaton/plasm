@@ -499,8 +499,9 @@ import and no property in the C# project, only its reference to the F#
 project and `PublishAot`. The library's reference to Plasm.Postgres flows to
 the host as packages do, so `buildTransitive/` brings Plasm's targets into the
 host's publish, and the step marks the library's F# getters there.
-`examples/Starter` is that shape, and the package check builds it as a user
-would have it, with Plasm's packages in its `packages/` folder: an F# library
+`examples/Starter` is that shape, on the published Plasm.Postgres from
+nuget.org; the package check builds a copy of it from the packages it packs
+in place of nuget.org's: an F# library
 on the package, a C# minimal API and C# tests referencing only it, each with
 `PublishAot`. The API's native binary prints the DDL the runtime prints,
 published without the step it refuses the library's typed id by name, and its
