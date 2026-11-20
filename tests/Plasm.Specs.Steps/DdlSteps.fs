@@ -3,6 +3,25 @@ namespace Plasm.Specs
 open Reqnroll
 open Plasm
 
+/// Tables and columns named by words PostgreSQL reserves, which the DDL must
+/// quote: a table, a unique column, a reference and an owned list.
+module KeywordNames =
+    type OrderId = OrderId of int64
+    type LineId = LineId of int64
+
+    [<Table "select">]
+    type Line = { Id: LineId; Order: OrderId; Limit: int }
+
+    [<Table "order">]
+    type Order =
+        { Id: OrderId
+          [<Unique>]
+          User: string
+          From: System.DateTimeOffset
+          Lines: Line list }
+
+    let model = Model.buildOrFail [] [ typeof<Order> ]
+
 /// Feature: Plasm prints the DDL its model expects
 [<Binding>]
 type DdlSteps(w: World) =
@@ -14,6 +33,7 @@ type DdlSteps(w: World) =
         | "Cards with a Stage" -> UnionCards.model
         | "Invoices with their lines" -> OwnedInvoices.model
         | "Cards linked to tags" -> LinkedTags.model
+        | "Records named by keywords" -> KeywordNames.model
         | other -> failwith $"no model named {other}"
 
     let repoFor name = w.Db.RepoWith(model = modelNamed name)

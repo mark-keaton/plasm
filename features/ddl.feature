@@ -7,7 +7,8 @@ Feature: Plasm prints the DDL its model expects
   So that I write each migration from what the model states, not from memory
 
   `repo.Ddl()` prints the statements that create every table the model maps:
-  columns and their types, NOT NULL for fields that are not options (a union's
+  columns and their types (a name PostgreSQL reserves, such as `from` or
+  `order`, quoted), NOT NULL for fields that are not options (a union's
   case columns always allow NULL), the key (an identity for identityKey), and
   constraints with the names Plasm maps violations by: `<table>_<column>_key`
   for uniqueness and `<table>_<column>_fkey` for references, join tables
@@ -31,6 +32,7 @@ Feature: Plasm prints the DDL its model expects
         | Cards with a Stage        |
         | Invoices with their lines |
         | Cards linked to tags      |
+        | Records named by keywords |
 
   Rule: It states the model's constraints by the names Plasm maps
 
