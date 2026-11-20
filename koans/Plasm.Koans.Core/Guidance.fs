@@ -8,7 +8,10 @@ open System.Text.RegularExpressions
 
 type KoanGuidance =
     { Discovers: string
-      Teaches: string }
+      Teaches: string
+      /// One sentence pointing at where on the page the answer comes from,
+      /// shown after a wrong answer; "" when the koan has none.
+      Hint: string }
 
 type LessonGuidance =
     { Number: string
@@ -17,7 +20,8 @@ type LessonGuidance =
       Goal: string
       Koans: Map<string, KoanGuidance> }
 
-let private row = Regex(@"^\s*\|\s*(.+?)\s*(?<!\\)\|\s*(.+?)\s*(?<!\\)\|\s*(.+?)\s*\|\s*$")
+// koan | the learner discovers | teaches | hint (the hint's cell may be empty).
+let private row = Regex(@"^\s*\|\s*(.+?)\s*(?<!\\)\|\s*(.+?)\s*(?<!\\)\|\s*(.+?)\s*(?:(?<!\\)\|\s*(.*?)\s*)?\|\s*$")
 
 let load () : LessonGuidance list =
     // Next to the koans assembly (also when it is loaded into F# Interactive).
@@ -51,7 +55,12 @@ let load () : LessonGuidance list =
                     let m = row.Match l
 
                     if m.Success && m.Groups.[1].Value <> "koan" then
-                        Some(m.Groups.[1].Value, { Discovers = m.Groups.[2].Value.Replace("\\|", "|"); Teaches = m.Groups.[3].Value })
+                        Some(
+                            m.Groups.[1].Value,
+                            { Discovers = m.Groups.[2].Value.Replace("\\|", "|")
+                              Teaches = m.Groups.[3].Value
+                              Hint = m.Groups.[4].Value.Replace("\\|", "|") }
+                        )
                     else
                         None)
                 |> Map.ofArray

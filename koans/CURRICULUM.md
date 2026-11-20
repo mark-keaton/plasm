@@ -96,7 +96,12 @@ the reference application in the same style.
 - The lesson file is `Plasm.Koans/Lessons/LNN_Name.fs`; its reference answers
   are in `answers/NN-name.answers` (`# Koan name`, then one answer per blank, in
   order); its specification is `features/lessons/NN-name.feature`, one row per
-  koan: name, what the learner discovers, and what it teaches.
+  koan: name, what the learner discovers, what it teaches, and its hint.
+- A hint is one sentence that says where on the page the answer comes from,
+  without the answer. The runner and the browser course show it after a wrong
+  answer. If no such sentence can be written, the page does not hold the
+  answer: reword the koan, or leave the cell empty and say what is missing in
+  `no-hint-yet.txt`.
 - Write the row first, run the koans' specs and see it fail, then write the
   koan and its answer.
 - Koan names are unique across the course; they are the keys of the answers.

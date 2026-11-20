@@ -105,6 +105,15 @@ type PathSteps(w: KoansWorld) =
         contains "Expected:\n    \"Gadget\"" w.Last.Output
         contains "Actual:\n    \"Widget\"" w.Last.Output
 
+    [<StepDefinition("the report shows the first koan's hint")>]
+    member _.HintShown() =
+        let hint = (firstLessonKoans ()).Head.Hint
+        check (hint <> "") "the first koan has no hint"
+        contains $"A hint: {hint}" w.Last.Output
+
+    [<StepDefinition("the report shows no hint")>]
+    member _.NoHint() = lacks "A hint:" w.Last.Output
+
     [<StepDefinition("the koan is still the next step")>]
     member _.StillNext() = contains $"The koan \"{(firstLessonKoans ()).Head.Koan}\"" w.Last.Output
 

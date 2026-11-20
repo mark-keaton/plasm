@@ -1,0 +1,22 @@
+# Koans with no hint yet (koan name  # what its page lacks). A hint points at
+# where on the page the answer comes from; for these the page does not hold
+# the answer, and a hint would only cover for that. The curriculum check fails
+# if a koan has neither a hint nor a line here, or has both. Reword the koan,
+# give its row a hint in its lesson's feature, and take its line out.
+A repo pairs a model with a database            # two counts fit the page: Db.model lists 8 record types, repo.Model.Types has 10 (the owned OrderLine and Profile too)
+The model is checked before any query           # Property is a string option (Some "Address"); nothing on the page says so
+A model reports every mistake at once           # Property is a string option; nothing on the page says so
+A list is stored only if its records are        # Property is a string option; nothing on the page says so
+A duplicate is the field's error                # FieldErrorKind and its case UniqueConstraint "name" appear nowhere before this blank
+A missing reference is the field's error        # the message "does not exist" appears nowhere on the page
+A broken check is the field's error             # FieldErrorKind.CheckConstraint "name" appears nowhere before this blank
+Stale updates are refused                       # TxFailure.Conflict is not named until two koans later, nor that it carries the record's name
+Without a version, every column is checked      # TxFailure.Conflict "Customer": the case is not named on the page, nor what it carries
+A copy from elsewhere says which version it saw # the comment names a Conflict, but not that it carries the record's name ("Order")
+A failure says where its step is written        # Action's text ("insert Order") is shown nowhere before this blank
+Custom steps use the transaction                # the Action of a Tx.fail step ("fail") is shown nowhere; the koan has no comment
+Failures are values                             # DbFailureKind.RepositoryClosed is not among the kinds lesson 20 lists
+Too many rows is about the data                 # DbError.MoreThanOneRow is named nowhere; the koan has no comment
+A link to a missing tag is the field's error    # FieldErrorKind.ForeignKeyConstraint is shown nowhere before this blank, nor the join table's constraint name
+Every query is checked before it runs           # the comment says Mistakes.shouting; the answer is the full name Plasm.Koans.Shop.Mistakes.shouting
+Drift is reported precisely                     # SchemaIssueKind.MissingColumn, and that Field is an option, appear nowhere; the koan's comment is about DDL

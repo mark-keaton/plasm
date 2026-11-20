@@ -37,6 +37,15 @@ Feature: The path to enlightenment
       Then the report shows the expected and the actual value, displayed as F# Interactive would
       And the koan is still the next step
 
+    Scenario: A wrong answer shows the koan's hint
+      Given the learner has filled in the first koan with a wrong value
+      When the learner runs the koans
+      Then the report shows the first koan's hint
+
+    Scenario: A blank not yet filled in shows no hint
+      When the learner runs the koans
+      Then the report shows no hint
+
     Scenario: A koan about SQL shows the SQL
       Given the learner has reached a koan that asserts on generated SQL
       And has filled it in with a wrong value

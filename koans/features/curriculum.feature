@@ -47,3 +47,24 @@ Feature: The curriculum is verified
     Scenario: Lessons build on each other
       When the lesson order is checked
       Then every lesson's prerequisites come before it
+
+  Rule: A koan's hint points at its answer and does not give it
+
+    A hint is the last cell of a koan's row in its lesson's feature: one
+    sentence saying where on the page the answer comes from. The runner shows
+    it after a wrong answer. A koan whose answer the page does not yet
+    determine gets no hint to cover for it: its cell is empty, and
+    no-hint-yet.txt names the koan and says what its page lacks.
+
+    Scenario: Every koan has a hint, or a stated reason for having none yet
+      When the lesson specifications are read
+      Then every koan has a hint or is listed in no-hint-yet.txt with its reason
+      And no koan listed there has a hint
+
+    Scenario: A hint is one sentence
+      When the lesson specifications are read
+      Then every hint is a single sentence
+
+    Scenario: No hint contains its answer
+      When the lesson specifications are read
+      Then no hint contains a reference answer of its koan

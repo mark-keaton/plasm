@@ -148,6 +148,9 @@ function render(r, lessonIndex, koanIndex) {
   if (r.shownSql?.length) box.append(part('sql', r.shownSql.length === 1 ? 'Plasm generated 1 command' : `Plasm generated ${r.shownSql.length} commands`, r.shownSql.join('\n\n')));
   if (r.status !== 'stopped' && r.status !== 'compile' && koan.discovers)
     box.append(el('div', { class: 'meditate' }, el('strong', {}, 'Meditate on this'), el('span', {}, koan.discovers)));
+  // The hint waits for a wrong answer: a blank not yet tried gets none.
+  if (['failed', 'threw', 'compile'].includes(r.status) && koan.hint)
+    box.append(el('div', { class: 'meditate hint' }, el('strong', {}, 'A hint'), el('span', {}, koan.hint)));
   box.dataset.status = r.status;
 }
 

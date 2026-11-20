@@ -13,6 +13,7 @@ Feature: Running a koan in the browser
       When the learner runs the first koan without changing it
       Then the koan shows that it is not yet passed
       And it points at the line of the blank in the editor
+      And it shows no hint yet
 
     Scenario: A correct answer passes
       When the learner fills in the first koan's blanks with its reference answer and runs it
@@ -23,6 +24,10 @@ Feature: Running a koan in the browser
       When the learner fills in the first koan's first blank with a wrong value and runs it
       Then the koan shows the expected and the actual value, displayed as F# Interactive would
       And it shows what the koan teaches
+
+    Scenario: A wrong answer shows the koan's hint
+      When the learner fills in the first koan's first blank with a wrong value and runs it
+      Then the koan shows its hint, as the lesson specification words it
 
     Scenario: A koan that talks to the database shows the SQL it generated
       When the learner runs a database koan with a wrong answer

@@ -125,6 +125,76 @@ type CurriculumSteps(w: KoansWorld) =
 
         check uses.IsEmpty $"kept-out API used: %A{uses}"
 
+    [<StepDefinition("every koan has a hint or is listed in no-hint-yet.txt with its reason")>]
+    member _.HintOrReason() =
+        let waiting = noHintYet ()
+        let specs = koanSpecs ()
+
+        let neither =
+            specs
+            |> List.filter (fun s -> s.Hint = "" && (waiting.TryFind s.Koan |> Option.defaultValue "") = "")
+            |> List.map (fun s -> s.Koan)
+
+        check neither.IsEmpty $"koans with neither a hint nor a reason in no-hint-yet.txt: %A{neither}"
+        let known = specs |> List.map (fun s -> s.Koan) |> Set.ofList
+        let strangers = waiting |> Map.toList |> List.map fst |> List.filter (fun k -> not (known.Contains k))
+        check strangers.IsEmpty $"no-hint-yet.txt names koans the course does not have: %A{strangers}"
+
+    [<StepDefinition("no koan listed there has a hint")>]
+    member _.ListedHaveNone() =
+        let waiting = noHintYet ()
+        let both = koanSpecs () |> List.filter (fun s -> s.Hint <> "" && waiting.ContainsKey s.Koan) |> List.map (fun s -> s.Koan)
+        check both.IsEmpty $"koans with a hint that no-hint-yet.txt still lists: %A{both}"
+
+    [<StepDefinition("every hint is a single sentence")>]
+    member _.OneSentence() =
+        let hints = koanSpecs () |> List.filter (fun s -> s.Hint <> "")
+        check (not hints.IsEmpty) "no koan has a hint"
+
+        // It ends with a full stop, and no sentence ends before that.
+        let wrong =
+            hints
+            |> List.filter (fun s -> not (s.Hint.EndsWith ".") || Regex.IsMatch(s.Hint, @"[.!?][\s""')]+\S"))
+            |> List.map (fun s -> $"{s.Koan}: {s.Hint}")
+
+        check wrong.IsEmpty ("hints that are not one sentence:\n" + String.concat "\n" wrong)
+
+    [<StepDefinition("no hint contains a reference answer of its koan")>]
+    member _.NoAnswerInHint() =
+        let hints = koanSpecs () |> List.filter (fun s -> s.Hint <> "")
+        check (not hints.IsEmpty) "no koan has a hint"
+        let answers = answers ()
+        let words = [| "zero"; "one"; "two"; "three"; "four"; "five"; "six"; "seven"; "eight"; "nine"; "ten"; "eleven"; "twelve" |]
+
+        // What would give an answer away: the answer as written; the text of
+        // an answer that is one string; a whole number also as a bare number
+        // and as its word; true, false and None in any case.
+        let giveaways (answer: string) =
+            let a = answer.Trim()
+
+            [ yield a, false
+              let text = Regex.Match(a, "^\"([^\"]*)\"$")
+              if text.Success then yield text.Groups.[1].Value, false
+              let number = Regex.Match(a, @"^(\d+)[Lm]?$")
+
+              if number.Success then
+                  yield number.Groups.[1].Value, false
+                  let n = int number.Groups.[1].Value
+                  if n < words.Length then yield words.[n], true
+
+              if List.contains a [ "true"; "false"; "None" ] then yield a, true ]
+
+        let found =
+            [ for s in hints do
+                  for answer in answers.TryFind s.Koan |> Option.defaultValue [] do
+                      for text, anyCase in giveaways answer do
+                          let options = if anyCase then RegexOptions.IgnoreCase else RegexOptions.None
+
+                          if Regex.IsMatch(s.Hint, @"(?<![\w.])" + Regex.Escape text + @"(?!\w)", options) then
+                              yield $"{s.Koan}: '{text}' in: {s.Hint}" ]
+
+        check found.IsEmpty ("hints that contain their answer:\n" + String.concat "\n" found)
+
     [<StepDefinition("the lesson order is checked")>]
     member _.ReadOrder() = ()
 

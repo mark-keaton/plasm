@@ -93,9 +93,9 @@ let lesson =
                                   select (o.Id, c)
                           }
 
-                      // A whole Customer can be selected; a whole Order cannot, because
-                      // it is read with its lines, which a join does not read. Select
-                      // the order's fields instead.
+                      // A whole Customer can be selected. So can a whole Order: it comes
+                      // with its lines, read in one more command (lesson 09). This query
+                      // selects only the order's id.
                       let! rows = repo.All pairs
                       ok rows |> List.map (fun (id, c) -> id, c.Name) |> shouldBe __
                   }

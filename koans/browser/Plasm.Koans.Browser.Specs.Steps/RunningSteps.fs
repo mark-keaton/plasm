@@ -188,6 +188,29 @@ type RunningSteps(w: BrowserWorld) =
         }
         |> unit
 
+    // A wrong answer shows the koan's hint; a blank not yet tried shows none
+
+    [<StepDefinition("the koan shows its hint, as the lesson specification words it")>]
+    member _.HintShown() =
+        task {
+            // The course's hint is the lesson specification's: the course scenario
+            // "The browser course has every lesson and koan of the terminal version" compares them.
+            let koan = w.Koan.Value
+            let! hint = w.Page.EvaluateAsync<string>($"() => window.koans.course.lessons[{koan.Lesson}].koans[{koan.Index}].hint")
+            check (not (String.IsNullOrEmpty hint)) $"the course has no hint for {koan.Name}"
+            let! text = w.Page.TextContentAsync "#result .hint span"
+            check (text = hint) $"the koan shows the hint '{text}', not '{hint}'"
+        }
+        |> unit
+
+    [<StepDefinition("it shows no hint yet")>]
+    member _.NoHintYet() =
+        task {
+            let! hints = w.Page.Locator("#result .hint").CountAsync()
+            check (hints = 0) "a koan with its blank unfilled shows a hint"
+        }
+        |> unit
+
     // A koan that talks to the database shows the SQL it generated
 
     [<StepDefinition("the learner runs a database koan with a wrong answer")>]

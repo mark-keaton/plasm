@@ -159,6 +159,11 @@ let describeNext (guidance: Guidance.LessonGuidance list) (r: KoanResult) =
     | Some g ->
         lines.Add ""
         lines.Add $"  Meditate on this: {g.Discovers}"
+
+        // The hint waits for a wrong answer: a blank not yet tried gets none.
+        match r.Outcome with
+        | (Failed _ | Threw _) when g.Hint <> "" -> lines.Add $"  A hint: {g.Hint}"
+        | _ -> ()
     | None -> ()
 
     String.concat "\n" lines

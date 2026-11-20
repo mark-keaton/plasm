@@ -257,9 +257,12 @@ type KoanSpec =
       Number: int
       Koan: string
       Discovers: string
-      Teaches: string }
+      Teaches: string
+      /// One sentence pointing at where the answer comes from; "" for none.
+      Hint: string }
 
-let private specRow = Regex(@"^\s*\|\s*(.+?)\s*(?<!\\)\|\s*(.+?)\s*(?<!\\)\|\s*(.+?)\s*\|\s*$")
+// koan | the learner discovers | teaches | hint (the hint's cell may be empty).
+let private specRow = Regex(@"^\s*\|\s*(.+?)\s*(?<!\\)\|\s*(.+?)\s*(?<!\\)\|\s*(.+?)\s*(?:(?<!\\)\|\s*(.*?)\s*)?\|\s*$")
 
 /// Every koan named in the lesson feature files, in lesson order.
 let koanSpecs () =
@@ -280,10 +283,27 @@ let koanSpecs () =
                       Number = number
                       Koan = m.Groups.[1].Value
                       Discovers = m.Groups.[2].Value.Replace("\\|", "|")
-                      Teaches = m.Groups.[3].Value }
+                      Teaches = m.Groups.[3].Value
+                      Hint = m.Groups.[4].Value.Replace("\\|", "|") }
             else
                 None))
     |> List.ofArray
+
+/// The koans that have no hint yet, each with what its page lacks
+/// (koans/no-hint-yet.txt: `koan name  # why`).
+let noHintYet () : Map<string, string> =
+    let file = Path.Combine(root, "koans", "no-hint-yet.txt")
+
+    if not (File.Exists file) then
+        Map.empty
+    else
+        File.ReadAllLines file
+        |> Array.filter (fun l -> l.Trim() <> "" && not (l.TrimStart().StartsWith "#"))
+        |> Array.map (fun l ->
+            match l.IndexOf '#' with
+            | -1 -> l.Trim(), ""
+            | i -> l.Substring(0, i).Trim(), l.Substring(i + 1).Trim())
+        |> Map.ofArray
 
 /// The orientation lesson, which teaches the F# the course relies on: its
 /// koans name an F# topic ("F#: Records") instead of a Plasm scenario.

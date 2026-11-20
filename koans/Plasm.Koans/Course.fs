@@ -164,6 +164,8 @@ let course () : string =
                                 "body", box (String.concat "\n" (shown k))
                                 "discovers", box (kg |> Option.map (fun x -> x.Discovers) |> Option.defaultValue "")
                                 "teaches", box (kg |> Option.map (fun x -> x.Teaches) |> Option.defaultValue "")
+                                // Shown after a wrong answer; "" when the koan has none.
+                                "hint", box (kg |> Option.map (fun x -> x.Hint) |> Option.defaultValue "")
                                 "given", box (given helperDefinitions (String.concat "\n" k.Body)) ])
                       |> Array.ofList
                   ) ])

@@ -14,10 +14,13 @@ type SpecKoan =
     { Lesson: string
       Koan: string
       Discovers: string
-      Teaches: string }
+      Teaches: string
+      /// One sentence pointing at where the answer comes from; "" for none.
+      Hint: string }
 
 module Specs =
-    let private row = Regex(@"^\s*\|\s*(.+?)\s*(?<!\\)\|\s*(.+?)\s*(?<!\\)\|\s*(.+?)\s*\|\s*$")
+    // koan | the learner discovers | teaches | hint (the hint's cell may be empty).
+    let private row = Regex(@"^\s*\|\s*(.+?)\s*(?<!\\)\|\s*(.+?)\s*(?<!\\)\|\s*(.+?)\s*(?:(?<!\\)\|\s*(.*?)\s*)?\|\s*$")
 
     let koans =
         lazy
@@ -36,7 +39,8 @@ module Specs =
                              { Lesson = title
                                Koan = m.Groups.[1].Value
                                Discovers = m.Groups.[2].Value.Replace("\\|", "|")
-                               Teaches = m.Groups.[3].Value }
+                               Teaches = m.Groups.[3].Value
+                               Hint = m.Groups.[4].Value.Replace("\\|", "|") }
                      else
                          None))
              |> List.ofArray)
@@ -100,13 +104,13 @@ type CourseSteps(w: BrowserWorld) =
         task {
             let! json =
                 w.Page.EvaluateAsync<string>(
-                    "() => JSON.stringify(window.koans.course.lessons.flatMap(l => l.koans.map(k => [l.title, k.name, k.discovers, k.teaches])))"
+                    "() => JSON.stringify(window.koans.course.lessons.flatMap(l => l.koans.map(k => [l.title, k.name, k.discovers, k.teaches, k.hint])))"
                 )
 
             let inPage =
-                JsonSerializer.Deserialize<string[][]>(json) |> Array.map (fun a -> a.[0], a.[1], a.[2], a.[3]) |> List.ofArray
+                JsonSerializer.Deserialize<string[][]>(json) |> Array.map (fun a -> a.[0], a.[1], a.[2], a.[3], a.[4]) |> List.ofArray
 
-            let specified = Specs.koans.Value |> List.map (fun s -> s.Lesson, s.Koan, s.Discovers, s.Teaches)
+            let specified = Specs.koans.Value |> List.map (fun s -> s.Lesson, s.Koan, s.Discovers, s.Teaches, s.Hint)
             check (inPage = specified) $"the browser course differs from the lesson specifications:\npage %A{inPage |> List.truncate 3}\nspec %A{specified |> List.truncate 3}"
         }
         |> unit
