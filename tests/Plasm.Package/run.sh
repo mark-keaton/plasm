@@ -57,7 +57,9 @@ echo "pack: version $version; no package carries obj/ or bin/"
 # template.json replaces the Starter's version with this one.
 tplconfig=$(unzip -p "$feed/Plasm.Templates.$version.nupkg" content/Starter/.template.config/template.json 2>/dev/null || true)
 starterversion=$(sed -n 's/.*Include="Plasm.Postgres" Version="\([^"]*\)".*/\1/p' "$repo/examples/Starter/Directory.Packages.props")
-if ! printf '%s' "$tplconfig" | grep -q "\"value\": \"$version\"" || ! printf '%s' "$tplconfig" | grep -q "\"replaces\": \"$starterversion\""; then
+# Matched in the shell, not by a pipe into grep -q: under pipefail, grep -q
+# leaving early can fail the pipe, and the check would answer the wrong way.
+if [[ "$tplconfig" != *"\"value\": \"$version\""* || "$tplconfig" != *"\"replaces\": \"$starterversion\""* ]]; then
   echo "pack: Plasm.Templates' template.json does not replace the Starter's $starterversion with $version:"; printf '%s\n' "$tplconfig" | grep -E '"(value|replaces)"'; exit 1
 fi
 echo "pack: Plasm.Templates replaces the Starter's Plasm.Postgres $starterversion with $version"
@@ -162,7 +164,8 @@ dotnet publish src/Starter.Api -c Release -r "$rid" -p:PlasmFieldGetters=false -
 echo "--- Starter's API, runtime: its DDL"; cat "$work/st-jit.txt"
 echo "--- Starter's API, native ($(grep 'warning IL' "$work/st-native.log" | sort -u | wc -l | tr -d ' ') IL warnings, $(grep 'warning IL' "$work/st-native.log" | grep -v -E 'IL2104|IL3053' | sort -u | wc -l | tr -d ' ') other than the summary lines)"
 if ! grep -q '^create table equipment' "$work/st-native.txt"; then echo "Starter's native binary did not print its DDL"; cat "$work/st-native.txt"; failed=1; fi
-if grep 'warning IL' "$work/st-native.log" | grep -v -E 'IL2104|IL3053' | grep -q .; then echo "Starter's publish warns beyond the summary lines"; failed=1; fi
+others=$(grep 'warning IL' "$work/st-native.log" | grep -v -E 'IL2104|IL3053' || true)
+if [ -n "$others" ]; then echo "Starter's publish warns beyond the summary lines"; failed=1; fi
 if diff -u "$work/st-jit.txt" "$work/st-native.txt"; then echo "Starter's native binary prints what the runtime prints"; else echo "Starter's native binary differs from the runtime"; failed=1; fi
 if grep -q "EquipmentId.EquipmentId has fields that this native binary cannot see" "$work/st-without.txt"; then echo "without the step, Starter's binary refuses its union by name"; else echo "without the step, Starter's binary did not refuse its union by name"; cat "$work/st-without.txt"; failed=1; fi
 dotnet test --project tests/Starter.Tests > "$work/st-test.log" 2>&1 || { echo "Starter's tests failed"; tail -30 "$work/st-test.log"; failed=1; }
@@ -209,7 +212,9 @@ echo "the made project's tests: $(grep -E '^\s+(total|failed):' "$work/tpl-test.
 dotnet publish src/Lending.Api -c Release -r "$rid" -o "$work/tpl-native" -v m > "$work/tpl-native.log" 2>&1 || { tail -30 "$work/tpl-native.log"; exit 1; }
 "$work/tpl-native/Lending.Api" ddl > "$work/tpl-native.txt" 2>&1 || true
 if ! grep -q '^create table equipment' "$work/tpl-native.txt"; then echo "the made project's native binary did not print its DDL"; cat "$work/tpl-native.txt"; failed=1; fi
-if grep 'warning IL' "$work/tpl-native.log" | grep -v -E 'IL2104|IL3053' | grep -q .; then echo "the made project's publish warns beyond the summary lines"; grep 'warning IL' "$work/tpl-native.log" | sort -u; failed=1; else echo "the made project's API publishes natively, warning only FSharp.Core's two summary lines"; fi
+others=$(grep 'warning IL' "$work/tpl-native.log" | grep -v -E 'IL2104|IL3053' || true)
+echo "--- the made project's API, native ($(grep -c 'warning IL' "$work/tpl-native.log" || true) IL warning lines, $(printf '%s' "$others" | grep -c . || true) other than the summary lines)"
+if [ -n "$others" ]; then echo "the made project's publish warns beyond the summary lines"; grep 'warning IL' "$work/tpl-native.log" | sort -u; failed=1; else echo "the made project's API publishes natively, warning only FSharp.Core's two summary lines"; fi
 cd "$repo"
 
 # A GraphQL application on Plasm.HotChocolate, from the same feed.
