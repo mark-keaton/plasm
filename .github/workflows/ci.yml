@@ -5,12 +5,16 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # A release runs all of this first, at the tagged commit (release.yml).
+  workflow_call:
 
 permissions:
   contents: read
 
+# The workflow's name is the caller's when a release runs this, so a release's
+# check and a push's CI on the same ref do not cancel each other.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:

@@ -1,0 +1,251 @@
+name: Release
+
+# Publishes Plasm's packages to nuget.org when a GitHub release is published.
+#
+# The version is the release's tag and nothing else: vX.Y.Z, or vX.Y.Z-suffix
+# for a pre-release. A tag of another form fails the run before anything is
+# packed. Every package is published at that one version.
+#
+# Dispatched by hand, the workflow is a dry run: it checks, packs and verifies
+# the packages at the version typed in, and stops. Only a published release
+# reaches the publish job.
+#
+# Trusted publishing on nuget.org matches this repository, this file's name
+# (release.yml) and the `release` environment. Renaming the file or the
+# environment breaks publishing until the policy on nuget.org is updated.
+# There is no stored API key: the publish job exchanges GitHub's OIDC token
+# for a key that lasts an hour.
+#
+# Jobs, in order: version (reads the tag) -> check (the whole of CI, at the
+# tagged commit) and pack (read-only) -> package-check (the packed files,
+# restored into applications outside the repository, natively too) -> publish
+# (the only job that can publish; it builds nothing).
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Dry run: the version to pack at (nothing is published)"
+        required: true
+        default: "0.0.0-dryrun"
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+# No permissions by default; each job states what it needs.
+permissions: {}
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # What is published, in dependency order. Plasm.PGlite is a spike and is not
+  # packed; Plasm.FieldGetters travels inside Plasm's package.
+  PACKAGES: Plasm.Annotations Plasm Plasm.Postgres Plasm.HotChocolate
+
+jobs:
+  version:
+    name: Read the version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Read the version
+        id: read
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.event.release.tag_name }}
+          TYPED: ${{ inputs.version }}
+        run: |
+          form='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'
+          if [ "$EVENT" = release ]; then
+            case "$TAG" in
+              v*) version="${TAG#v}" ;;
+              *) echo "::error::The release's tag is '$TAG'. It must be vX.Y.Z, or vX.Y.Z-suffix for a pre-release."; exit 1 ;;
+            esac
+          else
+            version="$TYPED"
+          fi
+          if ! printf '%s' "$version" | grep -Eq "$form"; then
+            echo "::error::'$version' is not a version: X.Y.Z, or X.Y.Z-suffix for a pre-release."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version $version, from $EVENT."
+      - name: A release is cut from main
+        if: github.event_name == 'release'
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::The tagged commit $GITHUB_SHA is not on main."
+            exit 1
+          fi
+
+  # The whole of CI, at the commit being released, with no credentials.
+  check:
+    name: CI
+    needs: version
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  pack:
+    name: Pack
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      digests: ${{ steps.digests.outputs.digests }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Pack every package at the one version
+        env:
+          PKG_VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          for p in $PACKAGES; do
+            echo "::group::$p"
+            dotnet pack "src/$p" -c Release -o nupkg -p:Version="$PKG_VERSION"
+            echo "::endgroup::"
+          done
+      - name: The packages are the ones named, complete, at the version
+        # A version on nuget.org can be unlisted and never replaced, so what a
+        # package says of itself is checked before it can be pushed.
+        env:
+          PKG_VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          failed=0
+          problem() { echo "::error::$1"; failed=1; }
+          expected=$(for p in $PACKAGES; do echo "$p.$PKG_VERSION.nupkg"; echo "$p.$PKG_VERSION.snupkg"; done | sort)
+          if [ "$(cd nupkg && ls | sort)" != "$expected" ]; then
+            problem "Packed: $(cd nupkg && ls | tr '\n' ' '). Expected: $(echo "$expected" | tr '\n' ' ')"
+          fi
+          for p in $PACKAGES; do
+            file="nupkg/$p.$PKG_VERSION.nupkg"
+            [ -f "$file" ] || continue
+            nuspec=$(unzip -p "$file" "$p.nuspec")
+            has() { printf '%s' "$nuspec" | grep -Fq "$1" || problem "$p: its nuspec lacks $1"; }
+            has "<version>$PKG_VERSION</version>"
+            has '<license type="expression">MIT</license>'
+            has '<readme>README.md</readme>'
+            has '<description>'
+            has '<tags>'
+            has '<projectUrl>'
+            has "<repository type=\"git\" url=\"https://github.com/$GITHUB_REPOSITORY\" commit=\"$GITHUB_SHA\""
+            files=$(unzip -Z1 "$file")
+            printf '%s\n' "$files" | grep -qx 'README.md' || problem "$p: no README.md in the package"
+            printf '%s\n' "$files" | grep -qx "lib/net11.0/$p.dll" || problem "$p: no lib/net11.0/$p.dll"
+            printf '%s\n' "$files" | grep -qx "lib/net11.0/$p.xml" || problem "$p: no documentation file"
+            if printf '%s\n' "$files" | grep -Eq '(^|/)(obj|bin)/'; then
+              problem "$p: carries build output: $(printf '%s\n' "$files" | grep -E '(^|/)(obj|bin)/' | tr '\n' ' ')"
+            fi
+            # Every Plasm package it depends on is at this version.
+            others=$(printf '%s' "$nuspec" | grep -o '<dependency id="Plasm[^"]*" version="[^"]*"' | grep -v "version=\"$PKG_VERSION\"" || true)
+            [ -z "$others" ] || problem "$p: depends on another version of a Plasm package: $others"
+            unzip -Z1 "nupkg/$p.$PKG_VERSION.snupkg" | grep -qx "lib/net11.0/$p.pdb" || problem "$p: no symbols in its snupkg"
+          done
+          for f in build/Plasm.targets buildTransitive/Plasm.targets tools/Plasm.FieldGetters.dll; do
+            unzip -Z1 "nupkg/Plasm.$PKG_VERSION.nupkg" | grep -qx "$f" || problem "Plasm: no $f"
+          done
+          exit $failed
+      - name: Record package digests
+        # Handed to publish as a job output, not inside the artifact, so publish
+        # can tell that what it downloaded is what this job packed.
+        id: digests
+        run: echo "digests=$(cd nupkg && sha256sum -- * | base64 -w0)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: nupkg
+          path: nupkg/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # tests/Plasm.Package/run.sh: applications outside the repository restore
+  # Plasm only from the packed files, and are run under the runtime and as
+  # native binaries.
+  package-check:
+    name: Package check
+    needs: [version, pack]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: nupkg
+          path: nupkg
+      - name: Run the package check on the packed files
+        env:
+          # The feed the check restores from: the files pack made.
+          PLASM_FEED: ${{ github.workspace }}/nupkg
+          PKG_VERSION: ${{ needs.version.outputs.version }}
+        run: tests/Plasm.Package/run.sh
+
+  # The only job that can publish. It runs no code from the repository: it
+  # downloads the packed files, checks they are the ones pack made, and pushes
+  # them. Skipped on a dry run.
+  publish:
+    name: Publish to nuget.org
+    needs: [version, check, pack, package-check]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: read
+      id-token: write       # OIDC: nuget.org trusted publishing, attestation signing
+      attestations: write   # the build-provenance attestation
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: nupkg
+          path: nupkg
+      - name: The packages are the ones pack made
+        env:
+          DIGESTS: ${{ needs.pack.outputs.digests }}
+        run: |
+          echo "$DIGESTS" | base64 -d > "$RUNNER_TEMP/expected.sha256"
+          if [ "$(cd nupkg && ls | sort)" != "$(awk '{print $2}' "$RUNNER_TEMP/expected.sha256" | sort)" ]; then
+            echo "::error::The downloaded packages are not the set the pack job made."
+            exit 1
+          fi
+          (cd nupkg && sha256sum --check --strict "$RUNNER_TEMP/expected.sha256")
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: nupkg/*.nupkg
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
+        with:
+          # This job has no checkout, so it cannot read global.json.
+          dotnet-version: "11.0.x"
+      - name: NuGet login (OIDC to a short-lived key)
+        id: nuget-login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841  # v1.2.0
+        with:
+          user: ${{ secrets.NUGET_USER }}
+      - name: Push to nuget.org
+        # Each .nupkg takes its .snupkg with it. --skip-duplicate makes a
+        # re-run safe: packages pushed before a failure are passed over.
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+        run: dotnet nuget push "nupkg/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
