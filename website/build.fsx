@@ -597,6 +597,18 @@ let build () =
 
 build ()
 
+// A typed pre-release version goes stale at the next release, and each of
+// these pages can do without one: --prerelease, a floating reference, or the
+// template's plain install.
+let typedPrerelease = Regex @"\b\d+\.\d+\.\d+-(alpha|beta|rc|preview)[\w.]*"
+
+for path in
+    [ "README.md"; "ROADMAP.md"; "docs/README.md"; "docs/csharp.md"; "website/prompt.txt" ]
+    @ [ for dir, pattern in [ "docs/start", "*.md"; "docs/guide", "*.md"; "website", "*.html" ] do
+          for file in Directory.GetFiles(Path.Combine(root, dir), pattern) -> dir + "/" + Path.GetFileName file ] do
+    for m in typedPrerelease.Matches(read path) do
+        problems.Add $"{path}: names the version {m.Value}, which the next release makes stale; say it without a version"
+
 if problems.Count > 0 then
     for p in problems do
         eprintfn "error: %s" p

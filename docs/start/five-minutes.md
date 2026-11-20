@@ -9,7 +9,17 @@ compiles ahead of time (native AOT), and every commit is checked natively.
 It is experimental and not production-ready. [Status](../status.md) says what
 is verified and what is missing.
 
-The packages are on NuGet as a pre-release, `0.1.0-alpha.2`:
+A new application starts from the template: an F# library on the packages,
+a C# minimal API that calls it through one type, and C# tests in a sandbox.
+Its tests need Docker.
+
+```sh
+dotnet new install Plasm.Templates
+dotnet new plasm-api -n MyApp
+```
+
+The packages are on NuGet as a pre-release, for an application that exists
+already:
 
 ```sh
 dotnet add package Plasm.Postgres --prerelease

@@ -1,18 +1,18 @@
 Use Plasm (https://mark-keaton.github.io/plasm) to build a library lending desk over PostgreSQL: members borrow and return copies of books. The host is a C# ASP.NET minimal API, the domain and its persistence are an F# project it references, and it is published with native AOT.
 
-Start from the starter; do not start from nothing:
-- Clone https://github.com/mark-keaton/plasm and copy examples/Starter to a folder of its own outside the clone, reached by its real path: on macOS /tmp and /var are symlinks, and NuGet drops packages through one.
+Start from the template; do not start from nothing:
+- Run dotnet new install Plasm.Templates, then dotnet new plasm-api -n Lending, in a folder reached by its real path: on macOS /tmp and /var are symlinks, and NuGet drops packages through one.
 - Run dotnet test before you change anything. It needs Docker, and it must be green first.
 - PostgreSQL for the running host can come from Docker too: postgres:18.
-- Read https://mark-keaton.github.io/plasm/llms-full.txt, every docs page in one file. Read docs/start, docs/guide and docs/csharp.md; the rest can wait. Where the site and the clone differ, the clone is right.
+- Read https://mark-keaton.github.io/plasm/llms-full.txt, every docs page in one file. Read the start pages, the guide and "A C# host over an F# domain"; the rest can wait. Where the site and the packages you installed differ, the packages are right: the site can describe a newer version.
 
 Then replace its booking domain with this one:
 - A member borrows a copy if they hold fewer than three loans and the copy is not out.
 - A loan is due in 21 days. Returning it late records a fine.
 - A change made from a stale version of a record is refused, never merged.
 
-Keep everything else the starter does, and write none of it again:
-- Its project files, nuget.config, global.json and JSON serializer options stay as they are, apart from names.
+Keep everything else the template gave you, and write none of it again:
+- Its project files, nuget.config, global.json and JSON serializer options stay as they are.
 - C# sees one F# type: plain arguments in, a Task of a union out. C# writes no query and switches over each outcome with no default arm.
 - Records carry [<Table>], an id is a single-case type, a validated value has a create function. Write no mapping.
 - Every write is a Tx step, and a caller's copy is read with Tx.oneAsSeen. Time comes from the TimeProvider, never from the system clock.

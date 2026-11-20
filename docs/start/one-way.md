@@ -3,6 +3,9 @@
 Store the domain's own records, and write each fact about the data once, in
 the type if F# can say it there. There is no second style.
 
+The template is this way as a project that builds and passes its tests:
+`dotnet new install Plasm.Templates`, then `dotnet new plasm-api -n MyApp`.
+
 ## Types
 
 A single-case wrapper (`OrderId of int64`) is stored as its value. A type

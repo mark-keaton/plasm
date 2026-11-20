@@ -199,8 +199,18 @@ dotnet fsi website/build.fsx       # the site, into _site/; fails if a documente
 
 ## Packages
 
+A new application starts from the template, `Plasm.Templates`: an F#
+library on the packages, a C# minimal API that calls it through one type,
+and C# tests in a sandbox.
+
+```sh
+dotnet new install Plasm.Templates
+dotnet new plasm-api -n MyApp
+```
+
 `Plasm.Postgres`, with `Plasm` and `Plasm.Annotations` under it, and
-`Plasm.HotChocolate` are on NuGet as a pre-release, `0.1.0-alpha.2`:
+`Plasm.HotChocolate` are on NuGet as a pre-release, for an application that
+exists already:
 
 ```sh
 dotnet add package Plasm.Postgres --prerelease

@@ -579,7 +579,7 @@ let! count =
     <section class="example" id="fsi">
       <h2>18 · F# Interactive</h2>
       <p>Plasm is built to be explored in F# Interactive. Referencing the package is the only setup. A query displays the SQL it would run, with its parameter values and the command that reads what its records own; displaying it never touches the database. The code is <code>examples/fsi-tour.fsx</code> (with its references and connection string shortened), and the output below each part is what <code>dotnet fsi</code> printed for it against PostgreSQL.</p>
-<pre class="code fsharp">#r &quot;nuget: Plasm.Postgres, 0.1.0-alpha.2&quot;
+<pre class="code fsharp">#r &quot;nuget: Plasm.Postgres, *-*&quot;
 #load &quot;Plasm.Examples/Model.fs&quot;
 open Plasm
 open Plasm.Postgres
