@@ -23,11 +23,20 @@ start-up, naming every one.
             )
 ```
 
+It then asks the database to describe the SQL of every statement those
+values make, their loads, bulk writes and hand-written statements included.
+The database parses each and runs none, so a misspelled column in your own
+SQL fails start-up, not a request. Statements are described only when the
+schema check found the tables as the model expects them.
+
 `OnCommand` is called with each command sent: its SQL, its duration and its
 row count. A transaction's own commands are reported too, BEGIN with its
 isolation level, COMMIT, ROLLBACK and a sandbox's savepoints, each with a
 `Kind` of `Begin`, `Commit` or `Rollback`; a statement's `Kind` is `Statement`,
-so count statements by that, not by their SQL.
+so count statements by that, not by their SQL. The same events are
+OpenTelemetry activities of the ActivitySource "Plasm", named by the
+operation and table ("SELECT customers") and tagged by the database
+conventions, whenever something listens to it.
 
 ## Turning a check down
 

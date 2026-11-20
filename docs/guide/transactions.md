@@ -55,6 +55,50 @@ let cancel id seen reason = changeOrder id seen (Order.cancel reason)
 A record without a version field is checked by every column of the record
 the change was made from, in the same command.
 
+## A step that may fail
+
+`Tx.attempt` runs a step under a savepoint. Its failure is a value, the
+step's writes are rolled back, and the transaction goes on.
+
+<!-- from: examples/Plasm.Examples/Writes.fs -->
+```fsharp
+let register (customer: Customer) : Tx<Customer, Refusal> =
+    transaction {
+        let! tried = Tx.attempt (Tx.insert customer)
+
+        match tried with
+        | Ok stored -> return stored
+        | Error _ ->
+            return!
+                Tx.one (plasm { for c in tableOf<Customer> do where (c.Email = customer.Email) })
+                |> Tx.orReject (Missing "customer")
+    }
+```
+
+A serialization failure, a deadlock or a lost connection is never caught by
+an attempt: it fails the whole transaction, which `repo.Transact(tx, retry =
+RetryPolicy.OnSerializationFailure 3)` runs again from the start, so a step
+of your own (`Tx.run`) must be safe to run twice.
+
+## Claiming a row
+
+`locking` reads rows locked until the transaction ends. With `SkipLocked`,
+workers each claim a different row.
+
+<!-- from: examples/Plasm.Examples/Writes.fs -->
+```fsharp
+let claimDraft: Tx<Order option, Refusal> =
+    Tx.one (
+        plasm {
+            for o in tableOf<Order> do
+                where (o.Status = Draft)
+                orderBy o.PlacedAt
+                take 1
+                locking RowLock.ForUpdate.SkipLocked
+        }
+    )
+```
+
 ## What comes back
 
 A failure says what failed and which steps were rolled back.
@@ -121,4 +165,17 @@ let expireDrafts (before: DateTime) =
 /// Insert new products and rename existing ones, matched on the SKU.
 let syncCatalogue (products: Product list) =
     Bulk.upsert (products, (fun p -> p.Sku), fun current incoming -> { current with Name = incoming.Name })
+```
+
+`Bulk.updateReturning` gives back the rows it changed, as they are now and
+read whole; `Bulk.deleteReturning` gives back the rows it removed, and is
+refused for a record that owns or links others, whose rows would go first.
+
+<!-- from: examples/Plasm.Examples/Writes.fs -->
+```fsharp
+let expireDraftsReturning (before: DateTime) =
+    Bulk.updateReturning (
+        plasm { for o in tableOf<Order> do where (o.Status = Draft && o.PlacedAt < before) },
+        fun o -> { o with Status = Cancelled "expired" }
+    )
 ```

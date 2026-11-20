@@ -140,6 +140,55 @@ let revenueByCustomer =
     }
 ```
 
+Inside an aggregate, a condition counts or adds only the rows meeting it,
+and a list is in the order the call states.
+
+<!-- from: examples/Plasm.Examples/Queries.fs -->
+```fsharp
+let customerSummary =
+    plasm {
+        for o in tableOf<Order> do
+            groupBy o.CustomerId
+            orderBy o.CustomerId
+            select (o.CustomerId, Agg.countWhere (o.Status = Draft), Agg.sumWhere (o.Status = Published) o.Total, Agg.listBy o.Id o.PlacedAt)
+    }
+```
+
+## Windows
+
+A window function reads a value over the rows around each one: its number,
+its rank, the total so far. The window is a partition and an order.
+
+<!-- from: examples/Plasm.Examples/Queries.fs -->
+```fsharp
+let orderHistory =
+    plasm {
+        for o in tableOf<Order> do
+            orderBy o.CustomerId
+            thenBy o.PlacedAt
+            select (
+                o.Id,
+                Win.rowNumber (Win.partition o.CustomerId |> Win.orderBy o.PlacedAt),
+                Win.runningSum o.Total (Win.partition o.CustomerId |> Win.orderBy o.PlacedAt)
+            )
+    }
+```
+
+## Combining queries
+
+`Query.union`, `unionAll`, `intersect` and `except` combine two queries. Of
+records, the result is a query like any other, ordered and paged after it is
+formed.
+
+<!-- from: examples/Plasm.Examples/Queries.fs -->
+```fsharp
+let needsAttention customerId =
+    Query.union (plasm { for o in tableOf<Order> do where (o.Status = Draft) }, unpaid (Query.from (tableOf<Order>)))
+    |> forCustomer customerId
+```
+
+A join takes a query where it takes a table: `join c in (plasm { ... }) on (...)`.
+
 ## Prepared queries
 
 A prepared query is built and planned once; each call only binds its

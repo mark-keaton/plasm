@@ -158,6 +158,11 @@ type Order =
       Lines: OrderLine list }
 ```
 
+A field can be unique within others, as a name within its tenant:
+`[<Unique(Within = [| nameof the<Tag>.Tenant |])>]` on `Name` is one
+constraint over (tenant, name), and a duplicate within a tenant is the Name
+field's error.
+
 Nothing is loaded lazily and nothing is left unloaded: an empty list always
 means the order has no lines.
 
