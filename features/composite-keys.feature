@@ -67,7 +67,7 @@ Feature: A record whose Id is a record has a key of several columns
       Given the keyed Issues plasm#7 "Crash", plasm#8 "Docs" and other#7 "Elsewhere"
       And the keyed Issue plasm#7 is renamed "Crash on start"
       When the keyed Issue plasm#7 is renamed "Crash again" from the copy read first
-      Then the change is refused as changed by another writer
+      Then the change is refused as changed by another writer, naming plasm#7
 
     Scenario: A part of the key cannot be changed
       Given the keyed Issues plasm#7 "Crash", plasm#8 "Docs" and other#7 "Elsewhere"

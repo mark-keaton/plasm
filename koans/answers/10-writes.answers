@@ -19,9 +19,9 @@ ProductId 0L
 true
 false
 # Stale updates are refused
-Some(TxFailure.Conflict "Order")
+Some(TxFailure.Conflict("Order", OrderId 1L))
 # Without a version, every column is checked
-Some(TxFailure.Conflict "Customer")
+Some(TxFailure.Conflict("Customer", CustomerId 1L))
 # A copy from elsewhere says which version it saw
-Some(TxFailure.Conflict "Order")
+Some(TxFailure.Conflict("Order", OrderId 2L))
 12.5m

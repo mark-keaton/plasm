@@ -166,8 +166,8 @@ type QualifiedUnionSteps(w: World) =
               "LoadStrategy", ("BatchedByKeys | PerParentWindow", "LoadStrategy.BatchedByKeys 1", "let unqualified: LoadStrategy = BatchedByKeys 1")
               "TxFailure",
               ("InvalidChanges | Conflict | Failed | Rejected | Misused",
-               "(TxFailure.Conflict \"Order\": TxFailure<string>)",
-               "let unqualified: TxFailure<string> = Conflict \"Order\"") ]
+               "(TxFailure.Conflict(\"Order\", 1L): TxFailure<string>)",
+               "let unqualified: TxFailure<string> = Conflict(\"Order\", 1L)") ]
 
     [<StepDefinition("^I compile a domain union reusing the case names of (\\w+) alongside Plasm$")>]
     member _.Compile(union: string) =

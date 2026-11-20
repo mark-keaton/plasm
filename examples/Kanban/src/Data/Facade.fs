@@ -410,7 +410,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
 
     /// Runs a workflow as the F# server does: serializable, run again on a
     /// serialization failure.
-    let transact (card: Guid) (tx: Tx<'T, Refusal>) (ct: CancellationToken) : Task<Result<'T, Stopped>> =
+    let transact (tx: Tx<'T, Refusal>) (ct: CancellationToken) : Task<Result<'T, Stopped>> =
         task {
             let! outcome = repo.Transact(tx, IsolationLevel.Serializable, RetryPolicy.OnSerializationFailure 5, ct)
 
@@ -420,7 +420,9 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
                     match error.Failure with
                     | TxFailure.Rejected(Domain refusal) -> ByDomain refusal
                     | TxFailure.Rejected(Refusal.Missing what) -> Missing what
-                    | TxFailure.Conflict _ -> Stopped.StaleCopy card
+                    // The conflict names the stale record by its key.
+                    | TxFailure.Conflict(_, (:? CardId as CardId card)) -> Stopped.StaleCopy card
+                    | TxFailure.Conflict(entity, key) -> unavailable $"A {entity} the transaction read was stale" key null
                     | TxFailure.InvalidChanges(_, errors) -> Fields(errors |> List.map View.fieldError)
                     | TxFailure.Failed failure -> failed $"{error.Step.Action} failed" failure
                     | TxFailure.Misused message -> unavailable "A transaction was misused" message null)
@@ -430,9 +432,9 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
         parse value |> Result.mapError (fun message -> [ name, message ])
 
     /// A workflow that changes one card, run, and told as a ChangeOutcome.
-    let changed (card: Guid) (tx: Tx<Card, Refusal>) ct : Task<ChangeOutcome> =
+    let changed (tx: Tx<Card, Refusal>) ct : Task<ChangeOutcome> =
         task {
-            match! transact card tx ct with
+            match! transact tx ct with
             | Ok stored -> return ChangeOutcome(View.card stored)
             | Error(Missing what) -> return ChangeOutcome { What = what }
             | Error(ByDomain error) -> return ChangeOutcome { Code = View.code error; Message = DomainError.describe error }
@@ -441,7 +443,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
         }
 
     let change (card: Guid) (version: int) (decide: Board -> int -> Card -> Result<Card, DomainError>) ct : Task<ChangeOutcome> =
-        changed card (changeCard (CardId card) version decide) ct
+        changed (changeCard (CardId card) version decide) ct
 
     static member private Open(dataSource: NpgsqlDataSource, onSql: Action<string> option, time: TimeProvider, checks: StartupChecks, cancellationToken: CancellationToken) : Task<KanbanData> =
         task {
@@ -630,7 +632,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
             | Ok(slug, name, limit) ->
                 let board: Board = { Id = BoardId(newId ()); Slug = slug; Name = name; WipLimit = limit }
 
-                match! transact Guid.Empty (createBoard board []) cancellationToken with
+                match! transact (createBoard board []) cancellationToken with
                 | Ok stored -> return CreateBoardOutcome(View.summary [] { Board = stored; Newest = []; Blocked = [] })
                 | Error(Fields problems) -> return CreateBoardOutcome(View.invalid problems)
                 | Error other -> return unavailable "Creating a board stopped" other null
@@ -645,7 +647,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
                 let id = CardId(newId ())
                 let now = clock ()
 
-                match! transact Guid.Empty (addCard slug (fun b -> Card.create id b title now)) cancellationToken with
+                match! transact (addCard slug (fun b -> Card.create id b title now)) cancellationToken with
                 | Ok card -> return AddCardOutcome(View.card card)
                 | Error(Missing what) -> return AddCardOutcome { What = what }
                 | Error(Fields problems) -> return AddCardOutcome(View.invalid problems)
@@ -670,7 +672,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
                       Name = name
                       PasswordHash = hash.Invoke password.Value }
 
-                match! transact Guid.Empty (Tx.insert account) cancellationToken with
+                match! transact (Tx.insert account) cancellationToken with
                 | Ok stored -> return RegisterOutcome { Name = stored.Name.Value; PasswordHash = stored.PasswordHash }
                 | Error(Fields problems) -> return RegisterOutcome(View.invalid problems)
                 | Error other -> return unavailable "Registering stopped" other null
@@ -725,7 +727,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
     member _.CommentAsync(card: Guid, author: string, body: string, cancellationToken: CancellationToken) : Task<ChangeOutcome> =
         match field "author" Person.create author with
         | Error problems -> Task.FromResult(ChangeOutcome(View.invalid problems))
-        | Ok who -> changed card (addComment (CardId card) (Card.comment (CommentId(newId ())) who body (clock ()))) cancellationToken
+        | Ok who -> changed (addComment (CardId card) (Card.comment (CommentId(newId ())) who body (clock ()))) cancellationToken
 
     /// Makes `labels` the card's whole set of labels; each must be a label,
     /// and a problem is named by its place (labels[1]).
@@ -735,7 +737,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
         match parsed |> List.collect (function Error e -> e | Ok _ -> []) with
         | [] ->
             let labels = parsed |> List.choose Result.toOption
-            changed card (relabel (CardId card) version (newId >> LabelId) (Card.relabel labels)) cancellationToken
+            changed (relabel (CardId card) version (newId >> LabelId) (Card.relabel labels)) cancellationToken
         | problems -> Task.FromResult(ChangeOutcome(View.invalid problems))
 
     /// Every card in progress on the board back to the backlog, in one
@@ -745,7 +747,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
             match Slug.create board with
             | Error _ -> return SendAllBackOutcome { What = $"board {board}" }
             | Ok slug ->
-                match! transact Guid.Empty (sendAllBack slug) cancellationToken with
+                match! transact (sendAllBack slug) cancellationToken with
                 | Ok n -> return SendAllBackOutcome { SentBack.Cards = n }
                 | Error(Missing what) -> return SendAllBackOutcome { What = what }
                 | Error other -> return unavailable "Sending cards back stopped" other null
@@ -755,7 +757,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
     /// back to the backlog, on every board: how many (docs/kanban-host.md).
     member _.SendStaleBackAsync(cancellationToken: CancellationToken) : Task<SentBack> =
         task {
-            match! transact Guid.Empty (sendStaleBack (clock ())) cancellationToken with
+            match! transact (sendStaleBack (clock ())) cancellationToken with
             | Ok n -> return { SentBack.Cards = n }
             | Error other -> return unavailable "Sending stale cards back stopped" other null
         }

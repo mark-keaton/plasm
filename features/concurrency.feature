@@ -11,6 +11,7 @@ Feature: Changes are checked against what was read
   was read, NULLs included, in the same command. A record with a version field is
   checked by its version instead (core.feature). A change made from a key alone
   has nothing to compare, so it is not checked unless the record has a version.
+  A conflict names the record by its key.
 
   # Note = { Id: NoteId; Text: string; Author: string option }, without a version.
   Background:
@@ -28,14 +29,14 @@ Feature: Changes are checked against what was read
       Given a Note read from the database
       And another writer changes that Note's text
       When I change the text of the Note I read
-      Then the change fails as a conflict
+      Then the change fails as a conflict naming the Note's key
       And the other writer's text is kept
 
     Scenario: A delete after another writer changed the row is a conflict
       Given a Note read from the database
       And another writer changes that Note's text
       When I delete the Note I read
-      Then the delete fails as a conflict
+      Then the delete fails as a conflict naming the Note's key
 
     Scenario: A NULL that is still NULL matches
       Given a Note without an author read from the database

@@ -330,6 +330,67 @@ let readBack (name: string) : Tx<Customer option, string> =
         )
         |> unit
 
+    [<StepDefinition("two draft Orders, the second at version 2")>]
+    member _.TwoOrders() =
+        task {
+            let! first = w.Repo.Transact(Tx.insert (New.order None Draft 10m): Tx<_, unit>)
+            let! second = w.Repo.Transact(Tx.insert (New.order None Draft 20m): Tx<_, unit>)
+            let! second = w.Repo.Transact(ok second |> edit (fun o -> { o with Total = 21m }))
+            equal 2 (ok second).Version "the second's version"
+            w.Set("orders", [ ok first; ok second ])
+        }
+        |> unit
+
+    [<StepDefinition("^a transaction reads both through one helper as seen at version (\\d+)$")>]
+    member _.BothByHelper(seen: int) =
+        // One line reads both: the step alone cannot say which was stale.
+        let asSeen (o: Order) = Tx.oneAsSeen (plasm { for x in tableOf<Order> do where (x.Id = o.Id) }, seen) |> Tx.orReject (Missing "order")
+
+        match w.Get<Order list> "orders" with
+        | [ first; second ] ->
+            transact (
+                transaction {
+                    let! _ = asSeen first
+                    return! asSeen second
+                }
+            )
+            |> unit
+        | other -> failwithf "expected two orders, got %A" other
+
+    [<StepDefinition("^a transaction reads both with Tx.traverse as seen at version (\\d+)$")>]
+    member _.BothByTraverse(seen: int) =
+        w.Get<Order list> "orders"
+        |> Tx.traverse (fun o -> Tx.oneAsSeen (plasm { for x in tableOf<Order> do where (x.Id = o.Id) }, seen) |> Tx.orReject (Missing "order"))
+        |> transact
+        |> unit
+
+    [<StepDefinition("the failure is a conflict naming the second Order's key")>]
+    member _.NamesSecond() =
+        let second = (w.Get<Order list> "orders").[1]
+        let f = (failure ()).Failure
+        check (f.IsConflict) $"expected a conflict, got %A{f}"
+        equal (Some(box second.Id)) (conflictKey f) "the key the conflict names"
+
+    [<StepDefinition("the failure is a conflict naming the Order's key")>]
+    member _.NamesOrder() =
+        let f = (failure ()).Failure
+        check (f.IsConflict) $"expected a conflict, got %A{f}"
+        equal (Some(box (w.Get<Order> "order").Id)) (conflictKey f) "the key the conflict names"
+
+    [<StepDefinition("^a transaction reads that Order as seen at version (\\d+) at a known line$")>]
+    member _.ReadAtKnownLine(seen: int) =
+        let o = w.Get<Order> "order"
+        let line = int __LINE__ + 1
+        let read = Tx.oneAsSeen (plasm { for x in tableOf<Order> do where (x.Id = o.Id) }, seen) |> Tx.orReject (Missing "order")
+        w.Set("knownLine", line)
+        transact read |> unit
+
+    [<StepDefinition("the failure's step is that Tx.oneAsSeen, at its file and line")>]
+    member _.StaleStep() =
+        let e = failure ()
+        check e.Failure.IsConflict $"expected a conflict, got %A{e.Failure}"
+        equal ("TypedTxSteps.fs", w.Get<int> "knownLine", "oneAsSeen Order") (System.IO.Path.GetFileName e.Step.File, e.Step.Line, e.Step.Action) "the step"
+
     [<StepDefinition("the failure is a conflict, and the Order keeps the other writer's change")>]
     member _.ConflictKeepsOther() =
         task {

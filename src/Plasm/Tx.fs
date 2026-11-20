@@ -27,8 +27,10 @@ type TxFailure<'E> =
     | Rejected of 'E
     /// Declared-constraint errors of the step's record, by field.
     | InvalidChanges of entity: string * errors: FieldError list
-    /// Optimistic concurrency conflict (or the row no longer exists).
-    | Conflict of entity: string
+    /// Optimistic concurrency conflict (or the row no longer exists): the
+    /// record's type, and the key of the record that was stale, the value of
+    /// its key field (its id, or the key record of a composite key), boxed.
+    | Conflict of entity: string * key: obj
     /// The step could not be translated, the provider could not perform it,
     /// the database failed, or a row could not be read back.
     | Failed of DbError
@@ -65,7 +67,7 @@ type TransactionError<'E> =
 
                 let all = errors |> List.map named |> String.concat "; "
                 $"{entity}: {all}"
-            | TxFailure.Conflict entity -> $"{entity}: changed or deleted by another writer since it was read"
+            | TxFailure.Conflict(entity, key) -> $"{entity} {Reflection.Shown.value key}: changed or deleted by another writer since it was read"
             | TxFailure.Failed d -> $"failed: {d}"
             | TxFailure.Misused m -> $"misused: {m}"
 
@@ -301,7 +303,7 @@ module internal TxCore =
         let failure (rt: TxRuntime) (f: Writes.Failure) : TxFailure<'E> =
             match f with
             | Writes.Invalid s -> TxFailure.InvalidChanges(typeof<'T>.Name, (Changeset<'T>(s)).Errors)
-            | Writes.Stale _ -> TxFailure.Conflict typeof<'T>.Name
+            | Writes.Stale s -> TxFailure.Conflict(typeof<'T>.Name, Writes.keyOf rt.Model s)
             | Writes.Failed f -> TxFailure.Failed(DbError.Database f)
             | Writes.Unsupported op -> TxFailure.Failed(DbError.Translation(TranslationError.UnsupportedByProvider(op, rt.Session.Provider.Dialect.Name)))
 
@@ -524,14 +526,22 @@ type Tx =
                     // The version is checked on the row as read, before what the
                     // record owns is loaded: a stale copy costs one SELECT.
                     let v = schema.Version.Value
+                    let mutable staleKey: obj = null
                     let limited = Query<'T>(OneRow.limit rt.Model query.Def)
                     let session = { rt.Session with Args = limited.Def.Args }
 
                     match Planner.plan session.Provider.Dialect rt.Model limited.Def with
                     | Error e -> return Error(TxFailure.Failed(DbError.Translation e))
                     | Ok plan ->
-                        match! Execution.readRootIf session plan (fun rows -> rows.Count <> 1 || unbox<int> rows.[0].[v.Index] = seen) with
-                        | None -> return Error(TxFailure.Conflict typeof<'T>.Name)
+                        let current (rows: Collections.Generic.IReadOnlyList<obj[]>) =
+                            if rows.Count = 1 && unbox<int> rows.[0].[v.Index] <> seen then
+                                staleKey <- rows.[0].[schema.Key.Index]
+                                false
+                            else
+                                true
+
+                        match! Execution.readRootIf session plan current with
+                        | None -> return Error(TxFailure.Conflict(typeof<'T>.Name, staleKey))
                         | Some [] -> return Ok None
                         | Some [ row ] -> return Ok(Some(unbox<'T> row))
                         | Some _ -> return Error(TxFailure.Failed DbError.MoreThanOneRow)
@@ -541,15 +551,19 @@ type Tx =
                     match! TxCore.rows rt limited with
                     | Ok [] -> return Ok None
                     | Ok [ row ] ->
-                        let version =
+                        let stale =
                             match found with
-                            | Ok schema -> schema.Version |> Option.map (fun v -> unbox<int> (schema.Shape.Deconstruct(box row)).[v.Index])
+                            | Ok schema ->
+                                let values = schema.Shape.Deconstruct(box row)
+
+                                schema.Version
+                                |> Option.filter (fun v -> unbox<int> values.[v.Index] <> seen)
+                                |> Option.map (fun _ -> values.[schema.Key.Index])
                             | Error _ -> None
 
-                        if version.IsSome && version <> Some seen then
-                            return Error(TxFailure.Conflict typeof<'T>.Name)
-                        else
-                            return Ok(Some row)
+                        match stale with
+                        | Some key -> return Error(TxFailure.Conflict(typeof<'T>.Name, key))
+                        | None -> return Ok(Some row)
                     | Ok _ -> return Error(TxFailure.Failed DbError.MoreThanOneRow)
                     | Error e -> return Error e
             })

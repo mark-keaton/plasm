@@ -278,10 +278,10 @@ type CompositeKeySteps(w: World) =
 
         w.Set("keyedReRead", true)
 
-    [<StepDefinition("the change is refused as changed by another writer")>]
-    member _.Stale() =
+    [<StepDefinition("^the change is refused as changed by another writer, naming (\\w+#\\d+)$")>]
+    member _.Stale(k: string) =
         match w.Get<Result<Issue, TransactionError<unit>>> "keyedChange" with
-        | Error e when (match e.Failure with TxFailure.Conflict _ -> true | _ -> false) -> ()
+        | Error e when e.Failure.IsConflict -> equal (Some(box (stored ()).[key k].Id)) (conflictKey e.Failure) "the key the conflict names"
         | other -> failwithf "expected a conflict, got %A" other
 
     [<StepDefinition("^the keyed Issue (\\w+#\\d+) is given the number (\\d+)$")>]

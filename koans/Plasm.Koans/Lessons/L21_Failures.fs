@@ -188,5 +188,5 @@ let lesson =
                       | _ -> false
 
                   paid Failed |> shouldBe __
-                  databaseFailed (TxFailure.Conflict "Order") |> shouldBe __
+                  databaseFailed (TxFailure.Conflict("Order", OrderId 1L)) |> shouldBe __
           ) ]

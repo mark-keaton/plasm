@@ -23,6 +23,13 @@ let private keyValue (schema: SchemaInfo) (s: CsState) : obj option =
     | Some(_, k) -> Some k
     | None -> s.Data |> Option.map (fun d -> (schema.Shape.Deconstruct d).[schema.Key.Index])
 
+/// The key of the record a stale write was made from: its key field's value.
+/// A write only checks a row it has the key of, so a stale one has a key.
+let keyOf (model: Model) (s: CsState) : obj =
+    match keyValue (schemaOf model s.Type) s with
+    | Some key -> key
+    | None -> invalidOp $"a stale {s.Type.Name} has no key"
+
 let private versionValue (schema: SchemaInfo) (s: CsState) : int option =
     match schema.Version with
     | None -> None

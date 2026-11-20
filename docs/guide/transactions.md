@@ -146,7 +146,8 @@ And a stale copy is a conflict:
         let! stale = repo.Transact(cancel order.Id order.Version "changed my mind")
 
         match stale with
-        | Error { Failure = TxFailure.Conflict entity } -> show "stale copy" entity
+        // The conflict names the stale record: its type, and its key, read with a type test.
+        | Error { Failure = TxFailure.Conflict(entity, (:? OrderId as id)) } -> show "stale copy" (entity, id)
         | other -> show "unexpected" other
 ```
 

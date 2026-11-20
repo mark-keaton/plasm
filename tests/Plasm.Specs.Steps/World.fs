@@ -61,6 +61,12 @@ module Support =
 
     let unit (t: Task<'a>) : Task = t :> Task
 
+    /// The key a conflict names, the stale record's key field's value.
+    let conflictKey (f: TxFailure<'E>) : obj option =
+        match f with
+        | TxFailure.Conflict(_, key) -> Some key
+        | _ -> None
+
     let published =
         plasm {
             for o in tableOf<Order> do

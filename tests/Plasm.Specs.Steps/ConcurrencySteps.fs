@@ -33,6 +33,7 @@ type ConcurrencySteps(w: World) =
 
     let saved (r: Result<'T, TransactionError<unit>>) =
         w.Set("noteWrite", r |> Result.map ignore |> Result.mapError (fun e -> string e, (match e.Failure with TxFailure.Conflict _ -> true | _ -> false)))
+        w.Set("noteConflictKey", (match r with Error e -> conflictKey e.Failure | Ok _ -> None))
 
     let readNote (author: string option) =
         task {
@@ -102,6 +103,11 @@ type ConcurrencySteps(w: World) =
         match w.Get<Result<unit, string * bool>> "noteWrite" with
         | Error(_, true) -> ()
         | other -> failwithf "expected a conflict, got %A" other
+
+    [<StepDefinition("^the (?:change|delete) fails as a conflict naming the Note's key$")>]
+    member this.ConflictNaming() =
+        this.Conflict()
+        equal (Some(box (read ()).Id)) (w.Get<obj option> "noteConflictKey") "the key the conflict names"
 
     [<StepDefinition("the other writer's text is kept")>]
     member _.TheirsKept() =

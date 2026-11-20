@@ -260,7 +260,7 @@ type RoundTripSteps(w: World) =
     [<StepDefinition("the write fails as a conflict on the Order")>]
     member _.Conflict() =
         match (err (result ())).Failure with
-        | TxFailure.Conflict entity -> equal "Order" entity "the conflicting record"
+        | TxFailure.Conflict(entity, _) -> equal "Order" entity "the conflicting record"
         | f -> failwithf "expected a conflict, got %A" f
 
     [<StepDefinition("the write is refused because (.+) does not belong to the Order")>]

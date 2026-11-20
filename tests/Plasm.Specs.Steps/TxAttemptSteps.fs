@@ -137,7 +137,7 @@ type TxAttemptSteps(w: World) =
     [<StepDefinition("the attempt gave a Conflict on the Order")>]
     member _.Conflict() =
         match w.Get<Result<Result<Order, TxFailure<unit>>, TransactionError<unit>>> "staleAttempt" with
-        | Ok(Error(TxFailure.Conflict name)) -> equal "Order" name "the conflict's record"
+        | Ok(Error(TxFailure.Conflict(name, _))) -> equal "Order" name "the conflict's record"
         | other -> failwithf "expected the attempt's Conflict, got %A" other
 
     [<StepDefinition("the Customer the attempt inserted is not stored")>]

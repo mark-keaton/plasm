@@ -77,6 +77,10 @@ Feature: Transactions are typed, and their steps need no names
     still `seen`, so a stale caller is told so before anything is decided. The
     version is checked on the record's own row, before what it owns is read, so
     a stale copy costs one SELECT.
+    A conflict names the record that was stale by its key, the value of its
+    key field (`TxFailure.Conflict (entity, key)`), and the error's step is
+    where the stale read or write is written: of two records of one type read
+    from the same line, the failure still says which.
 
     Scenario: Inserting a record gives it back with its key
       When a transaction inserts the Customer "Ada" as a record
@@ -108,6 +112,26 @@ Feature: Transactions are typed, and their steps need no names
       Given a draft Order whose version is 2
       When a transaction reads that Order as seen at version 2, and another writer changes it before the update
       Then the failure is a conflict, and the Order keeps the other writer's change
+
+    Scenario: Of two Orders read as seen by one helper, the conflict names the stale one
+      Given two draft Orders, the second at version 2
+      When a transaction reads both through one helper as seen at version 1
+      Then the failure is a conflict naming the second Order's key
+
+    Scenario: Of Orders read as seen in Tx.traverse, the conflict names the stale one
+      Given two draft Orders, the second at version 2
+      When a transaction reads both with Tx.traverse as seen at version 1
+      Then the failure is a conflict naming the second Order's key
+
+    Scenario: A stale update's conflict names the Order's key
+      Given a draft Order whose version is 2
+      When a transaction reads that Order as seen at version 2, and another writer changes it before the update
+      Then the failure is a conflict naming the Order's key
+
+    Scenario: A stale read's failure is reported at the Tx.oneAsSeen that read it
+      Given a draft Order whose version is 2
+      When a transaction reads that Order as seen at version 1 at a known line
+      Then the failure's step is that Tx.oneAsSeen, at its file and line
 
     Scenario: A record that is not there is missing, not stale
       When a transaction reads an Order that does not exist as seen at version 1, with Tx.orReject (Missing "order")

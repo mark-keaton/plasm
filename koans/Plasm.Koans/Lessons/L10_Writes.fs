@@ -123,7 +123,7 @@ let lesson =
                       // An update checks that the row is still the one you read: for a
                       // record with a version, by its version. failure is at the top of
                       // this lesson. A change from a stale copy fails as TxFailure.Conflict,
-                      // carrying the name of the record type that was stale.
+                      // carrying the name of the record type that was stale and its key.
                       let! first = order repo 1L
                       let! _ = repo.Transact(Tx.update (first, { first with Total = 31m }): Tx<Order, unit>)
                       // `first` still has the old version: this change was made from a stale copy.
