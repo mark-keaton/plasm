@@ -113,6 +113,9 @@ module internal Sql =
         | RowNumber of partitionBy: Expr * orderBy: OrderItem list
         /// An aggregate function: `NAME(arg)`, `NAME(DISTINCT arg)` or `COUNT(*)` (arg None).
         | Aggregate of name: string * distinct: bool * arg: Expr option
+        /// An aggregate with an order of its own and a filter:
+        /// name(args ORDER BY ...) FILTER (WHERE filter); COUNT(*) with no args.
+        | AggregateBy of name: string * args: Expr list * order: OrderItem list * filter: Expr option
         /// Literal SQL text interleaved with translated expressions (Raw.fragment).
         | Fragment of parts: Choice<string, Expr> list
         /// CASE WHEN condition THEN value ... ELSE otherwise END.
@@ -507,6 +510,30 @@ module internal Sql =
                     r.Expr a
 
                 w ")"
+            | AggregateBy(name, args, order, filter) ->
+                w name
+                w "("
+
+                if args.IsEmpty then
+                    w "*"
+                else
+                    args
+                    |> List.iteri (fun i a ->
+                        if i > 0 then w ", "
+                        r.Expr a)
+
+                if not order.IsEmpty then
+                    w " ORDER BY "
+                    r.Order order
+
+                w ")"
+
+                match filter with
+                | Some f ->
+                    w " FILTER (WHERE "
+                    r.Expr f
+                    w ")"
+                | None -> ()
             | Case(branches, otherwise) ->
                 // A CASE in another's ELSE is one CASE (if, elif, else).
                 let rec flat bs o =

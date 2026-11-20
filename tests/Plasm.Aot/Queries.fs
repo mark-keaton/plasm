@@ -19,6 +19,25 @@ let claimTicket =
             locking RowLock.ForUpdate.SkipLocked
     }
 
+/// Filtered and boolean aggregates (aggregates.feature), read natively.
+let sizeFacts =
+    plasm {
+        for t in tableOf<Ticket> do
+            select (Agg.countWhere (t.Size > 3), Agg.sumWhere (t.Size > 3) t.Price, Agg.any (t.Size > 3), Agg.all (t.Size > 0))
+    }
+
+/// List and text aggregates in a stated order (aggregates.feature), read natively.
+let sizesInOrder =
+    plasm {
+        for t in tableOf<Ticket> do
+            select (
+                Agg.listBy t.Size t.Created,
+                Agg.listByDescending t.Size t.Created,
+                Agg.stringConcatBy ", " t.Title t.Created,
+                Agg.stringConcatByDescending ", " t.Title t.Created
+            )
+    }
+
 let withOpenNotes =
     plasm {
         for t in tableOf<Ticket> do

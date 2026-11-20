@@ -49,6 +49,35 @@ module Agg =
     /// Largest value, or None when there are no rows.
     let max (_value: 'T) : 'T option when 'T: comparison = outside "max"
 
+    /// Number of rows meeting `condition` (COUNT(*) FILTER (WHERE ...)).
+    let countWhere (_condition: bool) : int64 = outside "countWhere"
+
+    /// Sum of the values of the rows meeting `condition`; zero when there are
+    /// none, as `List.sum []`.
+    let inline sumWhere (_condition: bool) (value: ^N) : ^N =
+        ignore (value + LanguagePrimitives.GenericZero< ^N>)
+        invalidOp "Agg.sumWhere is only meaningful inside a query (select, having or orderBy); it is computed by the database"
+
+    /// True when a row meets `condition`; false over no rows, as List.exists.
+    let any (_condition: bool) : bool = outside "any"
+
+    /// True when every row meets `condition`; true over no rows, as List.forall.
+    let all (_condition: bool) : bool = outside "all"
+
+    /// The rows' values as a list, in the order of `key` (a value, or a
+    /// tuple of them); [] over no rows. The order is always stated.
+    let listBy (_value: 'T) (_key: 'K) : 'T list = outside "listBy"
+
+    /// As listBy, in descending order of `key`.
+    let listByDescending (_value: 'T) (_key: 'K) : 'T list = outside "listByDescending"
+
+    /// The rows' texts joined by `separator`, in the order of `key`; "" over
+    /// no rows, as String.concat.
+    let stringConcatBy (_separator: string) (_value: string) (_key: 'K) : string = outside "stringConcatBy"
+
+    /// As stringConcatBy, in descending order of `key`.
+    let stringConcatByDescending (_separator: string) (_value: string) (_key: 'K) : string = outside "stringConcatByDescending"
+
     /// Average, or None when there are no rows. Like `List.average`, it is only
     /// defined for types that support division (decimal, float).
     let inline avg (value: ^N) : ^N option =

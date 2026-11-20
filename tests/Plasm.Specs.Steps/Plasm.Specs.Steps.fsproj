@@ -36,6 +36,7 @@
     <Compile Include="StatementSteps.fs" />
     <Compile Include="ActivitySteps.fs" />
     <Compile Include="SetOpSteps.fs" />
+    <Compile Include="AggregateFurtherSteps.fs" />
     <Compile Include="RowLockSteps.fs" />
     <Compile Include="TxAttemptSteps.fs" />
     <Compile Include="OwnedSteps.fs" />

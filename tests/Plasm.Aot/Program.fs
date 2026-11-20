@@ -347,6 +347,14 @@ let main argv =
         step "a tuple select with an int" (fun () -> selected Queries.titlesAndSizes (fun (title, size) -> title + " " + string size))
         step "a record select with an int" (fun () -> selected Queries.sizes (fun r -> r.Title + " " + string r.Size))
 
+        step "filtered and boolean aggregates" (fun () ->
+            selected Queries.sizeFacts (fun (n, total, any, all) -> $"{n} {total} {any} {all}"))
+
+        step "list and text aggregates in a stated order" (fun () ->
+            selected Queries.sizesInOrder (fun (up, down, titles, reversed) ->
+                let ints (xs: int list) = xs |> List.map string |> String.concat ","
+                $"[{ints up}] [{ints down}] {titles} | {reversed}"))
+
         step "an aggregate over decimal" (fun () ->
             selected Queries.totalPrice (fun (owner, total) ->
                 (match owner with Some(CustomerId id) -> string id | None -> "-") + ": " + total.ToString(Globalization.CultureInfo.InvariantCulture)))

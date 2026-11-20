@@ -1216,7 +1216,58 @@ and aggregate ctx (e: Expr) (mi: Reflection.MethodInfo) (args: Expr list) : Sql.
         | [ x ], Some names -> nameAt names (Sql.Aggregate(name.ToUpperInvariant(), false, Some(ordered ctx x)))
         | _ -> Sql.Aggregate(name.ToUpperInvariant(), false, Some(arg ()))
     | "avg" -> Sql.Aggregate("AVG", false, Some(arg ()))
+    // Filtered and boolean aggregates (aggregates.feature): each gives over
+    // no rows what the F# function it is named after gives.
+    | "countWhere" ->
+        match args with
+        | [ cond ] -> Sql.AggregateBy("COUNT", [], [], Some(predicate ctx cond))
+        | _ -> fail e "unexpected aggregate arguments"
+    | "sumWhere" ->
+        match args with
+        | [ cond; value ] ->
+            Sql.Func("COALESCE", [ Sql.AggregateBy("SUM", [ scalar ctx value ], [], Some(predicate ctx cond)); Sql.Literal "0" ])
+        | _ -> fail e "unexpected aggregate arguments"
+    | "any" ->
+        match args with
+        | [ cond ] -> Sql.Func("COALESCE", [ Sql.AggregateBy("BOOL_OR", [ predicate ctx cond ], [], None); Sql.Literal "FALSE" ])
+        | _ -> fail e "unexpected aggregate arguments"
+    | "all" ->
+        match args with
+        | [ cond ] -> Sql.Func("COALESCE", [ Sql.AggregateBy("BOOL_AND", [ predicate ctx cond ], [], None); Sql.Literal "TRUE" ])
+        | _ -> fail e "unexpected aggregate arguments"
+    // A list or a text of the rows' values, in the order the call states.
+    | "listBy"
+    | "listByDescending" as name ->
+        match args with
+        | [ value; key ] -> Sql.Func("COALESCE", [ Sql.AggregateBy("ARRAY_AGG", [ scalar ctx value ], orderOf ctx key (name.EndsWith "Descending"), None); Sql.Literal "'{}'" ])
+        | _ -> fail e "unexpected aggregate arguments"
+    | "stringConcatBy"
+    | "stringConcatByDescending" as name ->
+        match args with
+        | [ separator; value; key ] ->
+            Sql.Func(
+                "COALESCE",
+                [ Sql.AggregateBy("STRING_AGG", [ scalar ctx value; scalar ctx separator ], orderOf ctx key (name.EndsWith "Descending"), None)
+                  Sql.Literal "''" ]
+            )
+        | _ -> fail e "unexpected aggregate arguments"
     | n -> fail e $"Agg.{n} has no SQL translation"
+
+/// An aggregate's own order: a value, or a tuple of them, each ascending or,
+/// for a Descending aggregate, descending (aggregates.feature).
+and orderOf ctx (key: Expr) (descending: bool) : Sql.OrderItem list =
+    let keys =
+        match key with
+        | NewTuple xs -> xs
+        | x -> [ x ]
+
+    [ for k in keys ->
+          let sql = scalar ctx k
+
+          if containsAggregate sql then
+              fail key "aggregates cannot be nested"
+
+          ({ Expr = sql; Desc = descending; NullsFirst = None }: Sql.OrderItem) ]
 
 and fragment ctx (e: Expr) (sql: Expr) (args: Expr) : Sql.Expr =
     let text =
@@ -1302,7 +1353,8 @@ and ordered ctx (e: Expr) : Sql.Expr =
 
 and containsAggregate (e: Sql.Expr) : bool =
     match e with
-    | Sql.Aggregate _ -> true
+    | Sql.Aggregate _
+    | Sql.AggregateBy _ -> true
     | Sql.Binary(_, a, b)
     | Sql.NotDistinctFrom(a, b)
     | Sql.DistinctFrom(a, b)
@@ -2068,7 +2120,8 @@ let rec private ungrouped (groups: Sql.Expr list) (e: Sql.Expr) =
     else
         match e with
         | Sql.Column _ -> true
-        | Sql.Aggregate _ -> false
+        | Sql.Aggregate _
+        | Sql.AggregateBy _ -> false
         | Sql.Binary(_, a, b)
         | Sql.NotDistinctFrom(a, b)
         | Sql.DistinctFrom(a, b)
@@ -2451,6 +2504,31 @@ let rec projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr 
                         f.FromDb
 
                 Leaf(i, f.ProviderType, convert, $"{f.Name} ({f.Column})")
+            // A list a computed value gives (Agg.listBy, aggregates.feature):
+            // the database's array, each element read as its type.
+            | _ when Reflection.isList e.Type && (model.ProviderTypeOf(Reflection.elementType e.Type)).IsSome ->
+                let element = Reflection.elementType e.Type
+                let makeList = Reflection.makeList element
+                let i = add (scalar ctx e) (show e)
+
+                let read (v: obj) : Result<obj, string> =
+                    match v with
+                    | :? Array as a ->
+                        let items = ResizeArray<obj>(a.Length)
+                        let mutable problem = None
+
+                        for x in a do
+                            if problem.IsNone then
+                                match model.ScalarFromDb(element, x) with
+                                | Ok item -> items.Add item
+                                | Error m -> problem <- Some m
+
+                        match problem with
+                        | Some m -> Error m
+                        | None -> Ok(makeList items)
+                    | other -> Error $"expected an array, the database gave {other.GetType().Name}"
+
+                Leaf(i, typeof<obj>, read, show e)
             | _ ->
                 let t = e.Type
                 let scalarT = if Reflection.isOption t then Reflection.elementType t else t

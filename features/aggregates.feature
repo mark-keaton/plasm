@@ -80,3 +80,30 @@ Feature: Counts, aggregates and grouping
       When I filter on an aggregate with where instead of having
       Then the query is rejected before execution with an explanation
       And no database command is executed
+
+  Rule: Filtered, boolean, list and text aggregates
+
+    Agg.countWhere and Agg.sumWhere count and add the rows meeting a condition
+    (FILTER (WHERE ...)); Agg.any and Agg.all say whether some or every row
+    meets one. Agg.listBy and Agg.stringConcatBy collect the rows' values as a
+    list, or a text joined by a separator, in the order of a key the call
+    states (a value, or a tuple of them; the Descending forms reverse it):
+    in a grouped query the query's own order sorts the groups, not the rows
+    inside one, so there is no unordered form. Over no rows each gives what
+    the F# function it is named after gives: 0, 0, false, true, [] and "".
+
+    # Ada: published 10 (day 1) and 40 (day 3); Bob: draft 20 (day 2)
+    Scenario: Each customer's Orders, counted, summed, tested, listed and joined
+      Given Ada with published Orders of 10 and 40, and Bob with a draft Order of 20
+      When I read, for each customer, the published count and total, whether any total is over 30 and whether all are published, the totals by day, and the statuses by day joined by ", "
+      Then Ada's row is 2, 50, true, true, [10; 40] and "published, published"
+      And Bob's row is 0, 0, false, false, [20] and "draft"
+
+    Scenario: The Descending forms reverse the stated order
+      Given Ada with published Orders of 10 and 40, and Bob with a draft Order of 20
+      When I read Ada's totals by day, latest first
+      Then Ada's totals are [40; 10]
+
+    Scenario: Over no rows each gives what F# gives
+      When I read the same of the Orders over 1000
+      Then the row is 0, 0, false, true, [] and ""
