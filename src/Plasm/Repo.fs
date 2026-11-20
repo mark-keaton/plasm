@@ -54,8 +54,12 @@ module internal QueryDisplay =
 /// Count) and transactions (Transact), each returning a Result. It is
 /// the explicit boundary where descriptions are executed: every member performs
 /// database work; nothing else in the library does.
-type Repo internal (model: Model, provider: IProvider, ?options: RepoOptions) =
+type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
     let options = defaultArg options RepoOptions.Default
+
+    // With an OnCommand, every transaction begins through a provider that
+    // reports its BEGIN, COMMIT and ROLLBACK (transaction-events.feature).
+    let provider = Reporting.wrap options.OnCommand given
 
     // A provider without JSON documents cannot store a [<Json>] field: refused
     // now, at start-up, rather than at the first query (json-columns.feature).
@@ -185,7 +189,9 @@ type Repo internal (model: Model, provider: IProvider, ?options: RepoOptions) =
             })
 
     member _.Model = model
-    member _.Provider = provider
+    member _.Provider = given
+    /// The provider this repository begins its transactions through.
+    member internal _.Reporting = provider
     member internal _.Options = options
     member internal _.PlansMade = planned
 

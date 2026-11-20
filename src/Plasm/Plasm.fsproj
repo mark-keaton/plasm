@@ -25,6 +25,7 @@
     <Compile Include="Changeset.fs" />
     <Compile Include="Provider.fs" />
     <Compile Include="Sandbox.fs" />
+    <Compile Include="Transactions.fs" />
     <Compile Include="Execution.fs" />
     <Compile Include="Writes.fs" />
     <Compile Include="Bulk.fs" />

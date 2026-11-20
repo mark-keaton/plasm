@@ -89,10 +89,10 @@ let run (repo: Repo) (commands: ResizeArray<CommandEvent>) (lesson: Lesson) (koa
             | _, None when blankSurfaced -> Unanswered(koan.File, koan.Line)
             | other, None -> other
 
+        // The statements: the sandbox's BEGIN, savepoints and ROLLBACK are not
+        // the koan's.
         let sql =
-            commands |> Seq.map (fun c -> c.Sql) |> List.ofSeq
-            // The sandbox's own savepoint commands are not the koan's.
-            |> List.filter (fun s -> not (s.StartsWith "SAVEPOINT" || s.StartsWith "RELEASE" || s.StartsWith "ROLLBACK"))
+            commands |> Seq.filter (fun c -> c.Kind = CommandKind.Statement) |> Seq.map (fun c -> c.Sql) |> List.ofSeq
 
         return
             { Lesson = lesson

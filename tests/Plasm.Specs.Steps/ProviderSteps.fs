@@ -25,6 +25,7 @@ type TestDialectProvider(inner: IProvider) =
                 | n -> n
 
             member _.Json = None
+            member _.Begin isolation = inner.Dialect.Begin isolation
 
             member _.Capabilities =
                 { inner.Dialect.Capabilities with

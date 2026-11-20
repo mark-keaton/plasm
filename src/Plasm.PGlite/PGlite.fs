@@ -288,6 +288,15 @@ module internal Values =
 
         PGliteException(str "code", str "constraint", str "message", str "detail")
 
+    /// The BEGIN a transaction at this level sends, and OnCommand reports.
+    let beginAt (isolation: IsolationLevel) =
+        match isolation with
+        | IsolationLevel.Serializable -> "BEGIN ISOLATION LEVEL SERIALIZABLE"
+        | IsolationLevel.RepeatableRead
+        | IsolationLevel.Snapshot -> "BEGIN ISOLATION LEVEL REPEATABLE READ"
+        | IsolationLevel.ReadUncommitted -> "BEGIN ISOLATION LEVEL READ UNCOMMITTED"
+        | _ -> "BEGIN ISOLATION LEVEL READ COMMITTED"
+
     /// Raises the error a bridge reported, if any.
     let throwIfError (json: string) =
         if not (String.IsNullOrEmpty json) then
@@ -664,15 +673,7 @@ and PGliteConnection internal (bridge: IPGliteBridge, release: unit -> unit) =
     override _.Close() = close ()
 
     override this.BeginDbTransaction(isolation: IsolationLevel) : DbTransaction =
-        let level =
-            match isolation with
-            | IsolationLevel.Serializable -> " ISOLATION LEVEL SERIALIZABLE"
-            | IsolationLevel.RepeatableRead
-            | IsolationLevel.Snapshot -> " ISOLATION LEVEL REPEATABLE READ"
-            | IsolationLevel.ReadUncommitted -> " ISOLATION LEVEL READ UNCOMMITTED"
-            | _ -> " ISOLATION LEVEL READ COMMITTED"
-
-        Values.throwIfError (bridge.Execute("BEGIN" + level))
+        Values.throwIfError (bridge.Execute(Values.beginAt isolation))
         new PGliteTransaction(this, bridge, isolation) :> DbTransaction
 
     override this.CreateDbCommand() = new PGliteCommand(this, bridge) :> DbCommand
@@ -750,7 +751,10 @@ type internal PGliteDialect(maxKeys: int) =
               Returning = true
               Upserts = true
               RowLocking = true
-              Batching = false }
+              Batching = false
+              DefersBegin = false }
+
+        member _.Begin isolation = Values.beginAt isolation
 
         member _.NullSafeComparison negated =
             if negated then "IS DISTINCT FROM" else "IS NOT DISTINCT FROM"

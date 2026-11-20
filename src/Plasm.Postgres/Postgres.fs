@@ -83,7 +83,17 @@ type internal PostgresDialect(options: PostgresOptions) =
               Returning = true
               Upserts = true
               RowLocking = true
-              Batching = true }
+              Batching = true
+              DefersBegin = true }
+
+        // What Npgsql sends, as PostgreSQL logs it: its wording differs by level.
+        member _.Begin isolation =
+            match isolation with
+            | IsolationLevel.RepeatableRead
+            | IsolationLevel.Snapshot -> "BEGIN ISOLATION LEVEL REPEATABLE READ"
+            | IsolationLevel.Serializable -> "BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE"
+            | IsolationLevel.ReadUncommitted -> "BEGIN TRANSACTION ISOLATION LEVEL READ UNCOMMITTED"
+            | _ -> "BEGIN TRANSACTION ISOLATION LEVEL READ COMMITTED"
 
         member _.NullSafeComparison negated =
             if negated then "IS DISTINCT FROM" else "IS NOT DISTINCT FROM"

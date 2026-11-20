@@ -70,6 +70,10 @@ type internal PlaygroundProvider(inner: IProvider) =
         p.Discard()
         closed <- true
 
+    // Its savepoints are taken in a transaction its repository's provider
+    // began, which reports them.
+    interface IReportsTransactions
+
     interface IProvider with
         member _.Dialect = inner.Dialect
         member p.Classify ex =
@@ -151,7 +155,7 @@ module PlaygroundExtensions =
         /// A repository whose changes are kept across F# Interactive
         /// submissions and never committed (see `Playground`).
         member repo.Playground() =
-            new Playground(repo.Model, PlaygroundProvider(repo.Provider), repo.Options)
+            new Playground(repo.Model, PlaygroundProvider(repo.Reporting), repo.Options)
 
 /// Helpers for F# Interactive and scripts: `open Plasm.Interactive`.
 module Interactive =

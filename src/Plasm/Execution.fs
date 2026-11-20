@@ -109,14 +109,13 @@ let private prepare (s: Session) (cmd: Sql.Command) =
     parameters s cmd c.CreateParameter (c.Parameters.Add >> ignore)
     c
 
-let mutable private roundTrips = 0L
-
-let private nextRoundTrip () = Interlocked.Increment(&roundTrips)
-
 let private report (s: Session) (cmd: Sql.Command) (elapsed: TimeSpan) rows ok roundTrip =
     match s.Options.OnCommand with
     | None -> ()
     | Some f ->
+        // A BEGIN or SAVEPOINT that waited for this round trip went with it.
+        Waiting.flush f s.Connection roundTrip elapsed
+
         let ps =
             cmd.Parameters
             |> List.mapi (fun i v ->
@@ -134,7 +133,8 @@ let private report (s: Session) (cmd: Sql.Command) (elapsed: TimeSpan) rows ok r
                 name, value)
 
         f
-            { Sql = cmd.Sql
+            { Kind = CommandKind.Statement
+              Sql = cmd.Sql
               Parameters = ps
               Duration = elapsed
               Rows = rows
@@ -261,7 +261,7 @@ module Round =
     // no task here awaits inside a try (koans/browser).
     let private read (s: Session) (st: Statement) (readRow: DbDataReader -> unit) : Task<int> =
         task {
-            let trip = nextRoundTrip ()
+            let trip = RoundTrips.next ()
             use c = prepare s st.Command
             let sw = Stopwatch.StartNew()
             let mutable n = 0
@@ -288,7 +288,7 @@ module Round =
 
     let private write (s: Session) (st: Statement) : Task<int> =
         task {
-            let trip = nextRoundTrip ()
+            let trip = RoundTrips.next ()
             use c = prepare s st.Command
             let sw = Stopwatch.StartNew()
 
@@ -341,7 +341,7 @@ module Round =
     let private together (s: Session) (stmts: Statement list) : Task<Sent list> =
         task {
             let stmts = Array.ofList stmts
-            let trip = nextRoundTrip ()
+            let trip = RoundTrips.next ()
             use batch = s.Connection.CreateBatch()
 
             match s.Transaction with

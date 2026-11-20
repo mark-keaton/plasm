@@ -1,6 +1,7 @@
 namespace Plasm
 
 open System
+open System.Data
 open System.Text
 
 /// What a provider can execute faithfully. The planner rejects requests that
@@ -20,7 +21,12 @@ type ProviderCapabilities =
       RowLocking: bool
       /// Several statements sent in one round trip (a DbBatch): a write's
       /// statements, and one level of loads (round-trips.feature).
-      Batching: bool }
+      Batching: bool
+      /// BEGIN and SAVEPOINT wait for whatever the connection sends next and
+      /// travel with it (Npgsql), so OnCommand reports them in that round
+      /// trip; false when each is a round trip of its own
+      /// (transaction-events.feature).
+      DefersBegin: bool }
 
 /// How a provider stores and reads JSON documents (json-columns.feature).
 /// Each member writes SQL through `write`; `doc`, `value` and `condition`
@@ -59,6 +65,9 @@ type ISqlDialect =
     /// JSON documents ([<Json>] fields); None when the provider has none, and
     /// then a repository refuses a model with a [<Json>] field.
     abstract Json: IJsonDialect option
+    /// The BEGIN the provider sends for a transaction at this isolation level,
+    /// as the database logs it; OnCommand reports it (transaction-events.feature).
+    abstract Begin: IsolationLevel -> string
 
 module internal Sql =
 

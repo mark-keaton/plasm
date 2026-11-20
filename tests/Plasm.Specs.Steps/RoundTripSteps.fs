@@ -68,6 +68,7 @@ module RoundTripDomain =
                 member _.LikeEscape = inner.Dialect.LikeEscape
                 member _.FunctionName name = inner.Dialect.FunctionName name
                 member _.Json = inner.Dialect.Json
+                member _.Begin isolation = inner.Dialect.Begin isolation
                 member _.Capabilities = { inner.Dialect.Capabilities with Batching = false } }
 
         interface IProvider with

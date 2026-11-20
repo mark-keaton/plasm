@@ -122,8 +122,11 @@ let run (connectionString: string) (outputPath: string) =
                 events.Clear()
                 do! work ()
 
+                // The statements; a transaction's BEGIN, COMMIT and ROLLBACK are
+                // reported too, with a Kind of their own.
                 let commands =
                     events
+                    |> Seq.filter (fun e -> e.Kind = CommandKind.Statement)
                     |> Seq.map (fun e ->
                         { Sql = format e.Sql
                           Parameters = e.Parameters |> List.map (fun (n, v) -> $"""{n} = {defaultArg v "?"}""")
@@ -459,7 +462,7 @@ let run (connectionString: string) (outputPath: string) =
         do!
             capture
                 "testing"
-                "Starting a repository translates every query, which sends nothing, and reads the catalogue for the schema check; it found no differences for this model. Printing the DDL sends nothing. The sandbox's insert and count run inside a transaction that is rolled back afterwards. Its BEGIN, savepoints and ROLLBACK are sent by the connection, not as commands, so they do not appear here."
+                "Starting a repository translates every query, which sends nothing, and reads the catalogue for the schema check; it found no differences for this model. Printing the DDL sends nothing. The sandbox's insert and count run inside a transaction that is rolled back afterwards. OnCommand reports its BEGIN, savepoints and ROLLBACK too, each with a Kind that says it is not a statement; this page shows the statements."
                 [ "information_schema.columns"; "INSERT INTO \"customers\"" ]
                 None
                 (fun () ->

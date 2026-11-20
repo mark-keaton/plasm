@@ -134,10 +134,14 @@ let private server: Lazy<Task<Server>> =
 let mutable private counter = 0
 
 /// Records executed commands.
+/// What a repo reported to OnCommand. Events, and everything counted from it,
+/// are the statements, chosen by their Kind; All has the BEGIN, COMMIT and
+/// ROLLBACK around them as well (transaction-events.feature).
 type Recorder() =
     let events = ConcurrentQueue<CommandEvent>()
     member _.Record(e: CommandEvent) = events.Enqueue e
-    member _.Events = events.ToArray() |> List.ofArray
+    member _.All = events.ToArray() |> List.ofArray
+    member this.Events = this.All |> List.filter (fun e -> e.Kind = CommandKind.Statement)
     member this.Count = this.Events.Length
     member this.Selects = this.Events |> List.filter (fun e -> e.Sql.StartsWith "SELECT")
     member this.Writes = this.Events |> List.filter (fun e -> not (e.Sql.StartsWith "SELECT"))

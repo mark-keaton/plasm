@@ -573,7 +573,7 @@ window.PLASM_SQL = {
     ]
   },
   "testing": {
-    "caption": "Starting a repository translates every query, which sends nothing, and reads the catalogue for the schema check; it found no differences for this model. Printing the DDL sends nothing. The sandbox\u0027s insert and count run inside a transaction that is rolled back afterwards. Its BEGIN, savepoints and ROLLBACK are sent by the connection, not as commands, so they do not appear here.",
+    "caption": "Starting a repository translates every query, which sends nothing, and reads the catalogue for the schema check; it found no differences for this model. Printing the DDL sends nothing. The sandbox\u0027s insert and count run inside a transaction that is rolled back afterwards. OnCommand reports its BEGIN, savepoints and ROLLBACK too, each with a Kind that says it is not a statement; this page shows the statements.",
     "commands": [
       {
         "parameters": [

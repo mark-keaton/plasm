@@ -79,7 +79,7 @@ let private session =
                       "let commands = ResizeArray<string>()"
                       // Started as an application starts it, with nothing to check:
                       // the snippets bring their own queries.
-                      $"let repo = Repo.Start(Db.model, Plasm.Postgres.Postgres.connect @\"{cs}\", typeof<Plasm.Koans.Koans.Koan>.Assembly, {{ RepoOptions.Unchecked with OnCommand = Some(fun e -> commands.Add e.Sql) }}).Result" ]
+                      $"let repo = Repo.Start(Db.model, Plasm.Postgres.Postgres.connect @\"{cs}\", typeof<Plasm.Koans.Koans.Koan>.Assembly, {{ RepoOptions.Unchecked with OnCommand = Some(fun e -> if e.Kind = CommandKind.Statement then commands.Add e.Sql) }}).Result" ]
             )
 
             return fsi, run

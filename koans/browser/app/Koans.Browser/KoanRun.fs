@@ -177,8 +177,8 @@ let evaluate (refsDir: string) (code: string) (sandboxed: bool) : Task<string> =
 
                 let sql =
                     commands
+                    |> Seq.filter (fun c -> c.Kind = CommandKind.Statement)
                     |> Seq.map (fun c -> c.Sql)
-                    |> Seq.filter (fun s -> not (s.StartsWith "SAVEPOINT" || s.StartsWith "RELEASE" || s.StartsWith "ROLLBACK"))
                     |> Array.ofSeq
 
                 return json [ "result", box result; "sql", box sql ]

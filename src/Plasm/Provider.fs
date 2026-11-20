@@ -6,9 +6,26 @@ open System.Data.Common
 open System.Threading
 open System.Threading.Tasks
 
+/// What a reported command is (transaction-events.feature).
+[<RequireQualifiedAccess>]
+type CommandKind =
+    /// A statement Plasm sent: a query, a write, a check.
+    | Statement
+    /// BEGIN, with its isolation level, or a SAVEPOINT: the start of a
+    /// transaction or of a nested one.
+    | Begin
+    /// COMMIT, or the release of a savepoint.
+    | Commit
+    /// ROLLBACK, or a rollback to a savepoint.
+    | Rollback
+
 /// One executed database command, reported to `RepoOptions.OnCommand`.
 type CommandEvent =
-    { Sql: string
+    { /// Statement for what Plasm sent to read or write; Begin, Commit or
+      /// Rollback for a transaction's own commands. Count statements by this,
+      /// not by their SQL.
+      Kind: CommandKind
+      Sql: string
       /// Parameter names with values; values are `None` unless
       /// `RepoOptions.IncludeParameterValues` is enabled.
       Parameters: (string * string option) list
@@ -50,6 +67,12 @@ type IProvider =
     /// only SELECTs in it), or None if the provider cannot.
     abstract BeginSnapshot: DbConnection * CancellationToken -> Task<DbTransaction option>
     abstract BeginTransaction: DbConnection * IsolationLevel * CancellationToken -> Task<DbTransaction>
+
+/// A provider whose transactions already report their commands to
+/// OnCommand (transaction-events.feature): a repository does not wrap it again.
+type internal IReportsTransactions =
+    interface
+    end
 
 /// What a schema check found.
 [<RequireQualifiedAccess>]

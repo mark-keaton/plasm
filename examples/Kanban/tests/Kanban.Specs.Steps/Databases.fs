@@ -122,7 +122,7 @@ let repoFor (connectionString: string) : Task<Repo> =
         Db.model,
         Plasm.Postgres.PostgresProvider(NpgsqlDataSource.Create connectionString),
         queriesIn = typeof<Kanban.Server.Workflows.Refusal>.Assembly,
-        options = { RepoOptions.Default with OnCommand = Some(fun command -> commands.Enqueue command.Sql) }
+        options = { RepoOptions.Default with OnCommand = Some(fun command -> if command.Kind = CommandKind.Statement then commands.Enqueue command.Sql) }
     )
 
 /// The database most scenarios share, and its connection string. Each works

@@ -96,6 +96,9 @@ type internal SandboxProvider(inner: IProvider, connection: DbConnection, transa
     /// Called when the sandbox ends; later operations fail as closed.
     member _.End() = ended <- true
 
+    // Its savepoints are taken in the sandbox's transaction, which reports them.
+    interface IReportsTransactions
+
     interface IProvider with
         member _.Dialect = inner.Dialect
         member _.Classify ex = Closed.failure ex |> Option.orElse (inner.Classify ex)
@@ -139,11 +142,3 @@ type internal SandboxProvider(inner: IProvider, connection: DbConnection, transa
 
         member _.BeginSnapshot(conn: DbConnection, _: CancellationToken) : Task<DbTransaction option> =
             Task.FromResult(Some(new SandboxTransaction(conn, transaction, savepoint ()) :> DbTransaction))
-
-module internal Sandboxes =
-    /// The real transaction for a command (sandbox transactions are savepoints
-    /// of the sandbox's transaction).
-    let rec unwrap (t: DbTransaction) =
-        match t with
-        | :? SandboxTransaction as s -> unwrap s.Inner
-        | t -> t
