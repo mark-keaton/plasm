@@ -21,7 +21,7 @@ A field of another record's id type is a reference to that record:
 fields or a value's fields, named by its path (`Status.borrower`,
 `Home.City`), in a column that is NULL when that case is not the one stored,
 or the value or the field is absent. `[<NotReference>]` says a field is only
-a value; on a union or value field, it says so of every id inside it.
+a value.
 
 A key of several fields is a record of them as the Id. The key's parts are
 the table's own columns, by their own names, so the `Id` below is stored as
