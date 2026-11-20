@@ -26,7 +26,11 @@ type ProviderCapabilities =
       /// travel with it (Npgsql), so OnCommand reports them in that round
       /// trip; false when each is a round trip of its own
       /// (transaction-events.feature).
-      DefersBegin: bool }
+      DefersBegin: bool
+      /// A statement can be described without running it (PostgreSQL's
+      /// Parse and Describe): Repo.Start has the database describe every
+      /// statement a module defines (statement-check.feature).
+      Describe: bool }
 
 /// How a provider stores and reads JSON documents (json-columns.feature).
 /// Each member writes SQL through `write`; `doc`, `value` and `condition`

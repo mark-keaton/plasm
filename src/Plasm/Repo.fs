@@ -410,6 +410,143 @@ type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
            Problems = problems |> Seq.sortBy (fun p -> p.Query) |> List.ofSeq
            Functions = functions |> Seq.distinct |> Seq.sort |> List.ofSeq |}
 
+    /// Every statement `assembly`'s modules define, described by the database
+    /// without running any (statement-check.feature).
+    /// Bulk writes that cannot be translated come back as query problems; the
+    /// rest are described, and a refusal is a Refused problem. A provider that
+    /// cannot describe notes how many statements it did not.
+    member internal this.Describe(assembly: Reflection.Assembly, ?inNamespace: string, ?cancellationToken: CancellationToken) : Task<StartupProblem list> =
+        let ct = defaultArg cancellationToken CancellationToken.None
+        let dialect = provider.Dialect
+
+        let within (t: Type) =
+            match inNamespace with
+            | None -> true
+            | Some n -> t.FullName = n || t.FullName.StartsWith(n + ".") || t.FullName.StartsWith(n + "+")
+
+        let isModule (t: Type) =
+            t.GetCustomAttributes(typeof<CompilationMappingAttribute>, false)
+            |> Seq.exists (fun a -> (a :?> CompilationMappingAttribute).SourceConstructFlags = SourceConstructFlags.Module)
+
+        let render (select: Sql.Select) = Sql.renderSelect dialect select
+
+        // A plan's statement, and its loads' with no keys: what the database
+        // is asked to describe for a query of records.
+        let rec loads (nodes: Planner.LoadNode list) =
+            [ for node in nodes do
+                  let none = if node.KeyField.Composite then ([||]: obj[]) :> Array else Array.CreateInstance(node.KeyField.ProviderType, 0)
+                  yield render (node.Build none)
+                  yield! loads node.Children ]
+
+        let planned (plan: Planner.Plan) = render plan.Root :: loads plan.Loads
+
+        let commandsOf (q: ICheckable) : Result<Sql.Command list, TranslationError> =
+            match q.Select with
+            | Some _ when not q.Def.Includings.IsEmpty -> Planner.including dialect model q.Def |> Result.map (fun i -> planned i.Outer)
+            | Some select -> Translate.projection model (ref false) q.Def (Some select) |> Result.map (fun (s, _) -> [ render s ])
+            | None when not q.Def.Joins.IsEmpty -> Translate.projection model (ref false) q.Def None |> Result.map (fun (s, _) -> [ render s ])
+            | None -> planFor q.Def |> Result.map planned
+
+        let flags = Reflection.BindingFlags.Static ||| Reflection.BindingFlags.Public ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.DeclaredOnly
+        let statements = ResizeArray<string * Sql.Command list>()
+        let untranslated = ResizeArray<StartupProblem>()
+
+        for t in assembly.GetTypes() do
+            if isModule t && within t then
+                for p in t.GetProperties flags do
+                    if p.GetIndexParameters().Length = 0 then
+                        let name = $"{t.FullName.Replace('+', '.')}.{p.Name}"
+
+                        let found =
+                            if typeof<ICheckable>.IsAssignableFrom p.PropertyType
+                               || typeof<IBulkWrite>.IsAssignableFrom p.PropertyType
+                               || p.PropertyType = typeof<FormattableString>
+                               || Reflection.functionResult p.PropertyType |> Option.isSome then
+                                try
+                                    Some(p.GetValue null)
+                                with _ ->
+                                    // The query check reports a value that cannot be read.
+                                    None
+                            else
+                                None
+
+                        match found with
+                        | Some(:? ICheckable as q) ->
+                            match commandsOf q with
+                            | Ok cmds -> statements.Add(name, cmds)
+                            | Error _ -> () // the query check reports it
+                        | Some(:? IBulkWrite as b) ->
+                            match BulkExec.commands model dialect b.Def with
+                            | Ok cmds ->
+                                statements.Add(name, cmds |> List.map (function BulkExec.Rows(c, _) | BulkExec.Count c -> c))
+                            | Error e -> untranslated.Add(StartupProblem.Query { Query = name; Error = e })
+                        | Some(:? FormattableString as sql) -> statements.Add(name, [ Execution.rawCommand model dialect sql ])
+                        | _ -> ()
+
+        task {
+            if statements.Count = 0 then
+                return List.ofSeq untranslated
+            elif not dialect.Capabilities.Describe then
+                let names = statements |> Seq.map fst |> List.ofSeq
+                return List.ofSeq untranslated @ [ StartupProblem.NotDescribed($"{dialect.Name} cannot describe a statement without running it", names) ]
+            else
+                use! conn = provider.OpenConnection ct
+                let refused = ResizeArray<StartupProblem>()
+                let untyped = ResizeArray<string>()
+
+                for name, cmds in statements do
+                    // A statement's first refusal is its problem.
+                    let mutable failed = false
+
+                    for cmd in cmds do
+                        if not failed then
+                            use c = conn.CreateCommand()
+                            c.CommandText <- cmd.Sql
+
+                            cmd.Parameters
+                            |> List.iteri (fun i v ->
+                                let p = c.CreateParameter()
+                                p.ParameterName <- dialect.ParameterName i
+                                // An argument bound when a prepared query runs is an untyped NULL.
+                                p.Value <-
+                                    match v with
+                                    | :? Sql.Bound
+                                    | null -> box DBNull.Value
+                                    | v -> v
+
+                                c.Parameters.Add p |> ignore)
+
+                            try
+                                // Parsed and described, not run.
+                                use! r = c.ExecuteReaderAsync(Data.CommandBehavior.SchemaOnly, ct)
+                                ()
+                            with
+                            | :? OperationCanceledException as ex -> Err.rethrow ex
+                            | ex ->
+                                match provider.Classify ex with
+                                // The description's limit, not the statement's
+                                // fault: a parameter sent untyped that nothing
+                                // in the statement types.
+                                | Some f when f.SqlState = Some "42P18" ->
+                                    failed <- true
+                                    untyped.Add name
+                                | Some f ->
+                                    failed <- true
+                                    refused.Add(StartupProblem.Refused { Statement = name; Sql = cmd.Sql; Failure = f })
+                                | None -> Err.rethrow ex
+
+                let noted =
+                    if untyped.Count = 0 then
+                        []
+                    else
+                        [ StartupProblem.NotDescribed("the database cannot tell a parameter's type from the statement alone; checked when it runs", List.ofSeq untyped) ]
+
+                return
+                    List.ofSeq untranslated
+                    @ (refused |> Seq.sortBy (function StartupProblem.Refused r -> r.Statement | _ -> "") |> List.ofSeq)
+                    @ noted
+        }
+
     /// The query values of `assembly` that Plasm cannot translate (Plasm's own
     /// tests; an application starts its repository with Repo.Start).
     member internal this.CheckQueries(assembly: Reflection.Assembly, ?inNamespace: string) : QueryProblem list =
@@ -457,10 +594,36 @@ type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
                         | Error e -> return [ StartupProblem.Unchecked e ]
                     }
 
+            // Every statement the modules define, described by the database
+            // (statement-check.feature): what it refuses is a query problem;
+            // a provider that cannot describe adds a note. Only over tables
+            // that match the model: where the schema check found a
+            // difference, or did not run, a description would report that
+            // difference again, or describe tables the model does not know.
+            let! described =
+                if options.Queries = StartupCheck.Ignore || options.Schema = StartupCheck.Ignore || not schema.IsEmpty then
+                    Task.FromResult []
+                else
+                    task {
+                        try
+                            return! repo.Describe(queriesIn, cancellationToken = ct)
+                        with
+                        | :? OperationCanceledException -> return raise (OperationCanceledException())
+                        | ex ->
+                            match provider.Classify ex with
+                            | Some f -> return [ StartupProblem.Unchecked(DbError.Database f) ]
+                            | None -> return Err.rethrow ex
+                    }
+
+            let queries =
+                queries
+                @ (described |> List.filter (function StartupProblem.NotDescribed _ -> false | _ -> true))
+
             let functions =
-                match scan with
-                | Some s when not s.Functions.IsEmpty -> [ StartupProblem.UncheckedFunctions s.Functions ]
-                | _ -> []
+                [ match scan with
+                  | Some s when not s.Functions.IsEmpty -> StartupProblem.UncheckedFunctions s.Functions
+                  | _ -> ()
+                  yield! described |> List.filter (function StartupProblem.NotDescribed _ -> true | _ -> false) ]
 
             let report =
                 match options.OnProblem with

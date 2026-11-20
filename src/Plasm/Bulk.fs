@@ -14,6 +14,10 @@ type internal BulkDef =
     | DeleteAll of QueryDef * returning: bool
     | InsertAll of Type * rows: obj list * conflict: ConflictDef option
 
+/// A bulk write of any result, for the start-up check (statement-check.feature).
+type internal IBulkWrite =
+    abstract Def: BulkDef
+
 /// A set-based write: one statement over every row a query matches, or many
 /// records inserted at once. Like a query, it is a value: building it touches
 /// nothing; run it with `Tx.execute`, inspect it with `repo.Explain`.
@@ -23,6 +27,9 @@ type internal BulkDef =
 [<Sealed>]
 type BulkWrite<'R> internal (def: BulkDef, finish: obj -> 'R) =
     member internal _.Def = def
+
+    interface IBulkWrite with
+        member _.Def = def
     member internal _.Finish(v: obj) = finish v
 
 type Bulk =

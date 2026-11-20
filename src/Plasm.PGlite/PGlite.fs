@@ -752,7 +752,8 @@ type internal PGliteDialect(maxKeys: int) =
               Upserts = true
               RowLocking = true
               Batching = false
-              DefersBegin = false }
+              DefersBegin = false
+              Describe = false }
 
         member _.Begin isolation = Values.beginAt isolation
 

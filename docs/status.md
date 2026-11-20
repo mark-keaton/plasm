@@ -38,7 +38,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 
 | Suite | What it proves | Result |
 |---|---|---|
-| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 543 / 543 pass (outline examples counted separately) |
+| `tests/Plasm.Specs` (Reqnroll, real PostgreSQL 18) | Every scenario of `features/*.feature`: the user's two specifications (`core.feature`, `elegance.feature`, with scenarios removed or rewritten for the one style, listed below) and every feature added since, each written and run red before it was built. See `docs/acceptance.md`. | 727 / 727 pass (outline examples counted separately) |
 | `tests/Plasm.Tests`: `Translation.fs` | SQL-shape contracts (options, membership, `exists`, `List.exists`/`forall` over owned lists, pagination), unsupported-expression errors, model-configuration errors | 42 pass |
 | `tests/Plasm.Tests`: `CompileTime.fs` | Typed API acceptance and rejection, checked with FSharp.Compiler.Service against the real assemblies; each rejection pins its error code and has a passing control snippet | 15 pass |
 | `tests/Plasm.Tests`: `Properties.fs` (FsCheck, real database) | Predicate-order equivalence matching F# semantics; extending a query never alters it; an update records exactly the differing fields; the same aggregates for every batch size, with key-proportional command counts; owned lines keep their declared order per owner | 5 properties pass |
@@ -51,7 +51,7 @@ writes) was removed on 2026-11-14; see [the ledger](#the-one-style-ledger).
 | `koans/browser` | The browser koans (PGlite) | 120 scenarios pass |
 
 Run the library's tests with `dotnet test` from the repository root (Docker is
-required, or set `PLASM_TEST_PG`): 543 scenarios and 128 unit tests.
+required, or set `PLASM_TEST_PG`): 727 scenarios and 219 unit tests.
 
 ## Supported behaviour
 
@@ -479,10 +479,9 @@ These are medians from a machine shared with other work; times varied by up to
   subqueries.
 - Subqueries in `select`, set operations (UNION, INTERSECT, EXCEPT), CTEs and
   window functions (use `Raw.fragment` or `repo.Sql` / `Tx.sql`).
-- Join tables with extra columns (model the link as its own record), composite
-  keys.
-- Bulk writes over joins (`UPDATE ... FROM`), `RETURNING` from bulk updates,
-  streaming (`IAsyncEnumerable`) results.
+- Join tables with extra columns (model the link as its own record).
+- Bulk writes over joins (`UPDATE ... FROM`), streaming (`IAsyncEnumerable`)
+  results.
 - `Query.prepare3` for projections.
 
 **Limits of the 2026-11-15 additions** (loads, `selectDistinct`, values,
@@ -682,13 +681,16 @@ row's type, not in a field that may be unloaded.
 ### Still unproven
 
 - Nothing has run in production.
-- `examples/Kanban`, the reference application, is untracked in git until the
-  user decides to commit it.
 
 ## Changed
 
 Changes that break code written against an earlier alpha, newest first.
 
+- 2026-11-20: Repo.Start has the database describe every statement the
+  modules define (statement-check.feature), so a module-level query, bulk
+  write or FormattableString the database refuses now fails start-up under
+  `Queries = Crash`. `StartupProblem` has two cases more, `Refused` and
+  `NotDescribed`; a `match` over every case needs them.
 - 2026-11-20: `DbFailureKind` has a case `LockNotAvailable` (a NOWAIT row
   lock on a row another transaction holds). A `match` over every case of it
   needs one more arm.
@@ -838,27 +840,27 @@ Changes that break code written against an earlier alpha, newest first.
 | 2026-11-20 | A transaction can try a step and go on when it fails (tx-attempt.feature): `Tx.attempt step` runs it under a savepoint and gives `Ok` with what it gave, its writes kept (RELEASE SAVEPOINT), or `Error` with its failure, what it wrote undone (ROLLBACK TO SAVEPOINT) and the transaction able to go on; OnCommand reports the savepoint with its Kinds. Any failure of the step is a value, a Conflict and a rejection included, except those that end the transaction: a serialization failure, a deadlock, a lost connection, a closed repository and a misused step stay the transaction's failure, so a retry policy can run it again. Attempts nest, each its own savepoint, and the steps an attempt rolled back leave the list a later failure reports. Also pinned: under a retry policy a step of your own (Tx.run) runs once per attempt, its database work undone and done again. 4 scenarios red first (the uncaught failure proved red against an attempt that catches everything), 3 guards | `src/Plasm/Tx.fs` |
 | 2026-11-20 | Bulk updates and deletes can return the rows they wrote (bulk-writes.feature): `Bulk.updateReturning (query, change)` and `Bulk.deleteReturning query` are the same writes as `Bulk.update` and `Bulk.delete`, a `BulkWrite<'T list>` instead of a count, as `Bulk.insert` already is. The update's rows come back as they are after it (UPDATE ... RETURNING), read whole with what they own and link in the same transaction; the delete's as they were. A delete cannot read back what the rows it removes owned or linked, so it returns only records that own or link nothing, and refuses others by name before anything is sent; a provider without RETURNING refuses both. 3 scenarios red first | `src/Plasm/Bulk.fs` |
 | 2026-11-20 | A field can be unique within other fields (unique-within.feature): `[<Unique(Within = [| nameof the<Tag>.Tenant |])>] Name` states one uniqueness over the Within fields and then the field, `(tenant, name)`, so its index also serves a tenant's reads. The DDL prints `constraint <table>_tenant_name_key unique (tenant, name)`, the schema check reports it missing or held under another name with the rename (it reads unique indexes over any number of columns, in order), and a violation is the error of the field carrying the attribute. Two fields unique within the same fields are two constraints, named by their own columns (`tenant_tags_tenant_name_key`, `tenant_tags_tenant_slug_key`). A Within field and the field carrying it must be one column and required, each refused by name at model build: PostgreSQL counts absent values as distinct, so with an optional field two rows F# calls equal would both be kept, and refusing keeps one meaning for absent values without NULLS NOT DISTINCT (PostgreSQL 15). Not covered: a field of several columns in Within (a value, a union, a reference to a key of several parts), refused by name. 8 scenarios red first, and a DDL example | `src/Plasm/Model.fs`, `src/Plasm/SchemaCheck.fs` |
+| 2026-11-20 | The database describes every statement before any runs (statement-check.feature): Repo.Start translates every query value a module defines, as before, and now asks the database to describe the SQL of each, parsed and planned but not run (Npgsql's SchemaOnly: Parse and Describe): its query values with their loads, its bulk writes, and its hand-written statements (module-level FormattableString values). A statement the database refuses is `StartupProblem.Refused`, named by its value with the database's reason, under RepoOptions.Queries; a bulk write that cannot be translated is a query problem. Every parameter goes as an untyped NULL, so a prepared query is described through its template. Only over tables that match the model: when the schema check finds a difference or does not run, nothing is described and the schema check's report stands. A provider without `Describe` (PGlite) describes none and notes how many (`NotDescribed`), a note that never fails start-up; so is a statement whose parameter the database cannot type from the statement alone (42P18, `@p0 IS NULL` with an untyped NULL), the description's limit and not the statement's fault. Not reached: SQL written in place at a call (repo.Sql, Tx.sql, Tx.executeSql), a query a function builds, a transaction's steps, and a query's let! loads (its own statement is described). Proved that describing runs nothing: a module-level `delete from customers` and a `Bulk.delete` of every customer leave them all. 6 scenarios red first, 2 guards | `src/Plasm/Repo.fs` |
 
 ## Suggested next steps
 
-1. Decide whether to commit `examples/Kanban`, the reference application.
-2. Choose a license, add the repository URL to the package metadata, and
-   publish pre-release packages (the CI already builds them).
-3. `Query.prepare3` for projections.
-4. A second provider, to prove the `IProvider` / `ISqlDialect` boundary
+1. Publish pre-release packages (the CI already builds them); the licence is
+   MIT and the repository is public.
+2. `Query.prepare3` for projections.
+3. A second provider, to prove the `IProvider` / `ISqlDialect` boundary
    (SQLite or SQL Server); move the catalogue queries and the link SQL behind
    it.
-5. Diagnostics as OpenTelemetry activities.
-5a. Open question: hosting. `Repo.Start` is asynchronous, and ASP.NET Core's
+4. Diagnostics as OpenTelemetry activities.
+4a. Open question: hosting. `Repo.Start` is asynchronous, and ASP.NET Core's
    service registration is synchronous, so Kanban's Host.fs starts the
    repository after the migrations and hands it to the services through a
    `TaskCompletionSource`. Whether Plasm should offer something for that (a
    hosted service, or a registration helper in a `Plasm.AspNetCore` package)
    is undecided; nothing is built.
-5b. Bring the browser koans' first runnable koan back under 20 s on a 25 Mbit/s
+4b. Bring the browser koans' first runnable koan back under 20 s on a 25 Mbit/s
    connection. Measured 2026-11-15 at 19.2 to 20.1 s with 24.1 MB transferred
    (about 7.7 s of transfer); the budget in `course-in-the-browser.feature` is
    25 s until then.
-6. Close the gaps found by the comparison with the F# data-access libraries
+5. Close the gaps found by the comparison with the F# data-access libraries
    ([comparison.md](comparison.md)): typed parameters (such as `jsonb`) and
    several result sets in raw SQL; then the larger EF Core gaps listed there.

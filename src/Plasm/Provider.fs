@@ -130,6 +130,15 @@ type QueryProblem =
 
     override p.ToString() = $"{p.Query}: {p.Error}"
 
+/// A statement a module defines that the database refused to describe: the
+/// value's name, its SQL, and the database's reason (statement-check.feature).
+type StatementProblem =
+    { Statement: string
+      Sql: string
+      Failure: DbFailure }
+
+    override p.ToString() = $"{p.Statement}: the database refused it: {p.Failure.Message}"
+
 /// What `Repo.Start` does with what its check finds (query-check.feature).
 [<RequireQualifiedAccess>]
 type StartupCheck =
@@ -154,6 +163,14 @@ type StartupProblem =
     /// Functions returning a query: not values, so not checked. A note,
     /// reported under Warn; it never fails start-up.
     | UncheckedFunctions of names: string list
+    /// A statement a module defines that the database refused to describe
+    /// (statement-check.feature).
+    | Refused of StatementProblem
+    /// Statements not described, and why: the provider cannot describe one,
+    /// or the database could not type a parameter from the statement alone
+    /// (statement-check.feature). A note, reported under Warn; it never
+    /// fails start-up: each is checked when it runs.
+    | NotDescribed of reason: string * statements: string list
 
     override p.ToString() =
         match p with
@@ -165,6 +182,10 @@ type StartupProblem =
             let what = if names.Length = 1 then "function returning a query is" else "functions returning a query are"
             let listed = String.concat ", " names
             $"{names.Length} {what} not checked: {listed}"
+        | Refused r -> string r
+        | NotDescribed(reason, statements) ->
+            let what = if statements.Length = 1 then "statement was" else "statements were"
+            $"""{statements.Length} {what} not described ({reason}): {String.concat ", " statements}"""
 
 type RepoOptions =
     { OnCommand: (CommandEvent -> unit) option

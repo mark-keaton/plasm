@@ -84,7 +84,8 @@ type internal PostgresDialect(options: PostgresOptions) =
               Upserts = true
               RowLocking = true
               Batching = true
-              DefersBegin = true }
+              DefersBegin = true
+              Describe = true }
 
         // What Npgsql sends, as PostgreSQL logs it: its wording differs by level.
         member _.Begin isolation =
