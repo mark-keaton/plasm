@@ -106,8 +106,8 @@ met through a write. Each error case is named where a koan first meets it
   order); its specification is `features/lessons/NN-name.feature`, one row per
   koan: name, what the learner discovers, what it teaches, and its hint.
 - A hint is one sentence that says where on the page the answer comes from,
-  without the answer. The runner and the browser course show it after a wrong
-  answer. If no such sentence can be written, the page does not hold the
+  without the answer. The runner shows it after a wrong answer; the browser
+  course behind a button the learner chooses. If no such sentence can be written, the page does not hold the
   answer: reword the koan, or leave the cell empty and say what is missing in
   `no-hint-yet.txt`.
 - Write the row first, run the koans' specs and see it fail, then write the

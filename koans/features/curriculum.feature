@@ -51,8 +51,8 @@ Feature: The curriculum is verified
   Rule: A koan's hint points at its answer and does not give it
 
     A hint is the last cell of a koan's row in its lesson's feature: one
-    sentence saying where on the page the answer comes from. The runner shows
-    it after a wrong answer. A koan whose answer the page does not yet
+    sentence saying where on the page the answer comes from. The terminal runner
+    shows it after a wrong answer; the browser, when the learner asks. A koan whose answer the page does not yet
     determine gets no hint to cover for it: its cell is empty, and
     no-hint-yet.txt names the koan and says what its page lacks.
 

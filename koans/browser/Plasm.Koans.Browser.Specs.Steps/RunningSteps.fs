@@ -214,7 +214,7 @@ type RunningSteps(w: BrowserWorld) =
         }
         |> unit
 
-    // A wrong answer shows the koan's hint; a blank not yet tried shows none
+    // The hint waits for the learner to ask for it
 
     [<StepDefinition("the koan shows its hint, as the lesson specification words it")>]
     member _.HintShown() =
@@ -224,16 +224,55 @@ type RunningSteps(w: BrowserWorld) =
             let koan = w.Koan.Value
             let! hint = w.Page.EvaluateAsync<string>($"() => window.koans.course.lessons[{koan.Lesson}].koans[{koan.Index}].hint")
             check (not (String.IsNullOrEmpty hint)) $"the course has no hint for {koan.Name}"
-            let! text = w.Page.TextContentAsync "#result .hint span"
+            let! shown = w.Page.IsVisibleAsync "#hint-text"
+            check shown "the koan's hint is not shown"
+            let! text = w.Page.TextContentAsync "#hint-text span"
             check (text = hint) $"the koan shows the hint '{text}', not '{hint}'"
         }
         |> unit
 
-    [<StepDefinition("it shows no hint yet")>]
-    member _.NoHintYet() =
+    [<StepDefinition("it offers a hint, not yet shown")>]
+    member _.HintOffered() =
         task {
-            let! hints = w.Page.Locator("#result .hint").CountAsync()
-            check (hints = 0) "a koan with its blank unfilled shows a hint"
+            let! button = w.Page.IsVisibleAsync "#hint-toggle"
+            check button "the koan offers no hint button"
+            let! label = w.Page.TextContentAsync "#hint-toggle"
+            let! expanded = w.Page.GetAttributeAsync("#hint-toggle", "aria-expanded")
+            check (label.Trim() = "Show a hint" && expanded = "false") $"the hint button reads '{label}', aria-expanded {expanded}"
+            let! shown = w.Page.IsVisibleAsync "#hint-text"
+            check (not shown) "the koan's hint is shown before the learner asked for it"
+        }
+        |> unit
+
+    [<StepDefinition("^the learner asks for the hint(?: again)?$")>]
+    member _.AskForHint() = w.Page.ClickAsync "#hint-toggle"
+
+    [<StepDefinition("the hint's button offers to hide it")>]
+    member _.HintHideOffered() =
+        task {
+            let! label = w.Page.TextContentAsync "#hint-toggle"
+            let! expanded = w.Page.GetAttributeAsync("#hint-toggle", "aria-expanded")
+            check (label.Trim() = "Hide the hint" && expanded = "true") $"the hint button reads '{label}', aria-expanded {expanded}"
+        }
+        |> unit
+
+    [<StepDefinition("the learner runs it with a wrong value in its first blank")>]
+    member _.RunShownWrong() =
+        task {
+            // The koan already shown, not shown again: a run alone.
+            let koan = w.Koan.Value
+            do! typeCode w.Page (fill koan.Body ("\"Gadget\"" :: List.tail answers.Value.[koan.Name]))
+            let! ms = run w.Page
+            w.RunMs <- ms
+        }
+        |> unit
+
+    [<StepDefinition("the learner opens the second koan")>]
+    member _.OpenSecond() =
+        task {
+            let! koan = koanAt w.Page 0 1
+            do! show w.Page koan
+            w.Koan <- Some koan
         }
         |> unit
 

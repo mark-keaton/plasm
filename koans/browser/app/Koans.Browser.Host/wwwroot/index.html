@@ -159,6 +159,10 @@
   .meditate { margin-top: 16px; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--paper); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; color: var(--ink-2); }
   .meditate strong { font-family: var(--display); color: var(--accent-ink); white-space: nowrap; }
   .meditate.hint { margin-top: 0; }
+  #hint-box { margin-top: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+  #hint-box[hidden], #hint-text[hidden] { display: none; }
+  #hint-box .btn { min-height: 32px; font-size: 13px; color: var(--accent-ink); }
+  #hint-text { align-self: stretch; border: 1px solid var(--line); border-radius: 8px; }
 
   /* Given, then the koan: the data and definitions a koan starts from, above its code. */
   .step { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 0 16px; }
@@ -260,6 +264,10 @@
           </div>
         </div>
         <div class="editor" id="code"></div>
+      </section>
+      <section id="hint-box" hidden>
+        <button class="btn" id="hint-toggle" type="button" aria-expanded="false" aria-controls="hint-text">Show a hint</button>
+        <div id="hint-text" class="meditate hint" hidden><strong>A hint</strong><span></span></div>
       </section>
       <section id="result" aria-live="polite" aria-label="Result"></section>
         </div>

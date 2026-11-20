@@ -13,7 +13,6 @@ Feature: Running a koan in the browser
       When the learner runs the first koan without changing it
       Then the koan shows that it is not yet passed
       And it points at the line of the blank in the editor
-      And it shows no hint yet
       And it shows no Meditate line
 
     Scenario: A correct answer passes
@@ -27,10 +26,6 @@ Feature: Running a koan in the browser
       Then the koan shows what the learner wrote and what Plasm gave, displayed as F# Interactive would
       And it shows no Meditate line
 
-    Scenario: A wrong answer shows the koan's hint
-      When the learner fills in the first koan's first blank with a wrong value and runs it
-      Then the koan shows its hint, as the lesson specification words it
-
     Scenario: A koan that talks to the database shows the SQL it generated
       When the learner runs a database koan with a wrong answer
       Then the koan shows the SQL Plasm generated, formatted by clause
@@ -39,6 +34,42 @@ Feature: Running a koan in the browser
       When the learner writes code in a koan that does not compile and runs it
       Then the koan shows the compiler's message at its line and column
       And no earlier koan's result changes
+
+  Rule: The hint waits for the learner to ask for it
+
+    Every koan has a hint (koans/no-hint-yet.txt is empty), behind a button
+    from the start: the learner chooses when to read it. A run, passed or
+    failed, neither shows nor hides it, and each koan starts with it hidden.
+
+    Scenario: A koan's hint is hidden until the learner asks for it
+      When the learner opens the first koan
+      Then it offers a hint, not yet shown
+      When the learner runs it with a wrong value in its first blank
+      Then it offers a hint, not yet shown
+
+    Scenario: Asking for the hint shows it
+      When the learner opens the first koan
+      And the learner asks for the hint
+      Then the koan shows its hint, as the lesson specification words it
+      And the hint's button offers to hide it
+
+    Scenario: Asking again hides it
+      When the learner opens the first koan
+      And the learner asks for the hint
+      And the learner asks for the hint again
+      Then it offers a hint, not yet shown
+
+    Scenario: A run leaves a shown hint shown
+      When the learner opens the first koan
+      And the learner asks for the hint
+      And the learner runs it with a wrong value in its first blank
+      Then the koan shows its hint, as the lesson specification words it
+
+    Scenario: Another koan starts with its hint hidden
+      When the learner opens the first koan
+      And the learner asks for the hint
+      And the learner opens the second koan
+      Then it offers a hint, not yet shown
 
   Rule: Running is safe for the page
 

@@ -151,9 +151,6 @@ function render(r, lessonIndex, koanIndex) {
   if (r.status === 'passed') document.querySelector('p.teaches').hidden = false;
   if (r.status === 'passed' && koan.discovers)
     box.append(el('div', { class: 'meditate' }, el('strong', {}, 'Meditate on this'), el('span', {}, koan.discovers)));
-  // The hint waits for a wrong answer: a blank not yet tried gets none.
-  if (['failed', 'threw', 'compile'].includes(r.status) && koan.hint)
-    box.append(el('div', { class: 'meditate hint' }, el('strong', {}, 'A hint'), el('span', {}, koan.hint)));
   box.dataset.status = r.status;
 }
 
@@ -261,6 +258,20 @@ $('all-tables').addEventListener('click', () => {
   if (shown) renderGiven(course.lessons[shown.lessonIndex].koans[shown.koanIndex]);
 });
 
+/// A koan's hint waits behind its button until the learner asks for it; each
+/// koan starts with it hidden, and a run neither shows nor hides it.
+function hintFor(koan) {
+  $('hint-box').hidden = !koan.hint;
+  $('hint-text').querySelector('span').textContent = koan.hint ?? '';
+  setHint(false);
+}
+function setHint(open) {
+  $('hint-text').hidden = !open;
+  $('hint-toggle').setAttribute('aria-expanded', String(open));
+  $('hint-toggle').textContent = open ? 'Hide the hint' : 'Show a hint';
+}
+$('hint-toggle').onclick = () => setHint($('hint-text').hidden);
+
 let shown = null;
 function show(lessonIndex, koanIndex) {
   const lesson = course.lessons[lessonIndex];
@@ -276,6 +287,7 @@ function show(lessonIndex, koanIndex) {
   // The scenario a koan teaches is its conclusion, as the Meditate line is: shown once it passes.
   document.querySelector('p.teaches').hidden = !isPassed(lessonIndex, koanIndex);
   renderGiven(koan);
+  hintFor(koan);
   // The address always names the koan shown (go() adds the history entry first).
   const url = new URL(location.href);
   url.searchParams.set('koan', addressOf(koan));
