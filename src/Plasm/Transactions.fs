@@ -58,23 +58,32 @@ module internal Waiting =
                       Duration = duration
                       Rows = 0
                       Succeeded = true
+                      Error = None
                       RoundTrip = roundTrip }
         | _ -> ()
 
-/// Reports a transaction's commands to one OnCommand.
-type internal TxReporter(onCommand: CommandEvent -> unit, defers: bool) =
+/// Reports a transaction's commands to a repository's OnCommand and
+/// activities, while either wants them (Activities.sink).
+type internal TxReporter(sink: unit -> (CommandEvent -> unit) option, defers: bool) =
 
     let report connection kind sql trip (elapsed: TimeSpan) ok =
-        Waiting.flush onCommand connection trip elapsed
+        match sink () with
+        | None -> ()
+        | Some onCommand ->
+            Waiting.flush onCommand connection trip elapsed
 
-        onCommand
-            { Kind = kind
-              Sql = sql
-              Parameters = []
-              Duration = elapsed
-              Rows = 0
-              Succeeded = ok
-              RoundTrip = trip }
+            onCommand
+                { Kind = kind
+                  Sql = sql
+                  Parameters = []
+                  Duration = elapsed
+                  Rows = 0
+                  Succeeded = ok
+                  Error = if ok then None else Some "_OTHER"
+                  RoundTrip = trip }
+
+    let wait connection (w: Waiting) =
+        if (sink ()).IsSome then Waiting.add connection w
 
     /// A command sent at once, in a round trip of its own.
     member _.Sent(connection: DbConnection, kind, sql, send: unit -> unit) =
@@ -110,7 +119,7 @@ type internal TxReporter(onCommand: CommandEvent -> unit, defers: bool) =
     member this.Began(connection: DbConnection, sql, send: unit -> unit) =
         if defers then
             send ()
-            Waiting.add connection { Kind = CommandKind.Begin; Sql = sql }
+            wait connection { Kind = CommandKind.Begin; Sql = sql }
         else
             this.Sent(connection, CommandKind.Begin, sql, send)
 
@@ -120,7 +129,7 @@ type internal TxReporter(onCommand: CommandEvent -> unit, defers: bool) =
                 do! send ()
 
                 match sql () with
-                | Some text -> Waiting.add connection { Kind = CommandKind.Begin; Sql = text }
+                | Some text -> wait connection { Kind = CommandKind.Begin; Sql = text }
                 | None -> ()
             }
         else
@@ -180,8 +189,8 @@ type internal ReportedTransaction(inner: DbTransaction, connection: DbConnection
 
 /// A provider whose transactions report their commands to `onCommand`.
 [<Sealed>]
-type internal ReportingProvider(inner: IProvider, onCommand: CommandEvent -> unit) =
-    let reporter = TxReporter(onCommand, inner.Dialect.Capabilities.DefersBegin)
+type internal ReportingProvider(inner: IProvider, onCommand: (CommandEvent -> unit) option) =
+    let reporter = TxReporter((fun () -> Activities.sink onCommand inner.Dialect), inner.Dialect.Capabilities.DefersBegin)
 
     /// Begins with `start`, reporting the BEGIN at the level the transaction
     /// has (or `requested`, when beginning failed). None began nothing.
@@ -240,10 +249,11 @@ module internal Reporting =
     /// reports them when there is an OnCommand. A sandbox's and a playground's
     /// provider take their savepoints in a transaction that already reports.
     let wrap (onCommand: (CommandEvent -> unit) option) (provider: IProvider) =
-        match onCommand, provider with
-        | None, _ -> provider
-        | _, (:? IReportsTransactions) -> provider
-        | Some f, p -> ReportingProvider(p, f) :> IProvider
+        // Always: what it reports is decided per command, by whether an
+        // OnCommand or an activity listener wants it (activities.feature).
+        match provider with
+        | :? IReportsTransactions -> provider
+        | p -> ReportingProvider(p, onCommand) :> IProvider
 
 module internal Sandboxes =
     /// The provider's own transaction, on which commands are sent: a sandbox's

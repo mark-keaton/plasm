@@ -109,10 +109,13 @@ let private prepare (s: Session) (cmd: Sql.Command) =
     parameters s cmd c.CreateParameter (c.Parameters.Add >> ignore)
     c
 
-let private report (s: Session) (cmd: Sql.Command) (elapsed: TimeSpan) rows ok roundTrip =
-    match s.Options.OnCommand with
+let private report (s: Session) (cmd: Sql.Command) (elapsed: TimeSpan) rows (failure: exn option) roundTrip =
+    // To the repository's OnCommand and its activities (activities.feature):
+    // nothing is made unless one of them wants it.
+    match Activities.sink s.Options.OnCommand s.Provider.Dialect with
     | None -> ()
     | Some f ->
+        let ok = failure.IsNone
         // A BEGIN or SAVEPOINT that waited for this round trip went with it.
         Waiting.flush f s.Connection roundTrip elapsed
 
@@ -139,6 +142,12 @@ let private report (s: Session) (cmd: Sql.Command) (elapsed: TimeSpan) rows ok r
               Duration = elapsed
               Rows = rows
               Succeeded = ok
+              Error =
+                failure
+                |> Option.map (fun ex ->
+                    match s.Provider.Classify ex |> Option.bind (fun f -> f.SqlState) with
+                    | Some state -> state
+                    | None -> ex.GetType().Name)
               RoundTrip = roundTrip }
 
 // ---------------------------------------------------------------------------
@@ -279,10 +288,10 @@ module Round =
                     else
                         go <- false
 
-                report s st.Command sw.Elapsed n true trip
+                report s st.Command sw.Elapsed n None trip
                 return n
             with ex ->
-                report s st.Command sw.Elapsed n false trip
+                report s st.Command sw.Elapsed n (Some ex) trip
                 return Err.rethrow ex
         }
 
@@ -294,10 +303,10 @@ module Round =
 
             try
                 let! n = c.ExecuteNonQueryAsync(s.Ct)
-                report s st.Command sw.Elapsed n true trip
+                report s st.Command sw.Elapsed n None trip
                 return n
             with ex ->
-                report s st.Command sw.Elapsed 0 false trip
+                report s st.Command sw.Elapsed 0 (Some ex) trip
                 return Err.rethrow ex
         }
 
@@ -419,10 +428,10 @@ module Round =
                               | Some _ -> rows.[i]
                               | None -> batch.BatchCommands.[i].RecordsAffected
 
-                          report s st.Command elapsed n true trip
+                          report s st.Command elapsed n None trip
                           Ran n
                       elif i = failedAt then
-                          report s st.Command elapsed rows.[i] false trip
+                          report s st.Command elapsed rows.[i] failure trip
                           Threw failure.Value
                       else
                           Skipped ]

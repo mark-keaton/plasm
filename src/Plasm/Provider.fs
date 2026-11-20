@@ -33,6 +33,9 @@ type CommandEvent =
       /// Rows read (queries) or affected (writes).
       Rows: int
       Succeeded: bool
+      /// Why it failed: the SQLSTATE the database gave, else the exception's
+      /// type (activities.feature: error.type). None when it succeeded.
+      Error: string option
       /// The round trip the command travelled in: commands sent together
       /// share it, and Duration is that round trip's (round-trips.feature).
       RoundTrip: int64 }
