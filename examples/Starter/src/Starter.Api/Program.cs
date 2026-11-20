@@ -25,10 +25,16 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 var connectionString = builder.Configuration.GetConnectionString("Starter")
     ?? throw new InvalidOperationException("Set the connection string 'Starter' (ConnectionStrings__Starter).");
 var dataSource = NpgsqlDataSource.Create(connectionString);
+// ClockStart=2030-01-02T09:00:00Z starts the API's clock at that instant, from
+// where it runs on at the system's pace: what the rules read as now. Unset,
+// the clock is the system's.
+var time = builder.Configuration["ClockStart"] is { } start
+    ? new StartingAt(DateTimeOffset.Parse(start, System.Globalization.CultureInfo.InvariantCulture))
+    : TimeProvider.System;
 // LogSql=true prints each command Plasm sends, its BEGIN and COMMIT included.
 var data = bool.TryParse(builder.Configuration["LogSql"], out var logSql) && logSql
-    ? await BookingData.OpenAsync(dataSource, sql => Console.WriteLine("SQL: " + sql.Replace('\n', ' ')), TimeProvider.System, CancellationToken.None)
-    : await BookingData.OpenAsync(dataSource, TimeProvider.System, CancellationToken.None);
+    ? await BookingData.OpenAsync(dataSource, sql => Console.WriteLine("SQL: " + sql.Replace('\n', ' ')), time, CancellationToken.None)
+    : await BookingData.OpenAsync(dataSource, time, CancellationToken.None);
 builder.Services.AddSingleton(data);
 
 var app = builder.Build();
@@ -65,6 +71,13 @@ static IResult Changed(ChangeOutcome outcome) => outcome switch
     Refused refused => Results.UnprocessableEntity(refused),
     Stale stale => Results.Conflict(stale),
 };
+
+sealed class StartingAt(DateTimeOffset start) : TimeProvider
+{
+    readonly long started = System.GetTimestamp();
+
+    public override DateTimeOffset GetUtcNow() => start + System.GetElapsedTime(started);
+}
 
 record NewEquipment(string Name);
 record NewBooking(int Version, string Who, DateTimeOffset From, DateTimeOffset Until);
