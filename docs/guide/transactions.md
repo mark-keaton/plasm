@@ -99,6 +99,22 @@ let claimDraft: Tx<Order option, Refusal> =
     )
 ```
 
+## Many writes at once
+
+`Tx.traverse` makes one step of a list of them. Each of these orders is one
+insert, so their statements travel together: two round trips however many
+orders, the orders and then their lines, which need the generated keys.
+
+<!-- from: examples/Plasm.Examples/Writes.fs -->
+```fsharp
+let placeAll (orders: Order list) : Tx<Order list, Refusal> =
+    orders |> Tx.traverse (fun o -> Tx.insert o)
+```
+
+`Tx.traverse` sends its items' writes together when each item is one write;
+an item of more steps, and steps a transaction sequences, run one after
+another.
+
 ## What comes back
 
 A failure says what failed and which steps were rolled back.
