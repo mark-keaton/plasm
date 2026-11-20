@@ -73,7 +73,10 @@ type Ctx =
       Taken: Collections.Generic.HashSet<string>
       /// Set when a closed subexpression may evaluate differently next time
       /// (e.g. DateTime.UtcNow), which makes the translated plan non-reusable.
-      Volatile: bool ref }
+      Volatile: bool ref
+      /// Translating a select's columns: where a window function may be read
+      /// (window-functions.feature).
+      InSelect: bool }
 
     /// A source's name: the variable that reads it, or `otherwise` (its
     /// table) when it has none, numbered if a source of the statement or a
@@ -100,7 +103,8 @@ let newCtxWith model (vol: bool ref) =
       Spaces = Map.empty
       Docs = Map.empty
       Taken = Collections.Generic.HashSet<string>()
-      Volatile = vol }
+      Volatile = vol
+      InSelect = false }
 
 let newCtx model = newCtxWith model (ref false)
 
@@ -346,6 +350,7 @@ let rec expandTies (model: Model) (e: Expr) : Expr =
 
 let isAggCall (mi: Reflection.MethodInfo) = mi.DeclaringType.FullName = "Plasm.Agg"
 let isRawCall (mi: Reflection.MethodInfo) = mi.DeclaringType.FullName = "Plasm.Raw"
+let isWinCall (mi: Reflection.MethodInfo) = mi.DeclaringType.FullName = "Plasm.Win"
 
 /// Does `e` mention a query row variable (or an aggregate or SQL fragment,
 /// which are SQL by definition)? Allocation-free walk; row variables are bound
@@ -355,7 +360,7 @@ let isExistsCall (mi: Reflection.MethodInfo) =
 
 let rec private mentions (ctx: Ctx) (e: Expr) =
     match e with
-    | Call(None, mi, _) when isAggCall mi || isRawCall mi || isExistsCall mi -> true
+    | Call(None, mi, _) when isAggCall mi || isRawCall mi || isExistsCall mi || isWinCall mi -> true
     | ExprShape.ShapeVar v -> ctx.Vars.ContainsKey v || ctx.Spaces.ContainsKey v || ctx.Docs.ContainsKey v
     | ExprShape.ShapeLambda(_, b) -> mentions ctx b
     | ExprShape.ShapeCombination(_, args) -> List.exists (mentions ctx) args
@@ -957,6 +962,7 @@ let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
         // (scalar-conventions.feature).
         | PropertyGet(Some w, p, []) when isWrapperField w.Type p -> scalar ctx w
         | Call(None, mi, args) when isAggCall mi -> aggregate ctx e mi args
+        | Call(None, mi, args) when isWinCall mi -> windowed ctx e mi args
         | Call(None, mi, [ sql; args ]) when isRawCall mi -> fragment ctx e sql args
         | _ when e.Type = typeof<bool> -> predicate ctx e
         // A member of the application's own type that Plasm cannot see into.
@@ -1252,6 +1258,59 @@ and aggregate ctx (e: Expr) (mi: Reflection.MethodInfo) (args: Expr list) : Sql.
             )
         | _ -> fail e "unexpected aggregate arguments"
     | n -> fail e $"Agg.{n} has no SQL translation"
+
+/// A window function in a select (window-functions.feature): its window read
+/// from Win.partition or Win.whole and the orders piped onto it.
+and windowed ctx (e: Expr) (mi: Reflection.MethodInfo) (args: Expr list) : Sql.Expr =
+    if not ctx.InSelect then
+        fail e "a window function is read only in select: filter, group or order by its value with a query over this one"
+
+    let keys (key: Expr) =
+        match key with
+        | NewTuple xs -> xs
+        | x -> [ x ]
+
+    let rec window (w: Expr) : Sql.Expr list * Sql.OrderItem list =
+        match w with
+        | Call(None, m, [ key ]) when isWinCall m && m.Name = "partition" -> [ for k in keys key -> scalar ctx k ], []
+        | PropertyGet(None, p, []) when p.DeclaringType.FullName = "Plasm.Win" && p.Name = "whole" -> [], []
+        | Call(None, m, [ key; inner ]) when isWinCall m && (m.Name.StartsWith "orderBy" || m.Name.StartsWith "thenBy") ->
+            let partition, order = window inner
+            let descending = m.Name.EndsWith "Descending"
+            partition, order @ [ for k in keys key -> ({ Expr = scalar ctx k; Desc = descending; NullsFirst = None }: Sql.OrderItem) ]
+        | Let(v, value, body) -> window (body.Substitute(fun x -> if x = v then Some value else None))
+        | _ -> fail w "a window is Win.partition key or Win.whole, ordered with Win.orderBy, Win.thenBy and their Descending forms"
+
+    let ordered name (partition, order: Sql.OrderItem list) =
+        if order.IsEmpty then
+            fail e $"Win.{name} needs an order, or its result would be arbitrary: order the window with Win.orderBy"
+
+        partition, order
+
+    match mi.Name, args with
+    | ("rowNumber" | "rank" | "denseRank" as name), [ w ] ->
+        let partition, order = ordered name (window w)
+        let sqlName = match name with | "rowNumber" -> "ROW_NUMBER" | "rank" -> "RANK" | _ -> "DENSE_RANK"
+        Sql.Window(sqlName, [], partition, order, None)
+    | ("lag" | "lead" as name), [ value; w ] ->
+        let partition, order = ordered name (window w)
+        Sql.Window(name.ToUpperInvariant(), [ scalar ctx value ], partition, order, None)
+    | "runningSum", [ value; w ] ->
+        let partition, order = ordered "runningSum" (window w)
+        Sql.Func("COALESCE", [ Sql.Window("SUM", [ scalar ctx value ], partition, order, Some "ROWS UNBOUNDED PRECEDING"); Sql.Literal "0" ])
+    | "sum", [ value; w ] ->
+        let partition, order = window w
+        let frame = if order.IsEmpty then None else Some "ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING"
+        Sql.Func("COALESCE", [ Sql.Window("SUM", [ scalar ctx value ], partition, order, frame); Sql.Literal "0" ])
+    | "avg", [ value; w ] ->
+        let partition, order = window w
+        let frame = if order.IsEmpty then None else Some "ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING"
+        Sql.Window("AVG", [ scalar ctx value ], partition, order, frame)
+    | "count", [ w ] ->
+        let partition, order = window w
+        let frame = if order.IsEmpty then None else Some "ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING"
+        Sql.Window("COUNT", [ Sql.Literal "*" ], partition, order, frame)
+    | n, _ -> fail e $"Win.{n} is a window, not a value: give it to a window function such as Win.rowNumber"
 
 /// An aggregate's own order: a value, or a tuple of them, each ascending or,
 /// for a Descending aggregate, descending (aggregates.feature).
@@ -2587,7 +2646,7 @@ let rec projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr 
             match select with
             | Some sel ->
                 let ctx, body = bindSpace ctx space sel
-                shape ctx body
+                shape { ctx with InSelect = true } body
             | None when space.Length = 1 -> addEntity space.Head
             | None ->
                 // Rows are the tuple of the sources: flat for the computation

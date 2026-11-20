@@ -84,6 +84,61 @@ module Agg =
         ignore (LanguagePrimitives.DivideByInt< ^N> (value + LanguagePrimitives.GenericZero< ^N>) 1)
         invalidOp "Agg.avg is only meaningful inside a query (select, having or orderBy); it is computed by the database"
 
+/// A window over a query's rows (window-functions.feature): its partition
+/// and its order. Only built inside a query's `select`.
+[<Sealed>]
+type Window private () =
+    class
+    end
+
+/// Window functions for `select` (window-functions.feature): a value
+/// computed over the rows of the current row's window. A window is
+/// `Win.partition key` (a value, or a tuple, as groupBy takes) or
+/// `Win.whole`, ordered with `|> Win.orderBy k`, `Win.thenBy`, and their
+/// Descending forms; each function takes the window last.
+[<RequireQualifiedAccess; Trimming.QuerySurface>]
+module Win =
+    let internal outside name : 'a =
+        invalidOp $"Win.{name} is only meaningful inside a query's select; it is computed by the database"
+
+    /// The rows sharing `key`'s value (PARTITION BY).
+    let partition (_key: 'K) : Window = outside "partition"
+    /// Every row of the query, one window.
+    let whole: Window = Unchecked.defaultof<Window>
+    let orderBy (_key: 'K) (_window: Window) : Window = outside "orderBy"
+    let orderByDescending (_key: 'K) (_window: Window) : Window = outside "orderByDescending"
+    let thenBy (_key: 'K) (_window: Window) : Window = outside "thenBy"
+    let thenByDescending (_key: 'K) (_window: Window) : Window = outside "thenByDescending"
+
+    /// The row's place in its window's order, from 1 (ROW_NUMBER).
+    let rowNumber (_window: Window) : int64 = outside "rowNumber"
+    /// The row's rank in its window's order, ties sharing one and leaving gaps (RANK).
+    let rank (_window: Window) : int64 = outside "rank"
+    /// As rank, without gaps (DENSE_RANK).
+    let denseRank (_window: Window) : int64 = outside "denseRank"
+    /// `value` of the row before, in the window's order; None for the first (LAG).
+    let lag (_value: 'T) (_window: Window) : 'T option = outside "lag"
+    /// `value` of the row after; None for the last (LEAD).
+    let lead (_value: 'T) (_window: Window) : 'T option = outside "lead"
+
+    /// The sum of `value` over the window's rows up to this one, in its order.
+    let inline runningSum (value: ^N) (_window: Window) : ^N =
+        ignore (value + LanguagePrimitives.GenericZero< ^N>)
+        invalidOp "Win.runningSum is only meaningful inside a query's select; it is computed by the database"
+
+    /// The sum of `value` over every row of the window, whatever its order.
+    let inline sum (value: ^N) (_window: Window) : ^N =
+        ignore (value + LanguagePrimitives.GenericZero< ^N>)
+        invalidOp "Win.sum is only meaningful inside a query's select; it is computed by the database"
+
+    /// The average of `value` over every row of the window.
+    let inline avg (value: ^N) (_window: Window) : ^N option =
+        ignore (LanguagePrimitives.DivideByInt< ^N> (value + LanguagePrimitives.GenericZero< ^N>) 1)
+        invalidOp "Win.avg is only meaningful inside a query's select; it is computed by the database"
+
+    /// The number of rows in the window.
+    let count (_window: Window) : int64 = outside "count"
+
 /// Literal SQL inside a typed query, for what the query language cannot say.
 [<RequireQualifiedAccess; Trimming.QuerySurface>]
 module Raw =

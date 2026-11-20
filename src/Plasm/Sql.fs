@@ -113,6 +113,8 @@ module internal Sql =
         | RowNumber of partitionBy: Expr * orderBy: OrderItem list
         /// An aggregate function: `NAME(arg)`, `NAME(DISTINCT arg)` or `COUNT(*)` (arg None).
         | Aggregate of name: string * distinct: bool * arg: Expr option
+        /// A window function: name(args) OVER (PARTITION BY ... ORDER BY ... frame).
+        | Window of name: string * args: Expr list * partition: Expr list * order: OrderItem list * frame: string option
         /// An aggregate with an order of its own and a filter:
         /// name(args ORDER BY ...) FILTER (WHERE filter); COUNT(*) with no args.
         | AggregateBy of name: string * args: Expr list * order: OrderItem list * filter: Expr option
@@ -508,6 +510,41 @@ module internal Sql =
                 | Some a ->
                     if distinct then w "DISTINCT "
                     r.Expr a
+
+                w ")"
+            | Window(name, args, partition, order, frame) ->
+                w name
+                w "("
+
+                args
+                |> List.iteri (fun i a ->
+                    if i > 0 then w ", "
+                    r.Expr a)
+
+                w ") OVER ("
+                let mutable gap = false
+
+                if not partition.IsEmpty then
+                    w "PARTITION BY "
+
+                    partition
+                    |> List.iteri (fun i p ->
+                        if i > 0 then w ", "
+                        r.Expr p)
+
+                    gap <- true
+
+                if not order.IsEmpty then
+                    if gap then w " "
+                    w "ORDER BY "
+                    r.Order order
+                    gap <- true
+
+                match frame with
+                | Some f ->
+                    if gap then w " "
+                    w f
+                | None -> ()
 
                 w ")"
             | AggregateBy(name, args, order, filter) ->

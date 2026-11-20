@@ -38,6 +38,29 @@ let sizesInOrder =
             )
     }
 
+/// Window functions over an order (window-functions.feature), read natively.
+let sizeRanks =
+    plasm {
+        for t in tableOf<Ticket> do
+            orderBy t.Created
+            select (
+                Win.rowNumber (Win.whole |> Win.orderBy t.Created),
+                Win.rank (Win.whole |> Win.orderByDescending t.Size),
+                Win.denseRank (Win.partition t.Title |> Win.orderBy t.Size |> Win.thenByDescending t.Created),
+                Win.lag t.Size (Win.whole |> Win.orderBy t.Created |> Win.thenBy t.Title),
+                Win.lead t.Size (Win.whole |> Win.orderBy t.Created),
+                Win.runningSum t.Price (Win.whole |> Win.orderBy t.Created)
+            )
+    }
+
+/// Window functions over every row of a window (window-functions.feature).
+let sizeWindows =
+    plasm {
+        for t in tableOf<Ticket> do
+            orderBy t.Created
+            select (Win.sum t.Size Win.whole, Win.avg t.Price (Win.partition t.Title), Win.count Win.whole)
+    }
+
 let withOpenNotes =
     plasm {
         for t in tableOf<Ticket> do

@@ -350,6 +350,14 @@ let main argv =
         step "filtered and boolean aggregates" (fun () ->
             selected Queries.sizeFacts (fun (n, total, any, all) -> $"{n} {total} {any} {all}"))
 
+        step "window functions over an order" (fun () ->
+            selected Queries.sizeRanks (fun (n, r, d, lag, lead, run) ->
+                let o (x: int option) = x |> Option.map string |> Option.defaultValue "-"
+                $"{n} {r} {d} {o lag} {o lead} {run}"))
+
+        step "window functions over a whole window" (fun () ->
+            selected Queries.sizeWindows (fun (s, a, n) -> $"{s} {a} {n}"))
+
         step "list and text aggregates in a stated order" (fun () ->
             selected Queries.sizesInOrder (fun (up, down, titles, reversed) ->
                 let ints (xs: int list) = xs |> List.map string |> String.concat ","
