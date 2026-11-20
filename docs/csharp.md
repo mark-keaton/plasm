@@ -114,8 +114,11 @@ lacks would be left null.
 
 ## Where C# is awkward against F# types
 
-Each was measured on .NET 11 (SDK 11.0.100, C# 15, FSharp.Core 8.0.403,
-System.Text.Json 11.0.0):
+Each was measured on .NET 11 (SDK 11.0.100, C# 15, System.Text.Json 11.0.0)
+with FSharp.Core 8.0.403, the oldest the packages are built against, and
+again with 11.0.101, what a new project gets. Every row holds on both; the `Transact` call in the
+`?cancellationToken` row, whose optional parameters are Plasm's own signature,
+was measured on the first only:
 
 | F# | What C# writes | Fix belongs |
 |---|---|---|
@@ -140,7 +143,7 @@ What System.Text.Json writes of each: reflection-based with web options, source-
 | `Some 3` / `None` | `3` / `null` | `{"Value":3}` |
 | F# list | `[1,2]` | `[1,2]` |
 | `CardId` (public single-case) | `{"$type":"cardId","item":"..."}` | `{"Tag":0,"Item":"..."}` |
-| `Slug` (private single-case) | throws `ArgumentException`: its representation is private | `{"Value":"alpha"}` |
+| `Slug` (private single-case) | throws (an `ArgumentException` inside a `TargetInvocationException`): its representation is private | `{"Value":"alpha"}` |
 | `Stage.Backlog` (a case without fields) | `"backlog"` | not measured |
 | `DomainError.WipLimitReached 2` | `{"$type":"wipLimitReached","limit":2}` | not measured |
 | A record of the above (`Board`, `Card`) | throws, from its first private union | each field as above |
