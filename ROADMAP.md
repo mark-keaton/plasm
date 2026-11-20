@@ -5,17 +5,16 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
 ## Now: going public
 
-- A licence (MIT), then a public repository
-- The site, with the docs and the koans in the browser
 - Plasm and Plasm.Postgres on NuGet
-- llms.txt: the docs in plain text for coding assistants
+- A `dotnet new` template
 
 ## Next: in the library
 
-- Composite keys
+- Upserts and bulk writes by composite key, and join-table links between composite-keyed records
 - Batched writes for a list of transaction steps
 - Selection inside a GraphQL card's comments and labels
 - Kanban's own F# server as a native binary
+- Kanban's C# host and Lambda on the FSharp.Core a new project gets (they run on 10.1 today)
 
 ## Later: not started
 
@@ -25,14 +24,15 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
 ## Shipped
 
-- Stored records by convention, owned and linked lists, unions with fields, array columns
+- Stored records by convention, owned and linked lists, unions with fields, array columns, composite keys
 - Typed queries: joins, grouping, exists, prepared queries, hand-written SQL
-- Typed transactions with optimistic concurrency
+- Typed transactions with optimistic concurrency: a record read as the caller saw it, a stale copy refused at the read
 - Start-up checks of every query and of the schema
 - Native AOT, with a Lambda function in F# and one in C# over F#
 - Plasm.HotChocolate: filters, order, paging, selection, a page per parent
 - The Kanban reference application and its C# host
 - The koans: terminal and browser
+- The public repository, the site with docs and browser koans, llms.txt
 
 [`docs/status.md`](docs/status.md) lists each of these with the acceptance
 scenarios that check it.
