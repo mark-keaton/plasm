@@ -165,8 +165,11 @@ let lesson =
                       // same database. Checked, it would refuse every shop query that
                       // reads customers, so it is started unchecked: RepoOptions.Unchecked
                       // writes both checks as Ignore.
+                      // It reports what it sends to an OnCommand of its own, kept in
+                      // sent: sqlSent () sees only what this koan's own repo sends.
+                      let sent = ResizeArray<CommandEvent>()
                       let productsOnly = Model.buildOrFail [] [ typeof<Product> ]
-                      let! narrow = Repo.Start(productsOnly, repo.Provider, queriesIn = typeof<Customer>.Assembly, options = RepoOptions.Unchecked)
+                      let! narrow = Repo.Start(productsOnly, repo.Provider, queriesIn = typeof<Customer>.Assembly, options = { RepoOptions.Unchecked with OnCommand = Some sent.Add })
                       let! customers = narrow.All(Query.from (tableOf<Customer>))
 
                       // It cannot read customers: it returns an Error, it does not throw.
@@ -175,6 +178,6 @@ let lesson =
                       | DbError.Translation(TranslationError.UnmappedType name) -> name |> shouldBe __
                       | other -> failwithf "expected an unmapped type, got %A" other
 
-                      sqlSent().Length |> shouldBe __
+                      sent.Count |> shouldBe __
                   }
           ) ]

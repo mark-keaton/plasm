@@ -68,6 +68,9 @@ let lesson =
                       // names its query in full, by module and value: Shop.fs is the
                       // module Plasm.Koans.Shop.
                       let found = ResizeArray<StartupProblem>()
+                      // What the started repo sends, kept by an OnCommand of its own:
+                      // sqlSent () sees only what this koan's own repo sends.
+                      let sent = ResizeArray<CommandEvent>()
 
                       let! _ =
                           Repo.Start(
@@ -78,7 +81,8 @@ let lesson =
                                   { RepoOptions.Default with
                                       Queries = StartupCheck.Warn
                                       Schema = StartupCheck.Ignore
-                                      OnProblem = Some found.Add }
+                                      OnProblem = Some found.Add
+                                      OnCommand = Some sent.Add }
                           )
 
                       [ for p in found do
@@ -87,7 +91,7 @@ let lesson =
                             | _ -> () ]
                       |> shouldBe __
 
-                      sqlSent().Length |> shouldBe __
+                      sent.Count |> shouldBe __
                   }
           )
 
