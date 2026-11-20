@@ -10,7 +10,6 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
 ## Next: in the library
 
-- Join-table links between composite-keyed records
 - Batched writes for a list of transaction steps
 - Selection inside a GraphQL card's comments and labels
 - Kanban's own F# server as a native binary

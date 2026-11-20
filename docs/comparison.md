@@ -102,8 +102,7 @@ In rough order of importance for teams leaving EF Core:
    table is stored in its owner's row (a value, like EF Core's complex types).
    A field marked `[<Json>]` is one jsonb document, and a list of scalars one
    array column. A key of several fields is a record of them, with
-   references, owned lists and upserts by it; a linked list between records
-   keyed that way is not built. No inheritance, or keyless and view entities.
+   references, owned lists, upserts and linked lists by it. No inheritance, or keyless and view entities.
    A join table cannot carry columns of its own.
 5. **Querying.** No set operations, no subquery in a `select`, no right,
    full or non-equi joins, no streaming, a fixed set of translated functions,
