@@ -190,6 +190,7 @@ dotnet fsi website/build.fsx       # the site, into _site/; fails if a documente
 | `src/Plasm.HotChocolate` | GraphQL filters, order, paging and selection over Plasm |
 | `features/`, `tests/` | The acceptance specification (Gherkin, run by Reqnroll) and the other tests |
 | `examples/Plasm.Examples` | The runnable tour |
+| `examples/Starter` | What a new application starts from: an F# library on the packages, a C# minimal API and C# tests; see its README |
 | `examples/Kanban` | The reference application; its own solution and scenarios, see its README |
 | `koans/` | The koans: lessons, runner, browser version |
 | `website/` | The site's sources |

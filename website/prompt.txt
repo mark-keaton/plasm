@@ -4,7 +4,7 @@ Read these before you start, in this order:
 - https://mark-keaton.github.io/plasm/llms-full.txt (every docs page in one file; llms.txt is its index). Of them, docs/start/one-way.md, docs/csharp.md, docs/aot.md and docs/guide/testing.md matter most.
 - A clone of https://github.com/mark-keaton/plasm. The clone may be ahead of the site; where they differ, the clone is right.
 - examples/Kanban in the clone: src/Data is the F# side, and src/Host.CSharp is the C# side to follow, a minimal API published natively (src/Host is the larger host that runs on the runtime only).
-- tests/Plasm.Package/csharp: a C# host over an F# library from the packages, checked natively. Copy its project files, not Kanban's, which reference Plasm's projects.
+- examples/Starter: what a new application starts from, an F# library on the packages with a C# minimal API and C# tests over it, checked natively. Copy it, not Kanban, whose projects reference Plasm's.
 
 Plasm is not on NuGet yet, so make the packages yourself from the clone:
 - For each of Plasm.Annotations, Plasm and Plasm.Postgres: dotnet build src/X -c Release, then dotnet pack src/X -c Release --no-build -o <feed>, where <feed> is a folder you keep.
