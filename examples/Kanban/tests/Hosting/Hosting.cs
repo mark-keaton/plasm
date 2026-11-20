@@ -2,7 +2,6 @@
 // scenarios of Host.CSharp and Host, which talk to the host over HTTP.
 using System.Diagnostics;
 using System.Net;
-using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
 using Npgsql;
@@ -90,7 +89,10 @@ public static class Databases
     }
 }
 
-/// The host, started as its own process on a free port.
+/// The host, started as its own process on a port the system gives it: it
+/// listens on port 0, and its address is read from what Kestrel writes
+/// ("Now listening on: ..."), so two test runs side by side cannot both be
+/// handed one port.
 /// A host started for a scenario, stopped three ways so that none outlives
 /// its test run: when its scenario ends (Stop, from the steps' AfterScenario
 /// hook), when the test process exits (every host still running is
@@ -111,12 +113,20 @@ public sealed class HostProcess : IAsyncDisposable
 
     readonly Process process;
     readonly StringBuilder output = new();
-    public Uri Address { get; }
+    volatile Uri? address;
 
-    HostProcess(Process process, Uri address)
+    /// Where the host listens, once it has said so.
+    public Uri Address => address ?? throw new InvalidOperationException("the host has not said where it listens");
+
+    HostProcess(Process process)
     {
         this.process = process;
-        Address = address;
+        process.OutputDataReceived += (_, e) =>
+        {
+            const string listening = "Now listening on: ";
+            var at = e.Data?.IndexOf(listening) ?? -1;
+            if (at >= 0 && address is null) address = new Uri(e.Data!.Substring(at + listening.Length).Trim());
+        };
         process.OutputDataReceived += (_, e) => { lock (output) output.AppendLine(e.Data); };
         process.ErrorDataReceived += (_, e) => { lock (output) output.AppendLine(e.Data); };
         process.BeginOutputReadLine();
@@ -132,19 +142,12 @@ public sealed class HostProcess : IAsyncDisposable
     /// when `readyPath` answers 200; `environment` set besides the connection string.
     public static async Task<HostProcess> Start(string built, string native, string connectionString, string readyPath, IDictionary<string, string>? environment = null)
     {
-        int port;
-        using (var listener = new TcpListener(IPAddress.Loopback, 0))
-        {
-            listener.Start();
-            port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        }
-        var address = new Uri($"http://127.0.0.1:{port}");
         var program = Environment.GetEnvironmentVariable(native);
         var start = string.IsNullOrEmpty(program)
             ? new ProcessStartInfo("dotnet") { ArgumentList = { built } }
             : new ProcessStartInfo(program);
         start.ArgumentList.Add("--urls");
-        start.ArgumentList.Add(address.ToString());
+        start.ArgumentList.Add("http://127.0.0.1:0");
         start.Environment["ConnectionStrings__Kanban"] = connectionString;
         foreach (var (k, v) in environment ?? new Dictionary<string, string>()) start.Environment[k] = v;
         start.Environment["KANBAN_EXIT_WITH_STDIN"] = "1";
@@ -154,20 +157,23 @@ public sealed class HostProcess : IAsyncDisposable
         start.UseShellExecute = false;
         var started = Process.Start(start)!;
         lock (Running) Running.Add(started);
-        var host = new HostProcess(started, address);
+        var host = new HostProcess(started);
 
-        using var http = new HttpClient { BaseAddress = address };
+        using var http = new HttpClient();
         var waited = Stopwatch.StartNew();
         while (true)
         {
             if (host.process.HasExited)
                 throw new InvalidOperationException($"the host exited with {host.process.ExitCode}:\n{host.Output}");
-            try
+            if (host.address is { } listening)
             {
-                using var answer = await http.GetAsync(readyPath);
-                if (answer.IsSuccessStatusCode) return host;
+                try
+                {
+                    using var answer = await http.GetAsync(new Uri(listening, readyPath));
+                    if (answer.IsSuccessStatusCode) return host;
+                }
+                catch (HttpRequestException) { }
             }
-            catch (HttpRequestException) { }
             if (waited.Elapsed > TimeSpan.FromSeconds(60))
                 throw new TimeoutException($"the host did not answer within 60 s:\n{host.Output}");
             await Task.Delay(100);
