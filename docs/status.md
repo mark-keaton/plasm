@@ -689,6 +689,12 @@ row's type, not in a field that may be unloaded.
 
 Changes that break code written against an earlier alpha, newest first.
 
+- 2026-11-21: `ISqlDialect` has a member more, `Catalogue`, an
+  `ICatalogueDialect`: the queries the schema check and scaffolding send to
+  the database's catalogue (columns, the current schema, enum labels, unique
+  indexes, references, primary and foreign keys, one table's columns), each
+  reading the columns its documentation states. Breaks a dialect written
+  against 0.1.0.
 - 2026-11-21: `ISqlDialect` has two members more, `NotInList` (`<> ALL(@p)`
   on PostgreSQL) and `ListRows` (lists read as a table's rows, `unnest(...)
   AS "u"("k")`), and a dialect without `ArrayParameters` now writes links,
@@ -943,6 +949,7 @@ Changes that break code written against an earlier alpha, newest first.
 | 2026-11-21 | A prepared query's list argument is one parameter, as the dialect sends a list (`ISqlDialect.ListValue`, `InList`), not PostgreSQL's array parameter written into the core: a dialect that sends a list as one JSON text and reads it with json_each is obeyed, the text the same whatever the list's length (providers.feature). Before, `= ANY(@p)` was sent whatever the dialect could take. PostgreSQL is sent `= ANY(@p)` as before. The first of three changes that put every list Plasm sends behind the dialect (loads under keys of several parts and link writes follow). Breaking for a custom dialect: see Changed. Red first | `src/Plasm/Translate.fs`, `src/Plasm/Sql.fs` |
 | 2026-11-21 | A load under a key of several parts matches the keys as the dialect sends lists (`ISqlDialect.RowsIn`): one list a part, each one parameter (providers.feature: a dialect that sends lists as JSON joins json_each for each part). Before, PostgreSQL's unnest was written into the core. PostgreSQL is sent `(a, b) IN (SELECT * FROM unnest(@p0, @p1))` as before. Breaking for a custom dialect: see Changed. Red first | `src/Plasm/Plan.fs`, `src/Plasm/Sql.fs` |
 | 2026-11-21 | Links (a many-to-many list's join-table rows) are written as the dialect sends lists (`ISqlDialect.NotInList`, `ListRows`, with `ListValue`), not by PostgreSQL's `<> ALL` and `unnest` written into the core, so a provider without array parameters writes them: an Article's Tags made new through PostgreSQL's provider with `ArrayParameters` off are stored (providers.feature), where before the write was refused. With this, every list Plasm sends goes through the dialect. PostgreSQL is sent the same link SQL as before. Breaking for a custom dialect: see Changed. Red first | `src/Plasm/Writes.fs`, `src/Plasm/Sql.fs` |
+| 2026-11-21 | The schema check and scaffolding read the database's catalogue by the dialect's queries (`ISqlDialect.Catalogue`), its lists of names sent as the dialect sends a list; their rules are as they were (providers.feature: a dialect whose column query is its own is the one sent, and the model's tables are found as they are). Before, eight queries of information_schema and pg_catalog were written into the core; they are now the PostgreSQL provider's, word for word. Breaking for a custom dialect: see Changed. Red first | `src/Plasm/SchemaCheck.fs`, `src/Plasm/Scaffold.fs`, `src/Plasm/Sql.fs` |
 | 2026-11-21 | The Starter, and so the template, on Plasm.Postgres 0.1.0 from nuget.org, the first release that is not a pre-release: a version bump from 0.1.0-rc.1, nothing else. Restored from nuget.org alone: 11 tests at runtime, the API published natively warning only IL2104 and IL3053, and the tests published and run natively, 11 passing | `examples/Starter/Directory.Packages.props` |
 | 2026-11-21 | Kanban's `tests/Hosting/no-leftover-hosts.sh` sees the C# host again. Since the C# host's scenarios start it from its own output (src/Host.CSharp/bin), the script, which looked for hosts in the scenarios' own output, counted none: a leftover C# host would have gone unseen, and the case of a run killed mid-scenario failed, finding no host up to kill. The host's output is now one MSBuild property, `KanbanHostOutput`, which the scenarios read through their assembly and the script asks MSBuild for. Red: the script as it was exits 1, "0 host(s) up when killed". Green: 1 up when killed, 0 left. A mutation in which hosts no longer exit when their standard input closes leaves 1 after a killed run, and the script exits 1. It was not in the repository's full check, which is why its failure went unseen; it is now | `examples/Kanban/tests/Hosting/no-leftover-hosts.sh` |
 | 2026-11-21 | The Starter, and so the template, on Plasm.Postgres 0.1.0-rc.1 from nuget.org, the first release whose `TxFailure.Conflict` carries the stale record's key: its 409 names the equipment from the key the failure carries (`Conflict(_, (:? EquipmentId as EquipmentId stale))`), not from the id the caller sent, so `BookingData`'s change no longer takes the id. Restored from nuget.org alone: 11 tests at runtime, the API published natively warning only IL2104 and IL3053, and the tests published and run natively, 11 passing | `examples/Starter` |
@@ -954,8 +961,8 @@ Changes that break code written against an earlier alpha, newest first.
    MIT and the repository is public.
 2. `Query.prepare3` for projections.
 3. A second provider, to prove the `IProvider` / `ISqlDialect` boundary
-   (SQLite, under way); move the catalogue queries behind it (the link SQL
-   is behind it now).
+   (SQLite, under way); the DDL printer is the one PostgreSQL-shaped part
+   left in the core.
 4. Open question: hosting. `Repo.Start` is asynchronous, and ASP.NET Core's
    service registration is synchronous, so Kanban's Host.fs starts the
    repository after the migrations and hands it to the services through a

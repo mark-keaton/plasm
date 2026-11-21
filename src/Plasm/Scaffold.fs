@@ -175,16 +175,7 @@ module internal Scaffolding =
             let dialect = s.Provider.Dialect
 
             let cmd: Sql.Command =
-                { Sql =
-                    "SELECT c.column_name, c.data_type, c.is_nullable = 'YES', "
-                    + "c.is_identity = 'YES' OR coalesce(c.column_default LIKE 'nextval(%', false), "
-                    + "EXISTS (SELECT 1 FROM information_schema.table_constraints tc "
-                    + "JOIN information_schema.key_column_usage k ON k.constraint_name = tc.constraint_name AND k.table_schema = tc.table_schema AND k.table_name = tc.table_name "
-                    + "WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = c.table_schema AND tc.table_name = c.table_name AND k.column_name = c.column_name), "
-                    + "c.column_default IS NOT NULL OR c.is_identity = 'YES' OR c.is_generated <> 'NEVER' "
-                    + "FROM information_schema.columns c WHERE c.table_schema = current_schema() AND c.table_name = "
-                    + dialect.ParameterName 0
-                    + " ORDER BY c.ordinal_position"
+                { Sql = dialect.Catalogue.TableColumns(dialect.ParameterName 0)
                   Parameters = [ box table ] }
 
             let! columns =

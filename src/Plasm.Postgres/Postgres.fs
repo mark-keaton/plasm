@@ -53,6 +53,28 @@ type internal PostgresJson() =
             value ()
             w " AS jsonb))"
 
+/// PostgreSQL's catalogue queries.
+module internal PostgresCatalogue =
+    /// PostgreSQL's catalogue: information_schema and pg_catalog, in the current
+    /// schema (schema-check.feature, scaffolding).
+    let catalogue =
+        { new ICatalogueDialect with
+            member _.Columns tables =
+                "SELECT table_name, column_name, CASE WHEN data_type = 'ARRAY' THEN (SELECT format_type(t.typelem, NULL) || '[]' FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE t.typname = udt_name AND n.nspname = udt_schema) ELSE data_type END, " + "is_nullable, column_default IS NOT NULL OR is_identity = 'YES' OR is_generated <> 'NEVER', udt_schema, udt_name " + "FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ANY(" + tables + ")"
+            member _.CurrentSchema = "SELECT current_schema()"
+            member _.EnumLabels names =
+                "SELECT n.nspname, t.typname, e.enumlabel FROM pg_type t " + "JOIN pg_namespace n ON n.oid = t.typnamespace JOIN pg_enum e ON e.enumtypid = t.oid " + "WHERE t.typname = ANY(" + names + ") ORDER BY n.nspname, t.typname, e.enumsortorder"
+            member _.UniqueIndexes tables =
+                "SELECT t.relname::text, (SELECT string_agg(a.attname::text, ',' ORDER BY k.ord) FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord) " + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum WHERE k.ord <= i.indnkeyatts), ic.relname::text, " + "EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = i.indexrelid AND c.conrelid = t.oid AND c.contype IN ('u', 'p')) FROM pg_index i " + "JOIN pg_class t ON t.oid = i.indrelid JOIN pg_namespace n ON n.oid = t.relnamespace " + "JOIN pg_class ic ON ic.oid = i.indexrelid " + "WHERE i.indisunique AND n.nspname = current_schema() AND t.relname::text = ANY(" + tables + ")"
+            member _.References tables =
+                "SELECT t.relname::text, a.attname::text, r.relname::text, c.conname::text FROM pg_constraint c " + "JOIN pg_class t ON t.oid = c.conrelid JOIN pg_class r ON r.oid = c.confrelid " + "JOIN pg_namespace n ON n.oid = t.relnamespace " + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = c.conkey[1] " + "WHERE c.contype = 'f' AND array_length(c.conkey, 1) = 1 AND n.nspname = current_schema() AND t.relname::text = ANY(" + tables + ")"
+            member _.PrimaryKeys tables =
+                "SELECT t.relname::text, string_agg(a.attname::text, ',' ORDER BY k.ord) FROM pg_constraint c " + "JOIN pg_class t ON t.oid = c.conrelid JOIN pg_namespace n ON n.oid = t.relnamespace " + "CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) " + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum " + "WHERE c.contype = 'p' AND n.nspname = current_schema() AND t.relname::text = ANY(" + tables + ") GROUP BY t.relname"
+            member _.ForeignKeys tables =
+                "SELECT t.relname::text, r.relname::text, (SELECT string_agg(a.attname::text, ',' ORDER BY k.ord) FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) " + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum) FROM pg_constraint c " + "JOIN pg_class t ON t.oid = c.conrelid JOIN pg_class r ON r.oid = c.confrelid JOIN pg_namespace n ON n.oid = t.relnamespace " + "WHERE c.contype = 'f' AND n.nspname = current_schema() AND t.relname::text = ANY(" + tables + ")"
+            member _.TableColumns table =
+                "SELECT c.column_name, c.data_type, c.is_nullable = 'YES', " + "c.is_identity = 'YES' OR coalesce(c.column_default LIKE 'nextval(%', false), " + "EXISTS (SELECT 1 FROM information_schema.table_constraints tc " + "JOIN information_schema.key_column_usage k ON k.constraint_name = tc.constraint_name AND k.table_schema = tc.table_schema AND k.table_name = tc.table_name " + "WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = c.table_schema AND tc.table_name = c.table_name AND k.column_name = c.column_name), " + "c.column_default IS NOT NULL OR c.is_identity = 'YES' OR c.is_generated <> 'NEVER' " + "FROM information_schema.columns c WHERE c.table_schema = current_schema() AND c.table_name = " + table + " ORDER BY c.ordinal_position" }
+
 type internal PostgresDialect(options: PostgresOptions) =
     interface ISqlDialect with
         member _.Name = "PostgreSQL"
@@ -169,6 +191,8 @@ type internal PostgresDialect(options: PostgresOptions) =
             match cast with
             | Some c -> w $" = ANY(CAST({list} AS {c}))"
             | None -> w $" = ANY({list})"
+
+        member _.Catalogue = PostgresCatalogue.catalogue
 
         member _.UnboundedLimit = None
 

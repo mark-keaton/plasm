@@ -46,6 +46,36 @@ type ProviderCapabilities =
       /// when the repository is made.
       ArrayColumns: bool }
 
+/// The catalogue queries the schema check and scaffolding send
+/// (schema-check.feature), each given its parameter's name and reading the
+/// columns stated, in order. A list of names is sent as the dialect sends a
+/// list (ListValue).
+type ICatalogueDialect =
+    /// table, column, data type (an array's as its elements' type followed by
+    /// []), "YES" when nullable, whether it has a default or is generated, its
+    /// type's schema, its type's name: the columns of the tables in `tables`.
+    abstract Columns: tables: string -> string
+    /// The schema an unqualified name is in, as one value.
+    abstract CurrentSchema: string
+    /// schema, type, label: the labels of the enum types named in `names`, each
+    /// type's in their order.
+    abstract EnumLabels: names: string -> string
+    /// table, key columns joined by commas in order, index name, whether a
+    /// constraint holds it: the unique indexes of the tables in `tables`.
+    abstract UniqueIndexes: tables: string -> string
+    /// table, column, referenced table, constraint name: the single-column
+    /// foreign keys of the tables in `tables`.
+    abstract References: tables: string -> string
+    /// table, key columns joined by commas in order: the primary keys of the
+    /// tables in `tables`.
+    abstract PrimaryKeys: tables: string -> string
+    /// table, referenced table, columns joined by commas in order: the foreign
+    /// keys of the tables in `tables`.
+    abstract ForeignKeys: tables: string -> string
+    /// column, data type, nullable, identity, in the primary key, has a default
+    /// (the last five booleans): the columns of the one table `table`, in order.
+    abstract TableColumns: table: string -> string
+
 /// How a provider stores and reads JSON documents (json-columns.feature).
 /// Each member writes SQL through `write`; `doc`, `value` and `condition`
 /// write their own sub-expressions.
@@ -108,6 +138,8 @@ type ISqlDialect =
     /// An empty array's literal: a list aggregate's value over no rows
     /// (`'{}'`).
     abstract EmptyArray: string
+    /// The catalogue queries the schema check and scaffolding send.
+    abstract Catalogue: ICatalogueDialect
     /// What LIMIT takes for no limit, when the dialect needs a LIMIT before an
     /// OFFSET (SQLite's -1); None when OFFSET stands on its own (PostgreSQL).
     abstract UnboundedLimit: string option

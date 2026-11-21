@@ -140,6 +140,23 @@ type ProviderSteps(w: World) =
         let sql = w.Get<string> "explained"
         check (sql.Contains "LIMIT -1 OFFSET @p") sql
 
+    [<StepDefinition("the schema checks the model's tables through a provider like the database's whose dialect writes its own catalogue queries")>]
+    member _.MarkedCatalogueCheck() =
+        task {
+            let sent = ResizeArray<CommandEvent>()
+            let marked = Repo(w.Db.Model, MarkedCatalogue(w.Db.Provider), { RepoOptions.Default with OnCommand = Some sent.Add })
+            let! issues = marked.CheckSchema()
+            w.Set("catalogueIssues", ok issues |> List.map string)
+            w.Set("catalogueSent", sent |> Seq.map (fun e -> e.Sql) |> List.ofSeq)
+        }
+        |> unit
+
+    [<StepDefinition("the columns were read by the dialect's query, and no difference is found")>]
+    member _.MarkedCatalogueRead() =
+        let sent = w.Get<string list> "catalogueSent"
+        check (sent |> List.exists (fun s -> s.StartsWith "/* the dialect's columns */")) (String.concat "\n---\n" sent)
+        equal [] (w.Get<string list> "catalogueIssues") "the differences found"
+
     [<StepDefinition("I print the DDL with the test dialect, which accepts \"character varying\" before \"text\" for a string")>]
     member _.TestDdl() = w.Set("testDdl", repo().Ddl())
 

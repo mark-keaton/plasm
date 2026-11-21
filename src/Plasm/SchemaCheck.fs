@@ -54,15 +54,8 @@ module internal SchemaCheck =
                 |> Array.ofList
 
             let cmd: Sql.Command =
-                { Sql =
-                    // An array column's data_type is ARRAY: its type is read as its
-                    // elements' type followed by [] (array-columns.feature).
-                    "SELECT table_name, column_name, CASE WHEN data_type = 'ARRAY' THEN (SELECT format_type(t.typelem, NULL) || '[]' FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE t.typname = udt_name AND n.nspname = udt_schema) ELSE data_type END, "
-                    + "is_nullable, column_default IS NOT NULL OR is_identity = 'YES' OR is_generated <> 'NEVER', udt_schema, udt_name "
-                    + "FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ANY("
-                    + dialect.ParameterName 0
-                    + ")"
-                  Parameters = [ box tables ] }
+                { Sql = dialect.Catalogue.Columns(dialect.ParameterName 0)
+                  Parameters = [ dialect.ListValue tables ] }
 
             let! rows =
                 Execution.query s cmd (fun r ->
@@ -89,7 +82,7 @@ module internal SchemaCheck =
                     Task.FromResult ""
                 else
                     task {
-                        let! r = Execution.query s { Sql = "SELECT current_schema()"; Parameters = [] } (fun r -> r.GetString 0)
+                        let! r = Execution.query s { Sql = dialect.Catalogue.CurrentSchema; Parameters = [] } (fun r -> r.GetString 0)
                         return Seq.head r
                     }
 
@@ -106,13 +99,8 @@ module internal SchemaCheck =
 
                     Execution.query
                         s
-                        { Sql =
-                            "SELECT n.nspname, t.typname, e.enumlabel FROM pg_type t "
-                            + "JOIN pg_namespace n ON n.oid = t.typnamespace JOIN pg_enum e ON e.enumtypid = t.oid "
-                            + "WHERE t.typname = ANY("
-                            + dialect.ParameterName 0
-                            + ") ORDER BY n.nspname, t.typname, e.enumsortorder"
-                          Parameters = [ box names ] }
+                        { Sql = dialect.Catalogue.EnumLabels(dialect.ParameterName 0)
+                          Parameters = [ dialect.ListValue names ] }
                         (fun r -> (r.GetString 0, r.GetString 1), r.GetString 2)
 
             let enumLabels =
@@ -125,30 +113,15 @@ module internal SchemaCheck =
             let! uniqueRows =
                 Execution.query
                     s
-                    { Sql =
-                        "SELECT t.relname::text, (SELECT string_agg(a.attname::text, ',' ORDER BY k.ord) FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord) "
-                        + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum WHERE k.ord <= i.indnkeyatts), ic.relname::text, "
-                        + "EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = i.indexrelid AND c.conrelid = t.oid AND c.contype IN ('u', 'p')) FROM pg_index i "
-                        + "JOIN pg_class t ON t.oid = i.indrelid JOIN pg_namespace n ON n.oid = t.relnamespace "
-                        + "JOIN pg_class ic ON ic.oid = i.indexrelid "
-                        + "WHERE i.indisunique AND n.nspname = current_schema() AND t.relname::text = ANY("
-                        + dialect.ParameterName 0
-                        + ")"
-                      Parameters = [ box tables ] }
+                    { Sql = dialect.Catalogue.UniqueIndexes(dialect.ParameterName 0)
+                      Parameters = [ dialect.ListValue tables ] }
                     (fun r -> (r.GetString 0, r.GetString 1), (r.GetString 2, r.GetBoolean 3))
 
             let! referenceRows =
                 Execution.query
                     s
-                    { Sql =
-                        "SELECT t.relname::text, a.attname::text, r.relname::text, c.conname::text FROM pg_constraint c "
-                        + "JOIN pg_class t ON t.oid = c.conrelid JOIN pg_class r ON r.oid = c.confrelid "
-                        + "JOIN pg_namespace n ON n.oid = t.relnamespace "
-                        + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = c.conkey[1] "
-                        + "WHERE c.contype = 'f' AND array_length(c.conkey, 1) = 1 AND n.nspname = current_schema() AND t.relname::text = ANY("
-                        + dialect.ParameterName 0
-                        + ")"
-                      Parameters = [ box tables ] }
+                    { Sql = dialect.Catalogue.References(dialect.ParameterName 0)
+                      Parameters = [ dialect.ListValue tables ] }
                     (fun r -> ((r.GetString 0, r.GetString 1), r.GetString 2), r.GetString 3)
 
             let uniqueNames = uniqueRows |> List.ofSeq
@@ -472,15 +445,8 @@ module internal SchemaCheck =
                 let! primaryRows =
                     Execution.query
                         s
-                        { Sql =
-                            "SELECT t.relname::text, string_agg(a.attname::text, ',' ORDER BY k.ord) FROM pg_constraint c "
-                            + "JOIN pg_class t ON t.oid = c.conrelid JOIN pg_namespace n ON n.oid = t.relnamespace "
-                            + "CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) "
-                            + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum "
-                            + "WHERE c.contype = 'p' AND n.nspname = current_schema() AND t.relname::text = ANY("
-                            + dialect.ParameterName 0
-                            + ") GROUP BY t.relname"
-                          Parameters = [ box (compositeSchemas |> List.map (fun sc -> bare sc.Table) |> Array.ofList) ] }
+                        { Sql = dialect.Catalogue.PrimaryKeys(dialect.ParameterName 0)
+                          Parameters = [ dialect.ListValue(compositeSchemas |> List.map (fun sc -> bare sc.Table) |> Array.ofList) ] }
                         (fun r -> r.GetString 0, r.GetString 1)
 
                 let primary = primaryRows |> Map.ofSeq
@@ -544,14 +510,8 @@ module internal SchemaCheck =
                 let! foreignRows =
                     Execution.query
                         s
-                        { Sql =
-                            "SELECT t.relname::text, r.relname::text, (SELECT string_agg(a.attname::text, ',' ORDER BY k.ord) FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) "
-                            + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum) FROM pg_constraint c "
-                            + "JOIN pg_class t ON t.oid = c.conrelid JOIN pg_class r ON r.oid = c.confrelid JOIN pg_namespace n ON n.oid = t.relnamespace "
-                            + "WHERE c.contype = 'f' AND n.nspname = current_schema() AND t.relname::text = ANY("
-                            + dialect.ParameterName 0
-                            + ")"
-                          Parameters = [ box (compositeReferences |> List.map (fun (_, _, table, _, _) -> bare table) |> List.distinct |> Array.ofList) ] }
+                        { Sql = dialect.Catalogue.ForeignKeys(dialect.ParameterName 0)
+                          Parameters = [ dialect.ListValue(compositeReferences |> List.map (fun (_, _, table, _, _) -> bare table) |> List.distinct |> Array.ofList) ] }
                         (fun r -> r.GetString 0, r.GetString 1, r.GetString 2)
 
                 let foreign = foreignRows |> List.ofSeq
