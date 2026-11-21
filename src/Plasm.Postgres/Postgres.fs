@@ -26,6 +26,8 @@ type internal PostgresJson() =
             let quoted = key.Replace("'", "''")
             w $" -> '{quoted}')"
 
+        member _.StoreType = [ "jsonb" ]
+
         member _.Text(w, doc) =
             w "("
             doc ()
@@ -102,6 +104,12 @@ type internal PostgresDialect(options: PostgresOptions) =
             | IsolationLevel.Serializable -> "BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE"
             | IsolationLevel.ReadUncommitted -> "BEGIN TRANSACTION ISOLATION LEVEL READ UNCOMMITTED"
             | _ -> "BEGIN TRANSACTION ISOLATION LEVEL READ COMMITTED"
+
+        member this.StoreCast(typeName, array) =
+            let d = this :> ISqlDialect
+            Some((typeName |> List.map d.QuoteIdentifier |> String.concat ".") + (if array then "[]" else ""))
+
+        member _.TextCast = Some "text"
 
         member _.UnboundedLimit = None
 

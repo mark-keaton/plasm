@@ -36,6 +36,26 @@ type ProviderSteps(w: World) =
         let m = w.Get<string> "madeWith"
         check (m.Contains fields && m.Contains $"has no {capability}") m
 
+    [<StepDefinition("I explain a query of the shipments whose status is Shipped, with a dialect that stores an enum as text")>]
+    member _.EnumAsText() =
+        let repo = Repo(PgEnums.model, StoredAsDialectSays(w.Db.Provider, [ "json" ]))
+        w.Set("explained", (repo.Explain(plasm { for s in tableOf<PgEnums.Shipment> do where (s.Status = PgEnums.Shipped) }) |> ok).Sql)
+
+    [<StepDefinition("the status is compared with its parameter as it is, cast to no type")>]
+    member _.NoCast() =
+        let sql = w.Get<string> "explained"
+        check (sql.Contains "\"status\" = @p0" && not (sql.Contains "CAST(")) sql
+
+    [<StepDefinition("I print the DDL of the documented cards model, with a dialect whose JSON documents are json")>]
+    member _.JsonDdl() =
+        w.Set("testDdl", Repo(Plasm.Specs.JsonColumns.Schemas.model, StoredAsDialectSays(w.Db.Provider, [ "json" ])).Ddl())
+
+    [<StepDefinition("the cards' checklist is declared json")>]
+    member _.ChecklistJson() =
+        let ddl = w.Get<string> "testDdl"
+        let line = ddl.Split('\n') |> Array.find (fun l -> l.TrimStart().StartsWith "checklist ")
+        check (line.Trim().StartsWith "checklist json not null") line
+
     [<StepDefinition("I explain a query of the Customers by name that skips one, with the test dialect, which needs a LIMIT before an OFFSET")>]
     member _.SkipOnly() =
         w.Set("explained", (explain (plasm { for c in tableOf<Customer> do orderBy c.Name; skip 1 })).Sql)

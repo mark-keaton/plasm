@@ -293,14 +293,16 @@ module internal SchemaCheck =
                         | Some c ->
                             match f.Mapping |> Option.bind (fun m -> m.StoreType |> Option.map (fun t -> m, t)) with
                             | Some _ when f.Json.IsSome ->
-                                if c.DataType <> "jsonb" then
+                                let documents = Sql.storeName dialect Store.jsonDocument |> String.concat "."
+
+                                if c.DataType <> documents then
                                     add
                                         SchemaIssueKind.IncompatibleType
                                         sc.Name
                                         (Some f.Name)
                                         sc.Table
                                         (Some c.Name)
-                                        $"column is {c.DataType}; {sc.Name}.{f.Name} is a document and needs jsonb"
+                                        $"column is {c.DataType}; {sc.Name}.{f.Name} is a document and needs {documents}"
                             | Some(m, t) -> enumCheck sc.Name f sc.Table c m t
                             | None -> typeCheck sc.Name (Some f.Name) sc.Table c f.ProviderType
 
@@ -600,7 +602,7 @@ module internal Ddl =
 
         let columnType (p: ColumnPart) =
             match p.Mapping |> Option.bind (fun m -> m.StoreType) with
-            | Some parts -> parts |> List.map name |> String.concat "."
+            | Some parts -> Sql.storeName dialect parts |> List.map name |> String.concat "."
             | None ->
                 match ColumnTypes.declared dialect p.ProviderType with
                 | Some t -> t

@@ -586,8 +586,8 @@ module Model =
                         parsed |> Result.bind (JsonDoc.read shape prop.Name)
                   Ordered = None
                   Cases = []
-                  StoreType = Some [ "jsonb" ]
-                  Description = $"{Reflection.typeName inner} as a jsonb document" }
+                  StoreType = Some Store.jsonDocument
+                  Description = $"{Reflection.typeName inner} as a JSON document" }
 
             Ok
                 { scalarField prop.Name i column t (Some mapping) with

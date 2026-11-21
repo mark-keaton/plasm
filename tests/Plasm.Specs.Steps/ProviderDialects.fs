@@ -20,6 +20,8 @@ type TestDialectProvider(inner: IProvider) =
             member _.ColumnType t = inner.Dialect.ColumnType t
             member _.CatalogueTypes t = if t = typeof<string> then [ "character varying"; "text" ] else inner.Dialect.CatalogueTypes t
             member _.CastType t = inner.Dialect.CastType t
+            member _.StoreCast(t, array) = inner.Dialect.StoreCast(t, array)
+            member _.TextCast = inner.Dialect.TextCast
             member _.UnboundedLimit = Some "-1"
             member _.NullSafeComparison negated = if negated then "IS NOT" else "IS"
 
@@ -49,6 +51,51 @@ type TestDialectProvider(inner: IProvider) =
         member _.BeginSnapshot(_, _) = Task.FromResult None
         member _.BeginTransaction(c, i, ct) = inner.BeginTransaction(c, i, ct)
 
+/// PostgreSQL's dialect for queries, with a database type of its own (an enum
+/// type, a document type) stored as the dialect says: values of an enum sent
+/// as they are and read as they are, and documents of `documentType`.
+type StoredAsDialectSays(inner: IProvider, documentType: string list) =
+    let d = inner.Dialect
+
+    let json =
+        d.Json
+        |> Option.map (fun j ->
+            { new IJsonDialect with
+                member _.StoreType = documentType
+                member _.Member(w, doc, key) = j.Member(w, doc, key)
+                member _.Text(w, doc) = j.Text(w, doc)
+                member _.AnyElement(w, doc, alias, condition) = j.AnyElement(w, doc, alias, condition)
+                member _.Element(w, alias) = j.Element(w, alias)
+                member _.Contains(w, doc, value) = j.Contains(w, doc, value) })
+
+    let dialect =
+        { new ISqlDialect with
+            member _.Name = d.Name
+            member _.QuoteIdentifier s = d.QuoteIdentifier s
+            member _.ParameterName i = d.ParameterName i
+            member _.ColumnType t = d.ColumnType t
+            member _.CatalogueTypes t = d.CatalogueTypes t
+            member _.CastType t = d.CastType t
+            member _.StoreCast(_, _) = None
+            member _.TextCast = None
+            member _.UnboundedLimit = d.UnboundedLimit
+            member _.NullSafeComparison negated = d.NullSafeComparison negated
+            member _.LikeEscape = d.LikeEscape
+            member _.FunctionName name = d.FunctionName name
+            member _.Json = json
+            member _.Begin isolation = d.Begin isolation
+            member _.Capabilities = d.Capabilities }
+
+    member _.DocumentType = documentType
+
+    interface IProvider with
+        member _.Dialect = dialect
+        member _.OpenConnection ct = inner.OpenConnection ct
+        member _.Classify ex = inner.Classify ex
+        member _.BeginSnapshot(c, ct) = inner.BeginSnapshot(c, ct)
+        member _.BeginTransaction(c, i, ct) = inner.BeginTransaction(c, i, ct)
+        member _.Describe(c, ct) = inner.Describe(c, ct)
+
 /// PostgreSQL's provider, its null-safe comparison spelled with a marker the
 /// SQL it sends must carry: valid PostgreSQL, so a write it renders runs.
 type MarkedComparisonProvider(inner: IProvider) =
@@ -62,6 +109,8 @@ type MarkedComparisonProvider(inner: IProvider) =
             member _.ColumnType t = d.ColumnType t
             member _.CatalogueTypes t = d.CatalogueTypes t
             member _.CastType t = d.CastType t
+            member _.StoreCast(t, array) = d.StoreCast(t, array)
+            member _.TextCast = d.TextCast
             member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated + " /* the dialect's */"
             member _.LikeEscape = d.LikeEscape

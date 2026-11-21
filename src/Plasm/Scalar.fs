@@ -2,6 +2,12 @@ namespace Plasm
 
 open System
 
+/// Store types that name no database type themselves, which the dialect names.
+module internal Store =
+    /// A [<Json>] field's documents: the type is the JSON dialect's (jsonb on
+    /// PostgreSQL).
+    let jsonDocument = [ "(a JSON document)" ]
+
 /// How a domain scalar type is stored as a provider-native value.
 ///
 /// Mappings are explicit: a type without a built-in or configured mapping is a

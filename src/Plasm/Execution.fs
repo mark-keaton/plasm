@@ -1167,7 +1167,10 @@ let rawCommand (model: Model) (dialect: ISqlDialect) (sql: FormattableString) : 
             let name = dialect.ParameterName(ps.Count - 1)
 
             match castTo with
-            | Some(t, array) -> sb.Append($"CAST({name} AS {Sql.typeName dialect t array})") |> ignore
+            | Some(t, array) ->
+                match Sql.castName dialect t array with
+                | Some cast -> sb.Append($"CAST({name} AS {cast})") |> ignore
+                | None -> sb.Append(name) |> ignore
             | None -> sb.Append name |> ignore
             i <- close + 1
         else

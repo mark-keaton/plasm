@@ -31,6 +31,14 @@ Feature: Database-specific SQL comes from the provider
       When I explain a query filtering on the length of a name with the test dialect
       Then the length uses the dialect's function name
 
+    Scenario: A value stored as a type of the database's own is sent as the dialect casts it
+      When I explain a query of the shipments whose status is Shipped, with a dialect that stores an enum as text
+      Then the status is compared with its parameter as it is, cast to no type
+
+    Scenario: A document's column is the type the dialect's JSON documents are
+      When I print the DDL of the documented cards model, with a dialect whose JSON documents are json
+      Then the cards' checklist is declared json
+
     Scenario: Rows skipped with no limit are paged as the dialect pages them
       When I explain a query of the Customers by name that skips one, with the test dialect, which needs a LIMIT before an OFFSET
       Then the query takes the dialect's unbounded limit before its offset

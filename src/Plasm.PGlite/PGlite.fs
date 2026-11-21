@@ -693,6 +693,8 @@ type internal PGliteJson() =
             doc ()
             w $" -> '{quoted}')"
 
+        member _.StoreType = [ "jsonb" ]
+
         member _.Text(w, doc) =
             w "("
             doc ()
@@ -763,6 +765,12 @@ type internal PGliteDialect(maxKeys: int) =
               ArrayColumns = true }
 
         member _.Begin isolation = Values.beginAt isolation
+
+        member this.StoreCast(typeName, array) =
+            let d = this :> ISqlDialect
+            Some((typeName |> List.map d.QuoteIdentifier |> String.concat ".") + (if array then "[]" else ""))
+
+        member _.TextCast = Some "text"
 
         member _.UnboundedLimit = None
 

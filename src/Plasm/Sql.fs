@@ -46,6 +46,8 @@ type ProviderCapabilities =
 type IJsonDialect =
     /// A document's member: `(doc -> 'key')`.
     abstract Member: write: (string -> unit) * doc: (unit -> unit) * key: string -> unit
+    /// The database type a document is stored as (`["jsonb"]`).
+    abstract StoreType: string list
     /// A document holding a scalar, as text: `(doc #>> '{}')`.
     abstract Text: write: (string -> unit) * doc: (unit -> unit) -> unit
     /// Whether an element of an array document, named `alias`, meets `condition`.
@@ -72,6 +74,14 @@ type ISqlDialect =
     /// The type a scalar read out of a JSON document as text is cast to, to be
     /// compared and read as this provider type; None when the dialect has none.
     abstract CastType: Type -> string option
+    /// The type a value sent as text is cast to, to be stored as, or compared
+    /// with, a database type of its own (an enum type, a document type): given
+    /// that type's name, and whether it is its array type. None sends the
+    /// value as it is, for a dialect that stores such values as text.
+    abstract StoreCast: typeName: string list * array: bool -> string option
+    /// The type a column of a database type of its own is read as, to be read
+    /// as text; None reads it as it is.
+    abstract TextCast: string option
     /// What LIMIT takes for no limit, when the dialect needs a LIMIT before an
     /// OFFSET (SQLite's -1); None when OFFSET stands on its own (PostgreSQL).
     abstract UnboundedLimit: string option
@@ -260,10 +270,19 @@ module internal Sql =
         | [ e ] -> e
         | e :: rest -> Binary("OR", e, disj rest)
 
-    /// A database type name, quoted by the dialect: `"sales"."order_status"`,
-    /// with `[]` for its array type.
-    let typeName (d: ISqlDialect) (parts: string list) (array: bool) =
-        (parts |> List.map d.QuoteIdentifier |> String.concat ".") + (if array then "[]" else "")
+    /// The database type a store type names for this dialect: a document's is
+    /// the JSON dialect's.
+    let storeName (d: ISqlDialect) (parts: string list) =
+        if parts = Store.jsonDocument then
+            match d.Json with
+            | Some j -> j.StoreType
+            | None -> failwith $"{d.Name} has no JSON documents"
+        else
+            parts
+
+    /// The type a value of a store type is cast to on this dialect, or None
+    /// when it is sent as it is.
+    let castName (d: ISqlDialect) (parts: string list) (array: bool) = d.StoreCast(storeName d parts, array)
 
     /// The database type a field's values are stored as, when it is not the
     /// provider type's own (Scalar.asPgEnum).
@@ -449,8 +468,8 @@ module internal Sql =
                 r.Operand(b, false)
             | AnyOf(a, values, cast) ->
                 let typed (p: string) array =
-                    match cast with
-                    | Some t -> $"CAST({p} AS {typeName d t array})"
+                    match cast |> Option.bind (fun t -> castName d t array) with
+                    | Some name -> $"CAST({p} AS {name})"
                     | None -> p
 
                 if values.Length = 0 then
@@ -472,13 +491,19 @@ module internal Sql =
 
                     w ")"
             | Cast(e, t, array) ->
-                w "CAST("
-                r.Expr e
-                w $" AS {typeName d t array})"
+                match castName d t array with
+                | Some name ->
+                    w "CAST("
+                    r.Expr e
+                    w $" AS {name})"
+                | None -> r.Expr e
             | AsText e ->
-                w "CAST("
-                r.Expr e
-                w " AS text)"
+                match d.TextCast with
+                | Some name ->
+                    w "CAST("
+                    r.Expr e
+                    w $" AS {name})"
+                | None -> r.Expr e
             | Like(a, p) ->
                 r.Operand(a, true)
                 w " LIKE "
