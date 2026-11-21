@@ -15,12 +15,17 @@
     <None Include="../../features/csharp/*.feature" Link="Features/%(Filename)%(Extension)" />
     <Compile Include="../Hosting/Hosting.cs" Link="Hosting.cs" />
   </ItemGroup>
-  <ItemGroup>
+  <PropertyGroup>
     <!-- The host is run from its own output, on the packages its own build
-         resolved, not on this project's (which has the F# server's). -->
+         resolved, not on this project's (which has the F# server's). The
+         scenarios read it from this assembly; tests/Hosting/no-leftover-hosts.sh
+         asks MSBuild for it, so both look in one place. -->
+    <KanbanHostOutput>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..', 'src', 'Host.CSharp', 'bin', '$(Configuration)', '$(TargetFramework)'))</KanbanHostOutput>
+  </PropertyGroup>
+  <ItemGroup>
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>HostOutput</_Parameter1>
-      <_Parameter2>$(MSBuildThisFileDirectory)../../src/Host.CSharp/bin/$(Configuration)/$(TargetFramework)/</_Parameter2>
+      <_Parameter2>$(KanbanHostOutput)</_Parameter2>
     </AssemblyAttribute>
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>ApplicationFSharpCore</_Parameter1>
