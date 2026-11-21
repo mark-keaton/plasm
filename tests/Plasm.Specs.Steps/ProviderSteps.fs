@@ -41,6 +41,31 @@ type TestDialectProvider(inner: IProvider) =
         member _.BeginSnapshot(_, _) = Task.FromResult None
         member _.BeginTransaction(c, i, ct) = inner.BeginTransaction(c, i, ct)
 
+/// PostgreSQL's provider, its null-safe comparison spelled with a marker the
+/// SQL it sends must carry: valid PostgreSQL, so a write it renders runs.
+type MarkedComparisonProvider(inner: IProvider) =
+    let d = inner.Dialect
+
+    let dialect =
+        { new ISqlDialect with
+            member _.Name = d.Name
+            member _.QuoteIdentifier s = d.QuoteIdentifier s
+            member _.ParameterName i = d.ParameterName i
+            member _.ColumnTypes t = d.ColumnTypes t
+            member _.NullSafeComparison negated = d.NullSafeComparison negated + " /* the dialect's */"
+            member _.LikeEscape = d.LikeEscape
+            member _.FunctionName name = d.FunctionName name
+            member _.Json = d.Json
+            member _.Begin isolation = d.Begin isolation
+            member _.Capabilities = d.Capabilities }
+
+    interface IProvider with
+        member _.Dialect = dialect
+        member _.OpenConnection ct = inner.OpenConnection ct
+        member _.Classify ex = inner.Classify ex
+        member _.BeginSnapshot(c, ct) = inner.BeginSnapshot(c, ct)
+        member _.BeginTransaction(c, i, ct) = inner.BeginTransaction(c, i, ct)
+
 /// Feature: Database-specific SQL comes from the provider
 [<Binding>]
 type ProviderSteps(w: World) =
@@ -54,6 +79,36 @@ type ProviderSteps(w: World) =
     [<StepDefinition("a test dialect without array parameters, upserts, RETURNING or row locking, with its own null-safe comparison and string length")>]
     member _.TestDialect() =
         w.Set("testRepo", Repo(Schemas.model, TestDialectProvider(w.Db.Provider)))
+
+    [<StepDefinition("a dialect that is PostgreSQL's, its null-safe comparison spelled its own way")>]
+    member _.MarkedDialect() =
+        task {
+            let! _ = Seed.customer w.Db "Ada" "ada@example.com"
+            let events = ResizeArray<CommandEvent>()
+            w.Set("markedEvents", events)
+            w.Set("markedRepo", Repo(Schemas.model, MarkedComparisonProvider(w.Db.Provider), { RepoOptions.Default with OnCommand = Some events.Add }))
+        }
+        :> Task
+
+    [<StepDefinition("a Customer read through it is renamed")>]
+    member _.RenameMarked() =
+        task {
+            let repo = w.Get<Repo> "markedRepo"
+            let! read = repo.One(plasm { for c in tableOf<Customer> do where (c.Name = "Ada") })
+            let ada = (ok read).Value
+            (w.Get<ResizeArray<CommandEvent>> "markedEvents").Clear()
+            let! renamed = repo.Transact(Tx.update (ada, { ada with Name = "Ada L." }): Tx<Customer, unit>)
+            equal "Ada L." (ok renamed).Name "the renamed Customer"
+        }
+        :> Task
+
+    [<StepDefinition("the UPDATE compares the columns it was read with by the dialect's null-safe operator alone")>]
+    member _.MarkedUpdate() =
+        let update = w.Get<ResizeArray<CommandEvent>> "markedEvents" |> Seq.map (fun e -> e.Sql) |> Seq.find (fun s -> s.StartsWith "UPDATE")
+        let where = update.Substring(update.IndexOf "WHERE")
+        let count (s: string) = (where.Length - where.Replace(s, "").Length) / s.Length
+        let marked = count "IS NOT DISTINCT FROM /* the dialect's */"
+        check (marked > 0 && marked = count "IS NOT DISTINCT FROM") update
 
     [<StepDefinition("I explain a query for Orders, which own their Lines, with the test dialect")>]
     member _.ExplainLoads() =

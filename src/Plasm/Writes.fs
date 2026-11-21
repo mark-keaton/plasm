@@ -40,8 +40,9 @@ let private versionValue (schema: SchemaInfo) (s: CsState) : int option =
 /// every column still holds what the change was made from (concurrency.feature).
 /// A change made from a key alone has nothing to compare. A column `scope`
 /// already compares with the same value (an owned record's owner) is compared
-/// once.
-let private originalWhere (schema: SchemaInfo) (scope: Sql.Expr list) (s: CsState) =
+/// once. Each comparison is the dialect's null-safe operator, written as the
+/// binary operation it is, bracketed in the WHERE as one.
+let private originalWhere (dialect: ISqlDialect) (schema: SchemaInfo) (scope: Sql.Expr list) (s: CsState) =
     match schema.Version, s.Data with
     | None, Some d ->
         let values = schema.Shape.Deconstruct d
@@ -52,7 +53,7 @@ let private originalWhere (schema: SchemaInfo) (scope: Sql.Expr list) (s: CsStat
         |> List.collect (fun f ->
             Sql.fieldColumns f values.[f.Index]
             |> List.filter (fun (column, value) -> not (List.contains (Sql.Binary("=", Sql.Column(schema.Table, column), value)) scope))
-            |> List.map (fun (column, value) -> Sql.Binary("IS NOT DISTINCT FROM", Sql.Column(schema.Table, column), value)))
+            |> List.map (fun (column, value) -> Sql.Binary(dialect.NullSafeComparison false, Sql.Column(schema.Table, column), value)))
     | _ -> []
 
 /// Owned lists (owned-collections.feature) as child writes. An insert writes
@@ -507,7 +508,7 @@ and private update model (sess: Session) (schema: SchemaInfo) (scope: Sql.Expr l
             [ Sql.Binary("=", Sql.Column(schema.Table, vf.Column), Sql.Param(box v)) ]
         | _ -> [], []
 
-    let where = keyFilter schema key :: scope @ versionWhere @ originalWhere schema scope s
+    let where = keyFilter schema key :: scope @ versionWhere @ originalWhere sess.Provider.Dialect schema scope s
     let read cmd = Round.fetch sess cmd (readEntity schema) |> Round.map (replied sess (failedWrite schema s) >> Result.map Seq.tryHead)
 
     let row: Round<Written<obj[] option>> =
@@ -560,7 +561,7 @@ and private delete model (sess: Session) (schema: SchemaInfo) (scope: Sql.Expr l
         Sql.renderDelete
             sess.Provider.Dialect
             { Table = schema.Table
-              Where = keyFilter schema key :: scope @ versionWhere @ originalWhere schema scope s
+              Where = keyFilter schema key :: scope @ versionWhere @ originalWhere sess.Provider.Dialect schema scope s
               Returning = [] }
 
     // What the record owns goes first (owned-collections.feature).

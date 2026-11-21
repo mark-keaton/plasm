@@ -32,6 +32,11 @@ Feature: Database-specific SQL comes from the provider
       When I explain a query filtering on the length of a name with the test dialect
       Then the length uses the dialect's function name
 
+    Scenario: A write's every-column check compares by the dialect's null-safe operator
+      Given a dialect that is PostgreSQL's, its null-safe comparison spelled its own way
+      When a Customer read through it is renamed
+      Then the UPDATE compares the columns it was read with by the dialect's null-safe operator alone
+
   Rule: Constructs the dialect cannot express are refused before execution
 
     Scenario Outline: <operation> needs <capability>
