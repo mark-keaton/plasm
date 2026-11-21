@@ -98,6 +98,13 @@ type ISqlDialect =
     /// the i-th column's values, each with its cast: `(a, b) IN (SELECT * FROM
     /// unnest(@p0, @p1))` on PostgreSQL.
     abstract RowsIn: write: (string -> unit) * columns: (unit -> unit) list * lists: (string * string option) list -> unit
+    /// `operand` not among the values of the list sent as the parameter
+    /// `list`: `operand <> ALL(list)` on PostgreSQL.
+    abstract NotInList: write: (string -> unit) * operand: (unit -> unit) * list: string * cast: string option -> unit
+    /// The rows the lists make, the i-th list the i-th column, as a table a
+    /// FROM reads, named `alias(columns)` when given: `unnest(@p0, @p1) AS
+    /// "u"("k1", "k2")` on PostgreSQL.
+    abstract ListRows: write: (string -> unit) * lists: (string * string option) list * alias: (string * string list) option -> unit
     /// An empty array's literal: a list aggregate's value over no rows
     /// (`'{}'`).
     abstract EmptyArray: string

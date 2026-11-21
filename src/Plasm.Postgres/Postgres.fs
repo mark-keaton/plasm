@@ -116,6 +116,33 @@ type internal PostgresDialect(options: PostgresOptions) =
 
         member _.ListValue values = box values
 
+        member _.NotInList(w, operand, list, cast) =
+            operand ()
+
+            match cast with
+            | Some c -> w $" <> ALL(CAST({list} AS {c}))"
+            | None -> w $" <> ALL({list})"
+
+        member this.ListRows(w, lists, alias) =
+            let q = (this :> ISqlDialect).QuoteIdentifier
+            w "unnest("
+
+            lists
+            |> List.iteri (fun i (list, cast) ->
+                if i > 0 then w ", "
+
+                match cast with
+                | Some c -> w $"CAST({list} AS {c})"
+                | None -> w list)
+
+            w ")"
+
+            match alias with
+            | Some(name, columns) ->
+                let named = columns |> List.map q |> String.concat ", "
+                w $" AS {q name}({named})"
+            | None -> ()
+
         member _.RowsIn(w, columns, lists) =
             w "("
 

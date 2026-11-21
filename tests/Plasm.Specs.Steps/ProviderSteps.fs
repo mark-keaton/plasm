@@ -36,6 +36,31 @@ type ProviderSteps(w: World) =
         let m = w.Get<string> "madeWith"
         check (m.Contains fields && m.Contains $"has no {capability}") m
 
+    [<StepDefinition("^an Article \"(.*)\" and the Tags \"(.*)\" and \"(.*)\"$")>]
+    member _.ArticleAndTags(title: string, a: string, b: string) =
+        w.Db.Exec("insert into articles (title) values (@t); insert into tags (name) values (@a), (@b)", [ "t", box title; "a", box a; "b", box b ]) |> unit
+
+    [<StepDefinition("^the Article's Tags are made \"(.*)\" and \"(.*)\" through a provider like the database's without array parameters$")>]
+    member _.Relink(a: string, b: string) =
+        task {
+            let noArrays = Repo(Schemas.model, NoArrayParameters(w.Db.Provider))
+            let! article = noArrays.One(plasm { for x in tableOf<Article> do where (x.Title = "Intro") })
+            let article = (ok article).Value
+            let! tags = noArrays.All(plasm { for t in tableOf<Tag> do where (t.Name = a || t.Name = b); orderBy t.Name })
+            let! r = noArrays.Transact(Tx.update (article, { article with Tags = ok tags }): Tx<Article, unit>)
+            w.Set("relinked", r |> Result.map ignore |> Result.mapError string)
+        }
+        |> unit
+
+    [<StepDefinition("^the Article is stored linked to \"(.*)\" and \"(.*)\"$")>]
+    member _.Linked(a: string, b: string) =
+        task {
+            equal (Ok()) (w.Get<Result<unit, string>> "relinked") "the write"
+            let! names = w.Db.Scalar<string>("select string_agg(t.name, ',' order by t.name) from article_tags at join tags t on t.id = at.tag_id")
+            equal $"{a},{b}" names "the Article's Tags"
+        }
+        |> unit
+
     [<StepDefinition("I explain, with a dialect that sends lists as JSON, a query of the tickets, which own their notes under a key of two parts")>]
     member _.CompositeLoad() =
         let repo = Repo(Plasm.Specs.CompositeReferences.Schemas.model, JsonLists(w.Db.Provider))

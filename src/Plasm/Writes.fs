@@ -423,8 +423,6 @@ let unsupported (c: ProviderCapabilities) (s: CsState) : string option =
               "RETURNING (reading back written rows)"
           if s.Children |> List.exists (fun w -> w.Replace.IsSome) && not c.RowLocking && not c.WritersTakeTurns then
               "row locking (SELECT ... FOR UPDATE, to replace children)"
-          if not s.Links.IsEmpty && not c.ArrayParameters then
-              "array parameters (to write many-to-many links)"
           yield! s.Children |> List.collect (fun w -> w.Children) |> List.collect needs ]
 
     match needs s |> List.distinct with
@@ -620,8 +618,14 @@ and private writeLinks model (sess: Session) (schema: SchemaInfo) (s: CsState) (
         let ownerParameters = List.init n p |> String.concat ", "
 
         // Written in the hand of the other statements: quoted names, the
-        // owner bound once (readable-sql.feature).
+        // owner bound once (readable-sql.feature). The lists are sent and
+        // read as the dialect sends a list.
         let u = q "u"
+
+        let render (f: (string -> unit) -> unit) =
+            let sb = Text.StringBuilder()
+            f (fun x -> sb.Append x |> ignore)
+            sb.ToString()
 
         let removeSql, insertSql, targetParameters =
             let owned = ownedBy ""
@@ -630,9 +634,12 @@ and private writeLinks model (sess: Session) (schema: SchemaInfo) (s: CsState) (
             if not target.Key.Composite then
                 let tc, k = q (fst targets.Head), q "k"
 
-                $"DELETE FROM {jt}\nWHERE {owned} AND {tc} <> ALL({p n})",
-                $"INSERT INTO {jt} ({ownerColumns}, {tc})\nSELECT {ownerParameters}, {u}.{k}\nFROM unnest({p n}) AS {u}({k})\nWHERE NOT EXISTS (SELECT 1 FROM {jt} WHERE {ownedInJoin} AND {jt}.{tc} = {u}.{k})",
-                [ box (keyArray target keys) ]
+                let missing = render (fun w -> d.NotInList(w, (fun () -> w tc), p n, None))
+                let rows = render (fun w -> d.ListRows(w, [ p n, None ], Some("u", [ "k" ])))
+
+                $"DELETE FROM {jt}\nWHERE {owned} AND {missing}",
+                $"INSERT INTO {jt} ({ownerColumns}, {tc})\nSELECT {ownerParameters}, {u}.{k}\nFROM {rows}\nWHERE NOT EXISTS (SELECT 1 FROM {jt} WHERE {ownedInJoin} AND {jt}.{tc} = {u}.{k})",
+                [ d.ListValue(keyArray target keys) ]
             else
                 // An array per part, read back in rows by unnest.
                 let values = [ for k in keys -> target.Key.ToColumns k ]
@@ -641,16 +648,12 @@ and private writeLinks model (sess: Session) (schema: SchemaInfo) (s: CsState) (
                     targets
                     |> List.mapi (fun i (_, part) ->
                         match Model.arrayOf part.ProviderType with
-                        | Some(_, make) -> make [ for v in values -> v.[i] ]
+                        | Some(_, make) -> d.ListValue(make [ for v in values -> v.[i] ] :?> Array)
                         | None -> invalidOp ("a key part of " + part.ProviderType.Name + " cannot be sent as an array"))
 
-                let arrayParameters =
+                let lists =
                     targets
-                    |> List.mapi (fun i (_, part) ->
-                        match Sql.partStoreType part with
-                        | Some t -> "CAST(" + p (n + i) + " AS " + (t |> List.map q |> String.concat ".") + "[])"
-                        | None -> p (n + i))
-                    |> String.concat ", "
+                    |> List.mapi (fun i (_, part) -> p (n + i), Sql.partStoreType part |> Option.bind (fun t -> Sql.castName d t true))
 
                 let tcs = targets |> List.map (fst >> q)
                 let ks = targets |> List.mapi (fun i _ -> q ("k" + string (i + 1)))
@@ -659,8 +662,11 @@ and private writeLinks model (sess: Session) (schema: SchemaInfo) (s: CsState) (
                 let read = ks |> List.map (fun k -> u + "." + k) |> String.concat ", "
                 let named = String.concat ", " ks
 
-                $"DELETE FROM {jt}\nWHERE {owned} AND ({targetColumns}) NOT IN (SELECT * FROM unnest({arrayParameters}))",
-                $"INSERT INTO {jt} ({ownerColumns}, {targetColumns})\nSELECT {ownerParameters}, {read}\nFROM unnest({arrayParameters}) AS {u}({named})\nWHERE NOT EXISTS (SELECT 1 FROM {jt} WHERE {ownedInJoin} AND {matches})",
+                let listed = render (fun w -> d.ListRows(w, lists, None))
+                let rows = render (fun w -> d.ListRows(w, lists, Some("u", [ for i in 1 .. targets.Length -> "k" + string i ])))
+
+                $"DELETE FROM {jt}\nWHERE {owned} AND ({targetColumns}) NOT IN (SELECT * FROM {listed})",
+                $"INSERT INTO {jt} ({ownerColumns}, {targetColumns})\nSELECT {ownerParameters}, {read}\nFROM {rows}\nWHERE NOT EXISTS (SELECT 1 FROM {jt} WHERE {ownedInJoin} AND {matches})",
                 arrays
 
         // A link to a record that does not exist is the field's error, by the

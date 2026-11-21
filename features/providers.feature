@@ -9,8 +9,8 @@ Feature: Database-specific SQL comes from the provider
 
   These scenarios use a test dialect that differs from PostgreSQL. Queries are
   only explained (translated, never executed), so no second database is needed.
-  Not everything is behind the dialect yet: the catalogue queries and the
-  many-to-many link SQL are still PostgreSQL's (see docs/status.md).
+  Not everything is behind the dialect yet: the catalogue queries are still
+  PostgreSQL's (see docs/status.md).
 
   Background:
     Given a configured relational database
@@ -30,6 +30,11 @@ Feature: Database-specific SQL comes from the provider
     Scenario: A load under a key of several parts matches the keys as the dialect sends lists
       When I explain, with a dialect that sends lists as JSON, a query of the tickets, which own their notes under a key of two parts
       Then the notes' load matches both parts against the dialect's lists, one parameter a part
+
+    Scenario: Links are written as the dialect sends lists, with or without array parameters
+      Given an Article "Intro" and the Tags "fsharp" and "sql"
+      When the Article's Tags are made "fsharp" and "sql" through a provider like the database's without array parameters
+      Then the Article is stored linked to "fsharp" and "sql"
 
     Scenario: Null-safe comparisons are rendered by the dialect
       When I explain a query comparing an optional field with <> with the test dialect
@@ -92,7 +97,6 @@ Feature: Database-specific SQL comes from the provider
         | an upsert                  | upserts       |
         | an insert                  | RETURNING     |
         | deleting an Order and its Lines | row locking   |
-        | changing an Article's links     | array parameters |
 
   Rule: An unsupported operation is reported the same way by every write step
 

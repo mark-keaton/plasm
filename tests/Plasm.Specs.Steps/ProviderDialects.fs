@@ -25,6 +25,8 @@ type TestDialectProvider(inner: IProvider) =
             member _.EmptyArray = "'[]'"
             // A list is one JSON parameter, read as rows by json_each.
             member _.ListValue values = inner.Dialect.ListValue values
+            member _.NotInList(w, operand, list, cast) = inner.Dialect.NotInList(w, operand, list, cast)
+            member _.ListRows(w, lists, alias) = inner.Dialect.ListRows(w, lists, alias)
             member _.RowsIn(w, columns, lists) = inner.Dialect.RowsIn(w, columns, lists)
             member _.InList(w, operand, list, _) =
                 operand ()
@@ -89,6 +91,8 @@ type StoredAsDialectSays(inner: IProvider, documentType: string list) =
             member _.TextCast = None
             member _.EmptyArray = d.EmptyArray
             member _.ListValue values = d.ListValue values
+            member _.NotInList(w, operand, list, cast) = d.NotInList(w, operand, list, cast)
+            member _.ListRows(w, lists, alias) = d.ListRows(w, lists, alias)
             member _.RowsIn(w, columns, lists) = d.RowsIn(w, columns, lists)
             member _.InList(w, operand, list, cast) = d.InList(w, operand, list, cast)
             member _.UnboundedLimit = d.UnboundedLimit
@@ -100,6 +104,43 @@ type StoredAsDialectSays(inner: IProvider, documentType: string list) =
             member _.Capabilities = d.Capabilities }
 
     member _.DocumentType = documentType
+
+    interface IProvider with
+        member _.Dialect = dialect
+        member _.OpenConnection ct = inner.OpenConnection ct
+        member _.Classify ex = inner.Classify ex
+        member _.BeginSnapshot(c, ct) = inner.BeginSnapshot(c, ct)
+        member _.BeginTransaction(c, i, ct) = inner.BeginTransaction(c, i, ct)
+        member _.Describe(c, ct) = inner.Describe(c, ct)
+
+/// PostgreSQL's provider, its captured lists sent one parameter a value
+/// (no array parameters); what it sends as lists of its own is PostgreSQL's.
+type NoArrayParameters(inner: IProvider) =
+    let d = inner.Dialect
+
+    let dialect =
+        { new ISqlDialect with
+            member _.Name = "NoArraysSQL"
+            member _.QuoteIdentifier s = d.QuoteIdentifier s
+            member _.ParameterName i = d.ParameterName i
+            member _.ColumnType t = d.ColumnType t
+            member _.CatalogueTypes t = d.CatalogueTypes t
+            member _.CastType t = d.CastType t
+            member _.StoreCast(t, array) = d.StoreCast(t, array)
+            member _.TextCast = d.TextCast
+            member _.EmptyArray = d.EmptyArray
+            member _.ListValue values = d.ListValue values
+            member _.NotInList(w, operand, list, cast) = d.NotInList(w, operand, list, cast)
+            member _.ListRows(w, lists, alias) = d.ListRows(w, lists, alias)
+            member _.RowsIn(w, columns, lists) = d.RowsIn(w, columns, lists)
+            member _.InList(w, operand, list, cast) = d.InList(w, operand, list, cast)
+            member _.UnboundedLimit = d.UnboundedLimit
+            member _.NullSafeComparison negated = d.NullSafeComparison negated
+            member _.LikeEscape = d.LikeEscape
+            member _.FunctionName name = d.FunctionName name
+            member _.Json = d.Json
+            member _.Begin isolation = d.Begin isolation
+            member _.Capabilities = { d.Capabilities with ArrayParameters = false } }
 
     interface IProvider with
         member _.Dialect = dialect
@@ -126,6 +167,8 @@ type JsonLists(inner: IProvider) =
             member _.TextCast = d.TextCast
             member _.EmptyArray = d.EmptyArray
             member _.ListValue values = d.ListValue values
+            member _.NotInList(w, operand, list, cast) = d.NotInList(w, operand, list, cast)
+            member _.ListRows(w, lists, alias) = d.ListRows(w, lists, alias)
             member _.RowsIn(w, columns, lists) =
                 w "("
                 columns |> List.iteri (fun i c -> (if i > 0 then w ", "); c ())
@@ -170,6 +213,8 @@ type MarkedComparisonProvider(inner: IProvider) =
             member _.TextCast = d.TextCast
             member _.EmptyArray = d.EmptyArray
             member _.ListValue values = d.ListValue values
+            member _.NotInList(w, operand, list, cast) = d.NotInList(w, operand, list, cast)
+            member _.ListRows(w, lists, alias) = d.ListRows(w, lists, alias)
             member _.RowsIn(w, columns, lists) = d.RowsIn(w, columns, lists)
             member _.InList(w, operand, list, cast) = d.InList(w, operand, list, cast)
             member _.UnboundedLimit = d.UnboundedLimit
