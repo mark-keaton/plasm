@@ -111,6 +111,7 @@ the lessons it builds on.
 | 26 | Locks and tries | `locking RowLock.ForUpdate` read by `Tx.all` in a transaction, its lock on the query's own rows and not on what they own; `Tx.attempt`, a step's failure (a duplicate, a stale copy's Conflict) as a value the transaction goes on from, and a tried step that succeeds kept. NOWAIT and SKIP LOCKED are not taught: what they do needs a second transaction at once, which the browser course's database cannot have (`kept-out.txt`). |
 | 27 | Bulk writes that return their rows | `Bulk.updateReturning`, the rows as they are after it with what they own; `Bulk.deleteReturning`, the rows as they were; a delete of records that own others refused by name. |
 | 28 | Recursive queries | `Query.recursive` over the shop's categories: everything under a category and everything above one, with `Query.depth`, in one statement; the query made from it filtered and ordered as a whole; a cycle in the data ending; a step that does not join `found` refused. |
+| 29 | Streaming reads | `repo.Stream`, an `IAsyncEnumerable` of Results asked for one row at a time; nothing sent before the first row, the command reported when the stream ends; a projection streamed; a query of records that own a list one Error naming it. |
 
 ## Writing a koan
 

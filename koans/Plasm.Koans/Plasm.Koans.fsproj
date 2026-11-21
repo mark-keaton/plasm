@@ -34,6 +34,7 @@
     <Compile Include="Lessons/L26_LocksAndTries.fs" />
     <Compile Include="Lessons/L27_WritesThatReturnRows.fs" />
     <Compile Include="Lessons/L28_RecursiveQueries.fs" />
+    <Compile Include="Lessons/L29_StreamingReads.fs" />
     <Compile Include="Path.fs" />
     <Compile Include="Given.fs" />
     <Compile Include="Course.fs" />

@@ -1,0 +1,10 @@
+# A stream gives its rows as they are asked for
+[ Ok "Ada"; Ok "Bob"; Ok "Cy" ]
+# Nothing is sent before the first row
+0
+1
+# A projection is streamed
+[ Ok "Ada"; Ok "Bob"; Ok "Cy" ]
+# A stream is one command
+true
+0
