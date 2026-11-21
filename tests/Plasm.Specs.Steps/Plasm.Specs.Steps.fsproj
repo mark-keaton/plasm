@@ -71,6 +71,7 @@
     <Compile Include="ExactSteps.fs" />
     <Compile Include="CancellationSteps.fs" />
     <Compile Include="UtcSteps.fs" />
+    <Compile Include="JsonTimeSteps.fs" />
     <Compile Include="TransactionEventSteps.fs" />
     <Compile Include="StreamSteps.fs" />
     <Compile Include="RecursiveSteps.fs" />

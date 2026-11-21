@@ -19,7 +19,11 @@ type Stage =
     | Done of at: DateTimeOffset
 
 /// An item of a ticket's checklist, held in one JSON document.
-type Item = { Text: string; Done: bool }
+type Item =
+    { Text: string
+      Done: bool
+      /// When it was ticked: a time inside the document (utc-only).
+      Checked: DateTimeOffset option }
 
 /// A shipment keyed by its carrier and number: a key of several parts
 /// (composite-keys.feature), its parts the table's own columns.

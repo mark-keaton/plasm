@@ -262,9 +262,16 @@ let rec check (model: Model) (s: CsState) : CsState =
     // a record the database numbers is not either.
     for f, v in written do
         if not (isNull v) && not f.Generated && not (f.Index = schema.Key.Index && schema.KeyGenerated) then
-            match f.ToColumns v |> List.tryPick Times.refusal with
-            | Some why -> st <- err st f.Name (FieldErrorKind.Custom "utc") why
-            | None -> ()
+            match f.Json with
+            // A document's times (json-columns.feature): each, at its path.
+            | Some shape ->
+                match JsonDoc.refusal shape "" v with
+                | Some(path, why) -> st <- err st f.Name (FieldErrorKind.Custom "utc") $"at {path} in the document, {why}"
+                | None -> ()
+            | None ->
+                match f.ToColumns v |> List.tryPick Times.refusal with
+                | Some why -> st <- err st f.Name (FieldErrorKind.Custom "utc") why
+                | None -> ()
 
     let children =
         s.Children

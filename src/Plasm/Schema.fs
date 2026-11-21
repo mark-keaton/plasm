@@ -111,6 +111,27 @@ and internal ISchema =
 // Resolved metadata (produced by Model.build)
 // ---------------------------------------------------------------------------
 
+/// Times as both providers store them: an instant, in UTC (utc-only.feature).
+/// A DateTime whose Kind is not Utc, or a DateTimeOffset whose offset is not
+/// zero, is refused before it is sent: PostgreSQL's driver would send such a
+/// DateTime as a timestamp without a time zone, which the server reads in its
+/// own, and refuses such a DateTimeOffset by throwing.
+module internal Times =
+    let private one (v: obj) =
+        match v with
+        | :? DateTime as d when d.Kind <> DateTimeKind.Utc ->
+            Some
+                $"only UTC times are stored, and {d:o} has Kind {d.Kind}: give it Kind Utc (DateTime.SpecifyKind for a time that is UTC, ToUniversalTime for a local one)"
+        | :? DateTimeOffset as d when d.Offset <> TimeSpan.Zero ->
+            Some $"only UTC times are stored, and {d:o} has the offset {d.Offset}: give it the offset zero (ToUniversalTime)"
+        | _ -> None
+
+    /// Why a provider value (or an element of a list of them) cannot be stored.
+    let refusal (v: obj) : string option =
+        match v with
+        | :? Array as a when not (v :? byte[]) -> a |> Seq.cast<obj> |> Seq.tryPick one
+        | v -> one v
+
 /// How a [<Json>] field's value is a document (json-columns.feature).
 type internal JsonShape =
     /// A scalar, stored as its column would be: its provider value as a JSON
@@ -191,6 +212,32 @@ module internal JsonDoc =
                     o.[k.Key] <- write k.Shape values.[i])
 
             o
+
+    /// The first time in a document that is not UTC (Times), with its path
+    /// inside the document (`.checklist[1].due`): refused as a column's is.
+    let rec refusal (shape: JsonShape) (path: string) (value: obj) : (string * string) option =
+        match shape with
+        | JScalar(_, mapping) ->
+            let p =
+                match mapping with
+                | Some m -> m.ToProvider value
+                | None -> value
+
+            Times.refusal p |> Option.map (fun why -> path, why)
+        | JList(element, elementType) ->
+            Reflection.listItems elementType value
+            |> Seq.indexed
+            |> Seq.tryPick (fun (i, x) -> refusal element $"{path}[{i}]" x)
+        | JRecord(_, keys, _, read) ->
+            let values = read value
+
+            keys
+            |> List.indexed
+            |> List.tryPick (fun (i, k) ->
+                if k.Optional then
+                    k.ReadOption values.[i] |> Option.bind (refusal k.Shape $"{path}.{k.Key}")
+                else
+                    refusal k.Shape $"{path}.{k.Key}" values.[i])
 
     let private describe (node: JsonNode) =
         if isNull node then "null"

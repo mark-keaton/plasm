@@ -243,7 +243,7 @@ let main argv =
                   Ref = Guid("00000000-0000-0000-0000-000000000001")
                   Labels = [ "urgent"; "q4" ]
                   Watchers = [ ada.Id ]
-                  Checklist = [ { Text = "build"; Done = true }; { Text = "test"; Done = false } ]
+                  Checklist = [ { Text = "build"; Done = true; Checked = Some since }; { Text = "test"; Done = false; Checked = None } ]
                   Notes = [ { Id = NoteId 0L; TicketId = TicketId 0L; Text = "started"; Done = true } ] }
 
             match repo.Transact(Tx.insert t: Tx<_, unit>).Result with
@@ -583,6 +583,20 @@ let main argv =
                 | Error e ->
                     match e.Failure with
                     | TxFailure.InvalidChanges(entity, errors) -> "refused: " + entity + "." + String.Join(", ", errors |> List.map (fun er -> er.Field))
+                    | other -> "another failure: " + string other)
+
+        step "a time inside a document that is not UTC is refused with its path" (fun () ->
+            match repo.All(plasm { for t in tableOf<Ticket> do where (t.Id = TicketId 1L) }).Result with
+            | Error e -> "no ticket to change: " + refusal e
+            | Ok [] -> "no ticket to change"
+            | Ok(t :: _) ->
+                let ticked = t.Checklist |> List.map (fun i -> { i with Done = true; Checked = Some(since.AddHours(2.0).ToOffset(TimeSpan.FromHours 1.0)) })
+
+                match repo.Transact(Tx.update (t, { t with Checklist = ticked }): Tx<_, unit>).Result with
+                | Ok _ -> "stored"
+                | Error e ->
+                    match e.Failure with
+                    | TxFailure.InvalidChanges(entity, errors) -> "refused: " + String.Join("; ", errors |> List.map (fun er -> entity + "." + er.Field + " " + er.Message.Split(',').[0]))
                     | other -> "another failure: " + string other)
 
         step "a broken constraint is the field's error" (fun () ->

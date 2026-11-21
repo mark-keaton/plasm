@@ -1210,8 +1210,14 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
             if mentionsArg x then
                 fail e "a prepared argument cannot yet be looked for in a document list; compare it with a field instead"
 
+            let value = evaluate ctx x
+
+            match JsonDoc.refusal element "" value with
+            | Some(_, why) -> fail e why
+            | None -> ()
+
             let one = System.Text.Json.Nodes.JsonArray()
-            one.Add(JsonDoc.write element (evaluate ctx x))
+            one.Add(JsonDoc.write element value)
             Sql.JsonContains(doc, Sql.Param(box (one.ToJsonString())))
         // List.exists / List.forall over a [<Json>] list: over its elements.
         | Call(None, mi, [ Lambda(x, body); JsonPath ctx (doc, JList(element, _)) ]) when

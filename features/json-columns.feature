@@ -145,3 +145,41 @@ Feature: A field marked Json is stored as one jsonb document
         | a stored record marked Json     | StoredJson  | is a stored record                                  |
         | a map marked Json               | MapJson     | Map is not supported in a document                  |
         | a document holding an Id record | IdJson      | looks like a stored record                          |
+
+  Rule: A document's times are UTC, as a column's are
+
+    Every time a document holds is stored as an instant in UTC, as a column's
+    is (utc-only.feature): a DateTime of Kind Utc, a DateTimeOffset at the
+    offset zero, wherever it is in the document, in a record, a list or an
+    option. Any other is refused before anything is sent, naming the field and
+    its path in the document; read back, a document's DateTime is of Kind Utc
+    and its DateTimeOffset at the offset zero.
+
+    # Logbook = { Id; Name; [<Json>] Entries: Entry list; [<Json>] Stamps: DateTime list }
+    # Entry = { At: DateTimeOffset; Note: Note option }; Note = { Text; Seen: DateTime option }
+
+    Scenario Outline: A document holding a time that is not UTC is refused, naming the field and its path
+      Given a table of logbooks, each with its entries and stamps as documents
+      When I write a logbook whose <what>
+      Then the write is refused as an invalid change of <field>, at <path> in the document, saying "only UTC"
+
+      Examples:
+        | what                                                         | field            | path            |
+        | first entry's time is at +01:00                              | Logbook.Entries  | [0].at          |
+        | first entry's note was seen at 08:00 with Kind Unspecified   | Logbook.Entries  | [0].note.seen   |
+        | second stamp is 08:00 with Kind Local                        | Logbook.Stamps   | [1]             |
+
+    Scenario: A document's times are read back in UTC
+      Given a table of logbooks, each with its entries and stamps as documents
+      When I write a logbook whose times are all UTC
+      Then it is read back with each time at the offset zero and of Kind Utc
+
+    Scenario Outline: A query by a document's time that is not UTC is refused
+      Given a table of logbooks, each with its entries and stamps as documents
+      When I read the logbooks <how>
+      Then the read of the logbooks is refused as a query that cannot be translated, saying "only UTC"
+
+      Examples:
+        | how                                     |
+        | with an entry at 08:00 at +01:00        |
+        | stamped 08:00 with Kind Unspecified     |
