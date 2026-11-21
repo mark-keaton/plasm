@@ -43,7 +43,22 @@ let private known: (Type * Func<DbDataReader, int, obj>) list =
       typeof<TimeSpan>, typed<TimeSpan>
       typeof<byte[]>, typed<byte[]>
       typeof<byte>, typed<byte>
-      typeof<char>, typed<char> ]
+      typeof<char>, typed<char>
+      // A list column's arrays (array-columns.feature), each read whole.
+      typeof<int16[]>, typed<int16[]>
+      typeof<int[]>, typed<int[]>
+      typeof<int64[]>, typed<int64[]>
+      typeof<string[]>, typed<string[]>
+      typeof<bool[]>, typed<bool[]>
+      typeof<decimal[]>, typed<decimal[]>
+      typeof<float[]>, typed<float[]>
+      typeof<float32[]>, typed<float32[]>
+      typeof<Guid[]>, typed<Guid[]>
+      typeof<DateTime[]>, typed<DateTime[]>
+      typeof<DateTimeOffset[]>, typed<DateTimeOffset[]>
+      typeof<DateOnly[]>, typed<DateOnly[]>
+      typeof<TimeOnly[]>, typed<TimeOnly[]>
+      typeof<TimeSpan[]>, typed<TimeSpan[]> ]
 
 let private readers = ConcurrentDictionary<Type, Func<DbDataReader, int, obj>>(dict known)
 

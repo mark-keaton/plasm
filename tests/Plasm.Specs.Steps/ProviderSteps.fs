@@ -184,6 +184,21 @@ type ProviderSteps(w: World) =
         let name = customers.Split('\n') |> Array.find (fun l -> l.TrimStart().StartsWith "name ")
         check (name.Trim().StartsWith "name text") name
 
+    [<StepDefinition("I explain a query of the Issues labelled \"bug\" or with no assignee, with a dialect whose tests of a list column are its own")>]
+    member _.ExplainLists() =
+        let repo = Repo(Plasm.Specs.ArrayColumns.Schemas.model, MarkedListsProvider(w.Db.Provider))
+
+        let plan =
+            repo.Explain(plasm { for i in tableOf<Plasm.Specs.ArrayColumns.Issue> do where (List.contains "bug" i.Labels || List.isEmpty i.Assignees) })
+            |> ok
+
+        w.Set("sql", plan.Sql)
+
+    [<StepDefinition("the labels are tested by the dialect's membership, and the assignees by its emptiness")>]
+    member _.ListsTested() =
+        let sql = w.Get<string> "sql"
+        check (sql.Contains "= ANY(\"i\".\"labels\") /* the dialect's */" && sql.Contains "cardinality(\"i\".\"assignees\") = 0 /* the dialect's */") sql
+
     [<StepDefinition("a dialect that is PostgreSQL's, its null-safe comparison spelled its own way")>]
     member _.MarkedDialect() =
         task {

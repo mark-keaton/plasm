@@ -23,6 +23,8 @@ type TestDialectProvider(inner: IProvider) =
             member _.StoreCast(t, array) = inner.Dialect.StoreCast(t, array)
             member _.TextCast = inner.Dialect.TextCast
             member _.EmptyArray = "'[]'"
+            member _.ListHas(w, element, column) = inner.Dialect.ListHas(w, element, column)
+            member _.ListIsEmpty(w, column) = inner.Dialect.ListIsEmpty(w, column)
             // A list is one JSON parameter, read as rows by json_each.
             member _.ListValue values = inner.Dialect.ListValue values
             member _.NotInList(w, operand, list, cast) = inner.Dialect.NotInList(w, operand, list, cast)
@@ -42,6 +44,7 @@ type TestDialectProvider(inner: IProvider) =
                     member _.StoreColumn typeName = d.StoreColumn typeName
                     member _.EnumType(typeName, labels) = d.EnumType(typeName, labels)
                     member _.EnumCheck(column, labels) = d.EnumCheck(column, labels)
+                    member _.ListCheck column = d.ListCheck column
                     member _.ForeignKeysInTables = true }
             member _.UnboundedLimit = Some "-1"
             member _.NullSafeComparison negated = if negated then "IS NOT" else "IS"
@@ -103,6 +106,8 @@ type StoredAsDialectSays(inner: IProvider, documentType: string list) =
             member _.StoreCast(_, _) = None
             member _.TextCast = None
             member _.EmptyArray = d.EmptyArray
+            member _.ListHas(w, element, column) = d.ListHas(w, element, column)
+            member _.ListIsEmpty(w, column) = d.ListIsEmpty(w, column)
             member _.ListValue values = d.ListValue values
             member _.NotInList(w, operand, list, cast) = d.NotInList(w, operand, list, cast)
             member _.ListRows(w, lists, alias) = d.ListRows(w, lists, alias)
@@ -145,6 +150,8 @@ type MarkedCatalogue(inner: IProvider) =
             member _.StoreCast(t, array) = d.StoreCast(t, array)
             member _.TextCast = d.TextCast
             member _.EmptyArray = d.EmptyArray
+            member _.ListHas(w, element, column) = d.ListHas(w, element, column)
+            member _.ListIsEmpty(w, column) = d.ListIsEmpty(w, column)
             member _.ListValue values = d.ListValue values
             member _.NotInList(w, operand, list, cast) = d.NotInList(w, operand, list, cast)
             member _.ListRows(w, lists, alias) = d.ListRows(w, lists, alias)
@@ -196,6 +203,8 @@ type NoArrayParameters(inner: IProvider) =
             member _.StoreCast(t, array) = d.StoreCast(t, array)
             member _.TextCast = d.TextCast
             member _.EmptyArray = d.EmptyArray
+            member _.ListHas(w, element, column) = d.ListHas(w, element, column)
+            member _.ListIsEmpty(w, column) = d.ListIsEmpty(w, column)
             member _.ListValue values = d.ListValue values
             member _.NotInList(w, operand, list, cast) = d.NotInList(w, operand, list, cast)
             member _.ListRows(w, lists, alias) = d.ListRows(w, lists, alias)
@@ -236,6 +245,8 @@ type JsonLists(inner: IProvider) =
             member _.StoreCast(t, array) = d.StoreCast(t, array)
             member _.TextCast = d.TextCast
             member _.EmptyArray = d.EmptyArray
+            member _.ListHas(w, element, column) = d.ListHas(w, element, column)
+            member _.ListIsEmpty(w, column) = d.ListIsEmpty(w, column)
             member _.ListValue values = d.ListValue values
             member _.NotInList(w, operand, list, cast) = d.NotInList(w, operand, list, cast)
             member _.ListRows(w, lists, alias) = d.ListRows(w, lists, alias)
@@ -285,6 +296,8 @@ type MarkedComparisonProvider(inner: IProvider) =
             member _.StoreCast(t, array) = d.StoreCast(t, array)
             member _.TextCast = d.TextCast
             member _.EmptyArray = d.EmptyArray
+            member _.ListHas(w, element, column) = d.ListHas(w, element, column)
+            member _.ListIsEmpty(w, column) = d.ListIsEmpty(w, column)
             member _.ListValue values = d.ListValue values
             member _.NotInList(w, operand, list, cast) = d.NotInList(w, operand, list, cast)
             member _.ListRows(w, lists, alias) = d.ListRows(w, lists, alias)
@@ -370,6 +383,8 @@ type ExactDecimalsProvider(inner: IProvider) =
             member _.StoreCast(t, array) = d.StoreCast(t, array)
             member _.TextCast = d.TextCast
             member _.EmptyArray = d.EmptyArray
+            member _.ListHas(w, element, column) = d.ListHas(w, element, column)
+            member _.ListIsEmpty(w, column) = d.ListIsEmpty(w, column)
             member _.ListValue values = d.ListValue values
             member _.NotInList(w, operand, list, cast) = d.NotInList(w, operand, list, cast)
             member _.ListRows(w, lists, alias) = d.ListRows(w, lists, alias)
@@ -383,6 +398,52 @@ type ExactDecimalsProvider(inner: IProvider) =
             member _.FunctionName name = d.FunctionName name
             member _.Json = d.Json
             member _.Exact = Some exact
+            member _.Begin isolation = d.Begin isolation
+            member _.Capabilities = d.Capabilities }
+
+    interface IProvider with
+        member _.Dialect = dialect
+        member _.Describe(c, ct) = inner.Describe(c, ct)
+        member _.OpenConnection ct = inner.OpenConnection ct
+        member _.Classify ex = inner.Classify ex
+        member _.BeginSnapshot(c, ct) = inner.BeginSnapshot(c, ct)
+        member _.BeginTransaction(c, i, ct) = inner.BeginTransaction(c, i, ct)
+
+/// PostgreSQL's provider, its tests of a list column marked, so a query can be
+/// seen asking the dialect for them.
+type MarkedListsProvider(inner: IProvider) =
+    let d = inner.Dialect
+
+    let dialect =
+        { new ISqlDialect with
+            member _.Name = d.Name
+            member _.QuoteIdentifier s = d.QuoteIdentifier s
+            member _.ParameterName i = d.ParameterName i
+            member _.ColumnType t = d.ColumnType t
+            member _.CatalogueTypes t = d.CatalogueTypes t
+            member _.CastType t = d.CastType t
+            member _.StoreCast(t, array) = d.StoreCast(t, array)
+            member _.TextCast = d.TextCast
+            member _.EmptyArray = d.EmptyArray
+            member _.ListHas(w, element, column) =
+                d.ListHas(w, element, column)
+                w " /* the dialect's */"
+            member _.ListIsEmpty(w, column) =
+                d.ListIsEmpty(w, column)
+                w " /* the dialect's */"
+            member _.ListValue values = d.ListValue values
+            member _.NotInList(w, operand, list, cast) = d.NotInList(w, operand, list, cast)
+            member _.ListRows(w, lists, alias) = d.ListRows(w, lists, alias)
+            member _.RowsIn(w, columns, lists) = d.RowsIn(w, columns, lists)
+            member _.InList(w, operand, list, cast) = d.InList(w, operand, list, cast)
+            member _.Catalogue = d.Catalogue
+            member _.Ddl = d.Ddl
+            member _.UnboundedLimit = d.UnboundedLimit
+            member _.NullSafeComparison negated = d.NullSafeComparison negated
+            member _.LikeEscape = d.LikeEscape
+            member _.FunctionName name = d.FunctionName name
+            member _.Json = d.Json
+            member _.Exact = d.Exact
             member _.Begin isolation = d.Begin isolation
             member _.Capabilities = d.Capabilities }
 

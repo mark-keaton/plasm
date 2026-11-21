@@ -81,6 +81,10 @@ Feature: Database-specific SQL comes from the provider
       When I print the DDL with the test dialect, which accepts "character varying" before "text" for a string
       Then a Customer's name is declared "text"
 
+    Scenario: A list column is tested as the dialect tests one
+      When I explain a query of the Issues labelled "bug" or with no assignee, with a dialect whose tests of a list column are its own
+      Then the labels are tested by the dialect's membership, and the assignees by its emptiness
+
     Scenario: A write's every-column check compares by the dialect's null-safe operator
       Given a dialect that is PostgreSQL's, its null-safe comparison spelled its own way
       When a Customer read through it is renamed

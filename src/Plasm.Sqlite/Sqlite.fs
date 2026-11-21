@@ -125,6 +125,7 @@ module internal SqliteDdl =
                 let listed = labels |> List.map (fun l -> "'" + l.Replace("'", "''") + "'") |> String.concat ", "
                 Some $"check ({column} in ({listed}))"
 
+            member _.ListCheck column = Some $"check (json_valid({column}) and json_type({column}) = 'array')"
             member _.ForeignKeysInTables = true }
 
 /// SQLite's catalogue: the table-valued pragmas, joined to the list of tables
@@ -277,6 +278,18 @@ type internal SqliteDialect(options: SqliteOptions) =
         member _.StoreCast(_, _) = None
         member _.TextCast = None
         member _.EmptyArray = "'[]'"
+        // A list column holds JSON text (Lists.json): its elements are read by
+        // json_each, its length by json_array_length.
+        member _.ListHas(w, element, column) =
+            element ()
+            w " IN (SELECT value FROM json_each("
+            column ()
+            w "))"
+
+        member _.ListIsEmpty(w, column) =
+            w "json_array_length("
+            column ()
+            w ") = 0"
         member _.ListValue values = Lists.json values
 
         member _.InList(w, operand, list, _) =

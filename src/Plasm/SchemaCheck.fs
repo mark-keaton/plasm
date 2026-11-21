@@ -3,24 +3,15 @@ namespace Plasm
 open System
 open System.Threading.Tasks
 
-/// The catalogue type names a column of a provider type may have: the
-/// dialect's, and for an array column (array-columns.feature) its elements'
-/// names followed by [], as the schema check reads an array column's type.
-/// And the type such a column is declared as, which Ddl prints.
+/// The catalogue type names a column of a provider type may have, the
+/// dialect's, an array column's (array-columns.feature) among them; and the
+/// type such a column is declared as, which Ddl prints.
 module internal ColumnTypes =
-    let private isArray (t: Type) = t.IsArray && t <> typeof<byte[]>
+    // A list of scalars is asked for as its array type: the dialect says how it
+    // names one (PostgreSQL: its element's names followed by [], SQLite: TEXT).
+    let ofType (d: ISqlDialect) (t: Type) : string list = d.CatalogueTypes t
 
-    let ofType (d: ISqlDialect) (t: Type) : string list =
-        if isArray t then
-            d.CatalogueTypes(t.GetElementType()) |> List.map (fun n -> n + "[]")
-        else
-            d.CatalogueTypes t
-
-    let declared (d: ISqlDialect) (t: Type) : string option =
-        if isArray t then
-            d.ColumnType(t.GetElementType()) |> Option.map (fun n -> n + "[]")
-        else
-            d.ColumnType t
+    let declared (d: ISqlDialect) (t: Type) : string option = d.ColumnType t
 
 module internal SchemaCheck =
 
@@ -665,6 +656,17 @@ module internal Ddl =
                                   yield $"  constraint {constraintName} {check}"
                               | None -> ()
                           | _ -> ()
+
+                  // A list column, held to the form its lists are stored in
+                  // where its type does not hold it (array-columns.feature).
+                  for f in s.Fields do
+                      for p in f.Parts do
+                          if p.ProviderType.IsArray && p.ProviderType <> typeof<byte[]> then
+                              match ddl.ListCheck(name p.Name) with
+                              | Some check ->
+                                  let constraintName = name (s.Table + "_" + p.Name + "_check")
+                                  yield $"  constraint {constraintName} {check}"
+                              | None -> ()
 
                   // A key of several parts (composite-keys.feature): one
                   // primary key over them, in the key record's order.

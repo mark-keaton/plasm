@@ -82,6 +82,7 @@ module internal PostgresDdl =
                 let listed = labels |> List.map (fun l -> "'" + l + "'") |> String.concat ", "
                 Some $"create type {typeName} as enum ({listed});"
             member _.EnumCheck(_, _) = None
+            member _.ListCheck _ = None
             member _.ForeignKeysInTables = false }
 
 /// PostgreSQL's catalogue queries.
@@ -117,8 +118,10 @@ type internal PostgresDialect(options: PostgresOptions) =
         member this.ColumnType t = List.tryHead ((this :> ISqlDialect).CatalogueTypes t)
         member this.CastType t = List.tryHead ((this :> ISqlDialect).CatalogueTypes t)
 
-        member _.CatalogueTypes t =
+        member this.CatalogueTypes t =
             match t with
+            // A list of scalars: one array column of its element's type.
+            | t when t.IsArray && t <> typeof<byte[]> -> (this :> ISqlDialect).CatalogueTypes(t.GetElementType()) |> List.map (fun n -> n + "[]")
             | t when t = typeof<int16> -> [ "smallint" ]
             | t when t = typeof<int> -> [ "integer" ]
             | t when t = typeof<int64> -> [ "bigint" ]
@@ -166,6 +169,16 @@ type internal PostgresDialect(options: PostgresOptions) =
         member _.TextCast = Some "text"
 
         member _.EmptyArray = "'{}'"
+        member _.ListHas(w, element, column) =
+            element ()
+            w " = ANY("
+            column ()
+            w ")"
+
+        member _.ListIsEmpty(w, column) =
+            w "cardinality("
+            column ()
+            w ") = 0"
 
         member _.ListValue values = box values
 

@@ -93,6 +93,10 @@ type IDdlDialect =
     /// ('draft', ...))`), printed as a constraint in its table; None when an
     /// enum type holds them.
     abstract EnumCheck: column: string * labels: string list -> string option
+    /// The check holding a list column to the form its lists are stored in
+    /// (SQLite's JSON array), printed as a constraint in its table; None where
+    /// the column's type holds it (PostgreSQL's arrays).
+    abstract ListCheck: column: string -> string option
     /// Foreign keys are declared in their tables' create statements, not
     /// added after them with alter table.
     abstract ForeignKeysInTables: bool
@@ -184,6 +188,12 @@ type ISqlDialect =
     /// An empty array's literal: a list aggregate's value over no rows
     /// (`'{}'`).
     abstract EmptyArray: string
+    /// Whether a list column holds `element` (List.contains over a list of
+    /// scalars, array-columns.feature): `element = ANY(column)` on PostgreSQL.
+    abstract ListHas: write: (string -> unit) * element: (unit -> unit) * column: (unit -> unit) -> unit
+    /// Whether a list column holds nothing (List.isEmpty):
+    /// `cardinality(column) = 0` on PostgreSQL.
+    abstract ListIsEmpty: write: (string -> unit) * column: (unit -> unit) -> unit
     /// The catalogue queries the schema check and scaffolding send.
     abstract Catalogue: ICatalogueDialect
     /// How Ddl prints the model's tables.
@@ -230,6 +240,10 @@ module internal Sql =
         /// An empty array, as the dialect writes one: a list aggregate's value
         /// over no rows.
         | EmptyArray
+        /// A list column holds the element (ISqlDialect.ListHas).
+        | ListHas of element: Expr * column: Expr
+        /// A list column holds nothing (ISqlDialect.ListIsEmpty).
+        | ListIsEmpty of column: Expr
         | Binary of op: string * Expr * Expr
         | Not of Expr
         /// `(a) IS NOT TRUE`: F#'s `not`, for which an unknown (NULL) operand,
@@ -418,8 +432,15 @@ module internal Sql =
     let storeType (f: FieldMap) = f.Mapping |> Option.bind (fun m -> m.StoreType)
 
     /// A field value as a parameter, cast to the field's database type if it has one.
+    /// A provider value as a parameter: a list (an array column's value) as
+    /// the dialect sends a list (ListValue).
+    let private sent (v: obj) =
+        match v with
+        | :? Array as a when not (v :? byte[]) -> ArrayParam a
+        | v -> Param v
+
     let fieldValue (f: FieldMap) (value: obj) =
-        let p = Param(f.ToDb value)
+        let p = sent (f.ToDb value)
 
         match storeType f with
         | Some t -> Cast(p, t, false)
@@ -451,7 +472,7 @@ module internal Sql =
 
     /// A provider value for one column, as a parameter cast to its type.
     let partValue (p: ColumnPart) (providerValue: obj) =
-        let x = Param providerValue
+        let x = sent providerValue
 
         match partStoreType p with
         | Some t -> Cast(x, t, false)
@@ -569,9 +590,11 @@ module internal Sql =
                 w "."
                 w (q n)
             | Param v -> w (r.Param v)
-            | ArrayParam v -> w (r.Param v)
+            | ArrayParam v -> w (r.Param(d.ListValue v))
             | Literal l -> w l
             | EmptyArray -> w d.EmptyArray
+            | ListHas(element, column) -> d.ListHas(w, (fun () -> r.Expr element), (fun () -> r.Expr column))
+            | ListIsEmpty column -> d.ListIsEmpty(w, (fun () -> r.Expr column))
             | Binary(("AND" | "OR") as op, _, _) ->
                 let rec operands (x: Expr) =
                     match x with
@@ -872,6 +895,7 @@ module internal Sql =
             | RowNumber _
             | Case _
             | Fragment _
+            | ListHas _
             | Exists _ -> r.Expr e
             | Binary(op, _, _) when ofComparison && arithmetic op -> r.Expr e
             | _ -> r.Wrapped e

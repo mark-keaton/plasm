@@ -1212,14 +1212,16 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
                 Sql.JsonAny(doc, alias, condition)
             else
                 Sql.Not(Sql.JsonAny(doc, alias, Sql.IsNotTrue condition))
-        // An array column holds a value (array-columns.feature): value = ANY(column).
+        // A list column holds a value (array-columns.feature), as the dialect
+        // tests one (ISqlDialect.ListHas); a decimal by value.
         | Call(None, mi, [ x; ArrayField ctx (b, f) ]) when mi.Name = "Contains" && mi.DeclaringType.Name = "ListModule" ->
-            Sql.Fragment [ Choice2Of2(scalar ctx x); Choice1Of2 " = ANY("; Choice2Of2(Sql.Column(b.Alias, f.Column)); Choice1Of2 ")" ]
-        // An array column holds nothing: its cardinality is 0.
+            let element = scalar ctx x
+            Sql.ListHas((if isExact ctx.Model x.Type then Sql.Exact element else element), Sql.Column(b.Alias, f.Column))
+        // A list column holds nothing (ISqlDialect.ListIsEmpty).
         | Call(None, mi, [ ArrayField ctx (b, f) ]) when mi.Name = "IsEmpty" && mi.DeclaringType.Name = "ListModule" ->
-            Sql.Binary("=", Sql.Func("cardinality", [ Sql.Column(b.Alias, f.Column) ]), Sql.Literal "0")
+            Sql.ListIsEmpty(Sql.Column(b.Alias, f.Column))
         | PropertyGet(Some(ArrayField ctx (b, f)), p, []) when p.Name = "IsEmpty" ->
-            Sql.Binary("=", Sql.Func("cardinality", [ Sql.Column(b.Alias, f.Column) ]), Sql.Literal "0")
+            Sql.ListIsEmpty(Sql.Column(b.Alias, f.Column))
         | OverArray ctx (b, f) -> fail e (arrayRefusal b f $"{show e} reads more of it than a query translates")
         | Call(None, mi, [ x; coll ]) when mi.Name = "Contains" && isCollectionModule mi -> membership ctx e x coll
         | Call(Some coll, mi, [ x ]) when mi.Name = "Contains" && not (isRowDependent ctx coll) -> membership ctx e x coll
@@ -1484,7 +1486,9 @@ and containsAggregate (e: Sql.Expr) : bool =
     | Sql.InListParam(a, _, _)
     | Sql.Cast(a, _, _)
     | Sql.Exact a
+    | Sql.ListIsEmpty a
     | Sql.AsText a -> containsAggregate a
+    | Sql.ListHas(a, b) -> containsAggregate a || containsAggregate b
     | Sql.Func(_, xs) -> List.exists containsAggregate xs
     | Sql.Fragment ps ->
         ps
@@ -2312,7 +2316,9 @@ let rec private ungrouped (groups: Sql.Expr list) (e: Sql.Expr) =
         | Sql.InListParam(a, _, _)
         | Sql.Cast(a, _, _)
         | Sql.Exact a
+        | Sql.ListIsEmpty a
         | Sql.AsText a -> ungrouped groups a
+        | Sql.ListHas(a, b) -> ungrouped groups a || ungrouped groups b
         | Sql.Func(_, xs) -> List.exists (ungrouped groups) xs
         | Sql.Fragment ps ->
             ps
@@ -2549,6 +2555,8 @@ let private distinct (def: QueryDef) (sel: Sql.Select) (shape: Shape) : Sql.Sele
             | Sql.Cast(x, t, arr) -> Sql.Cast(over x, t, arr)
             | Sql.AsText x -> Sql.AsText(over x)
             | Sql.Exact x -> Sql.Exact(over x)
+            | Sql.ListHas(x, y) -> Sql.ListHas(over x, over y)
+            | Sql.ListIsEmpty x -> Sql.ListIsEmpty(over x)
             | Sql.Like(x, y) -> Sql.Like(over x, over y)
             | Sql.Func(f, xs) -> Sql.Func(f, List.map over xs)
             | Sql.Case(branches, otherwise) -> Sql.Case(branches |> List.map (fun (c, v) -> over c, over v), over otherwise)
@@ -2563,7 +2571,8 @@ let private distinct (def: QueryDef) (sel: Sql.Select) (shape: Shape) : Sql.Sele
         | Sql.Binary(_, x, y)
         | Sql.NotDistinctFrom(x, y)
         | Sql.DistinctFrom(x, y)
-        | Sql.Like(x, y) -> readsOther x || readsOther y
+        | Sql.Like(x, y)
+        | Sql.ListHas(x, y) -> readsOther x || readsOther y
         | Sql.Not x
         | Sql.IsNotTrue x
         | Sql.IsNull x
@@ -2571,6 +2580,7 @@ let private distinct (def: QueryDef) (sel: Sql.Select) (shape: Shape) : Sql.Sele
         | Sql.Cast(x, _, _)
         | Sql.AsText x
         | Sql.Exact x
+        | Sql.ListIsEmpty x
         | Sql.AnyOf(x, _, _)
         | Sql.InListParam(x, _, _) -> readsOther x
         | Sql.Func(_, xs) -> List.exists readsOther xs

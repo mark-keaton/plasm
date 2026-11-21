@@ -19,3 +19,4 @@ features/providers.feature	A write's every-column check compares by the dialect'
 features/providers.feature	A model storing <what> is refused when the repository is made, by a dialect without <capability>	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
 features/providers.feature	<operation> needs <capability>	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
 features/providers.feature	<call> reports an unsupported operation as UnsupportedByProvider	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	A list column is tested as the dialect tests one	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
