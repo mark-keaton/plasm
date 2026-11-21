@@ -897,6 +897,7 @@ type internal PGliteDialect(maxKeys: int) =
         member _.LikeEscape = ""
         member _.FunctionName name = name
         member _.Json = Some PGliteJson.Instance
+        member _.Exact = None
 
 module internal Classify =
     let private kindOf (state: string) =

@@ -236,6 +236,7 @@ type internal PostgresDialect(options: PostgresOptions) =
         member _.LikeEscape = ""
         member _.FunctionName name = name
         member _.Json = Some PostgresJson.Instance
+        member _.Exact = None
 
 module internal Classify =
 

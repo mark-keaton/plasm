@@ -41,7 +41,8 @@ let private versionValue (schema: SchemaInfo) (s: CsState) : int option =
 /// A change made from a key alone has nothing to compare. A column `scope`
 /// already compares with the same value (an owned record's owner) is compared
 /// once. Each comparison is the dialect's null-safe operator, written as the
-/// binary operation it is, bracketed in the WHERE as one.
+/// binary operation it is, bracketed in the WHERE as one; a decimal's is made
+/// by value, as the dialect's exact hooks make it.
 let private originalWhere (dialect: ISqlDialect) (schema: SchemaInfo) (scope: Sql.Expr list) (s: CsState) =
     match schema.Version, s.Data with
     | None, Some d ->
@@ -53,7 +54,11 @@ let private originalWhere (dialect: ISqlDialect) (schema: SchemaInfo) (scope: Sq
         |> List.collect (fun f ->
             Sql.fieldColumns f values.[f.Index]
             |> List.filter (fun (column, value) -> not (List.contains (Sql.Binary("=", Sql.Column(schema.Table, column), value)) scope))
-            |> List.map (fun (column, value) -> Sql.Binary(dialect.NullSafeComparison false, Sql.Column(schema.Table, column), value)))
+            |> List.map (fun (column, value) ->
+                match value with
+                // A decimal is compared by value: 2.0 is what was read as 2.00.
+                | Sql.Param(:? decimal) -> Sql.Exact(Sql.NotDistinctFrom(Sql.Column(schema.Table, column), value))
+                | _ -> Sql.Binary(dialect.NullSafeComparison false, Sql.Column(schema.Table, column), value)))
     | _ -> []
 
 /// Owned lists (owned-collections.feature) as child writes. An insert writes

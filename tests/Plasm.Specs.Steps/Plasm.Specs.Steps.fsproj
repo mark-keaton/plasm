@@ -67,6 +67,7 @@
     <Compile Include="CompositeReferenceSteps.fs" />
     <!-- After the steps whose models its scenarios use (arrays, enums, keys of several parts). -->
     <Compile Include="ProviderSteps.fs" />
+    <Compile Include="ExactSteps.fs" />
     <Compile Include="TransactionEventSteps.fs" />
     <Compile Include="StreamSteps.fs" />
     <Compile Include="RecursiveSteps.fs" />

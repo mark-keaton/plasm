@@ -55,6 +55,7 @@ type TestDialectProvider(inner: IProvider) =
                 | n -> n
 
             member _.Json = None
+            member _.Exact = inner.Dialect.Exact
             member _.Begin isolation = inner.Dialect.Begin isolation
 
             member _.Capabilities =
@@ -114,6 +115,7 @@ type StoredAsDialectSays(inner: IProvider, documentType: string list) =
             member _.LikeEscape = d.LikeEscape
             member _.FunctionName name = d.FunctionName name
             member _.Json = json
+            member _.Exact = d.Exact
             member _.Begin isolation = d.Begin isolation
             member _.Capabilities = d.Capabilities }
 
@@ -166,6 +168,7 @@ type MarkedCatalogue(inner: IProvider) =
             member _.LikeEscape = d.LikeEscape
             member _.FunctionName name = d.FunctionName name
             member _.Json = d.Json
+            member _.Exact = d.Exact
             member _.Begin isolation = d.Begin isolation
             member _.Capabilities = d.Capabilities }
 
@@ -205,6 +208,7 @@ type NoArrayParameters(inner: IProvider) =
             member _.LikeEscape = d.LikeEscape
             member _.FunctionName name = d.FunctionName name
             member _.Json = d.Json
+            member _.Exact = d.Exact
             member _.Begin isolation = d.Begin isolation
             member _.Capabilities = { d.Capabilities with ArrayParameters = false } }
 
@@ -253,6 +257,7 @@ type JsonLists(inner: IProvider) =
             member _.LikeEscape = d.LikeEscape
             member _.FunctionName name = d.FunctionName name
             member _.Json = d.Json
+            member _.Exact = d.Exact
             member _.Begin isolation = d.Begin isolation
             member _.Capabilities = d.Capabilities }
 
@@ -292,6 +297,92 @@ type MarkedComparisonProvider(inner: IProvider) =
             member _.LikeEscape = d.LikeEscape
             member _.FunctionName name = d.FunctionName name
             member _.Json = d.Json
+            member _.Exact = d.Exact
+            member _.Begin isolation = d.Begin isolation
+            member _.Capabilities = d.Capabilities }
+
+    interface IProvider with
+        member _.Dialect = dialect
+        member _.Describe(c, ct) = inner.Describe(c, ct)
+        member _.OpenConnection ct = inner.OpenConnection ct
+        member _.Classify ex = inner.Classify ex
+        member _.BeginSnapshot(c, ct) = inner.BeginSnapshot(c, ct)
+        member _.BeginTransaction(c, i, ct) = inner.BeginTransaction(c, i, ct)
+
+/// PostgreSQL's provider with exact hooks of its own: each decimal comparison,
+/// null-safe comparison, arithmetic and aggregate is written by value through
+/// numeric, each order and group key as it is, and each marked `/* exact */`, and a decimal is sent with three
+/// more places (12.50 as 12.50000), so what the hooks were asked can be seen
+/// in what PostgreSQL is sent and still runs.
+type ExactDecimalsProvider(inner: IProvider) =
+    let d = inner.Dialect
+
+    let exact =
+        { new IExactDialect with
+            member _.Compare(w, op, a, b) =
+                w "CAST("
+                a ()
+                w $" AS numeric) {op} CAST("
+                b ()
+                w " AS numeric) /* exact */"
+
+            member _.NullSafe(w, negated, a, b) =
+                w "CAST("
+                a ()
+                w $" AS numeric) {d.NullSafeComparison negated} CAST("
+                b ()
+                w " AS numeric) /* exact */"
+
+            member _.Arithmetic(w, op, a, b) =
+                w "(CAST("
+                a ()
+                w $" AS numeric) {op} CAST("
+                b ()
+                w " AS numeric) /* exact */)"
+
+            member _.Aggregate(w, name, a) =
+                w $"{name}(CAST("
+                a ()
+                w " AS numeric) /* exact */)"
+
+            member _.WindowAggregate(w, name, a, over) =
+                w $"{name}(CAST("
+                a ()
+                w " AS numeric) /* exact */)"
+                over ()
+
+            // As it is, marked: PostgreSQL groups a column by its own value,
+            // and selects it only where it is grouped as it is.
+            member _.Ordered(w, a) =
+                a ()
+                w " /* exact */"
+
+            member _.Value m = box (m * 1.000m) }
+
+    let dialect =
+        { new ISqlDialect with
+            member _.Name = d.Name
+            member _.QuoteIdentifier s = d.QuoteIdentifier s
+            member _.ParameterName i = d.ParameterName i
+            member _.ColumnType t = d.ColumnType t
+            member _.CatalogueTypes t = d.CatalogueTypes t
+            member _.CastType t = d.CastType t
+            member _.StoreCast(t, array) = d.StoreCast(t, array)
+            member _.TextCast = d.TextCast
+            member _.EmptyArray = d.EmptyArray
+            member _.ListValue values = d.ListValue values
+            member _.NotInList(w, operand, list, cast) = d.NotInList(w, operand, list, cast)
+            member _.ListRows(w, lists, alias) = d.ListRows(w, lists, alias)
+            member _.RowsIn(w, columns, lists) = d.RowsIn(w, columns, lists)
+            member _.InList(w, operand, list, cast) = d.InList(w, operand, list, cast)
+            member _.Catalogue = d.Catalogue
+            member _.Ddl = d.Ddl
+            member _.UnboundedLimit = d.UnboundedLimit
+            member _.NullSafeComparison negated = d.NullSafeComparison negated
+            member _.LikeEscape = d.LikeEscape
+            member _.FunctionName name = d.FunctionName name
+            member _.Json = d.Json
+            member _.Exact = Some exact
             member _.Begin isolation = d.Begin isolation
             member _.Capabilities = d.Capabilities }
 

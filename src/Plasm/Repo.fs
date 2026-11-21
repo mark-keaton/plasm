@@ -104,6 +104,21 @@ type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
             let array (p: ColumnPart) = p.ProviderType.IsArray && p.ProviderType <> typeof<byte[]>
             refuse (storing array) "array columns" "store each list as an owned list or as one [<Json>] document, or use a provider that has array columns"
 
+    // A dialect that makes decimals exact itself (ISqlDialect.Exact) has a
+    // database that compares keys as they are stored, not by value: a key of
+    // 2.0 and one of 2.00 would be two. A model keyed by a decimal is refused
+    // now, naming each key (providers.feature).
+    do
+        if provider.Dialect.Exact.IsSome then
+            let keyed =
+                [ for s in model.Schemas.Values do
+                      if s.Key.Parts |> List.exists (fun p -> p.ProviderType = typeof<decimal>) then
+                          yield $"{s.Name}.{s.Key.Name}" ]
+
+            if not keyed.IsEmpty then
+                Err.config
+                    $"""{provider.Dialect.Name} compares keys as they are stored, not decimals by value (2.0 and 2.00 would be two keys), so it cannot key by a decimal: {String.concat ", " keyed}; key by an integer, a Guid or text"""
+
     // Queries are immutable values, so a plan can be reused for the same value,
     // unless translation evaluated something volatile (Plan.Reusable = false).
     let plans = ConditionalWeakTable<QueryDef, Planner.Plan>()

@@ -85,6 +85,100 @@ Feature: Database-specific SQL comes from the provider
       When a Customer read through it is renamed
       Then the UPDATE compares the columns it was read with by the dialect's null-safe operator alone
 
+  Rule: Decimals are read by value as the dialect's exact hooks read them
+
+    A dialect that stores decimals as something its database does not compare,
+    order and add by value (SQLite's text) gives exact hooks; PostgreSQL's
+    numeric is exact and has none, so the SQL it is sent is as it was. The
+    dialect here is PostgreSQL's with hooks of its own, each marked, and the
+    queries run.
+
+    Background:
+      Given Orders totalling 2.00, 9.50 and 10.10, through a dialect whose decimals are exact by its own hooks
+
+    Scenario: A comparison of decimals is made by the dialect's exact comparison
+      When I query through it the Orders whose total is more than 9.4 and not less than 2.0, whose id is not 0
+      Then each comparison of a total is the dialect's exact comparison, and the id's is as it is
+      And the Orders found total 9.50 and 10.10
+
+    Scenario: Equality of decimals is the dialect's exact comparison, negated as it is
+      When I query through it the Orders whose total is not 2.0
+      Then the comparison of the total is the dialect's exact comparison, not equal
+      And the Orders found total 9.50 and 10.10
+
+    Scenario: Decimals are ordered by the dialect's exact order
+      When I query through it the Orders by total, then by id
+      Then the order by total is the dialect's exact order, and the order by id is as it is
+      And the Orders found total 2.00, 9.50 and 10.10
+
+    Scenario: Decimals are grouped by the dialect's exact group key
+      When I count through it the Orders of each total, with a fourth of 2.0
+      Then the group key is the dialect's exact group key
+      And there are three groups, the first of two Orders
+
+    Scenario: Sources joined on decimals are joined by the dialect's exact comparison
+      When I join through it the Orders to the Payments of their total, a Payment of 2.0 for the first
+      Then the join compares the total and the amount by the dialect's exact comparison
+      And the Order of 2.00 is joined to the Payment of 2.0, and no other
+
+    Scenario: A window partitioned by a decimal is partitioned by the dialect's exact group key
+      When I number through it the Orders within each total, with a fourth of 2.0
+      Then the partition key is the dialect's exact group key
+      And the Orders are numbered 1, 1, 1 and 2, the two of 2 in one partition
+
+    Scenario: A value holding decimals is compared part by part, each decimal by the dialect's exact comparison
+      When I explain through it a query of the customers at a place, a value of two decimals
+      Then each part of the value is compared by the dialect's exact comparison
+
+    Scenario: A union case holding a decimal is compared field by field, its decimal by the dialect's exact comparison
+      When I explain through it a query of the listings at a fixed price, a union case holding a decimal
+      Then the case's decimal is compared by the dialect's exact comparison, and its tag as it is
+
+    Scenario: A decimal among a list's values is compared with them as the dialect's exact order takes it
+      When I query through it the Orders whose total is among 2.0 and 10.1
+      Then the total is the operand of the list as the dialect's exact order takes it
+      And the Orders found total 2.00 and 10.10
+
+    Scenario: Distinct decimals are told apart as the dialect's exact order takes them
+      When I select through it the distinct Order totals, with a fourth of 2.0
+      Then the total is told apart as the dialect's exact order takes it
+      And there are three totals, 2, 9.50 and 10.10
+
+    Scenario: A set operation over decimals tells its rows apart as the dialect's exact order takes them
+      When I read through it the union of the Order totals and the Payment amounts, a Payment of 2.0 for the first
+      Then each operand's total or amount is told apart as the dialect's exact order takes it
+      And there are three values, 2, 9.50 and 10.10
+
+    Scenario: A window's sum of decimals is the dialect's exact aggregate
+      When I select through it each Order's running sum of totals, by id
+      Then the running sum is the dialect's exact aggregate over the window
+      And the running sums are 2.00, 11.50 and 21.60
+
+    Scenario: A model keyed by a decimal is refused when the repository is made, by a dialect with exact hooks
+      When a repository is made through it for a model keyed by a decimal
+      Then it is refused when made, naming Rate.Id and saying a key of 2.0 and one of 2.00 would be two
+      And a repository is made for it on PostgreSQL, whose numeric keys compare by value
+
+    Scenario: Arithmetic on decimals is the dialect's exact arithmetic
+      When I query through it the Orders whose total doubled is more than 19.5
+      Then the doubling is the dialect's exact arithmetic, compared by its exact comparison
+      And the Orders found total 10.10
+
+    Scenario: Aggregates of decimals are the dialect's exact aggregates
+      When I select through it the count, sum, minimum, maximum and average of the Order totals
+      Then the sum, minimum, maximum and average are the dialect's exact aggregates, and the count is as it is
+      And they are 3, 21.60, 2.00, 10.10 and 7.20
+
+    Scenario: A decimal is sent as the dialect's exact hooks send it
+      When I query through it the Orders whose total is 9.50
+      Then the total is sent as 9.50000
+      And the Orders found total 9.50
+
+    Scenario: A write's every-column check compares a decimal by the dialect's exact null-safe comparison
+      Given a Payment of 12.50 for the first Order
+      When the Payment read through it is marked succeeded
+      Then the UPDATE compares the amount it was read with by the dialect's exact null-safe comparison, and every other column as it is
+
   Rule: Constructs the dialect cannot express are refused before execution
 
     Scenario Outline: A model storing <what> is refused when the repository is made, by a dialect without <capability>

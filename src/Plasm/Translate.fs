@@ -463,6 +463,35 @@ let private unwrapOption (t: Type) (v: obj) =
 let private scalarType (t: Type) =
     if Reflection.isOption t then Reflection.elementType t else t
 
+/// Whether values of a type are decimals, which a dialect with exact hooks
+/// compares, orders and adds by value (Sql.Exact).
+let private isExact (model: Model) (t: Type) =
+    model.ProviderTypeOf(scalarType t) = Some typeof<decimal>
+
+/// A comparison of a column holding `providerType`, by value if decimals.
+let private byValueOf (providerType: Type) (e: Sql.Expr) =
+    if providerType = typeof<decimal> then Sql.Exact e else e
+
+/// The comparison that is a comparison's negation.
+let private (|Opposite|_|) (op: string) =
+    match op with
+    | "=" -> Some "<>"
+    | "<>" -> Some "="
+    | "<" -> Some ">="
+    | ">=" -> Some "<"
+    | ">" -> Some "<="
+    | "<=" -> Some ">"
+    | _ -> None
+
+/// A condition over decimals, its comparisons made by value.
+let rec private byValue (e: Sql.Expr) =
+    match e with
+    | Sql.Binary(("AND" | "OR") as op, a, b) -> Sql.Binary(op, byValue a, byValue b)
+    | Sql.Binary(("=" | "<>" | "<" | "<=" | ">" | ">="), _, _)
+    | Sql.NotDistinctFrom _
+    | Sql.DistinctFrom _ -> Sql.Exact e
+    | e -> e
+
 /// A parameter of a domain type, cast to the database type the type is stored
 /// as when it has one (Scalar.asPgEnum).
 let private typedParam (model: Model) (domainType: Type) (p: Sql.Expr) =
@@ -643,8 +672,8 @@ let private valueEquals (alias: string) (f: FieldMap) (value: obj) : Sql.Expr =
     List.zip f.Parts (f.ToColumns value)
     |> List.map (fun (p, v) ->
         if isNull v || v = box DBNull.Value then Sql.IsNull(Sql.Column(alias, p.Name))
-        elif f.Requires p.Name then Sql.Binary("=", Sql.Column(alias, p.Name), Sql.partValue p v)
-        else Sql.NotDistinctFrom(Sql.Column(alias, p.Name), Sql.partValue p v))
+        elif f.Requires p.Name then byValueOf p.ProviderType (Sql.Binary("=", Sql.Column(alias, p.Name), Sql.partValue p v))
+        else byValueOf p.ProviderType (Sql.NotDistinctFrom(Sql.Column(alias, p.Name), Sql.partValue p v)))
     |> Sql.conj
 
 /// A value in the row equals a prepared argument: every column equals its
@@ -663,8 +692,8 @@ let private valueEqualsArg (alias: string) (f: FieldMap) (v: Expr) : Sql.Expr =
         let bound = Sql.Param(box (Sql.Bound(part, show v)))
         let bound = match Sql.partStoreType p with Some t -> Sql.Cast(bound, t, false) | None -> bound
 
-        if f.Requires p.Name then Sql.Binary("=", Sql.Column(alias, p.Name), bound)
-        else Sql.NotDistinctFrom(Sql.Column(alias, p.Name), bound))
+        if f.Requires p.Name then byValueOf p.ProviderType (Sql.Binary("=", Sql.Column(alias, p.Name), bound))
+        else byValueOf p.ProviderType (Sql.NotDistinctFrom(Sql.Column(alias, p.Name), bound)))
     |> Sql.conj
 
 let (|RowAssoc|_|) (ctx: Ctx) (e: Expr) =
@@ -784,8 +813,8 @@ let rec private unionEquals (alias: string) (u: UnionLayout) (value: obj) : Sql.
     :: (c.Parts
         |> List.mapi (fun i p ->
             match p with
-            | Leaf f when f.IsOption -> [ Sql.NotDistinctFrom(Sql.Column(alias, f.Column), Sql.fieldValue f fields.[i]) ]
-            | Leaf f -> [ Sql.Binary("=", Sql.Column(alias, f.Column), Sql.fieldValue f fields.[i]) ]
+            | Leaf f when f.IsOption -> [ byValueOf f.ProviderType (Sql.NotDistinctFrom(Sql.Column(alias, f.Column), Sql.fieldValue f fields.[i])) ]
+            | Leaf f -> [ byValueOf f.ProviderType (Sql.Binary("=", Sql.Column(alias, f.Column), Sql.fieldValue f fields.[i])) ]
             | Nested(_, n) -> unionEquals alias n fields.[i])
         |> List.concat)
 
@@ -953,7 +982,10 @@ let rec scalar (ctx: Ctx) (e: Expr) : Sql.Expr =
             if Reflection.isOption a.Type || Reflection.isOption b.Type then
                 fail e "arithmetic on optional values is not supported"
 
-            Sql.Binary(op, scalar ctx a, scalar ctx b)
+            if isExact ctx.Model e.Type && op <> "||" then
+                Sql.Exact(Sql.Binary(op, scalar ctx a, scalar ctx b))
+            else
+                Sql.Binary(op, scalar ctx a, scalar ctx b)
         | Call(Some s, mi, []) when s.Type = typeof<string> ->
             match mi.Name with
             | "ToLower"
@@ -1034,13 +1066,10 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
             match predicate ctx a with
             | Sql.Exists _ as x -> Sql.Not x
             | x when mayBeNull ctx a -> Sql.IsNotTrue x
-            // Neither side can be NULL, so the negation is the opposite comparison.
-            | Sql.Binary("=", l, r) -> Sql.Binary("<>", l, r)
-            | Sql.Binary("<>", l, r) -> Sql.Binary("=", l, r)
-            | Sql.Binary("<", l, r) -> Sql.Binary(">=", l, r)
-            | Sql.Binary(">=", l, r) -> Sql.Binary("<", l, r)
-            | Sql.Binary(">", l, r) -> Sql.Binary("<=", l, r)
-            | Sql.Binary("<=", l, r) -> Sql.Binary(">", l, r)
+            // Neither side can be NULL, so the negation is the opposite
+            // comparison (by value still, for decimals).
+            | Sql.Exact(Sql.Binary(Opposite op, l, r)) -> Sql.Exact(Sql.Binary(op, l, r))
+            | Sql.Binary(Opposite op, l, r) -> Sql.Binary(op, l, r)
             | x -> Sql.Not x
         // Left-joined sources: presence tests and option predicates.
         | Call(None, mi, [ RowBinding ctx b ]) when b.Optional && (mi.Name = "get_IsSome" || isOptionModule mi "IsSome") ->
@@ -1106,6 +1135,8 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
         | OperatorCall "op_Inequality" [ RowField ctx (b, f); v ]
         | OperatorCall "op_Inequality" [ v; RowField ctx (b, f) ] when f.Value.IsSome && not (isRowDependent ctx v) ->
             Sql.IsNotTrue(valueEquals b.Alias f (evaluate ctx v))
+        | OperatorCall "op_Equality" [ a; b ] when isExact ctx.Model a.Type -> byValue (equality ctx e a b false)
+        | OperatorCall "op_Inequality" [ a; b ] when isExact ctx.Model a.Type -> byValue (equality ctx e a b true)
         | OperatorCall "op_Equality" [ a; b ] -> equality ctx e a b false
         | OperatorCall "op_Inequality" [ a; b ] -> equality ctx e a b true
         | Call(None, mi, [ a; b ]) when comparisonOps.ContainsKey mi.Name ->
@@ -1114,7 +1145,8 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
                     e
                     "ordering comparisons on optional values differ between F# (None < Some) and SQL (NULL); compare x.Value after testing x.IsSome"
 
-            Sql.Binary(comparisonOps.[mi.Name], ordered ctx a, ordered ctx b)
+            let compared = Sql.Binary(comparisonOps.[mi.Name], ordered ctx a, ordered ctx b)
+            if isExact ctx.Model a.Type then Sql.Exact compared else compared
         | PropertyGet(Some(RowField ctx (b, f)), p, []) when f.IsOption && p.Name = "IsSome" ->
             fieldIsNotNull b.Alias f
         | PropertyGet(Some(RowField ctx (b, f)), p, []) when f.IsOption && p.Name = "IsNone" ->
@@ -1213,6 +1245,12 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
         | _ -> fail e $"the condition {show e} cannot be translated to SQL, and it will not be evaluated in application memory"
 
 and aggregate ctx (e: Expr) (mi: Reflection.MethodInfo) (args: Expr list) : Sql.Expr =
+    // An aggregate of decimals, made by value.
+    let exactly (sql: Sql.Expr) =
+        match args with
+        | [ x ] when isExact ctx.Model x.Type -> Sql.Exact sql
+        | _ -> sql
+
     let arg () =
         match args with
         | [ x ] ->
@@ -1228,13 +1266,13 @@ and aggregate ctx (e: Expr) (mi: Reflection.MethodInfo) (args: Expr list) : Sql.
     | "count" -> Sql.Aggregate("COUNT", false, None)
     | "countDistinct" -> Sql.Aggregate("COUNT", true, Some(arg ()))
     // F# meaning: the sum of no values is zero (List.sum []).
-    | "sum" -> Sql.Func("COALESCE", [ Sql.Aggregate("SUM", false, Some(arg ())); Sql.Literal "0" ])
+    | "sum" -> Sql.Func("COALESCE", [ exactly (Sql.Aggregate("SUM", false, Some(arg ()))); Sql.Literal "0" ])
     | "min"
     | "max" as name ->
         match args, ctx.Model.OrderedNames e.Type with
         | [ x ], Some names -> nameAt names (Sql.Aggregate(name.ToUpperInvariant(), false, Some(ordered ctx x)))
-        | _ -> Sql.Aggregate(name.ToUpperInvariant(), false, Some(arg ()))
-    | "avg" -> Sql.Aggregate("AVG", false, Some(arg ()))
+        | _ -> exactly (Sql.Aggregate(name.ToUpperInvariant(), false, Some(arg ())))
+    | "avg" -> exactly (Sql.Aggregate("AVG", false, Some(arg ())))
     // Filtered and boolean aggregates (aggregates.feature): each gives over
     // no rows what the F# function it is named after gives.
     | "countWhere" ->
@@ -1285,12 +1323,16 @@ and windowed ctx (e: Expr) (mi: Reflection.MethodInfo) (args: Expr list) : Sql.E
 
     let rec window (w: Expr) : Sql.Expr list * Sql.OrderItem list =
         match w with
-        | Call(None, m, [ key ]) when isWinCall m && m.Name = "partition" -> [ for k in keys key -> scalar ctx k ], []
+        | Call(None, m, [ key ]) when isWinCall m && m.Name = "partition" ->
+            // A decimal partition key by value, as GROUP BY takes one.
+            [ for k in keys key -> (let sql = scalar ctx k in if isExact ctx.Model k.Type then Sql.Exact sql else sql) ], []
         | PropertyGet(None, p, []) when p.DeclaringType.FullName = "Plasm.Win" && p.Name = "whole" -> [], []
         | Call(None, m, [ key; inner ]) when isWinCall m && (m.Name.StartsWith "orderBy" || m.Name.StartsWith "thenBy") ->
             let partition, order = window inner
             let descending = m.Name.EndsWith "Descending"
-            partition, order @ [ for k in keys key -> ({ Expr = scalar ctx k; Desc = descending; NullsFirst = None }: Sql.OrderItem) ]
+            partition,
+            order
+            @ [ for k in keys key -> ({ Expr = scalar ctx k; Desc = descending; NullsFirst = None; ByValue = isExact ctx.Model k.Type }: Sql.OrderItem) ]
         | Let(v, value, body) -> window (body.Substitute(fun x -> if x = v then Some value else None))
         | _ -> fail w "a window is Win.partition key or Win.whole, ordered with Win.orderBy, Win.thenBy and their Descending forms"
 
@@ -1299,6 +1341,9 @@ and windowed ctx (e: Expr) (mi: Reflection.MethodInfo) (args: Expr list) : Sql.E
             fail e $"Win.{name} needs an order, or its result would be arbitrary: order the window with Win.orderBy"
 
         partition, order
+
+    // A window aggregate of decimals, made by value.
+    let exactly (value: Expr) (sql: Sql.Expr) = if isExact ctx.Model value.Type then Sql.Exact sql else sql
 
     match mi.Name, args with
     | ("rowNumber" | "rank" | "denseRank" as name), [ w ] ->
@@ -1310,15 +1355,15 @@ and windowed ctx (e: Expr) (mi: Reflection.MethodInfo) (args: Expr list) : Sql.E
         Sql.Window(name.ToUpperInvariant(), [ scalar ctx value ], partition, order, None)
     | "runningSum", [ value; w ] ->
         let partition, order = ordered "runningSum" (window w)
-        Sql.Func("COALESCE", [ Sql.Window("SUM", [ scalar ctx value ], partition, order, Some "ROWS UNBOUNDED PRECEDING"); Sql.Literal "0" ])
+        Sql.Func("COALESCE", [ exactly value (Sql.Window("SUM", [ scalar ctx value ], partition, order, Some "ROWS UNBOUNDED PRECEDING")); Sql.Literal "0" ])
     | "sum", [ value; w ] ->
         let partition, order = window w
         let frame = if order.IsEmpty then None else Some "ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING"
-        Sql.Func("COALESCE", [ Sql.Window("SUM", [ scalar ctx value ], partition, order, frame); Sql.Literal "0" ])
+        Sql.Func("COALESCE", [ exactly value (Sql.Window("SUM", [ scalar ctx value ], partition, order, frame)); Sql.Literal "0" ])
     | "avg", [ value; w ] ->
         let partition, order = window w
         let frame = if order.IsEmpty then None else Some "ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING"
-        Sql.Window("AVG", [ scalar ctx value ], partition, order, frame)
+        exactly value (Sql.Window("AVG", [ scalar ctx value ], partition, order, frame))
     | "count", [ w ] ->
         let partition, order = window w
         let frame = if order.IsEmpty then None else Some "ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING"
@@ -1339,7 +1384,7 @@ and orderOf ctx (key: Expr) (descending: bool) : Sql.OrderItem list =
           if containsAggregate sql then
               fail key "aggregates cannot be nested"
 
-          ({ Expr = sql; Desc = descending; NullsFirst = None }: Sql.OrderItem) ]
+          ({ Expr = sql; Desc = descending; NullsFirst = None; ByValue = isExact ctx.Model k.Type }: Sql.OrderItem) ]
 
 and fragment ctx (e: Expr) (sql: Expr) (args: Expr) : Sql.Expr =
     let text =
@@ -1438,6 +1483,7 @@ and containsAggregate (e: Sql.Expr) : bool =
     | Sql.AnyOf(a, _, _)
     | Sql.InListParam(a, _, _)
     | Sql.Cast(a, _, _)
+    | Sql.Exact a
     | Sql.AsText a -> containsAggregate a
     | Sql.Func(_, xs) -> List.exists containsAggregate xs
     | Sql.Fragment ps ->
@@ -1535,6 +1581,13 @@ and membership ctx (whole: Expr) (x: Expr) (coll: Expr) : Sql.Expr =
         | Some t -> t
         | None -> fail whole $"type {Reflection.typeName elemType} has no scalar mapping"
 
+    // A decimal is among the values by value: its operand marked, so a dialect
+    // with exact hooks takes it as its order does (SQLite's collation, which
+    // IN compares by).
+    let operand () =
+        let sql = scalar ctx x
+        if providerType = typeof<decimal> then Sql.Exact sql else sql
+
     if mentionsArg coll then
         // One SQL shape for every list (empty included): `= ANY(@p)`.
         let f = argFunction coll
@@ -1558,7 +1611,7 @@ and membership ctx (whole: Expr) (x: Expr) (coll: Expr) : Sql.Expr =
 
         // One parameter holding the list, as the dialect sends one, so the
         // text does not depend on the list's length.
-        Sql.InListParam(scalar ctx x, box (Sql.Bound(resolve, show coll)), model.StoreTypeOf elemType)
+        Sql.InListParam(operand (), box (Sql.Bound(resolve, show coll)), model.StoreTypeOf elemType)
     else
 
     let items = evaluate ctx coll
@@ -1578,7 +1631,7 @@ and membership ctx (whole: Expr) (x: Expr) (coll: Expr) : Sql.Expr =
 
     let arr = Array.CreateInstance(providerType, values.Length)
     values |> Array.iteri (fun i v -> arr.SetValue(v, i))
-    Sql.AnyOf(scalar ctx x, arr, ctx.Model.StoreTypeOf elemType)
+    Sql.AnyOf(operand (), arr, ctx.Model.StoreTypeOf elemType)
 
 and relationship ctx (whole: Expr) (pv: Var) (body: Expr) (assoc: Expr) (all: bool) : Sql.Expr =
     match assoc with
@@ -1813,7 +1866,8 @@ let private orderItem ctx (body: Expr) (dir: SortDirection) : Sql.OrderItem =
     { Expr = ordered ctx body
       Desc = desc
       // Match F# ordering of options: None sorts before Some.
-      NullsFirst = if Reflection.isOption body.Type then Some(not desc) else None }
+      NullsFirst = if Reflection.isOption body.Type then Some(not desc) else None
+      ByValue = isExact ctx.Model body.Type }
 
 let translateWhereOver ctx space (lambda: Expr) =
     let ctx, body = bindSpace ctx space lambda
@@ -1847,7 +1901,8 @@ let private appendKey (orders: Sql.OrderItem list) (key: Sql.Expr) =
         orders
         @ [ { Expr = key
               Desc = false
-              NullsFirst = None } ]
+              NullsFirst = None
+              ByValue = false } ]
 
 /// Every column of a source's key, in order: one, or a composite key's parts.
 let private keyColumns (alias: string) (s: SchemaInfo) =
@@ -1901,7 +1956,7 @@ let private withoutNeedlessNulls (space: Binding list) (wheres: Sql.Expr list) (
     let present (col: Sql.Expr) =
         all
         |> List.exists (fun c ->
-            match c, col with
+            match (match c with Sql.Exact x -> x | c -> c), col with
             | Sql.IsNotNull x, _ -> x = col
             | Sql.Binary(op, a, b), _ when comparison op && (a = col || b = col) -> true
             | Sql.AnyOf(a, _, _), _
@@ -2070,17 +2125,19 @@ let private joinSpace (ctx: Ctx) (def: QueryDef) (select: Expr option) (root: Sc
             let outerCtx, outerKey = bindSpace ctx space j.OuterKey
             let innerCtx, innerKey = bindLambda ctx { b with Optional = false } j.InnerKey
 
+            // Keys equal, decimals by value.
+            let equal (x: Expr) (y: Expr) =
+                let e = Sql.Binary("=", scalar outerCtx x, scalar innerCtx y)
+                if isExact ctx.Model x.Type then Sql.Exact e else e
+
             let on =
                 match outerKey, innerKey with
-                | NewTuple xs, NewTuple ys when xs.Length = ys.Length ->
-                    List.zip xs ys
-                    |> List.map (fun (x, y) -> Sql.Binary("=", scalar outerCtx x, scalar innerCtx y))
-                    |> Sql.conj
+                | NewTuple xs, NewTuple ys when xs.Length = ys.Length -> List.map2 equal xs ys |> Sql.conj
                 | x, y ->
                     if not (isRowDependent outerCtx x) || not (isRowDependent innerCtx y) then
                         fail j.InnerKey "both sides of a join condition must read the joined sources"
 
-                    Sql.Binary("=", scalar outerCtx x, scalar innerCtx y)
+                    equal x y
 
             // The rows a recursive query has found so far are its own name.
             let found = j.Source |> Option.exists (fun d -> d.Found)
@@ -2115,7 +2172,7 @@ let private pageRanked (numbered: Sql.Select) (columns: (Sql.Expr * string) list
     { Sql.select (Sql.Subquery(numbered, "ranked")) with
         Columns = columns
         Where = first @ last
-        OrderBy = [ { Expr = rn; Desc = false; NullsFirst = None } ] }
+        OrderBy = [ { Expr = rn; Desc = false; NullsFirst = None; ByValue = false } ] }
 
 /// pageEach: `sel`'s rows numbered per `key` in its own order, each value
 /// keeping its rows from `skip`, `take` of them; `columns` read them from
@@ -2254,6 +2311,7 @@ let rec private ungrouped (groups: Sql.Expr list) (e: Sql.Expr) =
         | Sql.AnyOf(a, _, _)
         | Sql.InListParam(a, _, _)
         | Sql.Cast(a, _, _)
+        | Sql.Exact a
         | Sql.AsText a -> ungrouped groups a
         | Sql.Func(_, xs) -> List.exists (ungrouped groups) xs
         | Sql.Fragment ps ->
@@ -2273,6 +2331,8 @@ type private Core =
       Joins: Sql.Join list
       Wheres: Sql.Expr list
       Groups: Sql.Expr list
+      /// The groups as GROUP BY takes them: a decimal's by value (Sql.Exact).
+      GroupKeys: Sql.Expr list
       Grouped: bool
       Havings: Sql.Expr list
       Orders: Sql.OrderItem list
@@ -2287,7 +2347,7 @@ type private Core =
                 Columns = columns
                 Joins = c.Joins
                 Where = c.Wheres
-                GroupBy = c.Groups
+                GroupBy = c.GroupKeys
                 Having = c.Havings
                 OrderBy = c.Orders
                 Limit = c.Limit
@@ -2308,14 +2368,20 @@ let private core (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr op
         ctx.Recursive.Add space.Head.Alias |> ignore
     let wheres = def.Wheres |> List.map (translateWhereOver ctx space)
 
-    let groups =
+    let keyed =
         def.GroupBy
         |> List.collect (fun g ->
             let c, body = bindSpace ctx space g
 
+            let key (x: Expr) =
+                let sql = scalar c x
+                sql, (if isExact ctx.Model x.Type then Sql.Exact sql else sql)
+
             match body with
-            | NewTuple xs -> xs |> List.map (scalar c)
-            | x -> [ scalar c x ])
+            | NewTuple xs -> xs |> List.map key
+            | x -> [ key x ])
+
+    let groups = keyed |> List.map fst
 
     let grouped = not groups.IsEmpty || not def.Havings.IsEmpty
     let havings = def.Havings |> List.map (translateHavingOver ctx space)
@@ -2357,6 +2423,7 @@ let private core (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr op
       Joins = joins
       Wheres = wheres
       Groups = groups
+      GroupKeys = keyed |> List.map snd
       Grouped = grouped
       Havings = havings
       Orders = withoutNeedlessNulls space wheres orders
@@ -2418,6 +2485,20 @@ type Shape =
 /// are the tuple of its sources.
 /// `selectDistinct` (distinct.feature): SELECT DISTINCT, ordered only by
 /// selected values, never paged.
+/// The result columns a shape reads as decimals.
+let rec private decimalColumns (s: Shape) =
+    match s with
+    | Leaf(i, t, _, _) when t = typeof<decimal> -> [ i ]
+    | Parts(columns, _, _, _) -> columns |> List.filter (fun (_, t) -> t = typeof<decimal>) |> List.map fst
+    | Build(_, parts) -> List.collect decimalColumns parts
+    | _ -> []
+
+/// A select's columns, its decimals taken by value (Sql.Exact): what DISTINCT
+/// and a set operation tell apart.
+let private byValueColumns (shape: Shape) (sel: Sql.Select) =
+    let decimals = set (decimalColumns shape)
+    { sel with Columns = sel.Columns |> List.mapi (fun i (e, alias) -> (if decimals.Contains i then Sql.Exact e else e), alias) }
+
 let private distinct (def: QueryDef) (sel: Sql.Select) (shape: Shape) : Sql.Select * Shape =
     let rec wholeRecord (s: Shape) =
         match s with
@@ -2467,6 +2548,7 @@ let private distinct (def: QueryDef) (sel: Sql.Select) (shape: Shape) : Sql.Sele
             | Sql.DistinctFrom(x, y) -> Sql.DistinctFrom(over x, over y)
             | Sql.Cast(x, t, arr) -> Sql.Cast(over x, t, arr)
             | Sql.AsText x -> Sql.AsText(over x)
+            | Sql.Exact x -> Sql.Exact(over x)
             | Sql.Like(x, y) -> Sql.Like(over x, over y)
             | Sql.Func(f, xs) -> Sql.Func(f, List.map over xs)
             | Sql.Case(branches, otherwise) -> Sql.Case(branches |> List.map (fun (c, v) -> over c, over v), over otherwise)
@@ -2488,6 +2570,7 @@ let private distinct (def: QueryDef) (sel: Sql.Select) (shape: Shape) : Sql.Sele
         | Sql.IsNotNull x
         | Sql.Cast(x, _, _)
         | Sql.AsText x
+        | Sql.Exact x
         | Sql.AnyOf(x, _, _)
         | Sql.InListParam(x, _, _) -> readsOther x
         | Sql.Func(_, xs) -> List.exists readsOther xs
@@ -2510,9 +2593,9 @@ let private distinct (def: QueryDef) (sel: Sql.Select) (shape: Shape) : Sql.Sele
             { o with Expr = e })
 
     if orders.IsEmpty then
-        { sel with Distinct = true }, shape
+        { byValueColumns shape sel with Distinct = true }, shape
     else
-        let inner = { sel with Distinct = true; OrderBy = [] }
+        let inner = { byValueColumns shape sel with Distinct = true; OrderBy = [] }
 
         { Sql.select (Sql.Subquery(inner, "d")) with
             Columns = sel.Columns |> List.map (fun (_, alias) -> Sql.Column("d", alias), alias)
@@ -2670,8 +2753,11 @@ let rec projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr 
 
                 let i = add sql (show e)
                 // Computed values (arithmetic, aggregates, fragments) are read as
-                // whatever the database returns and converted to the F# type.
-                Leaf(i, typeof<obj>, (fun v -> model.ScalarFromDb(t, v)), show e)
+                // whatever the database returns and converted to the F# type; a
+                // decimal as a decimal, as its column is, whatever the database
+                // keeps it as (SQLite's text).
+                let read = if model.ProviderTypeOf scalarT = Some typeof<decimal> then typeof<decimal> else typeof<obj>
+                Leaf(i, read, (fun v -> model.ScalarFromDb(t, v)), show e)
 
         let rec shape (ctx: Ctx) (e: Expr) : Shape =
             if not (isRowDependent ctx e) then
@@ -2756,7 +2842,9 @@ let rec projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr 
             sel, s)
 
 // The forward references a join to a query and a set operation's operands
-// read through (set-operations.feature).
+// read through (set-operations.feature); a projection's decimals taken by
+// value, as a set operation tells its rows apart. A record's key tells it
+// apart already.
 do
     recordsOf <-
         fun model vol def ->
@@ -2767,7 +2855,7 @@ do
     projectionOf <-
         fun model vol def select ->
             match projection model vol def (Some select) with
-            | Ok(sql, _) -> sql
+            | Ok(sql, shape) -> byValueColumns shape sql
             | Error e -> raise (TranslationFailure e)
 
 /// One field of the row `return` builds (loads.feature).

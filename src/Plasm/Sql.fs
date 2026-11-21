@@ -115,6 +115,31 @@ type IJsonDialect =
     /// sent as text).
     abstract Contains: write: (string -> unit) * doc: (unit -> unit) * value: (unit -> unit) -> unit
 
+/// How a provider makes decimals exact when it does not store them as a type
+/// the database compares, orders and adds by value (SQLite stores them as
+/// text). Translation marks what reads a decimal by value; a dialect with no
+/// such hooks (PostgreSQL's numeric is exact) writes it as it is.
+type IExactDialect =
+    /// `left op right` by value, op one of = <> < <= > >=.
+    abstract Compare: write: (string -> unit) * op: string * left: (unit -> unit) * right: (unit -> unit) -> unit
+    /// Whether `left` and `right` are equal by value, NULLs equal (or, when
+    /// `negated`, whether they differ, NULLs equal).
+    abstract NullSafe: write: (string -> unit) * negated: bool * left: (unit -> unit) * right: (unit -> unit) -> unit
+    /// `left op right` by value, op one of + - * /.
+    abstract Arithmetic: write: (string -> unit) * op: string * left: (unit -> unit) * right: (unit -> unit) -> unit
+    /// A decimal aggregate by value: SUM, AVG, MIN or MAX of `operand`.
+    abstract Aggregate: write: (string -> unit) * name: string * operand: (unit -> unit) -> unit
+    /// A decimal aggregate by value over a window: SUM or AVG of `operand`,
+    /// `over` writing its OVER clause (` OVER (...)`).
+    abstract WindowAggregate: write: (string -> unit) * name: string * operand: (unit -> unit) * over: (unit -> unit) -> unit
+    /// An operand ordered or grouped by value, as ORDER BY and GROUP BY take
+    /// it, the operand of IN, which compares the values in its list so, and a
+    /// column of SELECT DISTINCT or of a set operation's left operand, which
+    /// tell rows apart so.
+    abstract Ordered: write: (string -> unit) * operand: (unit -> unit) -> unit
+    /// The value a decimal is sent as.
+    abstract Value: decimal -> obj
+
 /// Dialect-specific rendering hooks.
 type ISqlDialect =
     abstract Name: string
@@ -178,6 +203,9 @@ type ISqlDialect =
     /// JSON documents ([<Json>] fields); None when the provider has none, and
     /// then a repository refuses a model with a [<Json>] field.
     abstract Json: IJsonDialect option
+    /// How decimals are made exact; None when the database's own decimal
+    /// type is (PostgreSQL's numeric).
+    abstract Exact: IExactDialect option
     /// The BEGIN the provider sends for a transaction at this isolation level,
     /// as the database logs it; OnCommand reports it (transaction-events.feature).
     abstract Begin: IsolationLevel -> string
@@ -252,11 +280,19 @@ module internal Sql =
         | JsonElement of alias: string
         /// Whether an array document contains every element of a document parameter.
         | JsonContains of document: Expr * value: Expr
+        /// A comparison, null-safe comparison, arithmetic, aggregate or window
+        /// aggregate of decimals, made by value as the dialect's IExactDialect makes it, or
+        /// a decimal taken by value as a GROUP BY takes its keys, IN its
+        /// operand and DISTINCT its columns; as it is where the dialect has
+        /// none.
+        | Exact of Expr
 
     and OrderItem =
         { Expr: Expr
           Desc: bool
-          NullsFirst: bool option }
+          NullsFirst: bool option
+          /// Ordered by value as the dialect's IExactDialect orders (a decimal).
+          ByValue: bool }
 
     and Source =
         | Table of name: string * alias: string
@@ -477,12 +513,37 @@ module internal Sql =
             if inline' > 0 then sb.Append(' ') |> ignore else sb.Append('\n').Append(indent) |> ignore
             sb.Append(keyword) |> ignore
 
+        /// What a mark stands for, as precedence sees it: where the dialect
+        /// has no exact hooks, what is written in its place.
+        let unmarked (e: Expr) =
+            match d.Exact, e with
+            | None, Exact(NotDistinctFrom(a, b)) -> Binary(d.NullSafeComparison false, a, b)
+            | None, Exact(DistinctFrom(a, b)) -> Binary(d.NullSafeComparison true, a, b)
+            | _, Exact x -> x
+            | _, e -> e
+
         let json () =
             match d.Json with
             | Some j -> j
             | None -> failwith $"{d.Name} has no JSON documents"
 
         member _.Param(v: obj) =
+            // A decimal is sent as the dialect's exact hooks send it.
+            let v =
+                match d.Exact, v with
+                | Some x, (:? decimal as m) -> x.Value m
+                | Some x, (:? Bound as b) ->
+                    box (
+                        Bound(
+                            (fun args ->
+                                match b.Resolve args with
+                                | :? decimal as m -> x.Value m
+                                | other -> other),
+                            b.Label
+                        )
+                    )
+                | _ -> v
+
             // One prepared argument written twice is one parameter, so its
             // type is the column's wherever it is read.
             match v with
@@ -526,12 +587,29 @@ module internal Sql =
                     |> List.iteri (fun i x ->
                         if i > 0 then w $" {op} "
 
-                        match x with
+                        match unmarked x with
                         // An OR inside an AND needs them; an AND inside an OR is
                         // bracketed to be read at a glance.
                         | Binary(("AND" | "OR"), _, _) -> r.Wrapped x
                         | Binary(o, _, _) when not (comparison o) && not (arithmetic o) -> r.Wrapped x
-                        | x -> r.Expr x)
+                        | _ -> r.Expr x)
+            | Exact x ->
+                match d.Exact, x with
+                | None, NotDistinctFrom(a, b) -> r.Expr(Binary(d.NullSafeComparison false, a, b))
+                | None, DistinctFrom(a, b) -> r.Expr(Binary(d.NullSafeComparison true, a, b))
+                | None, x -> r.Expr x
+                | Some ex, Binary(op, a, b) when comparison op ->
+                    ex.Compare(w, op, (fun () -> r.Expr a), (fun () -> r.Expr b))
+                | Some ex, Binary(op, a, b) when arithmetic op ->
+                    ex.Arithmetic(w, op, (fun () -> r.Expr a), (fun () -> r.Expr b))
+                | Some ex, NotDistinctFrom(a, b) -> ex.NullSafe(w, false, (fun () -> r.Expr a), (fun () -> r.Expr b))
+                | Some ex, DistinctFrom(a, b) -> ex.NullSafe(w, true, (fun () -> r.Expr a), (fun () -> r.Expr b))
+                | Some ex, Aggregate(name, false, Some a) -> ex.Aggregate(w, name, (fun () -> r.Expr a))
+                | Some ex, Window(name, [ a ], partition, order, frame) ->
+                    ex.WindowAggregate(w, name, (fun () -> r.Expr a), (fun () -> r.Over(partition, order, frame)))
+                // A value taken by value: a GROUP BY's key, an IN's operand, a
+                // DISTINCT's column.
+                | Some ex, x -> ex.Ordered(w, (fun () -> r.Expr x))
             | Binary(op, a, b) when comparison op ->
                 r.Operand(a, true)
                 w $" {op} "
@@ -677,32 +755,8 @@ module internal Sql =
                     if i > 0 then w ", "
                     r.Expr a)
 
-                w ") OVER ("
-                let mutable gap = false
-
-                if not partition.IsEmpty then
-                    w "PARTITION BY "
-
-                    partition
-                    |> List.iteri (fun i p ->
-                        if i > 0 then w ", "
-                        r.Expr p)
-
-                    gap <- true
-
-                if not order.IsEmpty then
-                    if gap then w " "
-                    w "ORDER BY "
-                    r.Order order
-                    gap <- true
-
-                match frame with
-                | Some f ->
-                    if gap then w " "
-                    w f
-                | None -> ()
-
                 w ")"
+                r.Over(partition, order, frame)
             | AggregateBy(name, args, order, filter) ->
                 w (d.FunctionName name)
                 w "("
@@ -765,8 +819,47 @@ module internal Sql =
         /// An operand of an operator: bare when it binds tighter (a column, a
         /// call, a CASE; an arithmetic operation inside a comparison), else in
         /// parentheses.
+        /// A window function's OVER clause.
+        member r.Over(partition: Expr list, order: OrderItem list, frame: string option) =
+            let w (s: string) = sb.Append(s) |> ignore
+            w " OVER ("
+            let mutable gap = false
+
+            if not partition.IsEmpty then
+                w "PARTITION BY "
+
+                partition
+                |> List.iteri (fun i p ->
+                    if i > 0 then w ", "
+                    r.Expr p)
+
+                gap <- true
+
+            if not order.IsEmpty then
+                if gap then w " "
+                w "ORDER BY "
+                r.Order order
+                gap <- true
+
+            match frame with
+            | Some f ->
+                if gap then w " "
+                w f
+            | None -> ()
+
+            w ")"
+
         member r.Operand(e: Expr, ofComparison: bool) =
             match e with
+            // Bracketed as what it marks is: what the dialect writes for it
+            // binds as tightly.
+            | Exact _ ->
+                match unmarked e with
+                | Binary(op, _, _) when ofComparison && arithmetic op -> r.Expr e
+                | Binary _
+                | NotDistinctFrom _
+                | DistinctFrom _ -> r.Wrapped e
+                | _ -> r.Expr e
             | Column _
             | Param _
             | ArrayParam _
@@ -787,7 +880,11 @@ module internal Sql =
             items
             |> List.iteri (fun i o ->
                 if i > 0 then sb.Append(", ") |> ignore
-                r.Expr o.Expr
+
+                match d.Exact with
+                | Some ex when o.ByValue -> ex.Ordered((fun x -> sb.Append(x) |> ignore), (fun () -> r.Expr o.Expr))
+                | _ -> r.Expr o.Expr
+
                 if o.Desc then sb.Append(" DESC") |> ignore
 
                 match o.NullsFirst with
@@ -804,7 +901,7 @@ module internal Sql =
                 if i > 0 then w ", "
                 r.Expr e
 
-                match e with
+                match unmarked e with
                 | Column(_, n) when n = alias -> ()
                 | _ ->
                     w " AS "
