@@ -50,6 +50,7 @@ type LimitedProvider(inner: IProvider) =
             member _.TextCast = inner.Dialect.TextCast
             member _.EmptyArray = inner.Dialect.EmptyArray
             member _.ListValue values = inner.Dialect.ListValue values
+            member _.RowsIn(w, columns, lists) = inner.Dialect.RowsIn(w, columns, lists)
             member _.InList(w, operand, list, cast) = inner.Dialect.InList(w, operand, list, cast)
             member _.UnboundedLimit = inner.Dialect.UnboundedLimit
             member _.NullSafeComparison negated = inner.Dialect.NullSafeComparison negated

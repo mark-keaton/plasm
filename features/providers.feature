@@ -27,6 +27,10 @@ Feature: Database-specific SQL comes from the provider
       When I explain, with the test dialect, a prepared query of the Customers whose id is in a list argument
       Then the membership is the dialect's, of one parameter, whatever the list's length
 
+    Scenario: A load under a key of several parts matches the keys as the dialect sends lists
+      When I explain, with a dialect that sends lists as JSON, a query of the tickets, which own their notes under a key of two parts
+      Then the notes' load matches both parts against the dialect's lists, one parameter a part
+
     Scenario: Null-safe comparisons are rendered by the dialect
       When I explain a query comparing an optional field with <> with the test dialect
       Then the comparison uses the dialect's null-safe operator

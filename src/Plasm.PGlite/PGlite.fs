@@ -777,6 +777,26 @@ type internal PGliteDialect(maxKeys: int) =
 
         member _.ListValue values = box values
 
+        member _.RowsIn(w, columns, lists) =
+            w "("
+
+            columns
+            |> List.iteri (fun i column ->
+                if i > 0 then w ", "
+                column ())
+
+            w ") IN (SELECT * FROM unnest("
+
+            lists
+            |> List.iteri (fun i (list, cast) ->
+                if i > 0 then w ", "
+
+                match cast with
+                | Some c -> w $"CAST({list} AS {c})"
+                | None -> w list)
+
+            w "))"
+
         member _.InList(w, operand, list, cast) =
             operand ()
 

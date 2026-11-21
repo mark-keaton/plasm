@@ -72,28 +72,14 @@ module internal Planner =
         let values = [ for k in keys -> keyField.ToColumns k ]
         let parts = matched |> List.map snd
 
-        let arrays =
+        let lists =
             parts
             |> List.mapi (fun i p ->
                 match Model.arrayOf p.ProviderType with
-                | Some(arrayType, make) ->
-                    let a = Sql.Param(make [ for v in values -> v.[i] ])
-                    match Sql.partStoreType p with
-                    | Some t -> Sql.Cast(a, t, true)
-                    | None -> a
+                | Some(_, make) -> make [ for v in values -> v.[i] ] :?> Array
                 | None -> raiseT (TranslationError.InvalidQuery $"a key part of {p.ProviderType.Name} cannot be sent as an array"))
 
-        let columns = matched |> List.map (fun (name, _) -> Choice2Of2(Sql.Column(alias, name)))
-        let comma = Choice1Of2 ", "
-        let listed (xs: Choice<string, Sql.Expr> list) = xs |> List.collect (fun x -> [ comma; x ]) |> List.tail
-
-        Sql.Fragment(
-            [ Choice1Of2 "(" ]
-            @ listed columns
-            @ [ Choice1Of2 ") IN (SELECT * FROM unnest(" ]
-            @ listed (arrays |> List.map Choice2Of2)
-            @ [ Choice1Of2 "))" ]
-        )
+        Sql.RowsInLists(matched |> List.map (fun (name, _) -> Sql.Column(alias, name)), lists, parts |> List.map Sql.partStoreType)
 
     /// The loads of what `parent` owns or links (owned-collections.feature):
     /// every owned or linked field, at every level, in its declared order (else

@@ -63,10 +63,10 @@
     <Compile Include="PageEachSteps.fs" />
     <Compile Include="RetryWaitSteps.fs" />
     <Compile Include="ArraySteps.fs" />
-    <!-- After the array and enum steps: its refusals use their models. -->
-    <Compile Include="ProviderSteps.fs" />
     <Compile Include="CompositeKeySteps.fs" />
     <Compile Include="CompositeReferenceSteps.fs" />
+    <!-- After the steps whose models its scenarios use (arrays, enums, keys of several parts). -->
+    <Compile Include="ProviderSteps.fs" />
     <Compile Include="TransactionEventSteps.fs" />
     <Compile Include="StreamSteps.fs" />
     <Compile Include="RecursiveSteps.fs" />

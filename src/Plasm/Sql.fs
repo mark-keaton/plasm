@@ -94,6 +94,10 @@ type ISqlDialect =
     /// cast as `cast` says when its elements have a database type of their
     /// own: `operand = ANY(list)` on PostgreSQL.
     abstract InList: write: (string -> unit) * operand: (unit -> unit) * list: string * cast: string option -> unit
+    /// Rows of `columns` among the rows the lists make, the i-th list holding
+    /// the i-th column's values, each with its cast: `(a, b) IN (SELECT * FROM
+    /// unnest(@p0, @p1))` on PostgreSQL.
+    abstract RowsIn: write: (string -> unit) * columns: (unit -> unit) list * lists: (string * string option) list -> unit
     /// An empty array's literal: a list aggregate's value over no rows
     /// (`'{}'`).
     abstract EmptyArray: string
@@ -145,6 +149,11 @@ module internal Sql =
         | IsNotNull of Expr
         | NotDistinctFrom of Expr * Expr
         | DistinctFrom of Expr * Expr
+        /// Rows of several columns (a key of several parts) among the rows the
+        /// lists make, one list a column, each sent as one parameter as the
+        /// dialect sends a list; `casts` name the database type each list's
+        /// elements are cast to.
+        | RowsInLists of columns: Expr list * lists: Array list * casts: string list option list
         /// Membership in a list sent as one parameter (a prepared query's list
         /// argument, a Sql.Bound resolving to an array), as the dialect sends a
         /// list; `cast` names the database type its elements are cast to.
@@ -489,6 +498,13 @@ module internal Sql =
                 r.Operand(a, false)
                 w $" {d.NullSafeComparison true} "
                 r.Operand(b, false)
+            | RowsInLists(columns, lists, casts) ->
+                let sent =
+                    List.map2 (fun (l: Array) (c: string list option) -> r.Param(d.ListValue l), c |> Option.bind (fun t -> castName d t true)) lists casts
+
+                w "("
+                d.RowsIn(w, columns |> List.map (fun c () -> r.Expr c), sent)
+                w ")"
             | InListParam(a, list, cast) ->
                 let sent =
                     match list with

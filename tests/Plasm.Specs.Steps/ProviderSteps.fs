@@ -36,6 +36,17 @@ type ProviderSteps(w: World) =
         let m = w.Get<string> "madeWith"
         check (m.Contains fields && m.Contains $"has no {capability}") m
 
+    [<StepDefinition("I explain, with a dialect that sends lists as JSON, a query of the tickets, which own their notes under a key of two parts")>]
+    member _.CompositeLoad() =
+        let repo = Repo(Plasm.Specs.CompositeReferences.Schemas.model, JsonLists(w.Db.Provider))
+        let plan = repo.Explain(Query.from (tableOf<Plasm.Specs.CompositeReferences.Ticket>)) |> ok
+        w.Set("sql", (plan.Loads |> List.head).Sql)
+
+    [<StepDefinition("the notes' load matches both parts against the dialect's lists, one parameter a part")>]
+    member _.CompositeLoadSql() =
+        let sql = w.Get<string> "sql"
+        check (sql.Contains "IN (SELECT l0.value, l1.value FROM json_each(@p0) AS l0 JOIN json_each(@p1) AS l1 ON l1.key = l0.key)" && not (sql.Contains "unnest")) sql
+
     [<StepDefinition("I explain, with the test dialect, a prepared query of the Customers whose id is in a list argument")>]
     member _.PreparedList() =
         let byIds = Query.prepare (fun (ids: Arg<CustomerId list>) -> plasm { for c in tableOf<Customer> do where (List.contains c.Id ids.Value) })
