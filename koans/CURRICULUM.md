@@ -107,6 +107,7 @@ the lessons it builds on.
 | # | Lesson | What it is for |
 |---|---|---|
 | 24 | Set operations | `Query.union`, `unionAll`, `intersect` and `except` of two queries of the same rows, ordered and paged as a whole; an operand that orders itself refused; projections combined; a query as a join's source. |
+| 25 | Windows and aggregates over rows | `Win.rowNumber`, `runningSum`, `lag`, `sum` and `count` over `Win.partition` or `Win.whole`, beside each row; a window over the rows kept; a rank over no order refused; `Agg.countWhere`, `sumWhere`, `any`, `all`, `listBy` and its Descending form; what each gives over no rows. |
 
 ## Writing a koan
 

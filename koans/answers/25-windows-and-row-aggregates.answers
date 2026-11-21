@@ -1,0 +1,19 @@
+# Numbering each customer's orders
+[ OrderId 1L, 1L; OrderId 2L, 2L; OrderId 3L, 1L ]
+# A running total and the row before
+[ 30m, None; 42.5m, Some 30m; 141.5m, Some 12.5m; 146.5m, Some 99m ]
+# A whole window beside each row
+(146.5m, 4L)
+# The window is over the rows kept
+[ 1L; 2L ]
+# A rank needs an order
+true
+# Counting and adding the rows that meet a test
+[ Some(CustomerId 1L), 1L, 30m; Some(CustomerId 2L), 1L, 99m ]
+# Whether any, whether all
+[ Some(CustomerId 1L), false, false; Some(CustomerId 2L), true, true ]
+# A list in a stated order
+[ 30m; 12.5m ]
+[ 12.5m; 30m ]
+# Over no rows
+(0L, false, true, [])
