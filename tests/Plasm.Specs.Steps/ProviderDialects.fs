@@ -20,6 +20,7 @@ type TestDialectProvider(inner: IProvider) =
             member _.ColumnType t = inner.Dialect.ColumnType t
             member _.CatalogueTypes t = if t = typeof<string> then [ "character varying"; "text" ] else inner.Dialect.CatalogueTypes t
             member _.CastType t = inner.Dialect.CastType t
+            member _.UnboundedLimit = Some "-1"
             member _.NullSafeComparison negated = if negated then "IS NOT" else "IS"
 
             member _.LikeEscape = " ESCAPE '\\'"
@@ -60,6 +61,7 @@ type MarkedComparisonProvider(inner: IProvider) =
             member _.ColumnType t = d.ColumnType t
             member _.CatalogueTypes t = d.CatalogueTypes t
             member _.CastType t = d.CastType t
+            member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated + " /* the dialect's */"
             member _.LikeEscape = d.LikeEscape
             member _.FunctionName name = d.FunctionName name

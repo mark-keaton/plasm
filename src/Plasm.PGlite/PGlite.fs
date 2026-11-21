@@ -764,6 +764,8 @@ type internal PGliteDialect(maxKeys: int) =
 
         member _.Begin isolation = Values.beginAt isolation
 
+        member _.UnboundedLimit = None
+
         member _.NullSafeComparison negated =
             if negated then "IS DISTINCT FROM" else "IS NOT DISTINCT FROM"
 

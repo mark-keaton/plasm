@@ -66,6 +66,7 @@ module RoundTripDomain =
                 member _.ColumnType t = inner.Dialect.ColumnType t
                 member _.CatalogueTypes t = inner.Dialect.CatalogueTypes t
                 member _.CastType t = inner.Dialect.CastType t
+                member _.UnboundedLimit = inner.Dialect.UnboundedLimit
                 member _.NullSafeComparison negated = inner.Dialect.NullSafeComparison negated
                 member _.LikeEscape = inner.Dialect.LikeEscape
                 member _.FunctionName name = inner.Dialect.FunctionName name

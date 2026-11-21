@@ -103,6 +103,8 @@ type internal PostgresDialect(options: PostgresOptions) =
             | IsolationLevel.ReadUncommitted -> "BEGIN TRANSACTION ISOLATION LEVEL READ UNCOMMITTED"
             | _ -> "BEGIN TRANSACTION ISOLATION LEVEL READ COMMITTED"
 
+        member _.UnboundedLimit = None
+
         member _.NullSafeComparison negated =
             if negated then "IS DISTINCT FROM" else "IS NOT DISTINCT FROM"
 

@@ -36,6 +36,15 @@ type ProviderSteps(w: World) =
         let m = w.Get<string> "madeWith"
         check (m.Contains fields && m.Contains $"has no {capability}") m
 
+    [<StepDefinition("I explain a query of the Customers by name that skips one, with the test dialect, which needs a LIMIT before an OFFSET")>]
+    member _.SkipOnly() =
+        w.Set("explained", (explain (plasm { for c in tableOf<Customer> do orderBy c.Name; skip 1 })).Sql)
+
+    [<StepDefinition("the query takes the dialect's unbounded limit before its offset")>]
+    member _.UnboundedLimit() =
+        let sql = w.Get<string> "explained"
+        check (sql.Contains "LIMIT -1 OFFSET @p") sql
+
     [<StepDefinition("I print the DDL with the test dialect, which accepts \"character varying\" before \"text\" for a string")>]
     member _.TestDdl() = w.Set("testDdl", repo().Ddl())
 

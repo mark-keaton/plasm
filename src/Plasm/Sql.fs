@@ -72,6 +72,9 @@ type ISqlDialect =
     /// The type a scalar read out of a JSON document as text is cast to, to be
     /// compared and read as this provider type; None when the dialect has none.
     abstract CastType: Type -> string option
+    /// What LIMIT takes for no limit, when the dialect needs a LIMIT before an
+    /// OFFSET (SQLite's -1); None when OFFSET stands on its own (PostgreSQL).
+    abstract UnboundedLimit: string option
     /// The null-safe comparison operator: equality treating NULLs as equal
     /// (`IS NOT DISTINCT FROM`), or its negation when `negated`.
     abstract NullSafeComparison: negated: bool -> string
@@ -793,16 +796,22 @@ module internal Sql =
                 clause "ORDER BY "
                 r.Order s.OrderBy
 
-            // A page is one line: LIMIT and OFFSET together.
-            match s.Limit with
-            | Some l ->
-                clause "LIMIT "
-                r.Expr l
-            | None -> ()
+            // A page is one line: LIMIT and OFFSET together. Rows skipped with
+            // no limit take the dialect's unbounded limit, if it needs one.
+            let limited =
+                match s.Limit, s.Offset, d.UnboundedLimit with
+                | Some l, _, _ ->
+                    clause "LIMIT "
+                    r.Expr l
+                    true
+                | None, Some _, Some unbounded ->
+                    clause $"LIMIT {unbounded}"
+                    true
+                | _ -> false
 
             match s.Offset with
             | Some o ->
-                if s.Limit.IsSome then w " OFFSET " else clause "OFFSET "
+                if limited then w " OFFSET " else clause "OFFSET "
                 r.Expr o
             | None -> ()
 

@@ -9,9 +9,8 @@ Feature: Database-specific SQL comes from the provider
 
   These scenarios use a test dialect that differs from PostgreSQL. Queries are
   only explained (translated, never executed), so no second database is needed.
-  Not everything is behind the dialect yet: LIMIT/OFFSET, the catalogue
-  queries and the many-to-many link SQL are still PostgreSQL's
-  (see docs/status.md).
+  Not everything is behind the dialect yet: the catalogue queries and the
+  many-to-many link SQL are still PostgreSQL's (see docs/status.md).
 
   Background:
     Given a configured relational database
@@ -31,6 +30,10 @@ Feature: Database-specific SQL comes from the provider
     Scenario: String functions are named by the dialect
       When I explain a query filtering on the length of a name with the test dialect
       Then the length uses the dialect's function name
+
+    Scenario: Rows skipped with no limit are paged as the dialect pages them
+      When I explain a query of the Customers by name that skips one, with the test dialect, which needs a LIMIT before an OFFSET
+      Then the query takes the dialect's unbounded limit before its offset
 
     Scenario: The DDL declares the dialect's column type, whatever names its catalogue accepts
       When I print the DDL with the test dialect, which accepts "character varying" before "text" for a string
