@@ -63,6 +63,7 @@
     <Compile Include="PageEachSteps.fs" />
     <Compile Include="RetryWaitSteps.fs" />
     <Compile Include="ArraySteps.fs" />
+    <Compile Include="ArrayValueSteps.fs" />
     <Compile Include="CompositeKeySteps.fs" />
     <Compile Include="CompositeReferenceSteps.fs" />
     <!-- After the steps whose models its scenarios use (arrays, enums, keys of several parts). -->

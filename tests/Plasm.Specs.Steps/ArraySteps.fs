@@ -51,6 +51,20 @@ module Schemas =
            topics text[] not null,
            kinds text[] not null);"
 
+    /// The table in SQLite's own SQL: each list a TEXT holding one JSON array,
+    /// held to that form as the Ddl holds it. `columns` replaces a column's
+    /// declaration (a scenario's change behind Plasm's back).
+    let tablesSqlite (columns: Map<string, string>) =
+        let column name declared =
+            match columns.TryFind name with
+            | Some d -> $"{name} {d}"
+            | None -> $"{name} {declared} constraint gh_issues_{name}_check check (json_valid({name}) and json_type({name}) = 'array')"
+
+        "create table gh_issues (
+           id INTEGER not null primary key,
+           title TEXT not null,
+           " + String.concat ",\n           " [ for c in [ "labels"; "assignees"; "points"; "topics"; "kinds" ] -> column c "TEXT not null" ] + ");"
+
     let topic (text: string) =
         match Topic.create text with
         | Ok t -> t
@@ -128,6 +142,7 @@ open System.Text.RegularExpressions
 open Reqnroll
 open Plasm
 open Plasm.Specs.ArrayColumns
+open Plasm.TestDomain.Database
 
 /// Feature: A list of scalars is stored as one array column
 [<Binding>]
@@ -183,12 +198,49 @@ type ArraySteps(w: World) =
     let read () = ok (w.Get<Result<Issue list, DbError>> "arrayRead")
 
     let column (name: string) =
-        w.Db.Scalar<obj>($"select {name}::text from gh_issues where title = @t", [ "t", box (w.Get<string> "arrayTitle") ])
+        match w.Db.Kind with
+        | PostgreSQL -> w.Db.Scalar<obj>($"select {name}::text from gh_issues where title = @t", [ "t", box (w.Get<string> "arrayTitle") ])
+        | SQLite -> w.Db.Scalar<obj>($"select {name} from gh_issues where title = @t", [ "t", box (w.Get<string> "arrayTitle") ])
+
+    /// A list written {bug,ui} (each element as it reads; NULL for none) as
+    /// the database holds it: PostgreSQL's array literal, or SQLite's JSON
+    /// array, the points as numbers.
+    let stored (name: string) (braces: string) =
+        match w.Db.Kind with
+        | PostgreSQL -> braces
+        | SQLite ->
+            let inner = braces.Trim('{', '}')
+            let items = if inner = "" then [] else inner.Split(',') |> List.ofArray
+
+            let json (item: string) =
+                if item = "NULL" then "null"
+                elif name = "points" then item
+                else "\"" + item + "\""
+
+            "[" + String.concat "," (items |> List.map json) + "]"
+
+    /// SQLite has no ALTER COLUMN: the table is made again with a column
+    /// declared otherwise, its rows kept.
+    let rebuild (columns: Map<string, string>) =
+        task {
+            let! _ =
+                w.Db.Exec(
+                    "alter table gh_issues rename to gh_issues_was; "
+                    + Schemas.tablesSqlite columns
+                    + " insert into gh_issues select * from gh_issues_was; drop table gh_issues_was;"
+                )
+
+            ()
+        }
 
     [<StepDefinition("issues with labels, assignees, points, topics and kinds")>]
     member _.Tables() =
         task {
-            let! _ = w.Db.Exec Schemas.tables
+            let! _ =
+                match w.Db.Kind with
+                | PostgreSQL -> w.Db.Exec Schemas.tables
+                | SQLite -> w.Db.Exec("drop table if exists gh_issues; " + Schemas.tablesSqlite Map.empty)
+
             w.Set("arrayRepo", w.Db.RepoWith(model = Schemas.model))
         }
         |> unit
@@ -207,13 +259,23 @@ type ArraySteps(w: World) =
     [<StepDefinition("^the (\\w+) column of \"(\\w+)\" is set behind Plasm's back to (.*)$")>]
     member _.Behind(name: string, title: string, value: string) =
         task {
-            let sql =
-                // Behind Plasm's back indeed: the column's NOT NULL goes too.
-                if value = "NULL" then $"alter table gh_issues alter column {name} drop not null; update gh_issues set {name} = NULL where title = @t"
-                else $"update gh_issues set {name} = '{value}' where title = @t"
+            match w.Db.Kind with
+            | PostgreSQL ->
+                let sql =
+                    // Behind Plasm's back indeed: the column's NOT NULL goes too.
+                    if value = "NULL" then $"alter table gh_issues alter column {name} drop not null; update gh_issues set {name} = NULL where title = @t"
+                    else $"update gh_issues set {name} = '{value}' where title = @t"
 
-            let! _ = w.Db.Exec(sql, [ "t", box title ])
-            ()
+                let! _ = w.Db.Exec(sql, [ "t", box title ])
+                ()
+            | SQLite ->
+                if value = "NULL" then
+                    do! rebuild (Map.ofList [ name, "TEXT" ])
+                    let! _ = w.Db.Exec($"update gh_issues set {name} = NULL where title = @t", [ "t", box title ])
+                    ()
+                else
+                    let! _ = w.Db.Exec($"update gh_issues set {name} = @v where title = @t", [ "v", box (stored name value); "t", box title ])
+                    ()
         }
         |> unit
 
@@ -226,8 +288,8 @@ type ArraySteps(w: World) =
     [<StepDefinition("^the (\\w+) column holds (\\{.*\\})$")>]
     member _.Holds(name: string, value: string) =
         task {
-            let! stored = column name
-            equal value (string stored) $"the {name} column"
+            let! held = column name
+            equal (stored name value) (string held) $"the {name} column"
         }
         |> unit
 
@@ -317,10 +379,11 @@ type ArraySteps(w: World) =
     member _.ReadAre(title: string) =
         equal [ title ] (read () |> List.map (fun i -> i.Title)) "issues"
 
-    [<StepDefinition("^the query's condition is (.*)$")>]
-    member _.Condition(text: string) =
-        let sql = w.CommandsSinceMark |> List.map (fun e -> e.Sql) |> List.head
-        check (sql.Contains text) sql
+    [<StepDefinition("^on (PostgreSQL|SQLite) the query's condition is (.*)$")>]
+    member _.Condition(database: string, text: string) =
+        if string w.Db.Kind = database then
+            let sql = w.CommandsSinceMark |> List.map (fun e -> e.Sql) |> List.head
+            check (sql.Contains text) sql
 
     [<StepDefinition("^I read the Issues whose labels are exactly \"(\\w+)\"$")>]
     member _.Exactly(label: string) =
@@ -359,10 +422,23 @@ type ArraySteps(w: World) =
     [<StepDefinition("the labels column may hold NULL")>]
     member _.LabelsNullable() =
         task {
-            let! _ = w.Db.Exec "alter table gh_issues alter column labels drop not null"
-            ()
+            match w.Db.Kind with
+            | PostgreSQL ->
+                let! _ = w.Db.Exec "alter table gh_issues alter column labels drop not null"
+                ()
+            | SQLite -> do! rebuild (Map.ofList [ "labels", "TEXT constraint gh_issues_labels_check check (json_valid(labels) and json_type(labels) = 'array')" ])
         }
         |> unit
+
+    [<StepDefinition("^the (labels|points) column is declared (INTEGER|REAL)$")>]
+    member _.DeclaredOtherwise(name: string, declared: string) = rebuild (Map.ofList [ name, declared + " not null" ]) |> unit
+
+    [<StepDefinition("each list column is held to a JSON array by its check")>]
+    member _.HeldToJson() =
+        let ddl = w.Get<string> "valueDdl"
+
+        for c in [ "labels"; "assignees"; "points"; "topics"; "kinds" ] do
+            check (ddl.Contains $"constraint gh_issues_{c}_check check (json_valid({c}) and json_type({c}) = 'array')") ddl
 
     [<StepDefinition("a nullable column is reported for Issue.Labels")>]
     member _.Nullable() =

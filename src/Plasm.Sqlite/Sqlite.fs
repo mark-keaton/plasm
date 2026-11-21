@@ -44,55 +44,6 @@ module internal Floor =
 
     let renderings = "RETURNING (3.35), IS NOT DISTINCT FROM (3.39), string_agg(x, sep ORDER BY k) (3.44)"
 
-module internal Lists =
-    /// A list as one JSON text parameter, read back as rows by json_each.
-    let json (values: Array) : obj =
-        use stream = new MemoryStream()
-
-        (use w = new Utf8JsonWriter(stream)
-         w.WriteStartArray()
-
-         for v in values do
-             match v with
-             | null -> w.WriteNullValue()
-             | :? int64 as x -> w.WriteNumberValue x
-             | :? int as x -> w.WriteNumberValue x
-             | :? int16 as x -> w.WriteNumberValue(int x)
-             | :? bool as x -> w.WriteNumberValue(if x then 1 else 0)
-             | :? float as x -> w.WriteNumberValue x
-             | :? decimal as x -> w.WriteStringValue(Decimals.text x)
-             | :? Guid as x -> w.WriteStringValue(x.ToString().ToUpperInvariant())
-             | :? string as x -> w.WriteStringValue x
-             | x -> w.WriteStringValue(string x)
-
-         w.WriteEndArray())
-
-        box (Encoding.UTF8.GetString(stream.ToArray()))
-
-    let rows (lists: (string * string option) list) (alias: (string * string list) option) (q: string -> string) =
-        let names =
-            match alias with
-            | Some(_, columns) -> columns
-            | None -> lists |> List.mapi (fun i _ -> $"k{i + 1}")
-
-        let select =
-            lists
-            |> List.mapi (fun i _ -> $"l{i}.value AS {q names.[i]}")
-            |> String.concat ", "
-
-        let from =
-            lists
-            |> List.mapi (fun i (list, _) ->
-                if i = 0 then $"json_each({list}) AS l0" else $"JOIN json_each({list}) AS l{i} ON l{i}.key = l0.key")
-            |> String.concat " "
-
-        let table = $"(SELECT {select} FROM {from})"
-
-        match alias with
-        | Some(name, _) -> $"{table} AS {q name}"
-        | None -> table
-
-/// SQLite's DDL (ddl.feature).
 module internal SqliteDdl =
     /// SQLite's keywords: a table or column named by one is printed quoted.
     let private reserved =
@@ -257,6 +208,9 @@ type internal SqliteDialect(options: SqliteOptions) =
             // registered collation and functions), and any tool reads the text.
             | t when t = typeof<decimal> -> Some "TEXT"
             | t when t = typeof<byte[]> -> Some "BLOB"
+            // A list of scalars: one JSON array (Lists.json), held to that form
+            // by its check (ListCheck).
+            | t when t.IsArray -> Some "TEXT"
             | t when
                 t = typeof<string> || t = typeof<Guid> || t = typeof<DateTime> || t = typeof<DateTimeOffset>
                 || t = typeof<DateOnly> || t = typeof<TimeOnly> || t = typeof<TimeSpan>
@@ -343,7 +297,7 @@ type internal SqliteDialect(options: SqliteOptions) =
               DefersBegin = false
               Describe = true
               EnumTypes = false
-              ArrayColumns = false }
+              ArrayColumns = true }
 
         // Every transaction takes the write lock from its first statement.
         member _.Begin _ = "BEGIN IMMEDIATE"

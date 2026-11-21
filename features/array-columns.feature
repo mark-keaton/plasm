@@ -86,7 +86,8 @@ Feature: A list of scalars is stored as one array column
       And an Issue "Docs" labelled "docs"
       When I read the Issues labelled "bug"
       Then the Issues read are "Crash"
-      And the query's condition is = ANY("i"."labels")
+      And on PostgreSQL the query's condition is = ANY("i"."labels")
+      And on SQLite the query's condition is IN (SELECT value FROM json_each("i"."labels"))
 
     Scenario: Filtering by a wrapped value in an array
       Given an Issue "Crash" assigned to "ada"
@@ -105,7 +106,8 @@ Feature: A list of scalars is stored as one array column
       And an Issue "Quiet" with nothing in its lists
       When I read the Issues with no labels
       Then the Issues read are "Quiet"
-      And the query's condition is cardinality("i"."labels") = 0
+      And on PostgreSQL the query's condition is cardinality("i"."labels") = 0
+      And on SQLite the query's condition is json_array_length("i"."labels") = 0
 
     Scenario: Filtering by an array that is not empty
       Given an Issue "Crash" labelled "bug"
@@ -124,12 +126,55 @@ Feature: A list of scalars is stored as one array column
         | with a label starting with "b"             | List.contains or List.isEmpty     |
         | ordered by their labels                    | cannot be ordered by              |
 
+  Rule: Every scalar a list holds is stored in its column's form
+
+    Each element is held in the form a column of its type holds it, so a list is
+    read back as it was written and List.contains finds what is there: on
+    SQLite a JSON array of each scalar's own text (a Guid in capitals, a time
+    to the tick it was given, a decimal keeping its scale) or exact number (an
+    int64 past 2^53, a double's shortest text).
+
+    Scenario: Every scalar a list can hold is read back as it was written
+      Given a sample holding every scalar a list can hold, at the values that test its form
+      Then the sample is read back as it was written
+
+    Scenario: Every scalar a list holds is found by List.contains
+      Given a sample holding every scalar a list can hold, at the values that test its form
+      Then each of its values is found in its list by List.contains, the decimal by value
+
+    @sqlite
+    Scenario: A double that is not a number cannot be stored in a list on SQLite
+      When a sample with NaN among its doubles is written
+      Then the write is refused, saying "JSON, which has no NaN or infinity"
+
+    @sqlite
+    Scenario: A list column holding what is not a JSON array is a read error naming the column
+      Given a sample holding every scalar a list can hold, at the values that test its form
+      And the sample's bigs column is set behind Plasm's back to "a string"
+      When I read the samples
+      Then the read of the samples fails, saying "bigs" and "not a list of Int64"
+
+    @sqlite
+    Scenario: A list element of the wrong type is a read error naming the column and the element
+      Given a sample holding every scalar a list can hold, at the values that test its form
+      And the sample's bigs column is set behind Plasm's back to [1,"two"]
+      When I read the samples
+      Then the read of the samples fails, saying "bigs" and "element 1"
+
   Rule: The database's tables are described and checked
 
+    @postgres
     Scenario: Ddl prints array columns
       When I print the DDL of the issues model
       Then it has the columns labels text[] not null, assignees text[] not null, points integer[] not null, topics text[] not null and kinds text[] not null
 
+    @sqlite
+    Scenario: Ddl prints array columns on SQLite
+      When I print the DDL of the issues model
+      Then it has the columns labels TEXT not null, assignees TEXT not null, points TEXT not null, topics TEXT not null and kinds TEXT not null
+      And each list column is held to a JSON array by its check
+
+    @postgres
     Scenario Outline: The schema check finds an array column of the wrong type
       Given the <column> column is <type>
       When I check the issues model against the database
@@ -139,6 +184,17 @@ Feature: A list of scalars is stored as one array column
         | column | type     | field  | needed    |
         | labels | text     | Labels | text[]    |
         | points | bigint[] | Points | integer[] |
+
+    @sqlite
+    Scenario Outline: The schema check finds an array column of the wrong type on SQLite
+      Given the <column> column is declared <type>
+      When I check the issues model against the database
+      Then an incompatible type is reported for Issue.<field>, naming <needed>
+
+      Examples:
+        | column | type    | field  | needed |
+        | labels | INTEGER | Labels | TEXT   |
+        | points | REAL    | Points | TEXT   |
 
     Scenario: The schema check finds an array column that may hold NULL
       Given the labels column may hold NULL

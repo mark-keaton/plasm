@@ -148,7 +148,13 @@ type internal HearingReader(inner: SqliteDataReader, ct: CancellationToken, hear
     override _.IsDBNull i = inner.IsDBNull i
     // As SQLite's reader reads them (a decimal from its text), not as the base
     // class would, through GetValue.
-    override _.GetFieldValue<'T>(i: int) : 'T = inner.GetFieldValue<'T> i
+    override _.GetFieldValue<'T>(i: int) : 'T =
+        // A list column (array-columns.feature): its JSON text read as the
+        // array its type declares, each element as its scalar column would be.
+        if typeof<'T>.IsArray && typeof<'T> <> typeof<byte[]> && not (inner.IsDBNull i) && inner.GetFieldType i = typeof<string> then
+            unbox<'T> (box (Lists.parse typeof<'T> (inner.GetName i) (inner.GetString i)))
+        else
+            inner.GetFieldValue<'T> i
     override _.GetSchemaTable() = inner.GetSchemaTable()
     override _.NextResult() = step (fun () -> inner.NextResult())
     override _.Read() = step (fun () -> inner.Read())
