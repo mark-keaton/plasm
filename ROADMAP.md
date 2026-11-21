@@ -14,7 +14,7 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
 ## Later: not started
 
-- A second database provider
+- A second database provider: SQLite
 - Measurements behind a connection proxy on AWS
 - A typed GraphQL client checked against the outcome unions
 
