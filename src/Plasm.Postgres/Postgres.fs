@@ -246,7 +246,19 @@ type internal PostgresDialect(options: PostgresOptions) =
             if negated then "IS DISTINCT FROM" else "IS NOT DISTINCT FROM"
 
         // A backslash is PostgreSQL's own escape character in LIKE.
-        member _.LikeEscape = ""
+        // LIKE, whose escape is a backslash by default: the text's own \\, %
+        // and _ escaped, then % where the match is open.
+        member _.TextMatch(w, kind, operand, pattern) =
+            operand ()
+            w " LIKE "
+
+            pattern (fun t ->
+                let e = t.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_")
+
+                match kind with
+                | TextMatchKind.StartsWith -> e + "%"
+                | TextMatchKind.EndsWith -> "%" + e
+                | TextMatchKind.Contains -> "%" + e + "%")
         member _.FunctionName name = name
         member _.Json = Some PostgresJson.Instance
         member _.Exact = None

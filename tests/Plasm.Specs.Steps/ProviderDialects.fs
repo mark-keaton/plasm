@@ -49,7 +49,20 @@ type TestDialectProvider(inner: IProvider) =
             member _.UnboundedLimit = Some "-1"
             member _.NullSafeComparison negated = if negated then "IS NOT" else "IS"
 
-            member _.LikeEscape = " ESCAPE '\\'"
+            // LIKE with its escape named, as a dialect whose default differs writes it.
+            member _.TextMatch(w, kind, operand, pattern) =
+                operand ()
+                w " LIKE "
+
+                pattern (fun t ->
+                    let e = t.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_")
+
+                    match kind with
+                    | TextMatchKind.StartsWith -> e + "%"
+                    | TextMatchKind.EndsWith -> "%" + e
+                    | TextMatchKind.Contains -> "%" + e + "%")
+
+                w " ESCAPE '\\'"
             member _.FunctionName name =
                 match name with
                 | "char_length" -> "length"
@@ -118,7 +131,7 @@ type StoredAsDialectSays(inner: IProvider, documentType: string list) =
             member _.Ddl = d.Ddl
             member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated
-            member _.LikeEscape = d.LikeEscape
+            member _.TextMatch(w, kind, operand, pattern) = d.TextMatch(w, kind, operand, pattern)
             member _.FunctionName name = d.FunctionName name
             member _.Json = json
             member _.Exact = d.Exact
@@ -174,7 +187,7 @@ type MarkedCatalogue(inner: IProvider) =
             member _.Ddl = d.Ddl
             member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated
-            member _.LikeEscape = d.LikeEscape
+            member _.TextMatch(w, kind, operand, pattern) = d.TextMatch(w, kind, operand, pattern)
             member _.FunctionName name = d.FunctionName name
             member _.Json = d.Json
             member _.Exact = d.Exact
@@ -217,7 +230,7 @@ type NoArrayParameters(inner: IProvider) =
             member _.Ddl = d.Ddl
             member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated
-            member _.LikeEscape = d.LikeEscape
+            member _.TextMatch(w, kind, operand, pattern) = d.TextMatch(w, kind, operand, pattern)
             member _.FunctionName name = d.FunctionName name
             member _.Json = d.Json
             member _.Exact = d.Exact
@@ -269,7 +282,7 @@ type JsonLists(inner: IProvider) =
             member _.Ddl = d.Ddl
             member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated
-            member _.LikeEscape = d.LikeEscape
+            member _.TextMatch(w, kind, operand, pattern) = d.TextMatch(w, kind, operand, pattern)
             member _.FunctionName name = d.FunctionName name
             member _.Json = d.Json
             member _.Exact = d.Exact
@@ -312,7 +325,7 @@ type MarkedComparisonProvider(inner: IProvider) =
             member _.Ddl = d.Ddl
             member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated + " /* the dialect's */"
-            member _.LikeEscape = d.LikeEscape
+            member _.TextMatch(w, kind, operand, pattern) = d.TextMatch(w, kind, operand, pattern)
             member _.FunctionName name = d.FunctionName name
             member _.Json = d.Json
             member _.Exact = d.Exact
@@ -400,7 +413,7 @@ type ExactDecimalsProvider(inner: IProvider) =
             member _.Ddl = d.Ddl
             member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated
-            member _.LikeEscape = d.LikeEscape
+            member _.TextMatch(w, kind, operand, pattern) = d.TextMatch(w, kind, operand, pattern)
             member _.FunctionName name = d.FunctionName name
             member _.Json = d.Json
             member _.Exact = Some exact
@@ -447,7 +460,7 @@ type MarkedListsProvider(inner: IProvider) =
             member _.Ddl = d.Ddl
             member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated
-            member _.LikeEscape = d.LikeEscape
+            member _.TextMatch(w, kind, operand, pattern) = d.TextMatch(w, kind, operand, pattern)
             member _.FunctionName name = d.FunctionName name
             member _.Json = d.Json
             member _.Exact = d.Exact

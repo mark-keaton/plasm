@@ -276,7 +276,27 @@ type internal SqliteDialect(options: SqliteOptions) =
         member _.Ddl = SqliteDdl.ddl
         member _.UnboundedLimit = Some "-1"
         member _.NullSafeComparison negated = if negated then "IS NOT" else "IS"
-        member _.LikeEscape = " ESCAPE '\\'"
+        // GLOB, not LIKE, which ignores ASCII case: GLOB keeps every
+        // character's case, and its own *, ? and [ are written [*], [?] and
+        // [[] (a ] outside brackets is itself), then * where the match is open.
+        member _.TextMatch(w, kind, operand, pattern) =
+            operand ()
+            w " GLOB "
+
+            pattern (fun t ->
+                let e =
+                    t
+                    |> String.collect (fun c ->
+                        match c with
+                        | '*' -> "[*]"
+                        | '?' -> "[?]"
+                        | '[' -> "[[]"
+                        | c -> string c)
+
+                match kind with
+                | TextMatchKind.StartsWith -> e + "*"
+                | TextMatchKind.EndsWith -> "*" + e
+                | TextMatchKind.Contains -> "*" + e + "*")
 
         member _.FunctionName name =
             match name with

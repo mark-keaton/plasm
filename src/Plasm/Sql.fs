@@ -77,6 +77,14 @@ type ICatalogueDialect =
     abstract TableColumns: table: string -> string
 
 /// How Ddl prints a model's tables in the database's own DDL (ddl.feature).
+/// How text is matched (text-matching.feature): String.StartsWith,
+/// EndsWith or Contains in a query.
+[<RequireQualifiedAccess>]
+type TextMatchKind =
+    | StartsWith
+    | EndsWith
+    | Contains
+
 /// What a column holds, as Ddl tells a dialect asked for its check
 /// (IDdlDialect.ColumnCheck).
 [<RequireQualifiedAccess>]
@@ -219,9 +227,11 @@ type ISqlDialect =
     /// The null-safe comparison operator: equality treating NULLs as equal
     /// (`IS NOT DISTINCT FROM`), or its negation when `negated`.
     abstract NullSafeComparison: negated: bool -> string
-    /// What follows a LIKE pattern so that a backslash escapes `%` and `_`:
-    /// `" ESCAPE '\\'"`, or "" where that is the dialect's default (PostgreSQL).
-    abstract LikeEscape: string
+    /// `operand` starts with, ends with or contains a text, matched with its
+    /// case and every character as itself (text-matching.feature): `operand
+    /// LIKE @p` on PostgreSQL, the text escaped and `%` added. `pattern shape`
+    /// writes the text's parameter, its value `shape` of the text.
+    abstract TextMatch: write: (string -> unit) * kind: TextMatchKind * operand: (unit -> unit) * pattern: ((string -> string) -> unit) -> unit
     /// The dialect's name for a function the core uses (char_length, btrim,
     /// lower, upper, COALESCE, ...); return the name unchanged if it is the same.
     abstract FunctionName: string -> string
@@ -288,7 +298,9 @@ module internal Sql =
         | Cast of Expr * typeName: string list * array: bool
         /// `CAST(e AS text)`: a column read as text (an enum type's label).
         | AsText of Expr
-        | Like of Expr * pattern: Expr
+        /// A text match (ISqlDialect.TextMatch): `text` the text itself, a
+        /// parameter or a prepared argument, which the dialect shapes.
+        | TextMatch of kind: TextMatchKind * operand: Expr * text: Expr
         | Func of string * Expr list
         | Exists of Select
         | RowNumber of partitionBy: Expr * orderBy: OrderItem list
@@ -744,11 +756,14 @@ module internal Sql =
                     r.Expr e
                     w $" AS {name})"
                 | None -> r.Expr e
-            | Like(a, p) ->
-                r.Operand(a, true)
-                w " LIKE "
-                r.Operand(p, true)
-                w d.LikeEscape
+            | TextMatch(kind, a, text) ->
+                let pattern (shape: string -> string) =
+                    match text with
+                    | Param(:? Bound as b) -> w (r.Param(box (Bound((fun args -> box (shape (string (b.Resolve args)))), b.Label))))
+                    | Param v -> w (r.Param(box (shape (string v))))
+                    | other -> invalidOp $"a text match's text is a parameter, not {other}"
+
+                d.TextMatch(w, kind, (fun () -> r.Operand(a, true)), pattern)
             | Func(name, args) ->
                 w (d.FunctionName name)
                 w "("

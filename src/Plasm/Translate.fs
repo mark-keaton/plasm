@@ -894,9 +894,6 @@ let private arithmeticOps =
           "op_Division", "/"
           "op_Modulus", "%" ]
 
-let private escapeLike (s: string) =
-    s.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_")
-
 // ---------------------------------------------------------------------------
 // Expressions
 // ---------------------------------------------------------------------------
@@ -1179,16 +1176,15 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
             if isRowDependent ctx arg then
                 fail e "string pattern arguments must be values, not columns"
 
-            if mentionsArg arg then
-                let shape (t: string) =
-                    match mi.Name with
-                    | "StartsWith" -> escapeLike t + "%"
-                    | "EndsWith" -> "%" + escapeLike t
-                    | "Contains" -> "%" + escapeLike t + "%"
-                    | n -> fail e $"string method '{n}' has no SQL translation"
+            let kind =
+                match mi.Name with
+                | "StartsWith" -> TextMatchKind.StartsWith
+                | "EndsWith" -> TextMatchKind.EndsWith
+                | "Contains" -> TextMatchKind.Contains
+                | n -> fail e $"string method '{n}' has no SQL translation"
 
-                shape "" |> ignore
-                Sql.Like(scalar ctx s, argParamWith ctx arg typeof<string> (fun v -> box (shape (string v))))
+            if mentionsArg arg then
+                Sql.TextMatch(kind, scalar ctx s, argParamWith ctx arg typeof<string> (fun v -> box (string v)))
             else
 
             let text = evaluate ctx arg :?> string
@@ -1196,14 +1192,7 @@ and predicate (ctx: Ctx) (e: Expr) : Sql.Expr =
             if isNull text then
                 fail e "string pattern argument is null"
 
-            let pattern =
-                match mi.Name with
-                | "StartsWith" -> escapeLike text + "%"
-                | "EndsWith" -> "%" + escapeLike text
-                | "Contains" -> "%" + escapeLike text + "%"
-                | n -> fail e $"string method '{n}' has no SQL translation"
-
-            Sql.Like(scalar ctx s, Sql.Param pattern)
+            Sql.TextMatch(kind, scalar ctx s, Sql.Param(box text))
         // A [<Json>] list of scalars contains a value: the document contains [value].
         | Call(None, mi, [ x; JsonPath ctx (doc, JList(element, _)) ]) when
             mi.Name = "Contains" && mi.DeclaringType.Name = "ListModule" && not (isRowDependent ctx x)
@@ -1497,7 +1486,7 @@ and containsAggregate (e: Sql.Expr) : bool =
     | Sql.Binary(_, a, b)
     | Sql.NotDistinctFrom(a, b)
     | Sql.DistinctFrom(a, b)
-    | Sql.Like(a, b) -> containsAggregate a || containsAggregate b
+    | Sql.TextMatch(_, a, b) -> containsAggregate a || containsAggregate b
     | Sql.Not a
     | Sql.IsNotTrue a
     | Sql.IsNull a
@@ -1992,7 +1981,7 @@ let private withoutNeedlessNulls (space: Binding list) (wheres: Sql.Expr list) (
             | Sql.Binary(op, a, b), _ when comparison op && (a = col || b = col) -> true
             | Sql.AnyOf(a, _, _), _
             | Sql.InListParam(a, _, _), _
-            | Sql.Like(a, _), _ -> a = col
+            | Sql.TextMatch(_, a, _), _ -> a = col
             | Sql.Binary("=", Sql.Column(alias, tag), Sql.Literal stored), Sql.Column(alias2, column) when alias = alias2 ->
                 caseHolds alias tag stored column
             | _ -> false)
@@ -2334,7 +2323,7 @@ let rec private ungrouped (groups: Sql.Expr list) (e: Sql.Expr) =
         | Sql.Binary(_, a, b)
         | Sql.NotDistinctFrom(a, b)
         | Sql.DistinctFrom(a, b)
-        | Sql.Like(a, b) -> ungrouped groups a || ungrouped groups b
+        | Sql.TextMatch(_, a, b) -> ungrouped groups a || ungrouped groups b
         | Sql.Not a
         | Sql.IsNotTrue a
         | Sql.IsNull a
@@ -2584,7 +2573,7 @@ let private distinct (def: QueryDef) (sel: Sql.Select) (shape: Shape) : Sql.Sele
             | Sql.Exact x -> Sql.Exact(over x)
             | Sql.ListHas(x, y) -> Sql.ListHas(over x, over y)
             | Sql.ListIsEmpty x -> Sql.ListIsEmpty(over x)
-            | Sql.Like(x, y) -> Sql.Like(over x, over y)
+            | Sql.TextMatch(k, x, y) -> Sql.TextMatch(k, over x, over y)
             | Sql.Func(f, xs) -> Sql.Func(f, List.map over xs)
             | Sql.Case(branches, otherwise) -> Sql.Case(branches |> List.map (fun (c, v) -> over c, over v), over otherwise)
             | Sql.AnyOf(x, vs, cast) -> Sql.AnyOf(over x, vs, cast)
@@ -2598,7 +2587,7 @@ let private distinct (def: QueryDef) (sel: Sql.Select) (shape: Shape) : Sql.Sele
         | Sql.Binary(_, x, y)
         | Sql.NotDistinctFrom(x, y)
         | Sql.DistinctFrom(x, y)
-        | Sql.Like(x, y)
+        | Sql.TextMatch(_, x, y)
         | Sql.ListHas(x, y) -> readsOther x || readsOther y
         | Sql.Not x
         | Sql.IsNotTrue x
