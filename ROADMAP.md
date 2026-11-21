@@ -3,7 +3,7 @@
 What Plasm does today, what is being built, and what it will not do. The
 repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
-## Now: after 0.1.0
+## Now: after 0.2.0
 
 - A second database provider: SQLite
 
@@ -19,7 +19,7 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
 ## Shipped
 
-- Plasm, Plasm.Postgres and Plasm.HotChocolate on NuGet: 0.1.0, published from a GitHub release
+- Plasm, Plasm.Postgres and Plasm.HotChocolate on NuGet: 0.2.0, published from a GitHub release
 - Stored records by convention, owned and linked lists, unions with fields, array columns, composite keys
 - Typed queries: joins, grouping, exists, set operations, window functions, filtered aggregates, prepared queries, hand-written SQL
 - Recursive queries: a tree read in one statement, with each row's depth; a cycle in the data ends

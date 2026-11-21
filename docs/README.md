@@ -9,7 +9,7 @@ Reference are the engineering records the library is built against.
 - [Plasm in five minutes](start/five-minutes.md)
 - [The one way](start/one-way.md)
 - [In F# Interactive](start/fsi.md)
-- [Upgrading from 0.1.0](start/upgrading.md)
+- [Upgrading from 0.1.0 to 0.2.0](start/upgrading.md)
 
 ## Guide
 

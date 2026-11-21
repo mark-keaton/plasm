@@ -1,6 +1,6 @@
-# Upgrading from 0.1.0
+# Upgrading from 0.1.0 to 0.2.0
 
-What changed after 0.1.0 that can break an application written against it,
+What changed in 0.2.0 that can break an application written against 0.1.0,
 the most serious first. [`docs/status.md`](../status.md) has every entry in
 full, under "Changed".
 
@@ -100,3 +100,9 @@ the rest.
 
 The entries under "Changed" in [`docs/status.md`](../status.md) say what
 each member is asked and what PostgreSQL answers.
+
+## The template
+
+A machine that installed the template at 0.1.0 keeps that one:
+`dotnet new install Plasm.Templates` leaves it as it is. Run
+`dotnet new uninstall Plasm.Templates` first, then install it again.
