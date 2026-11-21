@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>SQLite provider for Plasm (Microsoft.Data.Sqlite).</Description>
+    <PackageId>Plasm.Sqlite</PackageId>
+    <!-- Not packed until the provider is whole (docs/status.md). -->
+    <IsPackable>false</IsPackable>
+    <!-- Trim and AOT analysis at every build, as Plasm's (docs/aot.md). -->
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Decimals.fs" />
+    <Compile Include="Connection.fs" />
+    <Compile Include="Sqlite.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Plasm/Plasm.fsproj" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Plasm.Tests" />
+  </ItemGroup>
+</Project>

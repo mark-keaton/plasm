@@ -1,16 +1,49 @@
-/// Real PostgreSQL for tests: one container per test process, one freshly
-/// cloned database per test. Set PLASM_TEST_PG to an admin connection string to
-/// use an existing server instead of Testcontainers.
+/// Real databases for tests, one fresh database per test. PLASM_TEST_PROVIDER
+/// says which: postgres (or unset) runs on PostgreSQL, one container per test
+/// process and a database cloned for each test (set PLASM_TEST_PG to an admin
+/// connection string to use an existing server instead of Testcontainers);
+/// sqlite runs on SQLite, a temp file copied for each test from one built
+/// from schemaSqlite, and never opens PostgreSQL.
 module Plasm.TestDomain.Database
 
 open System
 open System.Collections.Concurrent
+open System.Data.Common
+open System.Globalization
+open System.IO
 open System.Threading
 open System.Threading.Tasks
+open Microsoft.Data.Sqlite
 open Npgsql
 open Plasm
 open Plasm.Postgres
+open Plasm.Sqlite
 open Plasm.TestDomain.Domain
+
+/// Says which database the run ran on, as read from a connection: on standard
+/// error, and appended to the file PLASM_TEST_SUMMARY names when set.
+let summarize (provider: string) (version: string) =
+    let line = $"provider: {provider} {version}"
+    eprintfn "%s" line
+
+    match Environment.GetEnvironmentVariable "PLASM_TEST_SUMMARY" with
+    | null
+    | "" -> ()
+    | file -> File.AppendAllText(file, line + Environment.NewLine)
+
+/// The database a test run runs on.
+type ProviderKind =
+    | PostgreSQL
+    | SQLite
+
+/// PLASM_TEST_PROVIDER's database; any other value fails the run.
+let providerKind =
+    match Environment.GetEnvironmentVariable "PLASM_TEST_PROVIDER" with
+    | null
+    | ""
+    | "postgres" -> PostgreSQL
+    | "sqlite" -> SQLite
+    | other -> failwith $"PLASM_TEST_PROVIDER is \"{other}\": it must be postgres or sqlite"
 
 let schemaSql =
     """
@@ -79,6 +112,90 @@ create table outbox (
 );
 """
 
+/// schemaSql for SQLite, stated on its own: the tables the library's Ddl
+/// prints for Schemas.model, which the SQLite run checks by reading both
+/// catalogues back (sqliteTemplate), and the constraints the scenarios
+/// violate. A decimal is TEXT, so its CHECK compares it as a number: text
+/// compared with 0 is always the greater.
+let schemaSqlite =
+    """
+create table accounts (
+  id INTEGER not null primary key,
+  name TEXT not null
+);
+create table profiles (
+  id INTEGER not null primary key,
+  account_id INTEGER not null,
+  bio TEXT not null,
+  constraint profiles_account_id_fkey foreign key (account_id) references accounts (id)
+);
+create index profiles_account_id_idx on profiles (account_id);
+create table customers (
+  id INTEGER not null primary key,
+  name TEXT not null,
+  email TEXT not null,
+  constraint customers_email_key unique (email)
+);
+create table products (
+  id INTEGER not null primary key,
+  sku TEXT not null,
+  name TEXT not null,
+  constraint products_sku_key unique (sku)
+);
+create table orders (
+  id INTEGER not null primary key,
+  customer_id INTEGER,
+  status TEXT not null,
+  total TEXT not null constraint orders_total_check check (CAST(total AS REAL) >= 0),
+  cancellation_reason TEXT,
+  placed_at TEXT not null,
+  version INTEGER not null default 1,
+  constraint orders_customer_id_fkey foreign key (customer_id) references customers (id)
+);
+create index orders_customer_id_idx on orders (customer_id);
+create table order_lines (
+  id INTEGER not null primary key,
+  order_id INTEGER not null,
+  product_id INTEGER not null,
+  quantity INTEGER not null,
+  unit_price TEXT not null constraint order_lines_unit_price_check check (CAST(unit_price AS REAL) >= 0),
+  constraint order_lines_order_id_fkey foreign key (order_id) references orders (id),
+  constraint order_lines_product_id_fkey foreign key (product_id) references products (id)
+);
+create index order_lines_order_id_idx on order_lines (order_id);
+create index order_lines_product_id_idx on order_lines (product_id);
+create table payments (
+  id INTEGER not null primary key,
+  order_id INTEGER not null,
+  amount TEXT not null,
+  status TEXT not null,
+  created_at TEXT not null,
+  constraint payments_order_id_fkey foreign key (order_id) references orders (id)
+);
+create index payments_order_id_idx on payments (order_id);
+create table articles (
+  id INTEGER not null primary key,
+  title TEXT not null
+);
+create table tags (
+  id INTEGER not null primary key,
+  name TEXT not null
+);
+create table article_tags (
+  article_id INTEGER not null,
+  tag_id INTEGER not null,
+  primary key (article_id, tag_id),
+  constraint article_tags_article_id_fkey foreign key (article_id) references articles (id),
+  constraint article_tags_tag_id_fkey foreign key (tag_id) references tags (id)
+);
+create index article_tags_tag_id_idx on article_tags (tag_id);
+create table outbox (
+  id INTEGER not null primary key,
+  topic TEXT not null,
+  payload TEXT not null
+);
+"""
+
 let private template = "plasm_template"
 
 type private Server =
@@ -88,6 +205,11 @@ type private Server =
 let private server: Lazy<Task<Server>> =
     lazy
         (task {
+            // The SQLite run proves it ran on SQLite: nothing in it opens
+            // PostgreSQL.
+            if providerKind = SQLite then
+                failwith "the SQLite run (PLASM_TEST_PROVIDER=sqlite) asked for PostgreSQL"
+
             let! admin, container =
                 match Environment.GetEnvironmentVariable "PLASM_TEST_PG" with
                 | null
@@ -126,6 +248,7 @@ let private server: Lazy<Task<Server>> =
             use cmd = t.CreateCommand()
             cmd.CommandText <- schemaSql
             let! _ = cmd.ExecuteNonQueryAsync()
+            summarize "PostgreSQL" t.ServerVersion
             do! t.CloseAsync()
             NpgsqlConnection.ClearAllPools()
             return { Admin = admin; Container = container }
@@ -147,60 +270,212 @@ type Recorder() =
     member this.Writes = this.Events |> List.filter (fun e -> not (e.Sql.StartsWith "SELECT"))
     member _.Clear() = events.Clear()
 
+/// The directory the SQLite run's databases are files in, one per test
+/// process; every file in it is removed when its test is done, and the
+/// directory when the process ends.
+let sqliteDirectory = Path.Combine(Path.GetTempPath(), $"plasm-sqlite-{Environment.ProcessId}")
+
+/// A SQLite database's files: itself, its write-ahead log and its index.
+let sqliteFiles (file: string) = [ file; file + "-wal"; file + "-shm"; file + "-journal" ]
+
+let private removeSqlite (file: string) =
+    SqliteConnection.ClearAllPools()
+
+    for f in sqliteFiles file do
+        if File.Exists f then File.Delete f
+
+/// What SQLite's catalogue says of a database's tables: for each, its columns
+/// (name, type, not null, default, place in the key), its indexes (unique,
+/// how made, columns) and its foreign keys (target, column, target column).
+/// Names of indexes are left out: SQLite names a constraint's index itself.
+let sqliteCatalogue (connectionString: string) =
+    use c = new SqliteConnection(connectionString)
+    c.Open()
+
+    let rows (sql: string) =
+        use cmd = c.CreateCommand()
+        cmd.CommandText <- sql
+        use r = cmd.ExecuteReader()
+
+        [ while r.Read() do
+              yield [ for i in 0 .. r.FieldCount - 1 -> if r.IsDBNull i then "NULL" else string (r.GetValue i) ] ]
+
+    let tables = rows "select name from sqlite_schema where type = 'table' and name not like 'sqlite_%' order by name" |> List.map List.head
+
+    [ for t in tables ->
+          let columns = rows $"select name, upper(type), \"notnull\", dflt_value, pk from pragma_table_xinfo('{t}') order by cid"
+
+          let indexes =
+              rows $"select name, \"unique\", origin from pragma_index_list('{t}')"
+              |> List.map (fun i ->
+                  let cols = rows $"select name from pragma_index_info('{i.[0]}') order by seqno" |> List.map List.head
+                  $"""unique {i.[1]} {i.[2]} ({String.concat ", " cols})""")
+              |> List.sort
+
+          let keys = rows $"select \"table\", \"from\", \"to\" from pragma_foreign_key_list('{t}')" |> List.map (String.concat " ") |> List.sort
+          t, (columns |> List.map (String.concat " "), indexes, keys) ]
+    |> Map.ofList
+
+/// The SQLite template: schemaSqlite in a file every test's database is a
+/// copy of, made once, after checking it against what the library's Ddl
+/// prints for Schemas.model, catalogue against catalogue. A table of
+/// schemaSqlite the model does not map (outbox) is not compared.
+let private sqliteTemplate: Lazy<Task<string>> =
+    lazy
+        (task {
+            // A run killed before it ended left its directory: removed now,
+            // when no process of its number runs.
+            for stale in Directory.GetDirectories(Path.GetTempPath(), "plasm-sqlite-*") do
+                match Int32.TryParse(Path.GetFileName(stale).Substring("plasm-sqlite-".Length)) with
+                | true, pid when pid <> Environment.ProcessId ->
+                    let alive =
+                        try
+                            not (Diagnostics.Process.GetProcessById(pid).HasExited)
+                        with _ -> false
+
+                    if not alive then
+                        try
+                            Directory.Delete(stale, true)
+                        with _ -> ()
+                | _ -> ()
+
+            Directory.CreateDirectory sqliteDirectory |> ignore
+            AppDomain.CurrentDomain.ProcessExit.Add(fun _ ->
+                try
+                    SqliteConnection.ClearAllPools()
+                    Directory.Delete(sqliteDirectory, true)
+                with _ -> ())
+
+            let make (name: string) (sql: string) =
+                let file = Path.Combine(sqliteDirectory, name)
+                removeSqlite file
+                use c = new SqliteConnection($"Data Source={file}")
+                c.Open()
+                use cmd = c.CreateCommand()
+                cmd.CommandText <- sql
+                cmd.ExecuteNonQuery() |> ignore
+                file
+
+            // In WAL mode, as the provider makes a file it creates, so a
+            // reader's snapshot does not keep a writer out; each test's copy
+            // keeps it.
+            let template = make "template.db" ("PRAGMA journal_mode = WAL;\n" + schemaSqlite)
+
+            let version =
+                use c = new SqliteConnection($"Data Source={template}")
+                c.Open()
+                c.ServerVersion
+
+            summarize "SQLite" version
+
+            let ddlProvider = Sqlite.connect "Data Source=:memory:"
+            let! repo = Repo.Start(Schemas.model, ddlProvider, typeof<Order>.Assembly, { RepoOptions.Default with Queries = StartupCheck.Ignore; Schema = StartupCheck.Ignore })
+            let printed = make "ddl.db" (repo.Ddl())
+            let stated = sqliteCatalogue $"Data Source={template}"
+            let made = sqliteCatalogue $"Data Source={printed}"
+            removeSqlite printed
+
+            let differences =
+                [ for KeyValue(t, m) in made do
+                      match stated.TryFind t with
+                      | None -> yield $"{t}: in the Ddl, not in schemaSqlite"
+                      | Some st when st <> m -> yield $"{t}: schemaSqlite has %A{st}, the Ddl %A{m}"
+                      | Some _ -> () ]
+
+            if not differences.IsEmpty then
+                failwith $"""schemaSqlite is not what the Ddl makes: {String.concat "; " differences}"""
+
+            return template
+        })
+
 /// An isolated database for one test. Disposing it closes its connections
-/// and drops it, so a run leaves no database or connection behind.
+/// and drops it (PostgreSQL) or removes its files (SQLite), so a run leaves no
+/// database or connection behind.
 type TestDb =
     { Name: string
       Admin: string
       ConnectionString: string
+      Kind: ProviderKind
       Recorder: Recorder
-      Provider: PostgresProvider
+      Provider: IProvider
       Repo: Repo
-      Model: Model }
+      Model: Model
+      Drop: unit -> Task }
+
+    /// A connection for raw SQL, unpooled and bypassing the library: on
+    /// SQLite with foreign keys enforced, as the provider's are.
+    member private db.Raw() : Task<DbConnection> =
+        task {
+            match db.Kind with
+            | PostgreSQL ->
+                // Unpooled: Npgsql's global pool would keep a connection to every
+                // scenario's database open until the run ends; and not the
+                // scenario's data source, whose type catalogue must be read after
+                // setup has created its types.
+                let conn = new NpgsqlConnection(db.ConnectionString + ";Pooling=false")
+                do! conn.OpenAsync()
+                return conn :> DbConnection
+            | SQLite ->
+                let conn = new SqliteConnection(db.ConnectionString + ";Pooling=False")
+                do! conn.OpenAsync()
+                use cmd = conn.CreateCommand()
+                cmd.CommandText <- "PRAGMA foreign_keys = ON"
+                cmd.ExecuteNonQuery() |> ignore
+                return conn :> DbConnection
+        }
+
+    member private db.Command(conn: DbConnection, sql: string, args: (string * obj) list) =
+        let cmd = conn.CreateCommand()
+        cmd.CommandText <- sql
+
+        for name, v in args do
+            let p = cmd.CreateParameter()
+            p.ParameterName <- name
+
+            p.Value <-
+                match db.Kind, v with
+                // As the provider stores a decimal: its text, its scale kept.
+                | SQLite, (:? decimal as d) -> box (d.ToString(CultureInfo.InvariantCulture))
+                | _, null -> box DBNull.Value
+                | _ -> v
+
+            cmd.Parameters.Add p |> ignore
+
+        cmd
 
     /// Runs raw SQL (setup and assertions bypass the library).
     member db.Exec(sql: string, ?args: (string * obj) list) =
         task {
-            // Unpooled: Npgsql's global pool would keep a connection to every
-            // scenario's database open until the run ends; and not the
-            // scenario's data source, whose type catalogue must be read after
-            // setup has created its types.
-            use conn = new NpgsqlConnection(db.ConnectionString + ";Pooling=false")
-            do! conn.OpenAsync()
-            use cmd = conn.CreateCommand()
-            cmd.CommandText <- sql
-
-            for name, v in defaultArg args [] do
-                cmd.Parameters.AddWithValue(name, v) |> ignore
-
+            use! conn = db.Raw()
+            use cmd = db.Command(conn, sql, defaultArg args [])
             let! n = cmd.ExecuteNonQueryAsync()
             return n
         }
 
     member db.Scalar<'T>(sql: string, ?args: (string * obj) list) =
         task {
-            // Unpooled: Npgsql's global pool would keep a connection to every
-            // scenario's database open until the run ends; and not the
-            // scenario's data source, whose type catalogue must be read after
-            // setup has created its types.
-            use conn = new NpgsqlConnection(db.ConnectionString + ";Pooling=false")
-            do! conn.OpenAsync()
-            use cmd = conn.CreateCommand()
-            cmd.CommandText <- sql
-
-            for name, v in defaultArg args [] do
-                cmd.Parameters.AddWithValue(name, v) |> ignore
-
+            use! conn = db.Raw()
+            use cmd = db.Command(conn, sql, defaultArg args [])
             let! v = cmd.ExecuteScalarAsync()
-            return unbox<'T> v
+
+            return
+                match db.Kind, v with
+                | PostgreSQL, _ -> unbox<'T> v
+                | SQLite, (:? 'T as t) -> t
+                // SQLite's integers are 64-bit, its decimals text.
+                | SQLite, (:? string as text) when typeof<'T> = typeof<decimal> -> unbox<'T> (box (Decimal.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture)))
+                | SQLite, v when not (isNull v) && not (v :? DBNull) -> Convert.ChangeType(v, typeof<'T>, CultureInfo.InvariantCulture) :?> 'T
+                | SQLite, v -> unbox<'T> v
         }
 
     /// A repo over the same database with different options or model.
     member db.RepoWith(?model: Model, ?options: PostgresOptions, ?includeParameterValues: bool) =
         let provider =
-            match options with
-            | Some o -> Postgres.connectWith o db.ConnectionString
-            | None -> db.Provider
+            match options, db.Kind with
+            | Some o, PostgreSQL -> Postgres.connectWith o db.ConnectionString :> IProvider
+            // The keys a command sends are the one option both providers have.
+            | Some o, SQLite -> Sqlite.connectWith { SqliteOptions.Default with MaxKeysPerCommand = o.MaxKeysPerCommand } db.ConnectionString :> IProvider
+            | None, _ -> db.Provider
 
         Repo(
             defaultArg model db.Model,
@@ -210,22 +485,43 @@ type TestDb =
                 IncludeParameterValues = defaultArg includeParameterValues false }
         )
 
-    interface IAsyncDisposable with
-        member db.DisposeAsync() =
-            task {
-                do! db.Provider.DataSource.DisposeAsync()
-                // A repo made by RepoWith has a data source of its own; FORCE
-                // ends whatever connection is still open to the database.
-                use conn = new NpgsqlConnection(db.Admin)
-                do! conn.OpenAsync()
-                use cmd = conn.CreateCommand()
-                cmd.CommandText <- $"drop database if exists {db.Name} with (force)"
-                let! _ = cmd.ExecuteNonQueryAsync()
-                return ()
-            }
-            |> ValueTask
+    /// Another session holding `table`'s rows against writers until the
+    /// returned release: PostgreSQL's row locks (FOR UPDATE), SQLite's write
+    /// lock (BEGIN IMMEDIATE), which a writer waits for in its busy timeout.
+    member db.HoldWrites(table: string) : Task<unit -> Task> =
+        task {
+            let! conn = db.Raw()
+            let! tx = conn.BeginTransactionAsync()
+            use cmd = conn.CreateCommand()
+            cmd.Transaction <- tx
 
-let fresh (model: Model) : Task<TestDb> =
+            cmd.CommandText <-
+                match db.Kind with
+                | PostgreSQL -> $"select * from {table} for update"
+                // BeginTransaction began a deferred transaction: a write takes the lock.
+                | SQLite -> $"update {table} set id = id where 0"
+
+            let! _ = cmd.ExecuteNonQueryAsync()
+
+            return
+                fun () ->
+                    task {
+                        do! tx.RollbackAsync()
+                        do! conn.DisposeAsync()
+                    }
+                    :> Task
+        }
+
+    /// How many tables of this name the database has.
+    member db.TablesNamed(name: string) =
+        match db.Kind with
+        | PostgreSQL -> db.Scalar<int64>("select count(*) from information_schema.tables where table_name = @n", [ "n", box name ])
+        | SQLite -> db.Scalar<int64>("select count(*) from sqlite_schema where type = 'table' and name = @n", [ "n", box name ])
+
+    interface IAsyncDisposable with
+        member db.DisposeAsync() = db.Drop() |> ValueTask
+
+let private freshPostgres (model: Model) : Task<TestDb> =
     task {
         let! s = server.Force()
         let n = Interlocked.Increment(&counter)
@@ -242,21 +538,60 @@ let fresh (model: Model) : Task<TestDb> =
         let recorder = Recorder()
         let provider = Postgres.connect cs
 
+        let drop () =
+            task {
+                do! provider.DataSource.DisposeAsync()
+                // A repo made by RepoWith has a data source of its own; FORCE
+                // ends whatever connection is still open to the database.
+                use conn = new NpgsqlConnection(s.Admin)
+                do! conn.OpenAsync()
+                use cmd = conn.CreateCommand()
+                cmd.CommandText <- $"drop database if exists {name} with (force)"
+                let! _ = cmd.ExecuteNonQueryAsync()
+                return ()
+            }
+            :> Task
+
         return
             { Name = name
               Admin = s.Admin
               ConnectionString = cs
+              Kind = PostgreSQL
               Recorder = recorder
               Provider = provider
-              Repo =
-                Repo(
-                    model,
-                    provider,
-                    { RepoOptions.Default with
-                        OnCommand = Some recorder.Record }
-                )
-              Model = model }
+              Repo = Repo(model, provider, { RepoOptions.Default with OnCommand = Some recorder.Record })
+              Model = model
+              Drop = drop }
     }
+
+let private freshSqlite (model: Model) : Task<TestDb> =
+    task {
+        let! template = sqliteTemplate.Force()
+        let n = Interlocked.Increment(&counter)
+        let name = $"t{n}.db"
+        let file = Path.Combine(sqliteDirectory, name)
+        File.Copy(template, file, true)
+        let cs = $"Data Source={file}"
+        let recorder = Recorder()
+        let provider = Sqlite.connect cs
+
+        return
+            { Name = name
+              Admin = ""
+              ConnectionString = cs
+              Kind = SQLite
+              Recorder = recorder
+              Provider = provider
+              Repo = Repo(model, provider, { RepoOptions.Default with OnCommand = Some recorder.Record })
+              Model = model
+              Drop = fun () -> Task.Run(fun () -> removeSqlite file) }
+    }
+
+/// A fresh database for one test, on the run's provider.
+let fresh (model: Model) : Task<TestDb> =
+    match providerKind with
+    | PostgreSQL -> freshPostgres model
+    | SQLite -> freshSqlite model
 
 let freshDefault () = fresh Schemas.model
 

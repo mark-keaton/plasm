@@ -1,0 +1,21 @@
+# feature<TAB>scenario<TAB>why it runs on PostgreSQL only<TAB>the scenario that covers it on SQLite (its refusal)
+features/core.feature	A snapshot read sends no SET, so a pooler need not pin its connection	what Npgsql sends a pooler in transaction mode (PgBouncer, RDS Proxy): SQLite has no pooler or server	Consistent multi-query reads can be requested
+features/providers.feature	Relationship loads without array parameters send one parameter per key	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	A prepared query's list argument is one parameter, as the dialect sends a list	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	A load under a key of several parts matches the keys as the dialect sends lists	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	Links are written as the dialect sends lists, with or without array parameters	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	Null-safe comparisons are rendered by the dialect	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	String functions are named by the dialect	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	Aggregates are named by the dialect	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	An aggregate's empty list is the dialect's empty array	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	The least stored name of an ordered union is read back without an array	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	A value stored as a type of the database's own is sent as the dialect casts it	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	A document's column is the type the dialect's JSON documents are	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	Rows skipped with no limit are paged as the dialect pages them	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	The DDL is printed in the dialect's form	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	The schema check reads the catalogue as the dialect asks it	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	The DDL declares the dialect's column type, whatever names its catalogue accepts	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	A write's every-column check compares by the dialect's null-safe operator	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	A model storing <what> is refused when the repository is made, by a dialect without <capability>	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	<operation> needs <capability>	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-
+features/providers.feature	<call> reports an unsupported operation as UnsupportedByProvider	a test dialect wrapping PostgreSQL's provider: what the core asks of any dialect	-

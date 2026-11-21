@@ -1,0 +1,6 @@
+# The features the SQLite run runs, while the rest are brought onto it one by
+# one (docs/status.md): each line a feature file and its generated test class.
+# When every feature is here, the SQLite run is the whole of tests/Plasm.Specs.
+features/core.feature	*PredictableFunctional*
+features/providers.feature	*Database_SpecificSQLComesFromTheProviderFeature*
+features/cancellation.feature	*ACancelledTokenStops*

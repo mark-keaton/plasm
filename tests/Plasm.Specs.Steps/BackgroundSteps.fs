@@ -14,6 +14,20 @@ type BackgroundSteps(w: World) =
             (w.Db.Model.References |> List.exists (fun r -> r.Model = model && r.Field = field && r.Target = target.Name))
             $"{model}.{field} references {target.Name}: %A{w.Db.Model.References}"
 
+    /// A scenario tagged for one database never runs on the other: if a run
+    /// starts one (its filter left out), it fails at once, naming the run it
+    /// belongs to.
+    [<BeforeScenario(Order = -100000)>]
+    member _.OnItsProvider(scenario: ScenarioContext, feature: FeatureContext) =
+        let tags = Set.ofSeq scenario.ScenarioInfo.CombinedTags
+
+        match providerKind with
+        | PostgreSQL when tags.Contains "sqlite" ->
+            failwith "this scenario is SQLite's: run it with PLASM_TEST_PROVIDER=sqlite dotnet test tests/Plasm.Specs"
+        | SQLite when tags.Contains "postgres" ->
+            failwith "this scenario is PostgreSQL's: run it with dotnet test tests/Plasm.Specs (PLASM_TEST_PROVIDER unset)"
+        | _ -> ()
+
     /// Each scenario has its own database and connection pool: both go when
     /// the scenario ends, after every other hook (one rolls back a prepared
     /// transaction, which would keep the database from being dropped).

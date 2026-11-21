@@ -1,0 +1,3 @@
+# feature<TAB>scenario<TAB>why it runs on SQLite only
+features/cancellation.feature	On a rollback-journal file, a read waiting for a writer is cancelled by its token	a rollback-journal file: PostgreSQL has no journal mode, and its readers never wait for a writer
+features/cancellation.feature	On a rollback-journal file, a commit waiting for a reader is cancelled by its token	a rollback-journal file: PostgreSQL has no journal mode, and its commits never wait for readers

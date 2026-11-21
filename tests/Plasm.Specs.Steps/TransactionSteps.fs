@@ -82,9 +82,19 @@ module TxSteps =
         Tx.run (fun ctx ->
             task {
                 use cmd = ctx.CreateCommand()
-                cmd.CommandText <- "select txid_current()"
-                let! v = cmd.ExecuteScalarAsync(ctx.CancellationToken)
-                return Ok(unbox<int64> v)
+
+                match cmd.Connection.GetType().Namespace with
+                // SQLite has no transaction id: its connection's transaction
+                // object stands for it, one per transaction begun (reached
+                // through Sqlite.connectionOf, the provider's way to it).
+                | "Plasm.Sqlite" ->
+                    let sqlite = Plasm.Sqlite.Sqlite.connectionOf cmd.Connection
+                    use own = sqlite.CreateCommand()
+                    return Ok(int64 (Runtime.CompilerServices.RuntimeHelpers.GetHashCode own.Transaction))
+                | _ ->
+                    cmd.CommandText <- "select txid_current()"
+                    let! v = cmd.ExecuteScalarAsync(ctx.CancellationToken)
+                    return Ok(unbox<int64> v)
             })
 
 /// Rule: Transactions and concurrency are explicit
@@ -262,14 +272,10 @@ type TransactionSteps(w: World) =
 
                                 if not fired && e.Sql.Contains "FROM \"orders\"" then
                                     fired <- true
-                                    use c = new NpgsqlConnection(w.Db.ConnectionString)
-                                    c.Open()
-                                    use cmd = c.CreateCommand()
-
-                                    cmd.CommandText <-
-                                        $"insert into order_lines(order_id, product_id, quantity, unit_price) values ({id}, {product}, 1, 1)"
-
-                                    cmd.ExecuteNonQuery() |> ignore) }
+                                    w.Db
+                                        .Exec($"insert into order_lines(order_id, product_id, quantity, unit_price) values ({id}, {product}, 1, 1)")
+                                        .Result
+                                    |> ignore) }
                 )
 
             let q = Query.from (tableOf<Order>)
@@ -348,8 +354,11 @@ type TransactionSteps(w: World) =
                 task {
                     use cmd = ctx.CreateCommand()
                     cmd.CommandText <- "insert into outbox(topic, payload) values (@t, @p)"
-                    cmd.Parameters.Add(NpgsqlParameter("t", box topic)) |> ignore
-                    cmd.Parameters.Add(NpgsqlParameter("p", box payload)) |> ignore
+                    for name, value in [ "t", topic; "p", payload ] do
+                        let p = cmd.CreateParameter()
+                        p.ParameterName <- name
+                        p.Value <- value
+                        cmd.Parameters.Add p |> ignore
                     let! _ = cmd.ExecuteNonQueryAsync(ctx.CancellationToken)
                     return Ok()
                 })

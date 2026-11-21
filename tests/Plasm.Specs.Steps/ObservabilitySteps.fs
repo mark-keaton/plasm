@@ -65,19 +65,12 @@ type ObservabilitySteps(w: World) =
             let! id = Seed.order w.Db None "draft" 10m (Seed.at 1)
             let! r = w.Repo.One(plasm { for o in tableOf<Order> do where (o.Id = id) })
             let order = (ok r).Value
-            // Another session holds the row lock, so the update blocks in the database.
-            let blocker = new NpgsqlConnection(w.Db.ConnectionString)
-            do! blocker.OpenAsync()
-            let! tx = blocker.BeginTransactionAsync()
-            use cmd = blocker.CreateCommand()
-            cmd.Transaction <- tx
-            cmd.CommandText <- "select * from orders for update"
-            let! _ = cmd.ExecuteNonQueryAsync()
+            // Another session holds the rows, so the update blocks in the database.
+            let! release = w.Db.HoldWrites "orders"
             let cts = new CancellationTokenSource()
             let started = DateTime.UtcNow
             let running = w.Repo.Transact(order |> edit (fun o -> { o with Total = 11m }), cancellationToken = cts.Token)
-            w.Set("blocker", blocker)
-            w.Set("blockerTx", tx)
+            w.Set("release", release)
             w.Set("cts", cts)
             w.Set("running", running)
             w.Set("started", started)
@@ -111,13 +104,19 @@ type ObservabilitySteps(w: World) =
             w.Set("outcome", outcome)
             let elapsed = DateTime.UtcNow - w.Get<DateTime> "started"
             check (elapsed < TimeSpan.FromSeconds 5.0) $"returned promptly ({elapsed})"
-            // The server-side statement was cancelled, not merely abandoned.
-            let! active =
-                w.Db.Scalar<int64>(
-                    "select count(*) from pg_stat_activity where datname = current_database() and query like 'UPDATE \"orders\"%' and state = 'active'"
-                )
+        }
+        |> unit
 
-            equal 0L active "UPDATE still running on the server"
+    [<StepDefinition("on PostgreSQL the server's statement was cancelled, not abandoned")>]
+    member _.CancelledOnServer() =
+        task {
+            if w.Db.Kind = PostgreSQL then
+                let! active =
+                    w.Db.Scalar<int64>(
+                        "select count(*) from pg_stat_activity where datname = current_database() and query like 'UPDATE \"orders\"%' and state = 'active'"
+                    )
+
+                equal 0L active "UPDATE still running on the server"
         }
         |> unit
 
@@ -128,9 +127,7 @@ type ObservabilitySteps(w: World) =
             | Choice2Of2(:? OperationCanceledException) -> ()
             | other -> failwithf "expected cancellation, got %A" other
 
-            let tx: NpgsqlTransaction = w.Get "blockerTx"
-            do! tx.RollbackAsync()
-            (w.Get<NpgsqlConnection> "blocker").Dispose()
+            do! (w.Get<unit -> Task> "release") ()
             let! total = w.Db.Scalar<decimal>("select total from orders")
             equal 10m total "update not applied"
         }

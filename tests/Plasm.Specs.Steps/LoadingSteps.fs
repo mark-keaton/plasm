@@ -113,14 +113,16 @@ type LoadingSteps(w: World) =
         task {
             let! p = Seed.product w.Db "SKU"
 
+            // Numbers from a recursive query, which both databases have.
             let! _ =
                 w.Db.Exec(
-                    $"insert into orders(status, total, placed_at) select 'published', g, now() from generate_series(1, {n}) g"
+                    $"with recursive g(g) as (select 1 union all select g + 1 from g where g < {n}) insert into orders(status, total, placed_at) select 'published', g, @now from g",
+                    [ "now", box DateTime.UtcNow ]
                 )
 
             let! _ =
                 w.Db.Exec(
-                    "insert into order_lines(order_id, product_id, quantity, unit_price) select o.id, @p, k, 1 from orders o, generate_series(1, 2) k",
+                    "with recursive k(k) as (select 1 union all select k + 1 from k where k < 2) insert into order_lines(order_id, product_id, quantity, unit_price) select o.id, @p, k, 1 from orders o, k",
                     [ "p", box (let (ProductId v) = p in v) ]
                 )
 

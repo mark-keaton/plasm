@@ -101,7 +101,7 @@ type CompositionSteps(w: World) =
         task {
             let customers: Customer list = w.Get "customers"
             equal [ w.Get<string> "name" ] (customers |> List.map (fun c -> c.Name)) "matched customers"
-            let! n = w.Db.Scalar<int64>("select count(*) from information_schema.tables where table_name = 'orders'")
+            let! n = w.Db.TablesNamed "orders"
             equal 1L n "orders table still exists"
         }
         |> unit

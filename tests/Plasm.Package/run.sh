@@ -53,6 +53,15 @@ for p in $packages; do
   if [ -n "$leaked" ]; then echo "pack: $p carries build output:"; echo "$leaked"; exit 1; fi
 done
 echo "pack: version $version; no package carries obj/ or bin/"
+# Plasm.Sqlite is not released until the provider is whole (docs/status.md):
+# packing it gives no package, and the feed is exactly the five pushed. This
+# goes in the commit that calls the provider whole.
+pushed=$(cd "$feed" && ls *.nupkg | sed "s/\.$version\.nupkg$//" | sort | tr '\n' ' ')
+expected=$(printf '%s\n' $packages Plasm.Templates | sort | tr '\n' ' ')
+if [ "$pushed" != "$expected" ]; then echo "pack: the feed holds $pushed, not $expected"; exit 1; fi
+dotnet pack "$repo/src/Plasm.Sqlite" -c Release -o "$work/sqlite-pack" -v q > "$work/pack-Plasm.Sqlite.log" 2>&1 || true
+if ls "$work/sqlite-pack"/*.nupkg > /dev/null 2>&1; then echo "pack: Plasm.Sqlite packed, and it is not to be released yet"; exit 1; fi
+echo "pack: the feed is exactly $expected; Plasm.Sqlite packs to nothing"
 # The template's projects reference Plasm at the template's version: its
 # template.json replaces the Starter's version with this one.
 tplconfig=$(unzip -p "$feed/Plasm.Templates.$version.nupkg" content/Starter/.template.config/template.json 2>/dev/null || true)

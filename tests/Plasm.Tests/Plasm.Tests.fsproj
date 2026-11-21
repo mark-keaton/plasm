@@ -21,6 +21,7 @@
     <Compile Include="UnreadableQueries.fs" />
     <Compile Include="Tuples.fs" />
     <Compile Include="QuerySurface.fs" />
+    <Compile Include="SqliteInterrupts.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Plasm.TestDomain/Plasm.TestDomain.fsproj" />

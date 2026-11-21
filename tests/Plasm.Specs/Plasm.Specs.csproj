@@ -7,6 +7,15 @@
     <IsTestProject>true</IsTestProject>
     <Nullable>disable</Nullable>
   </PropertyGroup>
+  <!-- The run's database chooses its scenarios: PLASM_TEST_PROVIDER=sqlite runs
+       those tagged for SQLite or for neither, else those tagged for PostgreSQL or
+       for neither (tests/Plasm.Providers/check-tags.py). A plain dotnet test is
+       the PostgreSQL run. -->
+  <PropertyGroup>
+    <PlasmTestProvider>$(PLASM_TEST_PROVIDER)</PlasmTestProvider>
+    <TestingPlatformCommandLineArguments Condition="'$(PlasmTestProvider)' == 'sqlite'">$(TestingPlatformCommandLineArguments) --filter-not-trait Category=postgres</TestingPlatformCommandLineArguments>
+    <TestingPlatformCommandLineArguments Condition="'$(PlasmTestProvider)' != 'sqlite'">$(TestingPlatformCommandLineArguments) --filter-not-trait Category=sqlite</TestingPlatformCommandLineArguments>
+  </PropertyGroup>
   <ItemGroup>
     <ReqnrollFeatureFiles Include="../../features/*.feature" />
     <None Include="../../features/*.feature" Link="Features/%(Filename)%(Extension)" />

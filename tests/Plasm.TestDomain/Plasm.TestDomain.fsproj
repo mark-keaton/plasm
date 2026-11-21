@@ -10,8 +10,10 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Plasm/Plasm.fsproj" />
     <ProjectReference Include="../../src/Plasm.Postgres/Plasm.Postgres.fsproj" />
+    <ProjectReference Include="../../src/Plasm.Sqlite/Plasm.Sqlite.fsproj" />
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Npgsql" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="FSharp.Compiler.Service" />
   </ItemGroup>
 </Project>

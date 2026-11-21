@@ -255,6 +255,7 @@ Feature: Predictable functional persistence for F#
     # A pooler in transaction mode, such as PgBouncer or RDS Proxy, may pin a
     # client to one server connection when it sees a SET. A snapshot needs
     # none: REPEATABLE READ alone gives it, and Plasm sends only SELECTs in it.
+    @postgres
     Scenario: A snapshot read sends no SET, so a pooler need not pin its connection
       Given a relationship graph is loaded through multiple queries
       When I read it as a consistent snapshot, watching what Npgsql sends
@@ -278,6 +279,7 @@ Feature: Predictable functional persistence for F#
       Given an executing database operation
       When its cancellation token is cancelled
       Then cancellation is propagated to the provider
+      And on PostgreSQL the server's statement was cancelled, not abandoned
       And the operation does not return a successful result
 
     Scenario: Infrastructure failures remain distinct from domain errors

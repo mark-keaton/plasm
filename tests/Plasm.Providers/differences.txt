@@ -1,0 +1,13 @@
+# Where PostgreSQL and SQLite differ, for the docs page on differences.
+# Each line: what differs<TAB>on PostgreSQL<TAB>on SQLite<TAB>where it is stated.
+# Scenarios that run on one database only are in postgres-only.txt and
+# sqlite-only.txt; this list is the rest.
+A key of decimals	keyed by value: numeric keys compare by value	refused when the repository is made (2.0 and 2.00 would be two keys)	providers.feature: A model keyed by a decimal is refused when the repository is made, by a dialect with exact hooks
+A decimal's scale	a numeric(p,s) column fixes it (2.0 stored as 2.00)	TEXT keeps the scale written (2.0 stays 2.0); compared, ordered and added by value	tests/Plasm.TestDomain/Database.fs: schemaSql, schemaSqlite
+A CHECK on a decimal (the test schema's)	compares numerics exactly	CAST(x AS REAL) >= 0: a sign test only, not an exact comparison (text compared with 0 is always greater)	tests/Plasm.TestDomain/Database.fs: schemaSqlite
+A transaction's identity (test steps)	txid_current()	none: the transaction object stands for it	tests/Plasm.Specs.Steps/TransactionSteps.fs: TxSteps.txid
+A writer waiting for another	waits on the row it locks	waits at BEGIN IMMEDIATE for the database, in tries of a second that hear cancellation, up to SqliteOptions.BusyTimeout	src/Plasm.Sqlite/Sqlite.fs: BeginTransaction; core.feature: Cancellation reaches database execution
+A window SUM or AVG of decimals	SUM/AVG over numeric	computed from a JSON array per row (plasm_decimal_json_sum(json_group_array(x) OVER (...))): a registered function cannot be a window function; quadratic for a running sum	providers.feature: A window's sum of decimals is the dialect's exact aggregate on SQLite
+Every call's thread	Npgsql awaits I/O	Microsoft.Data.Sqlite runs each async call on the caller's thread for the statement's length (an ASP.NET request thread is held for its query; repo.Stream holds one while each row is stepped); only a writer's wait for BEGIN IMMEDIATE moves to the thread pool	src/Plasm.Sqlite/Sqlite.fs: BeginTransaction; the SQLite docs give the measurements
+A cancelled token while a statement runs	Npgsql cancels it on the server	Plasm.Sqlite interrupts it on its connection (sqlite3_interrupt), only while the statement is the caller's; through Sqlite.connectionOf it is not interrupted	cancellation.feature
+A wait for a busy database	none in WAL beyond a writer's lock; PostgreSQL's readers never wait for writers	in WAL only a writer's BEGIN IMMEDIATE; on a rollback-journal file a read waits for a writer and a COMMIT for readers; each tried a second at a time, hearing the token, up to SqliteOptions.BusyTimeout	cancellation.feature: On a rollback-journal file ...

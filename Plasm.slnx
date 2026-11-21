@@ -3,6 +3,7 @@
     <Project Path="src/Plasm/Plasm.fsproj" />
     <Project Path="src/Plasm.Annotations/Plasm.Annotations.fsproj" />
     <Project Path="src/Plasm.Postgres/Plasm.Postgres.fsproj" />
+    <Project Path="src/Plasm.Sqlite/Plasm.Sqlite.fsproj" />
     <Project Path="src/Plasm.HotChocolate/Plasm.HotChocolate.fsproj" />
     <Project Path="src/Plasm.FieldGetters/Plasm.FieldGetters.fsproj" />
   </Folder>
@@ -16,6 +17,7 @@
     <Project Path="tests/Plasm.Specs/Plasm.Specs.csproj" />
     <Project Path="tests/Plasm.Aot.Domain/Plasm.Aot.Domain.fsproj" />
     <Project Path="tests/Plasm.Aot/Plasm.Aot.fsproj" />
+    <Project Path="tests/Plasm.Aot.Sqlite/Plasm.Aot.Sqlite.fsproj" />
     <Project Path="tests/Plasm.Aot.Unpatched/Plasm.Aot.Unpatched.fsproj" />
   </Folder>
   <Folder Name="/examples/">

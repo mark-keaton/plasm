@@ -36,6 +36,13 @@ module DecimalKeyed =
 [<Binding>]
 type ExactSteps(w: World) =
 
+    /// The dialect whose decimals are exact by its own hooks: on PostgreSQL,
+    /// PostgreSQL's with marked hooks of its own; on SQLite, Plasm.Sqlite's.
+    let exact () : IProvider =
+        match w.Db.Kind with
+        | SQLite -> w.Db.Provider
+        | PostgreSQL -> ExactDecimalsProvider(w.Db.Provider)
+
     let events () = w.Get<ResizeArray<CommandEvent>> "exactEvents"
     let repo () = w.Get<Repo> "exactRepo"
 
@@ -72,7 +79,7 @@ type ExactSteps(w: World) =
 
             w.Set(
                 "exactRepo",
-                Repo(Schemas.model, ExactDecimalsProvider(w.Db.Provider), { RepoOptions.Default with OnCommand = Some events.Add; IncludeParameterValues = true })
+                Repo(Schemas.model, exact (), { RepoOptions.Default with OnCommand = Some events.Add; IncludeParameterValues = true })
             )
         }
         :> Task
@@ -237,7 +244,7 @@ type ExactSteps(w: World) =
 
     [<StepDefinition("I explain through it a query of the customers at a place, a value of two decimals")>]
     member _.AtPlace() =
-        let values = Repo(Plasm.Specs.ValueRecords.Schemas.model, ExactDecimalsProvider(w.Db.Provider))
+        let values = Repo(Plasm.Specs.ValueRecords.Schemas.model, exact ())
         let place: Plasm.Specs.ValueRecords.Geo = { Lat = 51.5m; Lon = -0.1m }
 
         let plan =
@@ -254,7 +261,7 @@ type ExactSteps(w: World) =
 
     [<StepDefinition("I explain through it a query of the listings at a fixed price, a union case holding a decimal")>]
     member _.FixedPrice() =
-        let listings = Repo(ExactUnion.model, ExactDecimalsProvider(w.Db.Provider))
+        let listings = Repo(ExactUnion.model, exact ())
 
         let plan =
             listings.Explain(plasm { for l in tableOf<ExactUnion.Listing> do where (l.Price = ExactUnion.Fixed 2.0m) })
@@ -340,7 +347,7 @@ type ExactSteps(w: World) =
     [<StepDefinition("a repository is made through it for a model keyed by a decimal")>]
     member _.MakeDecimalKeyed() =
         try
-            Repo(DecimalKeyed.model, ExactDecimalsProvider(w.Db.Provider)) |> ignore
+            Repo(DecimalKeyed.model, exact ()) |> ignore
             w.Set("exactMade", "made")
         with :? PlasmConfigurationException as e ->
             w.Set("exactMade", e.Message)
@@ -353,6 +360,94 @@ type ExactSteps(w: World) =
     [<StepDefinition("a repository is made for it on PostgreSQL, whose numeric keys compare by value")>]
     member _.MakeDecimalKeyedPostgres() =
         Repo(DecimalKeyed.model, w.Db.Provider) |> ignore
+
+    // On SQLite: Plasm.Sqlite's own SQL, its decimal functions and collation.
+
+    [<StepDefinition("each comparison of a total is SQLite's plasm_decimal_compare, and the id's is as it is")>]
+    member _.ComparedSqlite() =
+        let where = clause "WHERE" (ordersSql ())
+        check (where.Contains "plasm_decimal_compare(\"o\".\"total\", @p0) > 0" && where.Contains "plasm_decimal_compare(\"o\".\"total\", @p1) >= 0") where
+        check (where.Contains "\"o\".\"id\" <> @p2" && count "plasm_decimal_compare" where = 2) where
+
+    [<StepDefinition("the comparison of the total is SQLite's plasm_decimal_compare, not equal")>]
+    member _.NotEqualSqlite() =
+        let where = clause "WHERE" (ordersSql ())
+        check (where.Contains "plasm_decimal_compare(\"o\".\"total\", @p0) <> 0") where
+
+    [<StepDefinition("the order by total is in SQLite's PLASM_DECIMAL collation, and the order by id is as it is")>]
+    member _.OrderedSqlite() =
+        let order = (ordersSql ()).Split("ORDER BY ").[1]
+        check (order.StartsWith "\"o\".\"total\" COLLATE PLASM_DECIMAL, \"o\".\"id\"") order
+
+    [<StepDefinition("the group key is the total in SQLite's PLASM_DECIMAL collation")>]
+    member _.GroupedSqlite() =
+        let sql = ordersSql ()
+        check (sql.Contains "GROUP BY \"o\".\"total\" COLLATE PLASM_DECIMAL") sql
+
+    [<StepDefinition("the join compares the total and the amount by SQLite's plasm_decimal_compare")>]
+    member _.JoinedSqlite() =
+        let sql = ordersSql ()
+        check (sql.Contains " ON plasm_decimal_compare(\"o\".\"total\", \"p\".\"amount\") = 0") sql
+
+    [<StepDefinition("the partition key is the total in SQLite's PLASM_DECIMAL collation")>]
+    member _.PartitionedSqlite() =
+        let sql = ordersSql ()
+        check (sql.Contains "PARTITION BY \"o\".\"total\" COLLATE PLASM_DECIMAL ORDER BY") sql
+
+    [<StepDefinition("each part of the value is compared by SQLite's plasm_decimal_compare")>]
+    member _.PartsSqlite() =
+        let where = clause "WHERE" (w.Get<string> "exactPlan")
+        check (where.Contains "plasm_decimal_compare(\"c\".\"address_geo_lat\", @p0) = 0" && where.Contains "plasm_decimal_compare(\"c\".\"address_geo_lon\", @p1) = 0") where
+
+    [<StepDefinition("the case's decimal is compared by SQLite's plasm_decimal_compare, and its tag as it is")>]
+    member _.CaseSqlite() =
+        let where = clause "WHERE" (w.Get<string> "exactPlan")
+        check (where.Contains "\"l\".\"price\" = @p0" && where.Contains "plasm_decimal_compare(\"l\".\"price_amount\", @p1) = 0") where
+
+    [<StepDefinition("the total is the operand of the list in SQLite's PLASM_DECIMAL collation")>]
+    member _.AmongSqlite() =
+        let where = clause "WHERE" (ordersSql ())
+        check (where.Contains "\"o\".\"total\" COLLATE PLASM_DECIMAL IN (") where
+
+    [<StepDefinition("the total is told apart in SQLite's PLASM_DECIMAL collation")>]
+    member _.DistinctSqlite() =
+        let sql = ordersSql ()
+        check (sql.StartsWith "SELECT DISTINCT \"o\".\"total\" COLLATE PLASM_DECIMAL") sql
+
+    [<StepDefinition("each operand's total or amount is told apart in SQLite's PLASM_DECIMAL collation")>]
+    member _.UnionSqlite() =
+        let sql = ordersSql ()
+        check (sql.Contains "\"o\".\"total\" COLLATE PLASM_DECIMAL" && sql.Contains "\"p\".\"amount\" COLLATE PLASM_DECIMAL" && sql.Contains "UNION") sql
+
+    [<StepDefinition("the running sum is SQLite's json_group_array over the window, summed by plasm_decimal_json_sum")>]
+    member _.RunningSqlite() =
+        let sql = ordersSql ()
+        check (sql.Contains "plasm_decimal_json_sum(json_group_array(\"o\".\"total\") OVER (ORDER BY \"o\".\"id\" ROWS UNBOUNDED PRECEDING))") sql
+
+    [<StepDefinition("the doubling is SQLite's plasm_decimal_multiply, compared by its plasm_decimal_compare")>]
+    member _.DoubledSqlite() =
+        let where = clause "WHERE" (ordersSql ())
+        check (where.Contains "plasm_decimal_compare(plasm_decimal_multiply(\"o\".\"total\", @p0), @p1) > 0") where
+
+    [<StepDefinition("the sum and average are SQLite's plasm_decimal_sum and plasm_decimal_avg, the minimum and maximum in its PLASM_DECIMAL collation, and the count is as it is")>]
+    member _.AggregatedSqlite() =
+        let sql = ordersSql ()
+        let select = sql.Substring(0, sql.IndexOf "FROM")
+
+        for part in [ "plasm_decimal_sum(\"o\".\"total\")"; "plasm_decimal_avg(\"o\".\"total\")"; "MIN(\"o\".\"total\" COLLATE PLASM_DECIMAL)"; "MAX(\"o\".\"total\" COLLATE PLASM_DECIMAL)"; "COUNT(*)" ] do
+            check (select.Contains part) select
+
+    [<StepDefinition("the total is sent as the text 9.50")>]
+    member _.SentSqlite() =
+        let e = events () |> Seq.find (fun e -> e.Sql.Contains "FROM \"orders\"")
+        check (e.Parameters |> List.exists (fun (_, v) -> v = Some "9.50")) $"%A{e.Parameters}"
+
+    [<StepDefinition("the UPDATE compares the amount it was read with by SQLite's plasm_decimal_same, and every other column as it is")>]
+    member _.UpdatedSqlite() =
+        let update = events () |> Seq.map (fun e -> e.Sql) |> Seq.find (fun s -> s.StartsWith "UPDATE")
+        let where = update.Substring(update.IndexOf "WHERE")
+        check (where.Contains "plasm_decimal_same(\"payments\".\"amount\", @p" && count "plasm_decimal_same" where = 1) update
+        check (where.Contains "\"payments\".\"status\" IS @p") update
 
     [<StepDefinition("a Payment of 12.50 for the first Order")>]
     member _.Payment() =

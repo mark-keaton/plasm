@@ -12,6 +12,8 @@
          (docs/status.md). -->
     <PackageVersion Include="FSharp.Core" Version="$(ApplicationFSharpCoreVersion)" />
     <PackageVersion Include="Npgsql" Version="10.0.3" />
+    <!-- Plasm.Sqlite's driver, with SQLitePCLRaw 3.0.5 and SQLite 3.53.4 beside it. -->
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="11.0.0" />
     <!-- Plasm.HotChocolate is built against this version (docs/hotchocolate.md). -->
     <PackageVersion Include="HotChocolate.Data" Version="16.7.6" />
     <PackageVersion Include="HotChocolate.AspNetCore" Version="16.7.6" />
