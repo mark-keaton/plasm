@@ -220,6 +220,19 @@ let tour (connectionString: string) (ddl: string) =
 
 [<EntryPoint>]
 let main argv =
+    if argv = [| "check-format" |] then
+        // The site's SQL layout, checked without a database.
+        match Shop.SqlCapture.checkFormat () with
+        | [] ->
+            printfn "format: %d statements laid out as they must be" Shop.SqlCapture.formatCases.Length
+            0
+        | failures ->
+            for f in failures do
+                printfn "format: %s" f
+
+            1
+    else
+
     task {
         let! connectionString, ddl = provision ()
 

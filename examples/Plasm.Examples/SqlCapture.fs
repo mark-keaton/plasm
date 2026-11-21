@@ -29,7 +29,8 @@ type Example =
       Empty: string option }
 
 /// Reformats whitespace only: top-level clauses start new lines and long
-/// select lists put one column per line. Text inside parentheses is untouched.
+/// select lists put one column per line. Text inside parentheses is untouched,
+/// and so is the FROM of IS [NOT] DISTINCT FROM.
 let format (sql: string) =
     let clauses =
         [ " FROM "; " INNER JOIN "; " LEFT JOIN "; " WHERE "; " GROUP BY "; " HAVING "; " ORDER BY "; " LIMIT "; " OFFSET "; " RETURNING "; " ON CONFLICT "; " SET "; " VALUES "; " FOR UPDATE" ]
@@ -77,9 +78,14 @@ let format (sql: string) =
             if c = '(' then depth <- depth + 1
             if c = ')' then depth <- depth - 1
 
+            // The FROM of IS [NOT] DISTINCT FROM is the operator's, not a clause.
+            let operatorFrom (k: string) =
+                k = " FROM " && (sql.Substring(0, i).EndsWith " IS DISTINCT" || sql.Substring(0, i).EndsWith " IS NOT DISTINCT")
+
             let clause =
                 if depth = 0 then
-                    clauses |> List.tryFind (fun k -> String.CompareOrdinal(sql, i, k, 0, k.Length) = 0)
+                    clauses
+                    |> List.tryFind (fun k -> String.CompareOrdinal(sql, i, k, 0, k.Length) = 0 && not (operatorFrom k))
                 else
                     None
 
@@ -96,6 +102,21 @@ let format (sql: string) =
 
     // `DELETE FROM` reads as one clause.
     sb.ToString().Replace("DELETE\nFROM ", "DELETE FROM ")
+
+/// Statements `format` lays out, with the layout each must get: the full
+/// check runs them (`-- check-format`).
+let formatCases =
+    [ "DELETE FROM \"t\" WHERE \"t\".\"id\" = @p0 AND \"t\".\"a\" IS NOT DISTINCT FROM @p1",
+      "DELETE FROM \"t\"\nWHERE \"t\".\"id\" = @p0 AND \"t\".\"a\" IS NOT DISTINCT FROM @p1"
+      "SELECT \"c\".\"id\" FROM \"c\" WHERE \"c\".\"a\" IS DISTINCT FROM @p0 ORDER BY \"c\".\"id\"",
+      "SELECT \"c\".\"id\"\nFROM \"c\"\nWHERE \"c\".\"a\" IS DISTINCT FROM @p0\nORDER BY \"c\".\"id\""
+      "SELECT DISTINCT \"c\".\"name\" FROM \"c\"", "SELECT DISTINCT \"c\".\"name\"\nFROM \"c\"" ]
+
+/// Each case `format` lays out otherwise, with what it gave.
+let checkFormat () =
+    [ for sql, expected in formatCases do
+          let got = format sql
+          if got <> expected then yield $"{sql}\n  expected:\n{expected}\n  got:\n{got}" ]
 
 let run (connectionString: string) (outputPath: string) =
     task {
