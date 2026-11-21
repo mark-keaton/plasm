@@ -74,6 +74,10 @@ until it gives the new members:
 - In `Ddl`, a column's check is one member, `ColumnCheck(column, holds)`,
   told what the column holds as a `ColumnHolds`: a scalar, a list, a
   document or an enum with its labels.
+- `ISqlDialect.LikeEscape` is gone. `TextMatch` writes `String.StartsWith`,
+  `EndsWith` and `Contains` in a query: told which of the three, it writes
+  the operand and its own pattern, matching the text with its case and every
+  character as itself.
 - `ISqlDialect.ColumnTypes` is now three members, one for each use:
   `ColumnType`, `CatalogueTypes` and `CastType`.
 - `IJsonDialect` gained `StoreType`.
@@ -86,7 +90,9 @@ until it gives the new members:
 The answers that keep what 0.1.0 did on PostgreSQL: `Refusal` answers `None`
 for every value; `Exact` and `UnboundedLimit` are `None`; `ColumnType` and
 `CastType` are the first name the old `ColumnTypes` list gave, and
-`CatalogueTypes` is the whole list; `ColumnCheck` answers `None` for every
+`CatalogueTypes` is the whole list; `TextMatch` writes the operand, `LIKE`
+and the text escaped (`\`, `%`, `_`), with `%` where the match is open, and
+the old escape clause after; `ColumnCheck` answers `None` for every
 column; `WritersTakeTurns` is false. Aggregate
 and window function names now pass through `FunctionName` as other
 functions' do, so a dialect that renames functions sees `COUNT`, `SUM` and
