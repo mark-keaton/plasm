@@ -176,12 +176,26 @@ type Delivery =
 type CategoryId = CategoryId of int64
 
 /// A category of the shop's products. Its parent is another Category: the
-/// categories form a tree, which Query.recursive reads.
+/// categories form a tree, which Query.recursive reads. Its keywords are a
+/// list of strings, kept in its own row as one array column.
 [<Table "categories">]
 type Category =
     { Id: CategoryId
       Name: string
-      Parent: CategoryId option }
+      Parent: CategoryId option
+      Keywords: string list }
+
+/// The key of a stock row: a warehouse and a product's sku. A record as an
+/// Id is a key of several columns, its fields the table's own columns.
+type StockKey = { Warehouse: string; Sku: string }
+
+/// How many of a product a warehouse holds, keyed by both.
+[<Table "stock">]
+type Stock =
+    { Id: StockKey
+      Quantity: int
+      [<Version>]
+      Version: int }
 
 let qty n =
     match Quantity.create n with
@@ -208,7 +222,8 @@ module Db =
               typeof<Tag>
               typeof<Account>
               typeof<Delivery>
-              typeof<Category> ]
+              typeof<Category>
+              typeof<Stock> ]
 
 /// The shop's queries: values, so `Repo.Start` can check them all.
 module Queries =

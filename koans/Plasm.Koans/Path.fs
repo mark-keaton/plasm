@@ -32,4 +32,5 @@ let lessons: Lesson list =
       L26_LocksAndTries.lesson
       L27_WritesThatReturnRows.lesson
       L28_RecursiveQueries.lesson
-      L29_StreamingReads.lesson ]
+      L29_StreamingReads.lesson
+      L30_KeysAndListsInColumns.lesson ]

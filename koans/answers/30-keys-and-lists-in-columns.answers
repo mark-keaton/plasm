@@ -1,0 +1,18 @@
+# A key of several columns
+5
+# Reading by one part of the key
+[ "GADGET"; "WIDGET" ]
+# An update finds the row by every part
+true
+4
+# A whole key has no order
+true
+# A list kept in its owner's row
+[ "cutting"; "hardware" ]
+# Filtering by a value in a list
+[ "Hand saws"; "Saws" ]
+# An empty list is an empty array
+[ "Garden" ]
+# Changing a list writes its column alone
+true
+[ "water"; "garden" ]

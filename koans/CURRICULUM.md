@@ -112,6 +112,7 @@ the lessons it builds on.
 | 27 | Bulk writes that return their rows | `Bulk.updateReturning`, the rows as they are after it with what they own; `Bulk.deleteReturning`, the rows as they were; a delete of records that own others refused by name. |
 | 28 | Recursive queries | `Query.recursive` over the shop's categories: everything under a category and everything above one, with `Query.depth`, in one statement; the query made from it filtered and ordered as a whole; a cycle in the data ending; a step that does not join `found` refused. |
 | 29 | Streaming reads | `repo.Stream`, an `IAsyncEnumerable` of Results asked for one row at a time; nothing sent before the first row, the command reported when the stream ends; a projection streamed; a query of records that own a list one Error naming it. |
+| 30 | Keys of several columns and lists in a column | The shop's `Stock`, keyed by a `StockKey` record (warehouse and sku): read by its whole key and by one part, updated by every part and its version, a whole key refused as an order. A category's `Keywords`, a string list kept as one array column: read whole, filtered with `List.contains` and `List.isEmpty`, and changed as one column. |
 
 ## Writing a koan
 

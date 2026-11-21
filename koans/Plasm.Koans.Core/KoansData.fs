@@ -75,7 +75,15 @@ create table deliveries (
 create table categories (
   id bigint generated always as identity primary key,
   name text not null,
-  parent bigint references categories(id)
+  parent bigint references categories(id),
+  keywords text[] not null default '{}'
+);
+create table stock (
+  warehouse text not null,
+  sku text not null,
+  quantity int not null,
+  version int not null default 1,
+  primary key (warehouse, sku)
 );"""
 
 /// The starting data. Every koan runs in a sandbox, so every koan sees exactly this.
@@ -103,6 +111,9 @@ insert into accounts(name) values ('ada'), ('bob');
 insert into profiles(account_id, bio) values (1, 'Writes compilers');
 insert into deliveries(order_id, stage, stage_carrier, stage_signed_by) values
   (1, 'delivered', null, 'Ada'), (3, 'in_transit', 'Swift', null), (2, 'packing', null, null);
-insert into categories(name, parent) values
-  ('Tools', null), ('Saws', 1), ('Hand saws', 2), ('Drills', 1), ('Garden', null), ('Hoses', 5);
+insert into categories(name, parent, keywords) values
+  ('Tools', null, '{hardware}'), ('Saws', 1, '{cutting,hardware}'), ('Hand saws', 2, '{cutting}'),
+  ('Drills', 1, '{hardware,power}'), ('Garden', null, '{}'), ('Hoses', 5, '{water}');
+insert into stock(warehouse, sku, quantity) values
+  ('north', 'WIDGET', 5), ('north', 'GADGET', 0), ('south', 'WIDGET', 2);
 """

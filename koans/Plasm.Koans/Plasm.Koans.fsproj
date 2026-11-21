@@ -35,6 +35,7 @@
     <Compile Include="Lessons/L27_WritesThatReturnRows.fs" />
     <Compile Include="Lessons/L28_RecursiveQueries.fs" />
     <Compile Include="Lessons/L29_StreamingReads.fs" />
+    <Compile Include="Lessons/L30_KeysAndListsInColumns.fs" />
     <Compile Include="Path.fs" />
     <Compile Include="Given.fs" />
     <Compile Include="Course.fs" />
