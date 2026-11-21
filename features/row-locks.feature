@@ -62,3 +62,9 @@ Feature: A transaction can lock the rows it reads
       Given three queued jobs
       When a transaction reads the first queued job locked for update, through a provider without row locks
       Then the read is refused as unsupported by that provider
+
+    Scenario: A provider whose writers take turns deletes what a record owns without locking a row
+      Given three queued jobs
+      When the first job is deleted through a provider without row locks, whose writers take turns
+      Then the first job and its notes are deleted
+      And no statement sent locks a row

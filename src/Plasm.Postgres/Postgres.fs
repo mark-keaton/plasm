@@ -90,6 +90,7 @@ type internal PostgresDialect(options: PostgresOptions) =
               Returning = true
               Upserts = true
               RowLocking = true
+              WritersTakeTurns = false
               Batching = true
               DefersBegin = true
               Describe = true

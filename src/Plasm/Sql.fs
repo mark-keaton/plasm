@@ -17,8 +17,14 @@ type ProviderCapabilities =
       Returning: bool
       /// Inserts that resolve conflicts (ON CONFLICT ...): upserts.
       Upserts: bool
-      /// SELECT ... FOR UPDATE (deleting an owner locks what it owns first).
+      /// SELECT ... FOR UPDATE: a query's `locking`, and the read of what a
+      /// record owns before a write replaces it (deleting an owner locks what
+      /// it owns first).
       RowLocking: bool
+      /// One writer holds the database at a time (SQLite): a write that
+      /// replaces what a record owns reads it without a row lock, since no
+      /// other writer can change it meanwhile.
+      WritersTakeTurns: bool
       /// Several statements sent in one round trip (a DbBatch): a write's
       /// statements, and one level of loads (round-trips.feature).
       Batching: bool

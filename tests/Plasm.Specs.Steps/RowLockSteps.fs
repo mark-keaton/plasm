@@ -52,8 +52,9 @@ open Plasm
 open Plasm.Specs.RowLocks
 open Plasm.TestDomain
 
-/// A provider like the database's, whose dialect takes no row locks.
-type NoRowLocks(inner: IProvider) =
+/// A provider like the database's, whose dialect takes no row locks; with
+/// `turns`, its writers take turns (one at a time, as SQLite's do).
+type NoRowLocks(inner: IProvider, turns: bool) =
     let dialect =
         { new ISqlDialect with
             member _.Name = "NoLocksSQL"
@@ -71,7 +72,7 @@ type NoRowLocks(inner: IProvider) =
             member _.FunctionName name = inner.Dialect.FunctionName name
             member _.Json = inner.Dialect.Json
             member _.Begin isolation = inner.Dialect.Begin isolation
-            member _.Capabilities = { inner.Dialect.Capabilities with RowLocking = false } }
+            member _.Capabilities = { inner.Dialect.Capabilities with RowLocking = false; WritersTakeTurns = turns } }
 
     interface IProvider with
         member _.Dialect = dialect
@@ -258,11 +259,39 @@ let read (repo: Repo) = repo.All claim
     [<StepDefinition("a transaction reads the first queued job locked for update, through a provider without row locks")>]
     member _.NoLocks() =
         task {
-            let unlocked = Repo(Schemas.model, NoRowLocks(w.Db.Provider), RepoOptions.Default)
+            let unlocked = Repo(Schemas.model, NoRowLocks(w.Db.Provider, false), RepoOptions.Default)
             let! r = unlocked.Transact(Tx.one (Schemas.firstQueued RowLock.ForUpdate): Tx<Job option, string>)
             w.Set("unlocked", r)
         }
         :> Task
+
+    [<StepDefinition("the first job is deleted through a provider without row locks, whose writers take turns")>]
+    member _.DeleteTakingTurns() =
+        task {
+            let sent = ResizeArray<CommandEvent>()
+            let turns = Repo(Schemas.model, NoRowLocks(w.Db.Provider, true), { RepoOptions.Default with OnCommand = Some sent.Add })
+            let! read = turns.One(plasm { for j in tableOf<Job> do where (j.Id = JobId 1L) })
+            sent.Clear()
+            let! r = turns.Transact(Tx.delete (ok read).Value: Tx<Job, string>)
+            w.Set("deleted", r |> Result.map ignore |> Result.mapError string)
+            w.Set("replaceSent", sent |> Seq.map (fun e -> e.Sql) |> List.ofSeq)
+        }
+        :> Task
+
+    [<StepDefinition("the first job and its notes are deleted")>]
+    member _.Deleted() =
+        task {
+            equal (Ok()) (w.Get<Result<unit, string>> "deleted") "the delete"
+            let! jobs = w.Db.Scalar<int64>("select count(*) from jobs where id = 1")
+            let! notes = w.Db.Scalar<int64>("select count(*) from job_notes where job = 1")
+            equal (0L, 0L) (jobs, notes) "the first job and its notes"
+        }
+        :> Task
+
+    [<StepDefinition("no statement sent locks a row")>]
+    member _.NoLock() =
+        let sent = w.Get<string list> "replaceSent"
+        check (not sent.IsEmpty && sent |> List.forall (fun s -> not (s.Contains "FOR UPDATE"))) (String.concat "\n---\n" sent)
 
     [<StepDefinition("the read is refused as unsupported by that provider")>]
     member _.Unsupported() =

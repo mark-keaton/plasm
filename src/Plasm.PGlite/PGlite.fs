@@ -758,6 +758,7 @@ type internal PGliteDialect(maxKeys: int) =
               Returning = true
               Upserts = true
               RowLocking = true
+              WritersTakeTurns = false
               Batching = false
               DefersBegin = false
               Describe = false

@@ -421,7 +421,7 @@ let unsupported (c: ProviderCapabilities) (s: CsState) : string option =
     let rec needs (s: CsState) =
         [ if (s.Action = ChangeAction.Insert || s.Action = ChangeAction.Update) && not c.Returning then
               "RETURNING (reading back written rows)"
-          if s.Children |> List.exists (fun w -> w.Replace.IsSome) && not c.RowLocking then
+          if s.Children |> List.exists (fun w -> w.Replace.IsSome) && not c.RowLocking && not c.WritersTakeTurns then
               "row locking (SELECT ... FOR UPDATE, to replace children)"
           if not s.Links.IsEmpty && not c.ArrayParameters then
               "array parameters (to write many-to-many links)"
@@ -729,7 +729,12 @@ and private writeChildWrite model sess (schema: SchemaInfo) (s: CsState) (wi: in
                 { Sql.select (Sql.Table(target.Table, target.Table)) with
                     Columns = [ Sql.Column(target.Table, target.Key.Column), target.Key.Column ]
                     Where = ownedBy :: scopeWheres
-                    Lock = Some { Strength = "UPDATE"; Of = None; Wait = None } }
+                    // Locked against other writers, unless writers take turns.
+                    Lock =
+                        if sess.Provider.Dialect.Capabilities.RowLocking then
+                            Some { Strength = "UPDATE"; Of = None; Wait = None }
+                        else
+                            None }
 
             let reader = columnReader target.Key.ProviderType
 
