@@ -5,7 +5,6 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
 ## Now: after 0.1.0
 
-- The provider boundary: every piece of database-specific SQL behind the dialect
 - A second database provider: SQLite
 
 ## Next: in the library
@@ -28,6 +27,7 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 - Typed transactions with optimistic concurrency: a record read as the caller saw it, a stale copy refused at the read; row locks, and a step that may fail under a savepoint; a list's writes sent together
 - A `dotnet new` template, `Plasm.Templates`: `plasm-api` makes an F# domain, a C# API and tests
 - Kanban's C# host and Lambda on the FSharp.Core a new project gets, 11.0.101
+- The provider boundary: every piece of database-specific SQL behind the dialect
 - Start-up checks of every query and of the schema, every statement described by the database before any runs
 - Each command as an OpenTelemetry activity
 - Native AOT, with a Lambda function in F# and one in C# over F#

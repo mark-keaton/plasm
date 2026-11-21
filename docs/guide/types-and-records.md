@@ -158,6 +158,12 @@ type Order =
       Lines: OrderLine list }
 ```
 
+A time is stored as an instant in UTC. A `DateTime` field holds a value of
+Kind Utc and a `DateTimeOffset` one at the offset zero; any other is refused
+before anything is sent, a write as an invalid change of that field and a
+query as a failure naming the value. Give a time Kind Utc with
+`DateTime.SpecifyKind`, or convert a local one with `ToUniversalTime()`.
+
 A field can be unique within others, as a name within its tenant:
 `[<Unique(Within = [| nameof the<Tag>.Tenant |])>]` on `Name` is one
 constraint over (tenant, name), and a duplicate within a tenant is the Name
