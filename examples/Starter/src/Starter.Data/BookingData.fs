@@ -198,13 +198,14 @@ type BookingData private (repo: Repo, time: TimeProvider) =
         | DbError.Database failure -> raise (BookingUnavailableException($"{what}: {failure.Message}", failure.Exception))
         | other -> raise (BookingUnavailableException($"{what}: {other}", null))
 
-    let changed (id: Guid) (tx: Tx<Equipment, Db.Stop>) (ct: CancellationToken) : Task<ChangeOutcome> =
+    let changed (tx: Tx<Equipment, Db.Stop>) (ct: CancellationToken) : Task<ChangeOutcome> =
         task {
             match! repo.Transact(tx, cancellationToken = ct) with
             | Ok stored -> return ChangeOutcome(View.equipment stored)
             | Error { Failure = TxFailure.Rejected Db.Gone } -> return ChangeOutcome { What = "equipment" }
             | Error { Failure = TxFailure.Rejected(Db.Ruled refusal) } -> return ChangeOutcome(View.refused refusal)
-            | Error { Failure = TxFailure.Conflict _ } -> return ChangeOutcome { Equipment = id }
+            // The conflict names the stale record by its key.
+            | Error { Failure = TxFailure.Conflict(_, (:? EquipmentId as EquipmentId stale)) } -> return ChangeOutcome { Equipment = stale }
             | Error { Failure = TxFailure.Failed error } -> return unavailable "a change" error
             | Error other -> return raise (BookingUnavailableException(string other, null))
         }
@@ -266,10 +267,10 @@ type BookingData private (repo: Repo, time: TimeProvider) =
 
     /// Books the equipment, if `version` is the one stored.
     member _.BookAsync(id: Guid, version: int, who: string, from: DateTimeOffset, until: DateTimeOffset, cancellationToken: CancellationToken) =
-        changed id (Db.change (EquipmentId id) version (Equipment.book (BookingId(Guid.CreateVersion7())) who from until)) cancellationToken
+        changed (Db.change (EquipmentId id) version (Equipment.book (BookingId(Guid.CreateVersion7())) who from until)) cancellationToken
 
     member _.TakeOutOfServiceAsync(id: Guid, version: int, reason: string, cancellationToken: CancellationToken) =
-        changed id (Db.change (EquipmentId id) version (Equipment.takeOutOfService reason (time.GetUtcNow()))) cancellationToken
+        changed (Db.change (EquipmentId id) version (Equipment.takeOutOfService reason (time.GetUtcNow()))) cancellationToken
 
     member _.ReturnToServiceAsync(id: Guid, version: int, cancellationToken: CancellationToken) =
-        changed id (Db.change (EquipmentId id) version Equipment.returnToService) cancellationToken
+        changed (Db.change (EquipmentId id) version Equipment.returnToService) cancellationToken
