@@ -173,6 +173,16 @@ type Delivery =
         | InTransit _ -> "in transit"
         | Delivered _ -> "delivered"
 
+type CategoryId = CategoryId of int64
+
+/// A category of the shop's products. Its parent is another Category: the
+/// categories form a tree, which Query.recursive reads.
+[<Table "categories">]
+type Category =
+    { Id: CategoryId
+      Name: string
+      Parent: CategoryId option }
+
 let qty n =
     match Quantity.create n with
     | Ok q -> q
@@ -197,7 +207,8 @@ module Db =
               typeof<Article>
               typeof<Tag>
               typeof<Account>
-              typeof<Delivery> ]
+              typeof<Delivery>
+              typeof<Category> ]
 
 /// The shop's queries: values, so `Repo.Start` can check them all.
 module Queries =

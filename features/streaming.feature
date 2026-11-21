@@ -1,5 +1,6 @@
 # Executable acceptance specification (Reqnroll): streaming reads. Written
 # before the implementation.
+@implemented
 Feature: A query's rows can be read as a stream
   As an F# or C# application developer reading more rows than I want in memory
   I want a read that gives me a query's rows as I ask for them

@@ -1,5 +1,6 @@
 # Executable acceptance specification (Reqnroll): recursive queries. Written
 # before the implementation.
+@implemented
 Feature: A query can follow a record that refers to its own kind
   As an F# application developer whose records form a tree
   I want everything under a row, or above it, in one statement

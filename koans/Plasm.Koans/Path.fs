@@ -30,4 +30,5 @@ let lessons: Lesson list =
       L24_SetOperations.lesson
       L25_WindowsAndRowAggregates.lesson
       L26_LocksAndTries.lesson
-      L27_WritesThatReturnRows.lesson ]
+      L27_WritesThatReturnRows.lesson
+      L28_RecursiveQueries.lesson ]

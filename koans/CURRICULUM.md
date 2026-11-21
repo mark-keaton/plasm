@@ -110,6 +110,7 @@ the lessons it builds on.
 | 25 | Windows and aggregates over rows | `Win.rowNumber`, `runningSum`, `lag`, `sum` and `count` over `Win.partition` or `Win.whole`, beside each row; a window over the rows kept; a rank over no order refused; `Agg.countWhere`, `sumWhere`, `any`, `all`, `listBy` and its Descending form; what each gives over no rows. |
 | 26 | Locks and tries | `locking RowLock.ForUpdate` read by `Tx.all` in a transaction, its lock on the query's own rows and not on what they own; `Tx.attempt`, a step's failure (a duplicate, a stale copy's Conflict) as a value the transaction goes on from, and a tried step that succeeds kept. NOWAIT and SKIP LOCKED are not taught: what they do needs a second transaction at once, which the browser course's database cannot have (`kept-out.txt`). |
 | 27 | Bulk writes that return their rows | `Bulk.updateReturning`, the rows as they are after it with what they own; `Bulk.deleteReturning`, the rows as they were; a delete of records that own others refused by name. |
+| 28 | Recursive queries | `Query.recursive` over the shop's categories: everything under a category and everything above one, with `Query.depth`, in one statement; the query made from it filtered and ordered as a whole; a cycle in the data ending; a step that does not join `found` refused. |
 
 ## Writing a koan
 

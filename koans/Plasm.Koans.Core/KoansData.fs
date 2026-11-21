@@ -71,6 +71,11 @@ create table deliveries (
   stage text not null,
   stage_carrier text,
   stage_signed_by text
+);
+create table categories (
+  id bigint generated always as identity primary key,
+  name text not null,
+  parent bigint references categories(id)
 );"""
 
 /// The starting data. Every koan runs in a sandbox, so every koan sees exactly this.
@@ -98,4 +103,6 @@ insert into accounts(name) values ('ada'), ('bob');
 insert into profiles(account_id, bio) values (1, 'Writes compilers');
 insert into deliveries(order_id, stage, stage_carrier, stage_signed_by) values
   (1, 'delivered', null, 'Ada'), (3, 'in_transit', 'Swift', null), (2, 'packing', null, null);
+insert into categories(name, parent) values
+  ('Tools', null), ('Saws', 1), ('Hand saws', 2), ('Drills', 1), ('Garden', null), ('Hoses', 5);
 """

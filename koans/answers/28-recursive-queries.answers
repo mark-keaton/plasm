@@ -1,0 +1,11 @@
+# Everything under a category
+[ "Tools", 0; "Drills", 1; "Saws", 1; "Hand saws", 2 ]
+1
+# Everything above a category
+[ "Hand saws", 0; "Saws", 1; "Tools", 2 ]
+# The query made from it is a query
+[ "Drills"; "Hand saws"; "Saws" ]
+# A cycle in the data ends
+[ "Tools", 0; "Drills", 1; "Saws", 1; "Hand saws", 2 ]
+# A step must join the rows found
+true
