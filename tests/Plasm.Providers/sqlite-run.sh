@@ -13,6 +13,8 @@ while IFS=$'\t' read -r feature class; do
   log="$logs/sqlite-$(basename "$feature" .feature).log"
   env -u PLASM_TEST_PG PLASM_TEST_PROVIDER=sqlite PLASM_TEST_SUMMARY="$summary" \
     dotnet test "$root/tests/Plasm.Specs" --no-build --output Detailed -- --filter-class "$class" > "$log" 2>&1 || status=1
+  # Without the colours dotnet test writes where it thinks a terminal is (CI's).
+  perl -pi -e 's/\e\[[0-9;]*[A-Za-z]//g' "$log"
   echo "SQLite $feature: $(grep -E '^\s+total:|^\s+failed:' "$log" | tr -s ' ' | tr '\n' ' ')"
   grep -E "^\s*failed [A-Za-z]" "$log" | head -5
 done < "$root/tests/Plasm.Providers/sqlite-features.txt"

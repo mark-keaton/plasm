@@ -75,6 +75,36 @@ type ArrayValueSteps(w: World) =
         }
         :> Task
 
+    [<StepDefinition("a sample whose times have a tenth of a microsecond")>]
+    member _.Ticks() =
+        task {
+            let repo = w.Db.RepoWith(model = Samples.model)
+            let! _ = w.Db.Exec("drop table if exists list_samples; " + repo.Ddl())
+            let! r = repo.Transact(Tx.insert { Samples.sample with Times = [ Samples.time.AddTicks 7L ]; Moments = [ Samples.moment.AddTicks 7L ] }: Tx<_, unit>)
+            ok r |> ignore
+            w.Set("samplesRepo", repo)
+        }
+        :> Task
+
+    [<StepDefinition("its times are read back to the microsecond, as PostgreSQL keeps them")>]
+    member _.TicksBack() =
+        task {
+            let! r = repo().All(Query.from (tableOf<Sample>))
+            let read = (ok r).Head
+            equal ([ Samples.time ], [ Samples.moment ]) (read.Times, read.Moments) "the times read"
+        }
+        :> Task
+
+    [<StepDefinition("each is found in its list by the time written")>]
+    member _.TicksFound() =
+        task {
+            let time, moment = Samples.time.AddTicks 7L, Samples.moment.AddTicks 7L
+            let! byTime = found (plasm { for s in tableOf<Sample> do where (List.contains time s.Times) })
+            let! byMoment = found (plasm { for s in tableOf<Sample> do where (List.contains moment s.Moments) })
+            equal ([ "edges" ], [ "edges" ]) (byTime, byMoment) "found by DateTime, by DateTimeOffset"
+        }
+        :> Task
+
     [<StepDefinition("the sample is read back as it was written")>]
     member _.ReadBack() =
         task {

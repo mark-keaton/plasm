@@ -138,6 +138,11 @@ Feature: A list of scalars is stored as one array column
       Given a sample holding every scalar a list can hold, at the values that test its form
       Then the sample is read back as it was written
 
+    Scenario: A list's times are kept to the microsecond, as a column's are
+      Given a sample whose times have a tenth of a microsecond
+      Then its times are read back to the microsecond, as PostgreSQL keeps them
+      And each is found in its list by the time written
+
     Scenario: Every scalar a list holds is found by List.contains
       Given a sample holding every scalar a list can hold, at the values that test its form
       Then each of its values is found in its list by List.contains, the decimal by value

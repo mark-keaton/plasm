@@ -28,7 +28,13 @@ module internal Times =
     let text (d: DateTime) = DateTime(keptTicks d.Ticks).ToString(form, inv)
 
     let private refuse (column: string) (stored: string) (what: string) =
-        raise (InvalidCastException $"column {column} holds '{stored}', not a time in Plasm's form ({what})")
+        raise (
+            InvalidCastException(
+                $"column {column} holds '{stored}', not a time in Plasm's form ({what}). "
+                + "Plasm writes a time to the microsecond in UTC, as PostgreSQL keeps it; a command sent past Plasm "
+                + "(on Sqlite.connectionOf, or by another tool) must write it so too, rounded to the microsecond"
+            )
+        )
 
     let private utc (column: string) (stored: string) (body: string) (what: string) =
         match DateTime.TryParseExact(body, form, inv, DateTimeStyles.AdjustToUniversal ||| DateTimeStyles.AssumeUniversal) with

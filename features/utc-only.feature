@@ -89,6 +89,24 @@ Feature: Only UTC times are stored, and a value that cannot be sent is a failure
       | 1999-12-31 23:59:59.9999995 | 2000-01-01 00:00:00        |
       | 1969-07-20 20:17:40.1234567 | 1969-07-20 20:17:40.123457 |
 
+  # However a time is written (Plasm's writes, a transaction's own command,
+  # the specs' own SQL), a tenth of a microsecond is not kept: CI's Linux
+  # clock gives one, where the Mac's gives whole microseconds.
+  Scenario Outline: A time is kept to the microsecond however it is written
+    Given a table of appointments
+    When an appointment whose When and At are 2026-11-21 08:00:00.1234567 UTC is written by <path>
+    Then it is read back with When and At 2026-11-21 08:00:00.123456 UTC
+    And it is found by When and by At 2026-11-21 08:00:00.1234567 UTC, in a query and through a prepared query
+
+    Examples:
+      | path                        |
+      | an insert                   |
+      | an update                   |
+      | a bulk insert               |
+      | a bulk update               |
+      | a transaction's own command |
+      | the scenario's own SQL      |
+
   Scenario: Times are ordered as the instants they are, whatever their fractions
     Given a table of appointments
     And appointments at 08:00:00.5, 08:00:00, 08:00:00.25, 08:00:00.000001 and 07:59:59.999999 UTC
@@ -107,6 +125,7 @@ Feature: Only UTC times are stored, and a value that cannot be sent is a failure
     And the appointment's <column> column is set past its check to "<text>"
     When I read the appointments
     Then the read of the appointments fails, saying "<column>" and "not a time in Plasm's form"
+    And the read's error says a command sent past Plasm must write a time to the microsecond in UTC
 
     Examples:
       | column | text                          |

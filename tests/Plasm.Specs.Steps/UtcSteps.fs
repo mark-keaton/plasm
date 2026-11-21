@@ -377,7 +377,84 @@ type UtcSteps(w: World) =
         }
         :> Task
 
+    [<StepDefinition("the read's error says a command sent past Plasm must write a time to the microsecond in UTC")>]
+    member _.SaysWhatToDo() =
+        let outcome = w.Get<string> "utcRead"
+        check (outcome.Contains "a command sent past Plasm" && outcome.Contains "Sqlite.connectionOf" && outcome.Contains "to the microsecond") outcome
+
     [<StepDefinition("^the read of the appointments fails, saying \"(.*)\" and \"(.*)\"$")>]
     member _.ReadFails(column: string, text: string) =
         let outcome = w.Get<string> "utcRead"
         check (not (outcome.StartsWith "read") && not (outcome.StartsWith "THROWN") && outcome.Contains column && outcome.Contains text) outcome
+
+    // ---- kept to the microsecond whichever way it is written ----
+
+    [<StepDefinition("^an appointment whose When and At are (.*) UTC is written by (an insert|an update|a bulk insert|a bulk update|a transaction's own command|the scenario's own SQL)$")>]
+    member _.WrittenBy(text: string, path: string) =
+        task {
+            let t = UtcSteps.Utc text
+            let at = DateTimeOffset t
+            let one = { Appointments.utc "one" with When = t; At = at }
+
+            match path with
+            | "an insert" ->
+                let! r = repo().Transact(Tx.insert one: Tx<_, unit>)
+                ok r |> ignore
+            | "a bulk insert" ->
+                let! r = repo().Transact(Tx.execute (Bulk.insert [ one ]): Tx<_, unit>)
+                ok r |> ignore
+            | "the scenario's own SQL" ->
+                let! _ =
+                    w.Db.Exec(
+                        "insert into appointments (title, \"when\", \"at\", window_from, window_until) values ('one', @w, @a, @f, @u)",
+                        [ "w", box t; "a", box at; "f", box Appointments.eight; "u", box (Appointments.eight.AddHours 1.0) ]
+                    )
+
+                ()
+            | _ ->
+                let! first = repo().Transact(Tx.insert (Appointments.utc "one"): Tx<_, unit>)
+                let first = ok first
+
+                match path with
+                | "an update" ->
+                    let! r = repo().Transact(Tx.update (first, { first with When = t; At = at }): Tx<_, unit>)
+                    ok r |> ignore
+                | "a bulk update" ->
+                    let! r = repo().Transact(Tx.execute (Bulk.update (Query.from (tableOf<Appointment>), fun a -> { a with When = t; At = at })): Tx<_, unit>)
+                    ok r |> ignore
+                | _ ->
+                    let own =
+                        Tx.run (fun ctx ->
+                            task {
+                                use cmd = ctx.CreateCommand()
+                                cmd.CommandText <- "update appointments set \"when\" = @w, \"at\" = @a"
+
+                                for name, v in [ "w", box t; "a", box at ] do
+                                    let p = cmd.CreateParameter()
+                                    p.ParameterName <- name
+                                    p.Value <- v
+                                    cmd.Parameters.Add p |> ignore
+
+                                let! _ = cmd.ExecuteNonQueryAsync(ctx.CancellationToken)
+                                return Ok()
+                            })
+
+                    let! r = repo().Transact(own: Tx<unit, unit>)
+                    ok r |> ignore
+        }
+        :> Task
+
+    [<StepDefinition("^it is found by When and by At (.*) UTC, in a query and through a prepared query$")>]
+    member _.FoundEveryWay(text: string) =
+        task {
+            let t = UtcSteps.Utc text
+            let at = DateTimeOffset t
+            let! byWhen = repo().All(plasm { for a in tableOf<Appointment> do where (a.When = t) })
+            let! byAt = repo().All(plasm { for a in tableOf<Appointment> do where (a.At = at) })
+            let whenArg = Query.prepare (fun (x: Arg<DateTime>) -> plasm { for a in tableOf<Appointment> do where (a.When = x.Value) })
+            let atArg = Query.prepare (fun (x: Arg<DateTimeOffset>) -> plasm { for a in tableOf<Appointment> do where (a.At = x.Value) })
+            let! preparedWhen = repo().All(whenArg t)
+            let! preparedAt = repo().All(atArg at)
+            equal (1, 1, 1, 1) ((ok byWhen).Length, (ok byAt).Length, (ok preparedWhen).Length, (ok preparedAt).Length) "found by When, by At, and through prepared queries"
+        }
+        :> Task

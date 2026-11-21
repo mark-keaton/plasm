@@ -5,7 +5,8 @@
 #   tests/Plasm.Providers/run-linux.sh          linux-arm64 (or the machine's own)
 #   tests/Plasm.Providers/run-linux.sh x64      linux-x64, under emulation on arm64
 # The repository's files (tracked, and untracked but not ignored) are copied to
-# a temporary directory the container builds in. No PostgreSQL is started: the
+# a temporary directory the container builds in; from a copy that is no git
+# checkout (a tree exported for its check), every file but bin and obj. No PostgreSQL is started: the
 # SQLite run must not need one.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -23,8 +24,12 @@ start=$(date +%s)
 echo "linux-$arch: building the SDK image"
 docker build -q --platform "$platform" -t "$image" "$here/linux" > /dev/null
 cd "$root"
-git ls-files -z --cached --others --exclude-standard |
-  COPYFILE_DISABLE=1 tar --no-xattrs --null -T - -cf - | tar -xf - -C "$copy"
+if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+  git ls-files -z --cached --others --exclude-standard |
+    COPYFILE_DISABLE=1 tar --no-xattrs --null -T - -cf - | tar -xf - -C "$copy"
+else
+  COPYFILE_DISABLE=1 tar --no-xattrs --exclude bin --exclude obj -cf - . | tar -xf - -C "$copy"
+fi
 code=0
 docker run --rm --platform "$platform" \
   -v "$copy:/work" -w /work \

@@ -424,6 +424,10 @@ type TestDb =
                 return conn :> DbConnection
         }
 
+    static member private Microseconds(ticks: int64) =
+        let epoch = DateTime(2000, 1, 1).Ticks
+        epoch + (ticks - epoch) / 10L * 10L
+
     member private db.Command(conn: DbConnection, sql: string, args: (string * obj) list) =
         let cmd = conn.CreateCommand()
         cmd.CommandText <- sql
@@ -436,6 +440,12 @@ type TestDb =
                 match db.Kind, v with
                 // As the provider stores a decimal: its text, its scale kept.
                 | SQLite, (:? decimal as d) -> box (d.ToString(CultureInfo.InvariantCulture))
+                // As the provider stores a time: to the microsecond, as
+                // PostgreSQL keeps it (the ticks since 2000 divided by ten,
+                // towards zero), where Microsoft.Data.Sqlite would bind seven
+                // digits of a second (utc-only.feature).
+                | SQLite, (:? DateTime as d) -> box (DateTime(TestDb.Microseconds d.Ticks, d.Kind))
+                | SQLite, (:? DateTimeOffset as d) -> box (DateTimeOffset(TestDb.Microseconds d.Ticks, d.Offset))
                 | _, null -> box DBNull.Value
                 | _ -> v
 
