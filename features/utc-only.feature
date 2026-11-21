@@ -70,3 +70,47 @@ Feature: Only UTC times are stored, and a value that cannot be sent is a failure
   Scenario: A value of a type Plasm cannot send in hand-written SQL is a failure, not an exception
     When I read appointments with hand-written SQL comparing the title with a Uri
     Then the read is refused as a query naming the type Uri, which Plasm does not map
+
+  # A time is kept to the microsecond, as PostgreSQL's timestamptz keeps it,
+  # on every database: what a write keeps is what a query by the same value
+  # finds. Measured on PostgreSQL 18 with Npgsql, which divides the ticks
+  # since 2000-01-01 by ten: towards zero, so a time before 2000 loses its
+  # tenth of a microsecond upwards.
+  Scenario Outline: A time is kept to the microsecond and found by the value written
+    Given a table of appointments
+    When I insert an appointment whose When and At are <written> UTC
+    Then it is read back with When and At <kept> UTC
+    And it is found by When and by At <written> UTC
+
+    Examples:
+      | written                     | kept                       |
+      | 2026-11-21 08:00:00.1234567 | 2026-11-21 08:00:00.123456 |
+      | 2000-01-01 00:00:00.0000009 | 2000-01-01 00:00:00        |
+      | 1999-12-31 23:59:59.9999995 | 2000-01-01 00:00:00        |
+      | 1969-07-20 20:17:40.1234567 | 1969-07-20 20:17:40.123457 |
+
+  Scenario: Times are ordered as the instants they are, whatever their fractions
+    Given a table of appointments
+    And appointments at 08:00:00.5, 08:00:00, 08:00:00.25, 08:00:00.000001 and 07:59:59.999999 UTC
+    When I read the appointments ordered by When and by At
+    Then both are in the order 07:59:59.999999, 08:00:00, 08:00:00.000001, 08:00:00.25, 08:00:00.5
+
+  @sqlite
+  Scenario: A time column holds one form, held to it by its check, on SQLite
+    Given an appointment at 08:00 UTC
+    When the appointment's when column is set to "2026-11-21T08:00:00Z", as another tool might write it
+    Then the database refuses it, by the column's check
+
+  @sqlite
+  Scenario Outline: A time column holding another form is a read error naming the column, on SQLite
+    Given an appointment at 08:00 UTC
+    And the appointment's <column> column is set past its check to "<text>"
+    When I read the appointments
+    Then the read of the appointments fails, saying "<column>" and "not a time in Plasm's form"
+
+    Examples:
+      | column | text                          |
+      | when   | 2026-11-21T08:00:00Z          |
+      | when   | 2026-11-21 08:00:00.1234567   |
+      | at     | 2026-11-21 09:00:00+01:00     |
+      | at     | 2026-11-21 08:00:00           |

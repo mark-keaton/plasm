@@ -21,8 +21,8 @@ module internal Lists =
         | :? string as x -> Some x
         | :? decimal as x -> Some(Decimals.text x)
         | :? Guid as x -> Some(x.ToString().ToUpperInvariant())
-        | :? DateTime as x -> Some(x.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF", inv))
-        | :? DateTimeOffset as x -> Some(x.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFFzzz", inv))
+        | :? DateTime as x -> Some(Times.text x)
+        | :? DateTimeOffset as x -> Some(Times.text x.UtcDateTime + "+00:00")
         | :? DateOnly as x -> Some(x.ToString("yyyy-MM-dd", inv))
         | :? TimeOnly as x -> Some(x.ToString((if x.Ticks % TimeSpan.TicksPerSecond = 0L then "HH:mm:ss" else "HH:mm:ss.fffffff"), inv))
         | :? TimeSpan as x -> Some(x.ToString("c", inv))
@@ -112,8 +112,8 @@ module internal Lists =
                         if element = typeof<string> then box t
                         elif element = typeof<decimal> then box (Decimals.parse t)
                         elif element = typeof<Guid> then box (Guid.Parse t)
-                        elif element = typeof<DateTime> then box (DateTime.Parse(t, inv))
-                        elif element = typeof<DateTimeOffset> then box (DateTimeOffset.Parse(t, inv))
+                        elif element = typeof<DateTime> then box (Times.dateTime $"{column} element {i}" t)
+                        elif element = typeof<DateTimeOffset> then box (Times.dateTimeOffset $"{column} element {i}" t)
                         elif element = typeof<DateOnly> then box (DateOnly.Parse(t, inv))
                         elif element = typeof<TimeOnly> then box (TimeOnly.Parse(t, inv))
                         elif element = typeof<TimeSpan> then box (TimeSpan.ParseExact(t, "c", inv))

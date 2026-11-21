@@ -128,7 +128,8 @@ type internal HearingReader(inner: SqliteDataReader, ct: CancellationToken, hear
     override _.GetChar i = inner.GetChar i
     override _.GetChars(i, offset, buffer, bufferOffset, length) = inner.GetChars(i, offset, buffer, bufferOffset, length)
     override _.GetDataTypeName i = inner.GetDataTypeName i
-    override _.GetDateTime i = inner.GetDateTime i
+    // A time column's text in Plasm's form, as the instant in UTC (Times).
+    override _.GetDateTime i = Times.dateTime (inner.GetName i) (inner.GetString i)
     override _.GetDecimal i = inner.GetDecimal i
     override _.GetDouble i = inner.GetDouble i
     override _.GetEnumerator() = (inner :> Collections.IEnumerable).GetEnumerator()
@@ -153,6 +154,10 @@ type internal HearingReader(inner: SqliteDataReader, ct: CancellationToken, hear
         // array its type declares, each element as its scalar column would be.
         if typeof<'T>.IsArray && typeof<'T> <> typeof<byte[]> && not (inner.IsDBNull i) && inner.GetFieldType i = typeof<string> then
             unbox<'T> (box (Lists.parse typeof<'T> (inner.GetName i) (inner.GetString i)))
+        elif typeof<'T> = typeof<DateTime> && not (inner.IsDBNull i) && inner.GetFieldType i = typeof<string> then
+            unbox<'T> (box (Times.dateTime (inner.GetName i) (inner.GetString i)))
+        elif typeof<'T> = typeof<DateTimeOffset> && not (inner.IsDBNull i) && inner.GetFieldType i = typeof<string> then
+            unbox<'T> (box (Times.dateTimeOffset (inner.GetName i) (inner.GetString i)))
         else
             inner.GetFieldValue<'T> i
     override _.GetSchemaTable() = inner.GetSchemaTable()
@@ -221,6 +226,15 @@ and internal HearingCommand(inner: SqliteCommand, connection: DbConnection, inte
         let timeout = inner.CommandTimeout
         Interrupted.tries ct busy (fun t -> inner.CommandTimeout <- t) (fun () -> inner.CommandTimeout <- timeout) f
 
+    /// Each time sent as PostgreSQL keeps it, to the microsecond (Times), so
+    /// what is stored is what a query by the same value finds.
+    let kept () =
+        for p in inner.Parameters do
+            match p.Value with
+            | :? DateTime
+            | :? DateTimeOffset -> p.Value <- Times.kept p.Value
+            | _ -> ()
+
     member _.Inner = inner
     override _.CommandText with get () = inner.CommandText and set v = inner.CommandText <- v
     override _.CommandTimeout with get () = inner.CommandTimeout and set v = inner.CommandTimeout <- v
@@ -245,18 +259,24 @@ and internal HearingCommand(inner: SqliteCommand, connection: DbConnection, inte
     override _.Cancel() = inner.Cancel()
     override _.CreateDbParameter() = inner.CreateParameter() :> DbParameter
     override _.Prepare() = inner.Prepare()
-    override _.ExecuteNonQuery() = inner.ExecuteNonQuery()
-    override _.ExecuteScalar() = inner.ExecuteScalar()
-    override _.ExecuteDbDataReader(behavior) = inner.ExecuteReader(behavior) :> DbDataReader
+    override _.ExecuteNonQuery() = kept (); inner.ExecuteNonQuery()
+    override _.ExecuteScalar() = kept (); inner.ExecuteScalar()
+    // Read as the asynchronous reader reads (its times in Plasm's form).
+    override _.ExecuteDbDataReader(behavior) =
+        kept ()
+        new HearingReader(inner.ExecuteReader(behavior), CancellationToken.None, { new IDisposable with member _.Dispose() = () }) :> DbDataReader
 
     override _.ExecuteNonQueryAsync(ct: CancellationToken) =
+        kept ()
         Task.FromResult(Interrupted.run ct interrupts.Hear (fun () -> tried ct (fun () -> inner.ExecuteNonQuery())))
 
     override _.ExecuteScalarAsync(ct: CancellationToken) =
+        kept ()
         Task.FromResult(Interrupted.run ct interrupts.Hear (fun () -> tried ct (fun () -> inner.ExecuteScalar())))
 
     override _.ExecuteDbDataReaderAsync(behavior, ct: CancellationToken) =
         ct.ThrowIfCancellationRequested()
+        kept ()
         let heard = interrupts.Hear ct
 
         try

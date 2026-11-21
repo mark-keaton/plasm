@@ -93,10 +93,11 @@ type IDdlDialect =
     /// ('draft', ...))`), printed as a constraint in its table; None when an
     /// enum type holds them.
     abstract EnumCheck: column: string * labels: string list -> string option
-    /// The check holding a list column to the form its lists are stored in
-    /// (SQLite's JSON array), printed as a constraint in its table; None where
-    /// the column's type holds it (PostgreSQL's arrays).
-    abstract ListCheck: column: string -> string option
+    /// The check holding a column to the form its values are stored in, given
+    /// its provider type (a list's array type, a DateTime), printed as a
+    /// constraint in its table; None where the column's type holds it
+    /// (PostgreSQL's arrays and timestamptz), or for a type it never checks.
+    abstract ColumnCheck: column: string * providerType: Type -> string option
     /// Foreign keys are declared in their tables' create statements, not
     /// added after them with alter table.
     abstract ForeignKeysInTables: bool

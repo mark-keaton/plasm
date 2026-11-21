@@ -76,7 +76,15 @@ module internal SqliteDdl =
                 let listed = labels |> List.map (fun l -> "'" + l.Replace("'", "''") + "'") |> String.concat ", "
                 Some $"check ({column} in ({listed}))"
 
-            member _.ListCheck column = Some $"check (json_valid({column}) and json_type({column}) = 'array')"
+            member _.ColumnCheck(column, t) =
+                if t.IsArray && t <> typeof<byte[]> then
+                    Some $"check (json_valid({column}) and json_type({column}) = 'array')"
+                elif t = typeof<DateTime> then
+                    Some(Times.check column false)
+                elif t = typeof<DateTimeOffset> then
+                    Some(Times.check column true)
+                else
+                    None
             member _.ForeignKeysInTables = true }
 
 /// SQLite's catalogue: the table-valued pragmas, joined to the list of tables
@@ -209,7 +217,7 @@ type internal SqliteDialect(options: SqliteOptions) =
             | t when t = typeof<decimal> -> Some "TEXT"
             | t when t = typeof<byte[]> -> Some "BLOB"
             // A list of scalars: one JSON array (Lists.json), held to that form
-            // by its check (ListCheck).
+            // by its check (ColumnCheck).
             | t when t.IsArray -> Some "TEXT"
             | t when
                 t = typeof<string> || t = typeof<Guid> || t = typeof<DateTime> || t = typeof<DateTimeOffset>

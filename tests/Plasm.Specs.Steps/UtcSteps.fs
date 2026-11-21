@@ -286,3 +286,98 @@ type UtcSteps(w: World) =
     member _.DatabaseFailure() =
         let outcome = w.Get<string> "utcOutcome"
         check (not (outcome.StartsWith "THROWN") && outcome.Contains "Database") outcome
+
+    // ---- kept to the microsecond, ordered, and held to one form (SQLite) ----
+
+    static member private Utc(text: string) =
+        DateTime.ParseExact(text, [| "yyyy-MM-dd HH:mm:ss"; "yyyy-MM-dd HH:mm:ss.FFFFFFF" |], Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.AdjustToUniversal ||| Globalization.DateTimeStyles.AssumeUniversal)
+
+    [<StepDefinition("^I insert an appointment whose When and At are (.*) UTC$")>]
+    member _.InsertAt(text: string) =
+        task {
+            let t = UtcSteps.Utc text
+            let! r = repo().Transact(Tx.insert { Appointments.utc "one" with When = t; At = DateTimeOffset t }: Tx<_, unit>)
+            ok r |> ignore
+        }
+        :> Task
+
+    [<StepDefinition("^it is read back with When and At (.*) UTC$")>]
+    member _.ReadKept(text: string) =
+        task {
+            let kept = UtcSteps.Utc text
+            let! all = appointments ()
+            let a = List.exactlyOne all
+            check (a.When = kept && a.When.Kind = DateTimeKind.Utc) $"When {a.When:o} {a.When.Kind}, not {kept:o}"
+            check (a.At = DateTimeOffset kept && a.At.Offset = TimeSpan.Zero) $"At {a.At:o}, not {kept:o}"
+        }
+        :> Task
+
+    [<StepDefinition("^it is found by When and by At (.*) UTC$")>]
+    member _.FoundBy(text: string) =
+        task {
+            let t = UtcSteps.Utc text
+            let at = DateTimeOffset t
+            let! byWhen = repo().All(plasm { for a in tableOf<Appointment> do where (a.When = t) })
+            let! byAt = repo().All(plasm { for a in tableOf<Appointment> do where (a.At = at) })
+            equal (1, 1) ((ok byWhen).Length, (ok byAt).Length) "found by When, by At"
+        }
+        :> Task
+
+    [<StepDefinition("^appointments at (.*) UTC$")>]
+    member _.AtTimes(times: string) =
+        task {
+            for text in times.Replace(" and ", ", ").Split(", ") do
+                let t = UtcSteps.Utc("2026-11-21 " + text)
+                let! r = repo().Transact(Tx.insert { Appointments.utc text with When = t; At = DateTimeOffset t }: Tx<_, unit>)
+                ok r |> ignore
+        }
+        :> Task
+
+    [<StepDefinition("I read the appointments ordered by When and by At")>]
+    member _.Ordered() =
+        task {
+            let! byWhen = repo().All(plasm { for a in tableOf<Appointment> do orderBy a.When })
+            let! byAt = repo().All(plasm { for a in tableOf<Appointment> do orderBy a.At })
+            w.Set("utcOrders", ((ok byWhen) |> List.map _.Title, (ok byAt) |> List.map _.Title))
+        }
+        :> Task
+
+    [<StepDefinition("^both are in the order (.*)$")>]
+    member _.InOrder(order: string) =
+        let expected = order.Split(", ") |> List.ofArray
+        let byWhen, byAt = w.Get<string list * string list> "utcOrders"
+        equal (expected, expected) (byWhen, byAt) "by When, by At"
+
+    [<StepDefinition("^the appointment's (\\w+) column is set to \"(.*)\", as another tool might write it$")>]
+    member _.SetByTool(column: string, text: string) =
+        task {
+            let! outcome = attempt (fun () -> task { let! _ = w.Db.Exec($"update appointments set \"{column}\" = @v", [ "v", box text ]) in return "set" })
+            w.Set("utcOutcome", outcome)
+        }
+        :> Task
+
+    [<StepDefinition("the database refuses it, by the column's check")>]
+    member _.RefusedByCheck() =
+        let outcome = w.Get<string> "utcOutcome"
+        check (outcome.StartsWith "THROWN" && outcome.Contains "CHECK constraint failed") outcome
+
+    [<StepDefinition("^the appointment's (\\w+) column is set past its check to \"(.*)\"$")>]
+    member _.SetPastCheck(column: string, text: string) =
+        task {
+            let! _ = w.Db.Exec($"PRAGMA ignore_check_constraints = ON; update appointments set \"{column}\" = @v; PRAGMA ignore_check_constraints = OFF;", [ "v", box text ])
+            ()
+        }
+        :> Task
+
+    [<StepDefinition("I read the appointments")>]
+    member _.ReadAppointments() =
+        task {
+            let! outcome = attempt (fun () -> task { let! r = repo().All(Query.from (tableOf<Appointment>)) in return (match r with Ok xs -> $"read {xs.Length}" | Error e -> readFailed e) })
+            w.Set("utcRead", outcome)
+        }
+        :> Task
+
+    [<StepDefinition("^the read of the appointments fails, saying \"(.*)\" and \"(.*)\"$")>]
+    member _.ReadFails(column: string, text: string) =
+        let outcome = w.Get<string> "utcRead"
+        check (not (outcome.StartsWith "read") && not (outcome.StartsWith "THROWN") && outcome.Contains column && outcome.Contains text) outcome

@@ -657,16 +657,16 @@ module internal Ddl =
                               | None -> ()
                           | _ -> ()
 
-                  // A list column, held to the form its lists are stored in
-                  // where its type does not hold it (array-columns.feature).
+                  // A column held to the form its values are stored in where
+                  // its type does not hold it: a list (array-columns.feature),
+                  // a time (utc-only.feature). An enum's is EnumCheck's.
                   for f in s.Fields do
                       for p in f.Parts do
-                          if p.ProviderType.IsArray && p.ProviderType <> typeof<byte[]> then
-                              match ddl.ListCheck(name p.Name) with
-                              | Some check ->
-                                  let constraintName = name (s.Table + "_" + p.Name + "_check")
-                                  yield $"  constraint {constraintName} {check}"
-                              | None -> ()
+                          match ddl.ColumnCheck(name p.Name, p.ProviderType) with
+                          | Some check ->
+                              let constraintName = name (s.Table + "_" + p.Name + "_check")
+                              yield $"  constraint {constraintName} {check}"
+                          | None -> ()
 
                   // A key of several parts (composite-keys.feature): one
                   // primary key over them, in the key record's order.

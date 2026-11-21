@@ -4,3 +4,5 @@ features/cancellation.feature	On a rollback-journal file, a commit waiting for a
 features/array-columns.feature	A double that is not a number cannot be stored in a list on SQLite	SQLite stores a list as JSON, which has no NaN or infinity; PostgreSQL's float8[] holds them (differences.txt)
 features/array-columns.feature	A list column holding what is not a JSON array is a read error naming the column	SQLite's TEXT can hold what another tool wrote; PostgreSQL's array column holds only arrays of its type
 features/array-columns.feature	A list element of the wrong type is a read error naming the column and the element	SQLite's JSON can hold an element of any type; PostgreSQL's array holds only its element type
+features/utc-only.feature	A time column holds one form, held to it by its check, on SQLite	SQLite's TEXT can hold any text; PostgreSQL's timestamptz holds only instants
+features/utc-only.feature	A time column holding another form is a read error naming the column, on SQLite	SQLite's TEXT can hold what another tool wrote past the check; PostgreSQL's timestamptz holds only instants

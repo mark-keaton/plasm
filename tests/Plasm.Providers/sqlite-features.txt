@@ -5,3 +5,4 @@ features/core.feature	*PredictableFunctional*
 features/providers.feature	*Database_SpecificSQLComesFromTheProviderFeature*
 features/cancellation.feature	*ACancelledTokenStops*
 features/array-columns.feature	*AListOfScalarsIsStoredAsOneArrayColumn*
+features/utc-only.feature	*OnlyUTC*

@@ -749,7 +749,7 @@ module internal PostgresDdl =
                 let listed = labels |> List.map (fun l -> "'" + l + "'") |> String.concat ", "
                 Some $"create type {typeName} as enum ({listed});"
             member _.EnumCheck(_, _) = None
-            member _.ListCheck _ = None
+            member _.ColumnCheck(_, _) = None
             member _.ForeignKeysInTables = false }
 
 /// PostgreSQL's catalogue queries.
