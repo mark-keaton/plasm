@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>PGlite provider for Plasm (PostgreSQL compiled to WebAssembly, reached through a JavaScript bridge). Experimental spike.</Description>
+    <Description>PGlite provider for Plasm (PostgreSQL compiled to WebAssembly, reached through a JavaScript bridge). A spike, used by the browser koans; not packaged.</Description>
     <PackageId>Plasm.PGlite</PackageId>
     <IsPackable>false</IsPackable>
   </PropertyGroup>

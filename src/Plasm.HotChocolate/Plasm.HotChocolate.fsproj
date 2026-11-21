@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Hot Chocolate over Plasm: GraphQL filter and sort input types generated from fields declared in F#, and the where and order a request gives applied in the database. Experimental.</Description>
+    <Description>Hot Chocolate over Plasm: GraphQL filter and sort input types generated from fields declared in F#, and the where and order a request gives applied in the database.</Description>
     <PackageId>Plasm.HotChocolate</PackageId>
   </PropertyGroup>
   <ItemGroup>

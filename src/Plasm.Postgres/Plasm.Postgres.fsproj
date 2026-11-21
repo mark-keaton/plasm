@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>PostgreSQL provider for Plasm (Npgsql). Experimental.</Description>
+    <Description>PostgreSQL provider for Plasm (Npgsql).</Description>
     <PackageId>Plasm.Postgres</PackageId>
   </PropertyGroup>
   <ItemGroup>

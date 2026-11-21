@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>The attributes a record uses to say how Plasm stores it: Table, Unique, Version, Generated, Assigned, NotReference, OrderedBy and JoinTable. No dependencies beyond FSharp.Core, and compiled by Fable from its sources, so a domain shared with a browser client can carry them. Experimental.</Description>
+    <Description>The attributes a record uses to say how Plasm stores it: Table, Unique, Version, Generated, Assigned, NotReference, OrderedBy and JoinTable. No dependencies beyond FSharp.Core, and compiled by Fable from its sources, so a domain shared with a browser client can carry them.</Description>
     <PackageId>Plasm.Annotations</PackageId>
   </PropertyGroup>
   <ItemGroup>
