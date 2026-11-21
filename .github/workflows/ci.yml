@@ -55,6 +55,24 @@ jobs:
       - name: Test
         run: dotnet test -c Release --no-build
 
+      # The features listed for SQLite run again on the SQLite that
+      # Microsoft.Data.Sqlite bundles, with no PostgreSQL. The script runs
+      # dotnet test --no-build without a configuration, so it needs the
+      # Debug build made here.
+      - name: Test on SQLite
+        run: |
+          python3 tests/Plasm.Providers/check-tags.py
+          dotnet build tests/Plasm.Specs
+          bash tests/Plasm.Providers/sqlite-run.sh "$RUNNER_TEMP/sqlite-run"
+
+      - name: Upload the SQLite run's logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sqlite-run
+          path: ${{ runner.temp }}/sqlite-run
+          if-no-files-found: ignore
+
       - name: Upload test results
         if: failure()
         uses: actions/upload-artifact@v4
