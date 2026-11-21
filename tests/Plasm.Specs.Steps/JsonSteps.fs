@@ -110,6 +110,7 @@ open System.Text.RegularExpressions
 open Reqnroll
 open Plasm
 open Plasm.Specs.JsonColumns
+open Plasm.TestDomain.Database
 
 /// Feature: A field marked Json is stored as one jsonb document
 [<Binding>]
@@ -170,13 +171,14 @@ type JsonSteps(w: World) =
     let read () = ok (w.Get<Result<Card list, DbError>> "jsonRead")
 
     let column (name: string) =
-        w.Db.Scalar<obj>($"select {name}::text from json_cards where title = @t", [ "t", box (w.Get<string> "jsonTitle") ])
+        w.Db.Scalar<obj>($"select cast({name} as text) from json_cards where title = @t", [ "t", box (w.Get<string> "jsonTitle") ])
 
     [<StepDefinition("cards with a JSON checklist, settings, estimate and tags")>]
     member _.Tables() =
         task {
-            let! _ = w.Db.Exec Schemas.tables
-            w.Set("jsonRepo", w.Db.RepoWith(model = Schemas.model))
+            let repo = w.Db.RepoWith(model = Schemas.model)
+            let! _ = w.Db.Exec("drop table if exists json_cards; " + repo.Ddl())
+            w.Set("jsonRepo", repo)
         }
         |> unit
 
@@ -195,7 +197,8 @@ type JsonSteps(w: World) =
     member _.Behind(title: string, document: string) =
         task {
             do! insert (parse title "")
-            let! _ = w.Db.Exec("update json_cards set checklist = @d::jsonb where title = @t", [ "d", box document; "t", box title ])
+            let cast = match w.Db.Kind with PostgreSQL -> "::jsonb" | SQLite -> ""
+            let! _ = w.Db.Exec($"update json_cards set checklist = @d{cast} where title = @t", [ "d", box document; "t", box title ])
             ()
         }
         |> unit
@@ -316,6 +319,24 @@ type JsonSteps(w: World) =
 
     [<StepDefinition("I print the DDL of the documented cards model")>]
     member _.Ddl() = w.Set("valueDdl", repo().Ddl())
+
+    [<StepDefinition("each document column is held to JSON by its check")>]
+    member _.HeldToJson() =
+        let ddl = w.Get<string> "valueDdl"
+
+        for c in [ "checklist"; "settings"; "estimate"; "tags" ] do
+            check (ddl.Contains $"constraint json_cards_{c}_check check (json_valid({c}))") ddl
+
+    [<StepDefinition("the estimate column is declared INTEGER")>]
+    member _.EstimateInteger() =
+        task {
+            let ddl = repo().Ddl()
+            let declared = ddl.Replace("estimate TEXT", "estimate INTEGER")
+            check (declared <> ddl) ddl
+            let! _ = w.Db.Exec("drop table json_cards; " + declared)
+            ()
+        }
+        |> unit
 
     [<StepDefinition("the estimate column is text")>]
     member _.EstimateText() =

@@ -7,3 +7,4 @@ features/cancellation.feature	*ACancelledTokenStops*
 features/array-columns.feature	*AListOfScalarsIsStoredAsOneArrayColumn*
 features/utc-only.feature	*OnlyUTC*
 features/text-matching.feature	*TextIsMatched*
+features/json-columns.feature	*FieldMarkedJson*

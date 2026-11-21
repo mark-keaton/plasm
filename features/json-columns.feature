@@ -118,12 +118,27 @@ Feature: A field marked Json is stored as one jsonb document
 
   Rule: The database's tables are described and checked
 
+    @postgres
     Scenario: Ddl prints a jsonb column
       When I print the DDL of the documented cards model
       Then it has the columns checklist jsonb not null, settings jsonb not null, estimate jsonb and tags jsonb not null
 
+    # SQLite keeps a document as TEXT holding JSON, held to it by a check.
+    @sqlite
+    Scenario: Ddl prints a jsonb column on SQLite
+      When I print the DDL of the documented cards model
+      Then it has the columns checklist TEXT not null, settings TEXT not null, estimate TEXT and tags TEXT not null
+      And each document column is held to JSON by its check
+
+    @postgres
     Scenario: The schema check finds a column that is not jsonb
       Given the estimate column is text
+      When I check the documented cards model against the database
+      Then an incompatible type is reported for Card.Estimate
+
+    @sqlite
+    Scenario: The schema check finds a column that is not jsonb on SQLite
+      Given the estimate column is declared INTEGER
       When I check the documented cards model against the database
       Then an incompatible type is reported for Card.Estimate
 

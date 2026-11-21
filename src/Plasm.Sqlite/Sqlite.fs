@@ -80,8 +80,9 @@ module internal SqliteDdl =
                 | ColumnHolds.List _ -> Some $"check (json_valid({column}) and json_type({column}) = 'array')"
                 | ColumnHolds.Scalar t when t = typeof<DateTime> -> Some(Times.check column false)
                 | ColumnHolds.Scalar t when t = typeof<DateTimeOffset> -> Some(Times.check column true)
-                | ColumnHolds.Scalar _
-                | ColumnHolds.Document -> None
+                // A document: TEXT holding JSON (SqliteJson).
+                | ColumnHolds.Document -> Some $"check (json_valid({column}))"
+                | ColumnHolds.Scalar _ -> None
             member _.ForeignKeysInTables = true }
 
 /// SQLite's catalogue: the table-valued pragmas, joined to the list of tables
@@ -194,6 +195,56 @@ module internal SqliteExact =
                 w $" COLLATE {Decimals.collation}"
 
             member _.Value m = box (Decimals.text m) }
+
+/// JSON documents ([<Json>] fields, json-columns.feature) as SQLite's JSON
+/// text: `->` for a member (JSON), `->>` for a scalar's value, json_each for
+/// an array's elements. A document is TEXT, written by Plasm's serializer.
+type internal SqliteJson() =
+    static member val Instance: IJsonDialect = SqliteJson()
+
+    interface IJsonDialect with
+        member _.Member(w, doc, key) =
+            w "("
+            doc ()
+            let quoted = key.Replace("'", "''")
+            w $" -> '{quoted}')"
+
+        member _.StoreType = [ "TEXT" ]
+
+        member _.Text(w, doc) =
+            w "("
+            doc ()
+            w " ->> '$')"
+
+        member _.AnyElement(w, doc, alias, condition) =
+            w "EXISTS (SELECT 1 FROM json_each("
+            doc ()
+            let q (n: string) = "\"" + n.Replace("\"", "\"\"") + "\""
+            w (") AS " + q alias + " WHERE ")
+            condition ()
+            w ")"
+
+        // json_each gives a scalar element as its SQL value: written back as
+        // JSON by its type, so a member or the text of it reads as PostgreSQL's
+        // element does.
+        member _.Element(w, alias) =
+            let q (n: string) = "\"" + n.Replace("\"", "\"\"") + "\""
+            let a = q alias
+
+            w (
+                $"(CASE {a}.type WHEN 'object' THEN json({a}.value) WHEN 'array' THEN json({a}.value) "
+                + $"WHEN 'true' THEN json('true') WHEN 'false' THEN json('false') WHEN 'null' THEN json('null') "
+                + $"ELSE json_quote({a}.value) END)"
+            )
+
+        // Every element of `value` is an element of the document: PostgreSQL's
+        // @> for arrays of scalars and of documents written alike.
+        member _.Contains(w, doc, value) =
+            w "NOT EXISTS (SELECT 1 FROM json_each("
+            value ()
+            w ") AS \"plasm_wanted\" WHERE NOT EXISTS (SELECT 1 FROM json_each("
+            doc ()
+            w ") AS \"plasm_held\" WHERE \"plasm_held\".type = \"plasm_wanted\".type AND \"plasm_held\".value = \"plasm_wanted\".value))"
 
 type internal SqliteDialect(options: SqliteOptions) =
     let q (s: string) = "\"" + s.Replace("\"", "\"\"") + "\""
@@ -308,7 +359,7 @@ type internal SqliteDialect(options: SqliteOptions) =
             | "ARRAY_AGG" -> "json_group_array"
             | n -> n
 
-        member _.Json = None
+        member _.Json = Some SqliteJson.Instance
         member _.Exact = Some SqliteExact.exact
 
         member _.Capabilities =
