@@ -32,6 +32,7 @@
     <Compile Include="Lessons/L24_SetOperations.fs" />
     <Compile Include="Lessons/L25_WindowsAndRowAggregates.fs" />
     <Compile Include="Lessons/L26_LocksAndTries.fs" />
+    <Compile Include="Lessons/L27_WritesThatReturnRows.fs" />
     <Compile Include="Path.fs" />
     <Compile Include="Given.fs" />
     <Compile Include="Course.fs" />

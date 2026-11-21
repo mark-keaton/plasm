@@ -109,6 +109,7 @@ the lessons it builds on.
 | 24 | Set operations | `Query.union`, `unionAll`, `intersect` and `except` of two queries of the same rows, ordered and paged as a whole; an operand that orders itself refused; projections combined; a query as a join's source. |
 | 25 | Windows and aggregates over rows | `Win.rowNumber`, `runningSum`, `lag`, `sum` and `count` over `Win.partition` or `Win.whole`, beside each row; a window over the rows kept; a rank over no order refused; `Agg.countWhere`, `sumWhere`, `any`, `all`, `listBy` and its Descending form; what each gives over no rows. |
 | 26 | Locks and tries | `locking RowLock.ForUpdate` read by `Tx.all` in a transaction, its lock on the query's own rows and not on what they own; `Tx.attempt`, a step's failure (a duplicate, a stale copy's Conflict) as a value the transaction goes on from, and a tried step that succeeds kept. NOWAIT and SKIP LOCKED are not taught: what they do needs a second transaction at once, which the browser course's database cannot have (`kept-out.txt`). |
+| 27 | Bulk writes that return their rows | `Bulk.updateReturning`, the rows as they are after it with what they own; `Bulk.deleteReturning`, the rows as they were; a delete of records that own others refused by name. |
 
 ## Writing a koan
 

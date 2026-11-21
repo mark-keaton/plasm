@@ -29,4 +29,5 @@ let lessons: Lesson list =
       L23_UnionsWithFields.lesson
       L24_SetOperations.lesson
       L25_WindowsAndRowAggregates.lesson
-      L26_LocksAndTries.lesson ]
+      L26_LocksAndTries.lesson
+      L27_WritesThatReturnRows.lesson ]

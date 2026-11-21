@@ -1,0 +1,8 @@
+# A bulk update gives back the rows it changed
+[ OrderId 2L, Cancelled, 1 ]
+# A bulk delete gives back the rows it removed
+[ 99m ]
+2L
+# A delete cannot return what records own
+true
+4L
