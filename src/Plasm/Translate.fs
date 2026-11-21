@@ -567,7 +567,8 @@ let private argParamWith (ctx: Ctx) (e: Expr) (valueType: Type) (transform: obj 
         | Some x ->
             match model.ScalarToDb(scalarT, transform x) with
             | Ok p -> p
-            | Error m -> invalidOp m
+            // A failure, as a value refused when the query is translated is.
+            | Error m -> fail e m
 
     typedParam model scalarT (Sql.Param(box (Sql.Bound(resolve, show e))))
 
@@ -667,9 +668,16 @@ let private fieldIsNotNull (alias: string) (f: FieldMap) =
     | Some _ -> Sql.Not(fieldIsNull alias f)
     | None -> Sql.IsNotNull(Sql.Column(alias, f.Column))
 
+/// A provider value a query compares with, refused when it is a time that is
+/// not UTC (utc-only.feature), as a value converted otherwise is.
+let private sendable (v: obj) =
+    match Times.refusal v with
+    | Some why -> raise (TranslationFailure(TranslationError.InvalidQuery why))
+    | None -> v
+
 /// A value in the row equals a value: every column equals its part.
 let private valueEquals (alias: string) (f: FieldMap) (value: obj) : Sql.Expr =
-    List.zip f.Parts (f.ToColumns value)
+    List.zip f.Parts (f.ToColumns value |> List.map sendable)
     |> List.map (fun (p, v) ->
         if isNull v || v = box DBNull.Value then Sql.IsNull(Sql.Column(alias, p.Name))
         elif f.Requires p.Name then byValueOf p.ProviderType (Sql.Binary("=", Sql.Column(alias, p.Name), Sql.partValue p v))
@@ -686,8 +694,8 @@ let private valueEqualsArg (alias: string) (f: FieldMap) (v: Expr) : Sql.Expr =
     |> List.mapi (fun i p ->
         let part (args: obj[]) =
             match value args with
-            | null -> invalidOp (nullMessage "argument" v)
-            | x -> (f.ToColumns x).[i]
+            | null -> raise (TranslationFailure(TranslationError.InvalidQuery(nullMessage "argument" v)))
+            | x -> sendable (f.ToColumns x).[i]
 
         let bound = Sql.Param(box (Sql.Bound(part, show v)))
         let bound = match Sql.partStoreType p with Some t -> Sql.Cast(bound, t, false) | None -> bound
@@ -808,6 +816,11 @@ let private caseIs (alias: string) (u: UnionLayout) (tag: int) =
 let rec private unionEquals (alias: string) (u: UnionLayout) (value: obj) : Sql.Expr list =
     let c = u.Cases.[u.Tag value]
     let fields = c.Read value
+
+    for p, v in List.zip c.Parts (List.ofArray fields) do
+        match p with
+        | Leaf f when not (isNull v) -> f.ToColumns v |> List.iter (sendable >> ignore)
+        | _ -> ()
 
     Sql.Binary("=", Sql.Column(alias, u.TagColumn), Sql.Param(box c.Stored))
     :: (c.Parts
@@ -1457,7 +1470,7 @@ and ordered ctx (e: Expr) : Sql.Expr =
             match model.ScalarToDb(t, v) with
             | Ok(:? string as stored) -> List.findIndex ((=) stored) names
             | Ok other -> invalidOp $"{Reflection.typeName t} was not stored as text: {other}"
-            | Error m -> invalidOp m
+            | Error m -> raise (TranslationFailure(TranslationError.InvalidQuery m))
 
         if not (isRowDependent ctx e) && mentionsArg e then
             argParamWith ctx e typeof<int> (fun v -> box (position v))
@@ -1598,19 +1611,25 @@ and membership ctx (whole: Expr) (x: Expr) (coll: Expr) : Sql.Expr =
         let model = ctx.Model
 
         let resolve (args: obj[]) =
+            // Each value converted, and refused, before duplicates go: 08:00
+            // Utc and 08:00 Unspecified are equal DateTimes, and one refused
+            // must not be dropped as the other's duplicate.
             let values =
                 match f args with
                 | null -> [||]
-                | items -> (items :?> IEnumerable) |> Seq.cast<obj> |> Seq.distinct |> Seq.toArray
+                | items ->
+                    (items :?> IEnumerable)
+                    |> Seq.cast<obj>
+                    |> Seq.map (fun v ->
+                        match model.ScalarToDb(elemType, v) with
+                        | Ok p -> p
+                        // A failure, as a value refused when the query is translated is.
+                        | Error m -> raise (TranslationFailure(TranslationError.InvalidQuery m)))
+                    |> Seq.distinct
+                    |> Seq.toArray
 
             let arr = Array.CreateInstance(providerType, values.Length)
-
-            values
-            |> Array.iteri (fun i v ->
-                match model.ScalarToDb(elemType, v) with
-                | Ok p -> arr.SetValue(p, i)
-                | Error m -> invalidOp m)
-
+            values |> Array.iteri (fun i p -> arr.SetValue(p, i))
             box arr
 
         // One parameter holding the list, as the dialect sends one, so the
@@ -1623,14 +1642,15 @@ and membership ctx (whole: Expr) (x: Expr) (coll: Expr) : Sql.Expr =
     if isNull items then
         fail whole "membership collection is null"
 
+    // Converted, and refused, before duplicates go (as above).
     let values =
         (items :?> IEnumerable)
         |> Seq.cast<obj>
-        |> Seq.distinct
         |> Seq.map (fun v ->
             match ctx.Model.ScalarToDb(elemType, v) with
             | Ok p -> p
             | Error m -> fail whole m)
+        |> Seq.distinct
         |> Seq.toArray
 
     let arr = Array.CreateInstance(providerType, values.Length)

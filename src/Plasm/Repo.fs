@@ -569,7 +569,10 @@ type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
                             | Ok cmds ->
                                 statements.Add(name, cmds |> List.map (function BulkExec.Rows(c, _) | BulkExec.Count c -> c))
                             | Error e -> untranslated.Add(StartupProblem.Query { Query = name; Error = e })
-                        | Some(:? FormattableString as sql) -> statements.Add(name, [ Execution.rawCommand model dialect sql ])
+                        | Some(:? FormattableString as sql) ->
+                            match (try Ok(Execution.rawCommand model dialect sql) with Translate.TranslationFailure t -> Error t) with
+                            | Ok cmd -> statements.Add(name, [ cmd ])
+                            | Error e -> untranslated.Add(StartupProblem.Query { Query = name; Error = e })
                         | _ -> ()
 
         task {
@@ -691,7 +694,7 @@ type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
                         with
                         | :? OperationCanceledException -> return raise (OperationCanceledException())
                         | ex ->
-                            match provider.Classify ex with
+                            match Driver.classify provider ex with
                             | Some f -> return [ StartupProblem.Unchecked(DbError.Database f) ]
                             | None -> return Err.rethrow ex
                     }
@@ -963,7 +966,7 @@ type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
                             | ex ->
                                 // Steps attribute their own failures; what reaches here
                                 // is from opening, beginning or committing.
-                                match provider.Classify ex with
+                                match Driver.classify provider ex with
                                 | Some f -> return Error(current, TxFailure.Failed(DbError.Database f))
                                 | None -> return Err.rethrow ex
                         }

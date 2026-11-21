@@ -160,7 +160,7 @@ let private report (s: Session) (cmd: Sql.Command) (elapsed: TimeSpan) rows (fai
               Error =
                 failure
                 |> Option.map (fun ex ->
-                    match s.Provider.Classify ex |> Option.bind (fun f -> f.SqlState) with
+                    match Driver.classify s.Provider ex |> Option.bind (fun f -> f.SqlState) with
                     | Some state -> state
                     | None -> ex.GetType().Name)
               RoundTrip = roundTrip }
@@ -291,11 +291,11 @@ module Round =
             let mutable n = 0
 
             try
-                use! r = c.ExecuteReaderAsync(s.Ct)
+                use! r = Driver.call (fun () -> c.ExecuteReaderAsync(s.Ct))
                 let mutable go = true
 
                 while go do
-                    let! more = r.ReadAsync(s.Ct)
+                    let! more = Driver.call (fun () -> r.ReadAsync(s.Ct))
 
                     if more then
                         readRow r
@@ -317,7 +317,7 @@ module Round =
             let sw = Stopwatch.StartNew()
 
             try
-                let! n = c.ExecuteNonQueryAsync(s.Ct)
+                let! n = Driver.call (fun () -> c.ExecuteNonQueryAsync(s.Ct))
                 report s st.Command sw.Elapsed n None trip
                 return n
             with ex ->
@@ -386,7 +386,7 @@ module Round =
             let mutable failure = None
 
             try
-                use! r = batch.ExecuteReaderAsync(s.Ct)
+                use! r = Driver.call (fun () -> batch.ExecuteReaderAsync(s.Ct))
                 let mutable first = true
 
                 for i in 0 .. stmts.Length - 1 do
@@ -395,7 +395,7 @@ module Round =
                         reading <- i
 
                         if not first then
-                            let! more = r.NextResultAsync(s.Ct)
+                            let! more = Driver.call (fun () -> r.NextResultAsync(s.Ct))
 
                             if not more then
                                 invalidOp $"statement {i + 1} of a batch returned no rows to read"
@@ -404,7 +404,7 @@ module Round =
                         let mutable go = true
 
                         while go do
-                            let! more = r.ReadAsync(s.Ct)
+                            let! more = Driver.call (fun () -> r.ReadAsync(s.Ct))
 
                             if more then
                                 readRow r
@@ -419,7 +419,7 @@ module Round =
                 let mutable more = true
 
                 while more do
-                    let! m = r.NextResultAsync(s.Ct)
+                    let! m = Driver.call (fun () -> r.NextResultAsync(s.Ct))
                     more <- m
             with ex ->
                 failure <- Some ex
@@ -763,7 +763,7 @@ and private attach (rows: IReadOnlyList<obj[]>) (node: Planner.LoadNode) (childR
         r.[a.Index] <- a.Ctors.Loaded payload
 
 let classifyOrRaise (s: Session) (ex: exn) =
-    match s.Provider.Classify ex with
+    match Driver.classify s.Provider ex with
     | Some f -> f
     | None -> raise ex
 
@@ -778,7 +778,7 @@ let guard (provider: IProvider) (body: unit -> Task<Result<'a, DbError>>) : Task
         | MaterializationFailure m -> return Error(DbError.Materialization m)
         | Translate.TranslationFailure t -> return Error(DbError.Translation t)
         | ex ->
-            match provider.Classify ex with
+            match Driver.classify provider ex with
             | Some f -> return Error(DbError.Database f)
             | None -> return Err.rethrow ex
     }
@@ -1133,7 +1133,12 @@ let rawCommand (model: Model) (dialect: ISqlDialect) (sql: FormattableString) : 
             else
                 match model.ScalarToDb(x.GetType(), x) with
                 | Ok p -> p
-                | Error m -> invalidArg "sql" $"interpolated value: {m}"
+                // A failure, as a query's value Plasm cannot send is
+                // (utc-only.feature), never an exception past the Result.
+                | Error m ->
+                    match model.ProviderTypeOf(x.GetType()) with
+                    | None -> raise (Translate.TranslationFailure(TranslationError.UnmappedType(Reflection.typeName (x.GetType()))))
+                    | Some _ -> raise (Translate.TranslationFailure(TranslationError.InvalidQuery $"interpolated value: {m}"))
 
         let cast (t: Type) array =
             model.StoreTypeOf t |> Option.map (fun st -> st, array)
@@ -1480,10 +1485,10 @@ type RowStream<'T>(provider: IProvider, options: RepoOptions, source: Result<Str
                             trip <- RoundTrips.next ()
                             command <- prepare s src.Command
                             sw.Start()
-                            let! r = command.ExecuteReaderAsync(ct)
+                            let! r = Driver.call (fun () -> command.ExecuteReaderAsync(ct))
                             reader <- r
 
-                        let! more = reader.ReadAsync(ct)
+                        let! more = Driver.call (fun () -> reader.ReadAsync(ct))
 
                         if more then
                             current <- Ok(unbox<'T> (src.Read reader))
@@ -1510,7 +1515,7 @@ type RowStream<'T>(provider: IProvider, options: RepoOptions, source: Result<Str
                     | Some(Error ex) ->
                         do! close (Some ex)
 
-                        match provider.Classify ex with
+                        match Driver.classify provider ex with
                         | Some f ->
                             current <- Error(DbError.Database f)
                             return true

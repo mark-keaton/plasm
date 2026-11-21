@@ -143,27 +143,27 @@ type internal GuardedCommand(inner: DbCommand) =
 
     override _.ExecuteNonQuery() =
         check ()
-        inner.ExecuteNonQuery()
+        Driver.callSync (fun () -> inner.ExecuteNonQuery())
 
     override _.ExecuteScalar() =
         check ()
-        inner.ExecuteScalar()
+        Driver.callSync (fun () -> inner.ExecuteScalar())
 
     override _.ExecuteDbDataReader(behavior) =
         check ()
-        inner.ExecuteReader(behavior)
+        Driver.callSync (fun () -> inner.ExecuteReader(behavior))
 
     override _.ExecuteNonQueryAsync(ct) =
         check ()
-        inner.ExecuteNonQueryAsync(ct)
+        Driver.call (fun () -> inner.ExecuteNonQueryAsync(ct))
 
     override _.ExecuteScalarAsync(ct) =
         check ()
-        inner.ExecuteScalarAsync(ct)
+        Driver.call (fun () -> inner.ExecuteScalarAsync(ct))
 
     override _.ExecuteDbDataReaderAsync(behavior, ct) =
         check ()
-        inner.ExecuteReaderAsync(behavior, ct)
+        Driver.call (fun () -> inner.ExecuteReaderAsync(behavior, ct))
 
     override _.Dispose(disposing) =
         if disposing then inner.Dispose()
@@ -248,7 +248,7 @@ module internal TxCore =
             | Execution.MaterializationFailure m -> return Error(TxFailure.Failed(DbError.Materialization m))
             | Translate.TranslationFailure t -> return Error(TxFailure.Failed(DbError.Translation t))
             | ex ->
-                match rt.Session.Provider.Classify ex with
+                match Driver.classify rt.Session.Provider ex with
                 | Some f -> return Error(TxFailure.Failed(DbError.Database f))
                 | None -> return Err.rethrow ex
         }

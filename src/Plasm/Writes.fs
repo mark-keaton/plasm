@@ -245,6 +245,27 @@ let rec check (model: Model) (s: CsState) : CsState =
         | _ -> ()
     | ChangeAction.Insert -> ()
 
+    // A time a field holds that is not UTC (utc-only.feature): refused, naming
+    // the field, before anything is sent.
+    let written =
+        match s.Action, s.Data with
+        | ChangeAction.Insert, Some d ->
+            let values = schema.Shape.Deconstruct d
+            schema.Fields |> Array.toList |> List.map (fun f -> f, values.[f.Index])
+        | ChangeAction.Update, _ ->
+            schema.Fields
+            |> Array.toList
+            |> List.choose (fun f -> s.Changes.TryFind f.Name |> Option.map (fun v -> f, v))
+        | _ -> []
+
+    // A field the database fills (a generated one) is not sent, and the key of
+    // a record the database numbers is not either.
+    for f, v in written do
+        if not (isNull v) && not f.Generated && not (f.Index = schema.Key.Index && schema.KeyGenerated) then
+            match f.ToColumns v |> List.tryPick Times.refusal with
+            | Some why -> st <- err st f.Name (FieldErrorKind.Custom "utc") why
+            | None -> ()
+
     let children =
         s.Children
         |> List.map (fun w ->
@@ -752,7 +773,16 @@ and private writeChildWrite model sess (schema: SchemaInfo) (s: CsState) (wi: in
             Round.fetch sess (Sql.renderSelect sess.Provider.Dialect select) (fun r ->
                 match target.Key.FromDb(reader.Invoke(r, 0)) with
                 | Ok v -> v
-                | Error m -> failwith m)
+                | Error m ->
+                    let raw = reader.Invoke(r, 0)
+                    let kind = if isNull raw then "null" else raw.GetType().Name
+                    raise (
+                        Execution.MaterializationFailure
+                            { Model = target.Name
+                              Property = target.Key.Name
+                              Value = $"{raw} ({kind})"
+                              Message = m }
+                    ))
             |> Round.bind (fun reply ->
                 match replied sess asFailed reply with
                 | Error p -> Done(Error p)

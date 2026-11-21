@@ -178,6 +178,27 @@ module internal Conventions =
 
 /// A reference the model infers (constraints.feature): `Model.Field` holds the
 /// key of `Target`, because its type is `Target`'s key type (a typed id).
+/// Times as both providers store them: an instant, in UTC (utc-only.feature).
+/// A DateTime whose Kind is not Utc, or a DateTimeOffset whose offset is not
+/// zero, is refused before it is sent: PostgreSQL's driver would send such a
+/// DateTime as a timestamp without a time zone, which the server reads in its
+/// own, and refuses such a DateTimeOffset by throwing.
+module internal Times =
+    let private one (v: obj) =
+        match v with
+        | :? DateTime as d when d.Kind <> DateTimeKind.Utc ->
+            Some
+                $"only UTC times are stored, and {d:o} has Kind {d.Kind}: give it Kind Utc (DateTime.SpecifyKind for a time that is UTC, ToUniversalTime for a local one)"
+        | :? DateTimeOffset as d when d.Offset <> TimeSpan.Zero ->
+            Some $"only UTC times are stored, and {d:o} has the offset {d.Offset}: give it the offset zero (ToUniversalTime)"
+        | _ -> None
+
+    /// Why a provider value (or an element of a list of them) cannot be stored.
+    let refusal (v: obj) : string option =
+        match v with
+        | :? Array as a when not (v :? byte[]) -> a |> Seq.cast<obj> |> Seq.tryPick one
+        | v -> one v
+
 type ModelReference =
     { Model: string
       Field: string
@@ -238,13 +259,19 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, registered:
     /// Converts a closed (application-side) value of the given domain type to a
     /// provider parameter value. Returns Error if the type has no mapping.
     member internal _.ScalarToDb(t: Type, value: obj) : Result<obj, string> =
+        // A time is refused unless it is UTC (Times), as Plasm stores no other.
+        let stored (p: obj) =
+            match Times.refusal p with
+            | Some why -> Error why
+            | None -> Ok p
+
         if isNull value then
             Ok(box DBNull.Value)
         elif Scalar.isBuiltIn t then
-            Ok value
+            stored value
         else
             match tryScalar t with
-            | true, m -> Ok(m.ToProvider value)
+            | true, m -> stored (m.ToProvider value)
             | _ -> Error $"type {Reflection.typeName t} has no scalar mapping"
 
     /// Converts a value read from the database (any provider type, or NULL) to

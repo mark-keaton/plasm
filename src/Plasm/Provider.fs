@@ -246,3 +246,43 @@ type ReadConsistency =
     | Independent
     /// All commands see one snapshot. Rejected if the provider cannot do this.
     | Snapshot
+
+/// What a provider's driver threw while it bound, sent or read a command, that
+/// is neither the database's failure (a DbException) nor the caller's
+/// cancellation: a value it cannot send, a type it has no handler for
+/// (utc-only.feature). Marked where the driver is called, so it is the
+/// driver's by construction, never Plasm's own fault, and reported as a
+/// failure, never thrown past the caller's Result.
+exception internal DriverFault of exn
+
+module internal Driver =
+    let private passes (e: exn) = e :? DbException || e :? OperationCanceledException
+
+    /// A call into the driver, its own faults marked.
+    let call (f: unit -> Task<'T>) : Task<'T> =
+        task {
+            try
+                return! f ()
+            with e when not (passes e) ->
+                return raise (DriverFault e)
+        }
+
+    let callSync (f: unit -> 'T) : 'T =
+        try
+            f ()
+        with e when not (passes e) ->
+            raise (DriverFault e)
+
+    /// The failure an exception is: the driver's faults as a database
+    /// failure Plasm has no other name for, else what the provider says.
+    let rec classify (provider: IProvider) (ex: exn) : DbFailure option =
+        match ex with
+        | DriverFault inner ->
+            Some
+                { Kind = DbFailureKind.OtherDatabaseError
+                  SqlState = None
+                  Constraint = None
+                  Message = "the provider could not send or read a value: " + inner.Message
+                  Exception = inner }
+        | :? AggregateException as ae when ae.InnerExceptions.Count = 1 && (ae.InnerException :? DriverFault) -> classify provider ae.InnerException
+        | ex -> provider.Classify ex

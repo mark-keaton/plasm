@@ -549,6 +549,42 @@ let main argv =
             | Ok inserted -> String.Join("; ", inserted |> List.map customer)
             | Error e -> "failed: " + e.Display)
 
+        // A value the driver cannot send (utc-only.feature) is a database
+        // failure on the native binary as under the runtime, not an exception.
+        step "a value the driver cannot send is a database failure" (fun () ->
+            let sendUri =
+                Tx.run (fun ctx ->
+                    task {
+                        use cmd = ctx.CreateCommand()
+                        cmd.CommandText <- "select 1 where @u is not null"
+                        let p = cmd.CreateParameter()
+                        p.ParameterName <- "u"
+                        p.Value <- Uri "https://example.com/"
+                        cmd.Parameters.Add p |> ignore
+                        let! _ = cmd.ExecuteScalarAsync(ctx.CancellationToken)
+                        return Ok()
+                    })
+
+            match repo.Transact(sendUri: Tx<unit, unit>).Result with
+            | Ok() -> "sent"
+            | Error e ->
+                match e.Failure with
+                | TxFailure.Failed(DbError.Database f) -> "Database " + string f.Kind + ": " + f.Exception.GetType().Name
+                | other -> "another failure: " + string other)
+
+        step "a time that is not UTC is refused before it is sent" (fun () ->
+            // Ticket 1: a step above stored a priority behind Plasm's back on ticket 2.
+            match repo.All(plasm { for t in tableOf<Ticket> do where (t.Id = TicketId 1L) }).Result with
+            | Error e -> "no ticket to change: " + refusal e
+            | Ok [] -> "no ticket to change"
+            | Ok(t :: _) ->
+                match repo.Transact(Tx.update (t, { t with Created = since.AddHours(1.0).ToOffset(TimeSpan.FromHours 1.0) }): Tx<_, unit>).Result with
+                | Ok _ -> "stored"
+                | Error e ->
+                    match e.Failure with
+                    | TxFailure.InvalidChanges(entity, errors) -> "refused: " + entity + "." + String.Join(", ", errors |> List.map (fun er -> er.Field))
+                    | other -> "another failure: " + string other)
+
         step "a broken constraint is the field's error" (fun () ->
             match repo.Transact(Tx.insert { ada with Id = CustomerId 0L; Name = "Ada again" }: Tx<_, unit>).Result with
             | Ok c -> "inserted " + customer c
