@@ -5,7 +5,8 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
 ## Now: after 0.1.0
 
-- Koans lessons for what the course does not teach yet: composite keys and array columns
+- The provider boundary: every piece of database-specific SQL behind the dialect
+- A second database provider: SQLite
 
 ## Next: in the library
 
@@ -14,7 +15,6 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
 ## Later: not started
 
-- A second database provider: SQLite
 - Measurements behind a connection proxy on AWS
 - A typed GraphQL client checked against the outcome unions
 
