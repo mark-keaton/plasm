@@ -536,33 +536,18 @@ module internal SchemaCheck =
 /// is printed, never run; Plasm does not write or apply migrations.
 module internal Ddl =
 
-    /// The words PostgreSQL reserves, in both its reserved categories (its
-    /// documentation's Appendix C): a table or column named by one, such as
+    /// A table or column named by one of the dialect's reserved words, such as
     /// `from` or `order`, is printed quoted, as every query quotes it.
-    let private reserved =
-        set
-            [ "all"; "analyse"; "analyze"; "and"; "any"; "array"; "as"; "asc"; "asymmetric"; "authorization"
-              "binary"; "both"; "case"; "cast"; "check"; "collate"; "collation"; "column"; "concurrently"
-              "constraint"; "create"; "cross"; "current_catalog"; "current_date"; "current_role"
-              "current_schema"; "current_time"; "current_timestamp"; "current_user"; "default"; "deferrable"
-              "desc"; "distinct"; "do"; "else"; "end"; "except"; "false"; "fetch"; "for"; "foreign"; "freeze"
-              "from"; "full"; "grant"; "group"; "having"; "ilike"; "in"; "initially"; "inner"; "intersect"
-              "into"; "is"; "isnull"; "join"; "lateral"; "leading"; "left"; "like"; "limit"; "localtime"
-              "localtimestamp"; "natural"; "not"; "notnull"; "null"; "offset"; "on"; "only"; "or"; "order"
-              "outer"; "overlaps"; "placing"; "primary"; "references"; "returning"; "right"; "select"
-              "session_user"; "similar"; "some"; "symmetric"; "system_user"; "table"; "tablesample"; "then"
-              "to"; "trailing"; "true"; "union"; "unique"; "user"; "using"; "variadic"; "verbose"; "when"
-              "where"; "window"; "with" ]
-
     let print (model: Model) (dialect: ISqlDialect) : string =
         let plain = Text.RegularExpressions.Regex "^[a-z_][a-z0-9_]*$"
-        let name (n: string) = if plain.IsMatch n && not (reserved.Contains n) then n else dialect.QuoteIdentifier n
+        let ddl = dialect.Ddl
+        let name (n: string) = if plain.IsMatch n && not (ddl.Reserved.Contains n) then n else dialect.QuoteIdentifier n
         let schemas = model.Schemas.Values |> Seq.sortBy (fun s -> s.Table) |> List.ofSeq
         let byType = model.Schemas
 
         let columnType (p: ColumnPart) =
             match p.Mapping |> Option.bind (fun m -> m.StoreType) with
-            | Some parts -> Sql.storeName dialect parts |> List.map name |> String.concat "."
+            | Some parts -> ddl.StoreColumn(Sql.storeName dialect parts |> List.map name |> String.concat ".")
             | None ->
                 match ColumnTypes.declared dialect p.ProviderType with
                 | Some t -> t
@@ -581,9 +566,11 @@ module internal Ddl =
             |> List.distinctBy fst
 
         for t, m in enums do
-            let labels = m.Cases |> List.map (fun (_, l) -> $"'{l}'") |> String.concat ", "
             let typeName = t |> List.map name |> String.concat "."
-            line $"create type {typeName} as enum ({labels});"
+
+            match ddl.EnumType(typeName, m.Cases |> List.map snd) with
+            | Some statement -> line statement
+            | None -> ()
 
         // The columns a field is stored in, as one reference's columns: one,
         // or a reference's to a key of several parts (composite-references.feature).
@@ -621,6 +608,14 @@ module internal Ddl =
                       | AssocKind.ManyToMany -> () ]
             |> List.distinctBy (fun (t, c, _) -> t, c)
 
+        let listed (columns: string list) = columns |> List.map name |> String.concat ", "
+
+        // `constraint t_c_fkey foreign key (c) references r (k)`.
+        let foreignKey (table: string) (columns: string list) (r: SchemaInfo) =
+            let constraintName = name (table + "_" + String.concat "_" columns + "_fkey")
+            let keyColumns = r.Key.Parts |> List.map (fun p -> p.Name)
+            $"constraint {constraintName} foreign key ({listed columns}) references {name r.Table} ({listed keyColumns})"
+
         for s in schemas do
             let columns =
                 [ for f in s.Fields do
@@ -631,7 +626,7 @@ module internal Ddl =
                               if f.Name = s.Key.Name && f.Composite then
                                   ""
                               elif f.Name = s.Key.Name then
-                                  if s.KeyGenerated then " generated always as identity primary key" else " primary key"
+                                  if s.KeyGenerated then ddl.GeneratedKey else " primary key"
                               else
                                   ""
 
@@ -659,11 +654,29 @@ module internal Ddl =
                           let constraintName = name (s.Table + "_" + String.concat "_" columns + "_key")
                           yield $"""  constraint {constraintName} unique ({columns |> List.map name |> String.concat ", "})"""
 
+                  // A column of an enum, held to its labels where no enum type holds it.
+                  for f in s.Fields do
+                      for p in f.Parts do
+                          match p.Mapping with
+                          | Some m when m.StoreType.IsSome && not m.Cases.IsEmpty ->
+                              match ddl.EnumCheck(name p.Name, m.Cases |> List.map snd) with
+                              | Some check ->
+                                  let constraintName = name (s.Table + "_" + p.Name + "_check")
+                                  yield $"  constraint {constraintName} {check}"
+                              | None -> ()
+                          | _ -> ()
+
                   // A key of several parts (composite-keys.feature): one
                   // primary key over them, in the key record's order.
                   if s.Key.Composite then
                       let parts = s.Key.Parts |> List.map (fun p -> name p.Name) |> String.concat ", "
-                      yield $"  primary key ({parts})" ]
+                      yield $"  primary key ({parts})"
+
+                  // Its references, where the dialect declares them in the table.
+                  if ddl.ForeignKeysInTables then
+                      for table, columns, r in references do
+                          if table = s.Table then
+                              yield $"  {foreignKey table columns r}" ]
 
             line $"create table {name s.Table} ("
             line (String.concat ",\n" columns)
@@ -689,7 +702,14 @@ module internal Ddl =
                 line $"  {name column} {columnType part} not null,"
 
             let key = owners @ targets |> List.map (fst >> name) |> String.concat ", "
-            line $"  primary key ({key})"
+
+            if ddl.ForeignKeysInTables then
+                line $"  primary key ({key}),"
+                line $"  {foreignKey j.Table (owners |> List.map fst) owner},"
+                line $"  {foreignKey j.Table (targets |> List.map fst) target}"
+            else
+                line $"  primary key ({key})"
+
             line ");"
 
         let joinReferences =
@@ -698,14 +718,9 @@ module internal Ddl =
                   yield j.Table, owners |> List.map fst, owner
                   yield j.Table, targets |> List.map fst, target ]
 
-        let listed (columns: string list) = columns |> List.map name |> String.concat ", "
-
-        for table, columns, r in references @ joinReferences do
-            let constraintName = name (table + "_" + String.concat "_" columns + "_fkey")
-            let keyColumns = r.Key.Parts |> List.map (fun p -> p.Name)
-
-            line
-                $"alter table {name table} add constraint {constraintName} foreign key ({listed columns}) references {name r.Table} ({listed keyColumns});"
+        if not ddl.ForeignKeysInTables then
+            for table, columns, r in references @ joinReferences do
+                line $"alter table {name table} add {foreignKey table columns r};"
 
         // The columns the model's reads filter on (an owned table's owner
         // column, a reference to another aggregate, a join table's target

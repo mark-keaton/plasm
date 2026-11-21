@@ -71,6 +71,7 @@ type NoDescribe(inner: IProvider) =
             member _.RowsIn(w, columns, lists) = inner.Dialect.RowsIn(w, columns, lists)
             member _.InList(w, operand, list, cast) = inner.Dialect.InList(w, operand, list, cast)
             member _.Catalogue = inner.Dialect.Catalogue
+            member _.Ddl = inner.Dialect.Ddl
             member _.UnboundedLimit = inner.Dialect.UnboundedLimit
             member _.NullSafeComparison negated = inner.Dialect.NullSafeComparison negated
             member _.LikeEscape = inner.Dialect.LikeEscape

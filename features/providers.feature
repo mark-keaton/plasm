@@ -9,7 +9,7 @@ Feature: Database-specific SQL comes from the provider
 
   These scenarios use a test dialect that differs from PostgreSQL. Queries are
   only explained (translated, never executed), so no second database is needed.
-  The DDL Plasm prints is still PostgreSQL's (see docs/status.md).
+  Every construct a provider renders differently is behind the dialect.
 
   Background:
     Given a configured relational database
@@ -66,6 +66,11 @@ Feature: Database-specific SQL comes from the provider
     Scenario: Rows skipped with no limit are paged as the dialect pages them
       When I explain a query of the Customers by name that skips one, with the test dialect, which needs a LIMIT before an OFFSET
       Then the query takes the dialect's unbounded limit before its offset
+
+    Scenario: The DDL is printed in the dialect's form
+      When I print the DDL with the test dialect, which declares a generated key its own way and its foreign keys in their tables
+      Then an Order's key is declared the dialect's way
+      And the orders table declares its reference to the customers inside it, with no alter table
 
     Scenario: The schema check reads the catalogue as the dialect asks it
       When the schema checks the model's tables through a provider like the database's whose dialect writes its own catalogue queries

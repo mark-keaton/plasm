@@ -32,6 +32,17 @@ type TestDialectProvider(inner: IProvider) =
                 operand ()
                 w $" IN (SELECT value FROM json_each({list}))"
             member _.Catalogue = inner.Dialect.Catalogue
+            // Its own key clause, and foreign keys in their tables.
+            member _.Ddl =
+                let d = inner.Dialect.Ddl
+
+                { new IDdlDialect with
+                    member _.Reserved = d.Reserved
+                    member _.GeneratedKey = " primary key autoincrement"
+                    member _.StoreColumn typeName = d.StoreColumn typeName
+                    member _.EnumType(typeName, labels) = d.EnumType(typeName, labels)
+                    member _.EnumCheck(column, labels) = d.EnumCheck(column, labels)
+                    member _.ForeignKeysInTables = true }
             member _.UnboundedLimit = Some "-1"
             member _.NullSafeComparison negated = if negated then "IS NOT" else "IS"
 
@@ -97,6 +108,7 @@ type StoredAsDialectSays(inner: IProvider, documentType: string list) =
             member _.RowsIn(w, columns, lists) = d.RowsIn(w, columns, lists)
             member _.InList(w, operand, list, cast) = d.InList(w, operand, list, cast)
             member _.Catalogue = d.Catalogue
+            member _.Ddl = d.Ddl
             member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated
             member _.LikeEscape = d.LikeEscape
@@ -148,6 +160,7 @@ type MarkedCatalogue(inner: IProvider) =
                     member _.PrimaryKeys tables = c.PrimaryKeys tables
                     member _.ForeignKeys tables = c.ForeignKeys tables
                     member _.TableColumns table = c.TableColumns table }
+            member _.Ddl = d.Ddl
             member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated
             member _.LikeEscape = d.LikeEscape
@@ -186,6 +199,7 @@ type NoArrayParameters(inner: IProvider) =
             member _.RowsIn(w, columns, lists) = d.RowsIn(w, columns, lists)
             member _.InList(w, operand, list, cast) = d.InList(w, operand, list, cast)
             member _.Catalogue = d.Catalogue
+            member _.Ddl = d.Ddl
             member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated
             member _.LikeEscape = d.LikeEscape
@@ -233,6 +247,7 @@ type JsonLists(inner: IProvider) =
                 w ")"
             member _.InList(w, operand, list, cast) = d.InList(w, operand, list, cast)
             member _.Catalogue = d.Catalogue
+            member _.Ddl = d.Ddl
             member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated
             member _.LikeEscape = d.LikeEscape
@@ -271,6 +286,7 @@ type MarkedComparisonProvider(inner: IProvider) =
             member _.RowsIn(w, columns, lists) = d.RowsIn(w, columns, lists)
             member _.InList(w, operand, list, cast) = d.InList(w, operand, list, cast)
             member _.Catalogue = d.Catalogue
+            member _.Ddl = d.Ddl
             member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated + " /* the dialect's */"
             member _.LikeEscape = d.LikeEscape

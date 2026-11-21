@@ -140,6 +140,23 @@ type ProviderSteps(w: World) =
         let sql = w.Get<string> "explained"
         check (sql.Contains "LIMIT -1 OFFSET @p") sql
 
+    [<StepDefinition("I print the DDL with the test dialect, which declares a generated key its own way and its foreign keys in their tables")>]
+    member _.DialectDdl() = w.Set("testDdl", repo().Ddl())
+
+    [<StepDefinition("an Order's key is declared the dialect's way")>]
+    member _.KeyDeclared() =
+        let ddl = w.Get<string> "testDdl"
+        let orders = ddl.Substring(ddl.IndexOf "create table orders")
+        let id = orders.Split('\n') |> Array.find (fun l -> l.TrimStart().StartsWith "id ")
+        check (id.Trim() = "id bigint not null primary key autoincrement,") id
+
+    [<StepDefinition("the orders table declares its reference to the customers inside it, with no alter table")>]
+    member _.ForeignKeyInside() =
+        let ddl = w.Get<string> "testDdl"
+        let orders = ddl.Substring(ddl.IndexOf "create table orders")
+        let table = orders.Substring(0, orders.IndexOf ");")
+        check (table.Contains "constraint orders_customer_id_fkey foreign key (customer_id) references customers (id)" && not (ddl.Contains "alter table")) ddl
+
     [<StepDefinition("the schema checks the model's tables through a provider like the database's whose dialect writes its own catalogue queries")>]
     member _.MarkedCatalogueCheck() =
         task {

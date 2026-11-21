@@ -76,6 +76,27 @@ type ICatalogueDialect =
     /// (the last five booleans): the columns of the one table `table`, in order.
     abstract TableColumns: table: string -> string
 
+/// How Ddl prints a model's tables in the database's own DDL (ddl.feature).
+type IDdlDialect =
+    /// The words a table or column may not be named without quotes.
+    abstract Reserved: Set<string>
+    /// What follows a generated key column's type and NOT NULL:
+    /// ` generated always as identity primary key` on PostgreSQL.
+    abstract GeneratedKey: string
+    /// The column type of a database type of its own (an enum type, a document
+    /// type), given its name as Ddl writes it.
+    abstract StoreColumn: typeName: string -> string
+    /// The statement that creates an enum type with its labels, printed before
+    /// the tables; None when the dialect has no enum types.
+    abstract EnumType: typeName: string * labels: string list -> string option
+    /// The check holding a column of an enum to its labels (`check (status in
+    /// ('draft', ...))`), printed as a constraint in its table; None when an
+    /// enum type holds them.
+    abstract EnumCheck: column: string * labels: string list -> string option
+    /// Foreign keys are declared in their tables' create statements, not
+    /// added after them with alter table.
+    abstract ForeignKeysInTables: bool
+
 /// How a provider stores and reads JSON documents (json-columns.feature).
 /// Each member writes SQL through `write`; `doc`, `value` and `condition`
 /// write their own sub-expressions.
@@ -140,6 +161,8 @@ type ISqlDialect =
     abstract EmptyArray: string
     /// The catalogue queries the schema check and scaffolding send.
     abstract Catalogue: ICatalogueDialect
+    /// How Ddl prints the model's tables.
+    abstract Ddl: IDdlDialect
     /// What LIMIT takes for no limit, when the dialect needs a LIMIT before an
     /// OFFSET (SQLite's -1); None when OFFSET stands on its own (PostgreSQL).
     abstract UnboundedLimit: string option

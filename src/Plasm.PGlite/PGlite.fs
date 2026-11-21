@@ -720,6 +720,37 @@ type internal PGliteJson() =
             value ()
             w " AS jsonb))"
 
+/// PostgreSQL's DDL (ddl.feature).
+module internal PostgresDdl =
+    /// The words PostgreSQL reserves, in both its reserved categories (its
+    /// documentation's Appendix C): a table or column named by one, such as
+    /// `from` or `order`, is printed quoted, as every query quotes it.
+    let private reserved =
+        set
+                [ "all"; "analyse"; "analyze"; "and"; "any"; "array"; "as"; "asc"; "asymmetric"; "authorization"
+                  "binary"; "both"; "case"; "cast"; "check"; "collate"; "collation"; "column"; "concurrently"
+                  "constraint"; "create"; "cross"; "current_catalog"; "current_date"; "current_role"
+                  "current_schema"; "current_time"; "current_timestamp"; "current_user"; "default"; "deferrable"
+                  "desc"; "distinct"; "do"; "else"; "end"; "except"; "false"; "fetch"; "for"; "foreign"; "freeze"
+                  "from"; "full"; "grant"; "group"; "having"; "ilike"; "in"; "initially"; "inner"; "intersect"
+                  "into"; "is"; "isnull"; "join"; "lateral"; "leading"; "left"; "like"; "limit"; "localtime"
+                  "localtimestamp"; "natural"; "not"; "notnull"; "null"; "offset"; "on"; "only"; "or"; "order"
+                  "outer"; "overlaps"; "placing"; "primary"; "references"; "returning"; "right"; "select"
+                  "session_user"; "similar"; "some"; "symmetric"; "system_user"; "table"; "tablesample"; "then"
+                  "to"; "trailing"; "true"; "union"; "unique"; "user"; "using"; "variadic"; "verbose"; "when"
+                  "where"; "window"; "with" ]
+
+    let ddl =
+        { new IDdlDialect with
+            member _.Reserved = reserved
+            member _.GeneratedKey = " generated always as identity primary key"
+            member _.StoreColumn typeName = typeName
+            member _.EnumType(typeName, labels) =
+                let listed = labels |> List.map (fun l -> "'" + l + "'") |> String.concat ", "
+                Some $"create type {typeName} as enum ({listed});"
+            member _.EnumCheck(_, _) = None
+            member _.ForeignKeysInTables = false }
+
 /// PostgreSQL's catalogue queries.
 module internal PostgresCatalogue =
     /// PostgreSQL's catalogue: information_schema and pg_catalog, in the current
@@ -854,6 +885,8 @@ type internal PGliteDialect(maxKeys: int) =
             | None -> w $" = ANY({list})"
 
         member _.Catalogue = PostgresCatalogue.catalogue
+
+        member _.Ddl = PostgresDdl.ddl
 
         member _.UnboundedLimit = None
 
