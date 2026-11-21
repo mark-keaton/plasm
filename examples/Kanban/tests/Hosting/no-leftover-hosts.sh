@@ -31,16 +31,45 @@ for specs in Kanban.CSharpHost.Specs Kanban.Host.Specs; do
   [ "$after" -eq 0 ] || failed=1
 done
 
-# A run killed while a scenario's host is up.
+# A run killed while a scenario's host is up: killed only once a host is
+# seen. A run that starts no host within the wait has tested nothing, which
+# is its own failure ("no host started"), shown with the run's own output,
+# not a host left behind. The run is built above, so the wait is the
+# scenarios' own: their database starting, then their first host.
+# KANBAN_LEFTOVER_PLANT=leak or =never makes each failure happen, to prove
+# the check tells them apart (never set it otherwise).
 specs=Kanban.CSharpHost.Specs
 dir=$(started "$specs")
-dotnet test --project "tests/$specs" --no-build > /dev/null 2>&1 &
-for i in $(seq 120); do [ "$(hosts "$dir")" -gt 0 ] && break; sleep 0.5; done
-up=$(hosts "$dir")
-pkill -9 -f "$here/tests/$specs/bin/Debug/net11.0/$specs" || true
-for i in $(seq 20); do [ "$(hosts "$dir")" -eq 0 ] && break; sleep 0.5; done
-left=$(hosts "$dir")
-echo "$specs killed mid-run: $up host(s) up when killed, $left left after"
-[ "$up" -gt 0 ] && [ "$left" -eq 0 ] || failed=1
+wait_s=${KANBAN_LEFTOVER_WAIT:-180}
+run_log=$(mktemp "${TMPDIR:-/tmp}/kanban-killed-run.XXXXXX")
+case "${KANBAN_LEFTOVER_PLANT:-}" in
+  never) sleep "$wait_s" > "$run_log" 2>&1 & ;;
+  *) dotnet test --project "tests/$specs" --no-build > "$run_log" 2>&1 & ;;
+esac
+run=$!
+up=0
+for i in $(seq $((wait_s * 2))); do up=$(hosts "$dir"); [ "$up" -gt 0 ] && break; sleep 0.5; done
+if [ "$up" -eq 0 ]; then
+  kill -9 $run 2> /dev/null
+  pkill -9 -f "$here/tests/$specs/bin/Debug/net11.0/$specs" 2> /dev/null
+  echo "$specs killed mid-run: no host started within $wait_s s; the run's output until then:"
+  tail -30 "$run_log" | sed 's/^/    /'
+  failed=1
+else
+  # A host the check plants, which ignores its standard input: a leak.
+  if [ "${KANBAN_LEFTOVER_PLANT:-}" = leak ]; then
+    (exec -a "$dir/Kanban.Host.planted" sleep 120) &
+  fi
+  pkill -9 -f "$here/tests/$specs/bin/Debug/net11.0/$specs" || true
+  for i in $(seq 20); do [ "$(hosts "$dir")" -eq 0 ] && break; sleep 0.5; done
+  left=$(hosts "$dir")
+  echo "$specs killed mid-run: $up host(s) up when killed, $left left after"
+  if [ "$left" -ne 0 ]; then
+    echo "a host was left:"; pgrep -fl "$dir.*Kanban\.Host" | sed 's/^/    /'
+    pkill -9 -f "$dir.*Kanban\.Host.planted" 2> /dev/null
+    failed=1
+  fi
+fi
 wait 2> /dev/null
+rm -f "$run_log"
 exit $failed
