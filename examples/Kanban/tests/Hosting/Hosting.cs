@@ -122,7 +122,7 @@ public sealed class HostProcess : IAsyncDisposable
         {
             lock (Running)
                 foreach (var p in Running)
-                    try { if (!p.HasExited) p.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+                    try { if (!p.HasExited) p.Kill(); } catch (InvalidOperationException) { }
         };
 
     readonly Process process;
@@ -194,12 +194,16 @@ public sealed class HostProcess : IAsyncDisposable
         }
     }
 
-    /// Stops the host and everything it started.
+    /// Stops the host. With one SIGKILL (Kill()), never Kill(entireProcessTree:
+    /// true): on Unix that stops the process first (SIGSTOP), lists its
+    /// children, and only then kills it, so a test run that dies in between
+    /// leaves the host stopped, deaf to SIGTERM and never reaching its own exit.
+    /// A host starts no process of its own, so there is no tree to kill.
     public async ValueTask DisposeAsync()
     {
         if (!process.HasExited)
         {
-            process.Kill(entireProcessTree: true);
+            process.Kill();
             await process.WaitForExitAsync();
         }
         lock (Running) Running.Remove(process);
