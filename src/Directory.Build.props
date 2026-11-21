@@ -23,7 +23,7 @@
     <!-- Declared explicitly so the packages depend on FSharp.Core (the implicit
          reference does not flow into the package under central package management). -->
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
-    <PackageReleaseNotes>Plasm is new: this is version 0.1, and its API may change before 1.0. See docs/status.md.</PackageReleaseNotes>
+    <PackageReleaseNotes>Plasm is new, and its API may change before 1.0. See docs/status.md.</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
