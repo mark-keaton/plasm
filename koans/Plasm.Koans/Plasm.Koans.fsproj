@@ -29,6 +29,7 @@
     <Compile Include="Lessons/L21_Failures.fs" />
     <Compile Include="Lessons/L22_TestingWithPlasm.fs" />
     <Compile Include="Lessons/L23_UnionsWithFields.fs" />
+    <Compile Include="Lessons/L24_SetOperations.fs" />
     <Compile Include="Path.fs" />
     <Compile Include="Given.fs" />
     <Compile Include="Course.fs" />

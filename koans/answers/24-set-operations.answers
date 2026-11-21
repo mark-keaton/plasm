@@ -1,0 +1,16 @@
+# A union gives each row once
+[ "Ada"; "Bob"; "Cy" ]
+# A union of all keeps every copy
+[ "Ada"; "Bob"; "Bob"; "Cy" ]
+# An intersection and a difference
+[ "Bob" ]
+[ "Cy" ]
+# The combined rows are ordered and paged
+[ "Ada" ]
+true
+# An operand cannot order itself
+true
+# Two projections combine into their rows
+[ "Ada"; "Bob" ]
+# A join takes a query
+[ OrderId 1L; OrderId 2L ]

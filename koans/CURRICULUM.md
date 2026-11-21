@@ -99,6 +99,15 @@ met through a write. Each error case is named where a koan first meets it
 | 22 | Testing with Plasm | Sandboxes; `Repo.Start` checking the app's query values, `repo.CheckSchema()`, and `repo.Ddl()`. |
 | 23 | Unions with fields | A union whose cases carry facts, stored across columns, and the domain's own members in queries. |
 
+### Part 6: what came after (lessons 24 on)
+
+Lessons for what Plasm gained after the course was first written, each after
+the lessons it builds on.
+
+| # | Lesson | What it is for |
+|---|---|---|
+| 24 | Set operations | `Query.union`, `unionAll`, `intersect` and `except` of two queries of the same rows, ordered and paged as a whole; an operand that orders itself refused; projections combined; a query as a join's source. |
+
 ## Writing a koan
 
 - The lesson file is `Plasm.Koans/Lessons/LNN_Name.fs`; its reference answers

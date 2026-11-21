@@ -26,4 +26,5 @@ let lessons: Lesson list =
       L20_PreparedQueries.lesson
       L21_Failures.lesson
       L22_TestingWithPlasm.lesson
-      L23_UnionsWithFields.lesson ]
+      L23_UnionsWithFields.lesson
+      L24_SetOperations.lesson ]
