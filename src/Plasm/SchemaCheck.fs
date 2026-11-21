@@ -645,28 +645,26 @@ module internal Ddl =
                           let constraintName = name (s.Table + "_" + String.concat "_" columns + "_key")
                           yield $"""  constraint {constraintName} unique ({columns |> List.map name |> String.concat ", "})"""
 
-                  // A column of an enum, held to its labels where no enum type holds it.
-                  for f in s.Fields do
-                      for p in f.Parts do
-                          match p.Mapping with
-                          | Some m when m.StoreType.IsSome && not m.Cases.IsEmpty ->
-                              match ddl.EnumCheck(name p.Name, m.Cases |> List.map snd) with
-                              | Some check ->
-                                  let constraintName = name (s.Table + "_" + p.Name + "_check")
-                                  yield $"  constraint {constraintName} {check}"
-                              | None -> ()
-                          | _ -> ()
+                  // Each column held to what it holds where its type does not
+                  // hold it, the enums' checks first: an enum's labels, a list
+                  // (array-columns.feature), a time (utc-only.feature), a
+                  // document (json-columns.feature).
+                  let holds (f: FieldMap) (p: ColumnPart) =
+                      match p.Mapping with
+                      | Some m when m.StoreType.IsSome && not m.Cases.IsEmpty && f.Json.IsNone -> ColumnHolds.Enum(m.Cases |> List.map snd)
+                      | _ when f.Json.IsSome -> ColumnHolds.Document
+                      | _ when p.ProviderType.IsArray && p.ProviderType <> typeof<byte[]> -> ColumnHolds.List(p.ProviderType.GetElementType())
+                      | _ -> ColumnHolds.Scalar p.ProviderType
 
-                  // A column held to the form its values are stored in where
-                  // its type does not hold it: a list (array-columns.feature),
-                  // a time (utc-only.feature). An enum's is EnumCheck's.
-                  for f in s.Fields do
-                      for p in f.Parts do
-                          match ddl.ColumnCheck(name p.Name, p.ProviderType) with
-                          | Some check ->
-                              let constraintName = name (s.Table + "_" + p.Name + "_check")
-                              yield $"  constraint {constraintName} {check}"
-                          | None -> ()
+                  let columns = [ for f in s.Fields do for p in f.Parts -> p, holds f p ]
+                  let isEnum = function ColumnHolds.Enum _ -> true | _ -> false
+
+                  for p, h in (columns |> List.filter (snd >> isEnum)) @ (columns |> List.filter (snd >> isEnum >> not)) do
+                      match ddl.ColumnCheck(name p.Name, h) with
+                      | Some check ->
+                          let constraintName = name (s.Table + "_" + p.Name + "_check")
+                          yield $"  constraint {constraintName} {check}"
+                      | None -> ()
 
                   // A key of several parts (composite-keys.feature): one
                   // primary key over them, in the key record's order.

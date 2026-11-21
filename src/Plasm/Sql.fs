@@ -77,6 +77,19 @@ type ICatalogueDialect =
     abstract TableColumns: table: string -> string
 
 /// How Ddl prints a model's tables in the database's own DDL (ddl.feature).
+/// What a column holds, as Ddl tells a dialect asked for its check
+/// (IDdlDialect.ColumnCheck).
+[<RequireQualifiedAccess>]
+type ColumnHolds =
+    /// One value of this provider type (a string, a DateTime).
+    | Scalar of providerType: Type
+    /// A list of scalars of this element type (array-columns.feature).
+    | List of elementType: Type
+    /// A [<Json>] document (json-columns.feature).
+    | Document
+    /// A union of cases without fields, stored by these labels.
+    | Enum of labels: string list
+
 type IDdlDialect =
     /// The words a table or column may not be named without quotes.
     abstract Reserved: Set<string>
@@ -89,15 +102,12 @@ type IDdlDialect =
     /// The statement that creates an enum type with its labels, printed before
     /// the tables; None when the dialect has no enum types.
     abstract EnumType: typeName: string * labels: string list -> string option
-    /// The check holding a column of an enum to its labels (`check (status in
-    /// ('draft', ...))`), printed as a constraint in its table; None when an
-    /// enum type holds them.
-    abstract EnumCheck: column: string * labels: string list -> string option
-    /// The check holding a column to the form its values are stored in, given
-    /// its provider type (a list's array type, a DateTime), printed as a
-    /// constraint in its table; None where the column's type holds it
-    /// (PostgreSQL's arrays and timestamptz), or for a type it never checks.
-    abstract ColumnCheck: column: string * providerType: Type -> string option
+    /// The check holding a column to what it holds (`check (status in
+    /// ('draft', ...))` for an enum, SQLite's JSON array for a list, its form
+    /// for a time), printed as a constraint in its table; None where the
+    /// column's type holds it (PostgreSQL's enum types, arrays, timestamptz
+    /// and jsonb), or for what it never checks.
+    abstract ColumnCheck: column: string * holds: ColumnHolds -> string option
     /// Foreign keys are declared in their tables' create statements, not
     /// added after them with alter table.
     abstract ForeignKeysInTables: bool

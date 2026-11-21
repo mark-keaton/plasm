@@ -72,19 +72,16 @@ module internal SqliteDdl =
             member _.StoreColumn _ = "TEXT"
             member _.EnumType(_, _) = None
 
-            member _.EnumCheck(column, labels) =
-                let listed = labels |> List.map (fun l -> "'" + l.Replace("'", "''") + "'") |> String.concat ", "
-                Some $"check ({column} in ({listed}))"
-
-            member _.ColumnCheck(column, t) =
-                if t.IsArray && t <> typeof<byte[]> then
-                    Some $"check (json_valid({column}) and json_type({column}) = 'array')"
-                elif t = typeof<DateTime> then
-                    Some(Times.check column false)
-                elif t = typeof<DateTimeOffset> then
-                    Some(Times.check column true)
-                else
-                    None
+            member _.ColumnCheck(column, holds) =
+                match holds with
+                | ColumnHolds.Enum labels ->
+                    let listed = labels |> List.map (fun l -> "'" + l.Replace("'", "''") + "'") |> String.concat ", "
+                    Some $"check ({column} in ({listed}))"
+                | ColumnHolds.List _ -> Some $"check (json_valid({column}) and json_type({column}) = 'array')"
+                | ColumnHolds.Scalar t when t = typeof<DateTime> -> Some(Times.check column false)
+                | ColumnHolds.Scalar t when t = typeof<DateTimeOffset> -> Some(Times.check column true)
+                | ColumnHolds.Scalar _
+                | ColumnHolds.Document -> None
             member _.ForeignKeysInTables = true }
 
 /// SQLite's catalogue: the table-valued pragmas, joined to the list of tables

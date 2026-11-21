@@ -748,7 +748,6 @@ module internal PostgresDdl =
             member _.EnumType(typeName, labels) =
                 let listed = labels |> List.map (fun l -> "'" + l + "'") |> String.concat ", "
                 Some $"create type {typeName} as enum ({listed});"
-            member _.EnumCheck(_, _) = None
             member _.ColumnCheck(_, _) = None
             member _.ForeignKeysInTables = false }
 
