@@ -23,6 +23,11 @@ type TestDialectProvider(inner: IProvider) =
             member _.StoreCast(t, array) = inner.Dialect.StoreCast(t, array)
             member _.TextCast = inner.Dialect.TextCast
             member _.EmptyArray = "'[]'"
+            // A list is one JSON parameter, read as rows by json_each.
+            member _.ListValue values = inner.Dialect.ListValue values
+            member _.InList(w, operand, list, _) =
+                operand ()
+                w $" IN (SELECT value FROM json_each({list}))"
             member _.UnboundedLimit = Some "-1"
             member _.NullSafeComparison negated = if negated then "IS NOT" else "IS"
 
@@ -82,6 +87,8 @@ type StoredAsDialectSays(inner: IProvider, documentType: string list) =
             member _.StoreCast(_, _) = None
             member _.TextCast = None
             member _.EmptyArray = d.EmptyArray
+            member _.ListValue values = d.ListValue values
+            member _.InList(w, operand, list, cast) = d.InList(w, operand, list, cast)
             member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated
             member _.LikeEscape = d.LikeEscape
@@ -116,6 +123,8 @@ type MarkedComparisonProvider(inner: IProvider) =
             member _.StoreCast(t, array) = d.StoreCast(t, array)
             member _.TextCast = d.TextCast
             member _.EmptyArray = d.EmptyArray
+            member _.ListValue values = d.ListValue values
+            member _.InList(w, operand, list, cast) = d.InList(w, operand, list, cast)
             member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated + " /* the dialect's */"
             member _.LikeEscape = d.LikeEscape

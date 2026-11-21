@@ -36,6 +36,18 @@ type ProviderSteps(w: World) =
         let m = w.Get<string> "madeWith"
         check (m.Contains fields && m.Contains $"has no {capability}") m
 
+    [<StepDefinition("I explain, with the test dialect, a prepared query of the Customers whose id is in a list argument")>]
+    member _.PreparedList() =
+        let byIds = Query.prepare (fun (ids: Arg<CustomerId list>) -> plasm { for c in tableOf<Customer> do where (List.contains c.Id ids.Value) })
+        let one = (explain (byIds [ CustomerId 1L ])).Sql
+        let three = (explain (byIds [ CustomerId 1L; CustomerId 2L; CustomerId 3L ])).Sql
+        w.Set("explainedLists", (one, three))
+
+    [<StepDefinition("the membership is the dialect's, of one parameter, whatever the list's length")>]
+    member _.ListMembership() =
+        let one, three = w.Get<string * string> "explainedLists"
+        check (one = three && one.Contains "\"c\".\"id\" IN (SELECT value FROM json_each(@p0))" && not (one.Contains "@p1")) one
+
     [<StepDefinition("I explain, with the test dialect, whether any of each customer's Orders is published")>]
     member _.AnyPublished() =
         w.Set("explained", (repo().Explain(plasm { for o in tableOf<Order> do groupBy o.CustomerId; select (o.CustomerId, Agg.any (o.Status = Published)) }) |> ok).Sql)

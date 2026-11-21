@@ -1436,6 +1436,7 @@ and containsAggregate (e: Sql.Expr) : bool =
     | Sql.IsNull a
     | Sql.IsNotNull a
     | Sql.AnyOf(a, _, _)
+    | Sql.InListParam(a, _, _)
     | Sql.Cast(a, _, _)
     | Sql.AsText a -> containsAggregate a
     | Sql.Func(_, xs) -> List.exists containsAggregate xs
@@ -1555,12 +1556,9 @@ and membership ctx (whole: Expr) (x: Expr) (coll: Expr) : Sql.Expr =
 
             box arr
 
-        let values: Sql.Expr =
-            match model.StoreTypeOf elemType with
-            | Some t -> Sql.Cast(Sql.Param(box (Sql.Bound(resolve, show coll))), t, true)
-            | None -> Sql.Param(box (Sql.Bound(resolve, show coll)))
-
-        Sql.Binary("=", scalar ctx x, Sql.Func("ANY", [ values ]))
+        // One parameter holding the list, as the dialect sends one, so the
+        // text does not depend on the list's length.
+        Sql.InListParam(scalar ctx x, box (Sql.Bound(resolve, show coll)), model.StoreTypeOf elemType)
     else
 
     let items = evaluate ctx coll
@@ -1907,6 +1905,7 @@ let private withoutNeedlessNulls (space: Binding list) (wheres: Sql.Expr list) (
             | Sql.IsNotNull x, _ -> x = col
             | Sql.Binary(op, a, b), _ when comparison op && (a = col || b = col) -> true
             | Sql.AnyOf(a, _, _), _
+            | Sql.InListParam(a, _, _), _
             | Sql.Like(a, _), _ -> a = col
             | Sql.Binary("=", Sql.Column(alias, tag), Sql.Literal stored), Sql.Column(alias2, column) when alias = alias2 ->
                 caseHolds alias tag stored column
@@ -2253,6 +2252,7 @@ let rec private ungrouped (groups: Sql.Expr list) (e: Sql.Expr) =
         | Sql.IsNull a
         | Sql.IsNotNull a
         | Sql.AnyOf(a, _, _)
+        | Sql.InListParam(a, _, _)
         | Sql.Cast(a, _, _)
         | Sql.AsText a -> ungrouped groups a
         | Sql.Func(_, xs) -> List.exists (ungrouped groups) xs
@@ -2471,6 +2471,7 @@ let private distinct (def: QueryDef) (sel: Sql.Select) (shape: Shape) : Sql.Sele
             | Sql.Func(f, xs) -> Sql.Func(f, List.map over xs)
             | Sql.Case(branches, otherwise) -> Sql.Case(branches |> List.map (fun (c, v) -> over c, over v), over otherwise)
             | Sql.AnyOf(x, vs, cast) -> Sql.AnyOf(over x, vs, cast)
+            | Sql.InListParam(x, list, cast) -> Sql.InListParam(over x, list, cast)
             | Sql.Fragment parts -> Sql.Fragment(parts |> List.map (function Choice2Of2 x -> Choice2Of2(over x) | text -> text))
             | other -> other
 
@@ -2487,7 +2488,8 @@ let private distinct (def: QueryDef) (sel: Sql.Select) (shape: Shape) : Sql.Sele
         | Sql.IsNotNull x
         | Sql.Cast(x, _, _)
         | Sql.AsText x
-        | Sql.AnyOf(x, _, _) -> readsOther x
+        | Sql.AnyOf(x, _, _)
+        | Sql.InListParam(x, _, _) -> readsOther x
         | Sql.Func(_, xs) -> List.exists readsOther xs
         | Sql.Case(branches, otherwise) -> branches |> List.exists (fun (c, v) -> readsOther c || readsOther v) || readsOther otherwise
         | Sql.Fragment parts -> parts |> List.exists (function Choice2Of2 x -> readsOther x | _ -> false)

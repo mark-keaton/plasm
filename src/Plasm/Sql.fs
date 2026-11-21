@@ -88,6 +88,12 @@ type ISqlDialect =
     /// The type a column of a database type of its own is read as, to be read
     /// as text; None reads it as it is.
     abstract TextCast: string option
+    /// The value a list is sent as, as one parameter (PostgreSQL: the array).
+    abstract ListValue: Array -> obj
+    /// Membership of `operand` in the list sent as the parameter `list`,
+    /// cast as `cast` says when its elements have a database type of their
+    /// own: `operand = ANY(list)` on PostgreSQL.
+    abstract InList: write: (string -> unit) * operand: (unit -> unit) * list: string * cast: string option -> unit
     /// An empty array's literal: a list aggregate's value over no rows
     /// (`'{}'`).
     abstract EmptyArray: string
@@ -139,6 +145,10 @@ module internal Sql =
         | IsNotNull of Expr
         | NotDistinctFrom of Expr * Expr
         | DistinctFrom of Expr * Expr
+        /// Membership in a list sent as one parameter (a prepared query's list
+        /// argument, a Sql.Bound resolving to an array), as the dialect sends a
+        /// list; `cast` names the database type its elements are cast to.
+        | InListParam of Expr * list: obj * cast: string list option
         /// Membership in a list of values; `cast` names the database type the
         /// values are cast to (an enum type), when they are not sent as it.
         | AnyOf of Expr * values: Array * cast: string list option
@@ -479,6 +489,14 @@ module internal Sql =
                 r.Operand(a, false)
                 w $" {d.NullSafeComparison true} "
                 r.Operand(b, false)
+            | InListParam(a, list, cast) ->
+                let sent =
+                    match list with
+                    | :? Bound as b -> box (Bound((fun args -> d.ListValue(b.Resolve args :?> Array)), b.Label))
+                    | v -> d.ListValue(v :?> Array)
+
+                let name = r.Param sent
+                d.InList(w, (fun () -> r.Operand(a, true)), name, cast |> Option.bind (fun t -> castName d t true))
             | AnyOf(a, values, cast) ->
                 let typed (p: string) array =
                     match cast |> Option.bind (fun t -> castName d t array) with

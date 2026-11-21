@@ -23,6 +23,10 @@ Feature: Database-specific SQL comes from the provider
       When I explain a query for Orders, which own their Lines, with the test dialect
       Then the load command matches keys with an IN list of parameters
 
+    Scenario: A prepared query's list argument is one parameter, as the dialect sends a list
+      When I explain, with the test dialect, a prepared query of the Customers whose id is in a list argument
+      Then the membership is the dialect's, of one parameter, whatever the list's length
+
     Scenario: Null-safe comparisons are rendered by the dialect
       When I explain a query comparing an optional field with <> with the test dialect
       Then the comparison uses the dialect's null-safe operator

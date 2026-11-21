@@ -775,6 +775,15 @@ type internal PGliteDialect(maxKeys: int) =
 
         member _.EmptyArray = "'{}'"
 
+        member _.ListValue values = box values
+
+        member _.InList(w, operand, list, cast) =
+            operand ()
+
+            match cast with
+            | Some c -> w $" = ANY(CAST({list} AS {c}))"
+            | None -> w $" = ANY({list})"
+
         member _.UnboundedLimit = None
 
         member _.NullSafeComparison negated =
