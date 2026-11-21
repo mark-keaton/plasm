@@ -419,10 +419,102 @@ type ExactSteps(w: World) =
         let sql = ordersSql ()
         check (sql.Contains "\"o\".\"total\" COLLATE PLASM_DECIMAL" && sql.Contains "\"p\".\"amount\" COLLATE PLASM_DECIMAL" && sql.Contains "UNION") sql
 
-    [<StepDefinition("the running sum is SQLite's json_group_array over the window, summed by plasm_decimal_json_sum")>]
+    [<StepDefinition("the running sum is SQLite's plasm_decimal_sum over the window, a window function")>]
     member _.RunningSqlite() =
         let sql = ordersSql ()
-        check (sql.Contains "plasm_decimal_json_sum(json_group_array(\"o\".\"total\") OVER (ORDER BY \"o\".\"id\" ROWS UNBOUNDED PRECEDING))") sql
+        check (sql.Contains "plasm_decimal_sum(\"o\".\"total\") OVER (ORDER BY \"o\".\"id\" ROWS UNBOUNDED PRECEDING)" && not (sql.Contains "json_group_array")) sql
+
+    [<StepDefinition("I select through it each Order's sum and average of every total")>]
+    member _.WholeWindow() =
+        task {
+            let! r = repo().All(plasm { for o in tableOf<Order> do orderBy o.Id; select (Win.sum o.Total Win.whole, Win.avg o.Total Win.whole) })
+            w.Set("exactWhole", ok r)
+        }
+        :> Task
+
+    [<StepDefinition("each Order's are 21.60 and 7.20")>]
+    member _.WholeValues() =
+        let rows = w.Get<(decimal * decimal option) list> "exactWhole"
+        equal [ for _ in 1..3 -> 21.60m, Some 7.20m ] rows "each Order's sum and average"
+
+    /// Rows of `values` (SQL literals: a decimal's text, NULL), each with the
+    /// window `f` over it and the row before, read as text, through a command
+    /// of the repository's own.
+    member private _.OverFrame(f: string, values: string list) =
+        task {
+            let rows = values |> List.mapi (fun i v -> $"SELECT {i + 1} AS i, {v} AS v") |> String.concat " UNION ALL "
+
+            let read =
+                Tx.run (fun ctx ->
+                    task {
+                        use cmd = ctx.CreateCommand()
+                        cmd.CommandText <- $"SELECT {f}(v) OVER (ORDER BY i ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM ({rows}) ORDER BY i"
+                        use! r = cmd.ExecuteReaderAsync(ctx.CancellationToken)
+                        let out = ResizeArray<string>()
+
+                        while r.Read() do
+                            out.Add(if r.IsDBNull 0 then "NULL" else r.GetString 0)
+
+                        return Ok(List.ofSeq out)
+                    })
+
+            return! repo().Transact(read: Tx<string list, unit>)
+        }
+
+    [<StepDefinition("^I sum and average through it (.*) over each row and the one before$")>]
+    member this.SumAverage(list: string) =
+        task {
+            let values = list.Replace(" and ", ", ").Split(", ") |> List.ofArray |> List.map (fun v -> if v = "NULL" then v else $"'{v}'")
+            let! sums = this.OverFrame("plasm_decimal_sum", values)
+            let! averages = this.OverFrame("plasm_decimal_avg", values)
+            w.Set("frameSums", sums |> Result.map id |> Result.mapError string)
+            w.Set("frameAverages", averages |> Result.map id |> Result.mapError string)
+        }
+        :> Task
+
+    [<StepDefinition("^the (sums|averages) are (.*)$")>]
+    member _.FrameValues(which: string, list: string) =
+        let expected = list.Replace(" and ", ", ").Split(", ") |> List.ofArray
+        let got = w.Get<Result<string list, string>> (if which = "sums" then "frameSums" else "frameAverages")
+        // By value: the text a decimal is written in may differ in its scale.
+        let byValue (xs: string list) = xs |> List.map (fun x -> if x = "NULL" then None else Some(Decimal.Parse(x, Globalization.CultureInfo.InvariantCulture)))
+        match got with
+        | Ok xs -> equal (byValue expected) (byValue xs) which
+        | Error e -> failwith e
+
+    [<StepDefinition("^I sum through it 1.10 and \"not a decimal\" over each row and the one before$")>]
+    member this.SumUnreadable() =
+        task {
+            let! sums = this.OverFrame("plasm_decimal_sum", [ "'1.10'"; "'not a decimal'" ])
+            w.Set("frameFailure", sums)
+        }
+        :> Task
+
+    [<StepDefinition("the sum fails as a database failure, naming the value")>]
+    member _.FrameFails() =
+        match w.Get<Result<string list, TransactionError<unit>>> "frameFailure" with
+        | Error e ->
+            match e.Failure with
+            | TxFailure.Failed(DbError.Database f) -> check (f.Message.Contains "not a decimal") f.Message
+            | other -> failwithf "expected a database failure, got %A" other
+        | Ok xs -> failwithf "the sum read %A" xs
+
+    [<StepDefinition("the next query on the connection reads 1")>]
+    member _.NextQuery() =
+        task {
+            let one =
+                Tx.run (fun ctx ->
+                    task {
+                        use cmd = ctx.CreateCommand()
+                        cmd.CommandText <- "SELECT 1"
+                        let! v = cmd.ExecuteScalarAsync(ctx.CancellationToken)
+                        return Ok(Convert.ToInt64 v)
+                    })
+
+            let! r = repo().Transact(one: Tx<int64, unit>)
+            equal 1L (ok r) "the next query"
+        }
+        :> Task
 
     [<StepDefinition("the doubling is SQLite's plasm_decimal_multiply, compared by its plasm_decimal_compare")>]
     member _.DoubledSqlite() =

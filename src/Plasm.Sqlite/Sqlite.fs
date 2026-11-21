@@ -180,15 +180,12 @@ module internal SqliteExact =
                     a ()
                     w $" COLLATE {Decimals.collation})"
 
-            // A function registered through Microsoft.Data.Sqlite cannot be a
-            // window function: the window's values are gathered by SQLite's
-            // own json_group_array, which can, and added exactly by a scalar.
+            // The same functions, as the window functions they are (Windows).
             member _.WindowAggregate(w, name, a, over) =
-                w $"plasm_decimal_json_{name.ToLowerInvariant()}(json_group_array("
+                w $"plasm_decimal_{name.ToLowerInvariant()}("
                 a ()
                 w ")"
                 over ()
-                w ")"
 
             member _.Ordered(w, a) =
                 a ()
@@ -496,6 +493,9 @@ type SqliteProvider(connectionString: string, ?options: SqliteOptions) =
             invalidOp "this SQLite does not enforce foreign keys (PRAGMA foreign_keys stays off: built with SQLITE_OMIT_FOREIGN_KEY?); Plasm.Sqlite needs them"
 
         Decimals.register c
+        // plasm_decimal_sum and plasm_decimal_avg, window functions and so
+        // aggregates too.
+        Windows.register (c.Handle.DangerousGetHandle())
 
         match file with
         | Some _ when Volatile.Read(&journalSet) = 0 ->

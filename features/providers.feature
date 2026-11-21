@@ -238,8 +238,26 @@ Feature: Database-specific SQL comes from the provider
     @sqlite
     Scenario: A window's sum of decimals is the dialect's exact aggregate on SQLite
       When I select through it each Order's running sum of totals, by id
-      Then the running sum is SQLite's json_group_array over the window, summed by plasm_decimal_json_sum
+      Then the running sum is SQLite's plasm_decimal_sum over the window, a window function
       And the running sums are 2.00, 11.50 and 21.60
+
+    Scenario: A window's whole sum and average of decimals are exact
+      When I select through it each Order's sum and average of every total
+      Then each Order's are 21.60 and 7.20
+
+    # SQLite's window function is called by frames Plasm's queries do not write
+    # too: one that rows leave, and one that empties.
+    @sqlite
+    Scenario: SQLite's exact window sum and average follow a frame that rows leave and that empties
+      When I sum and average through it 1.10, NULL, 2.205, NULL and NULL over each row and the one before
+      Then the sums are 1.10, 1.10, 2.205, 2.205 and NULL
+      And the averages are 1.10, 1.10, 2.205, 2.205 and NULL
+
+    @sqlite
+    Scenario: A value SQLite's exact window sum cannot read fails its query, and the connection goes on
+      When I sum through it 1.10 and "not a decimal" over each row and the one before
+      Then the sum fails as a database failure, naming the value
+      And the next query on the connection reads 1
 
     @postgres
     Scenario: A model keyed by a decimal is refused when the repository is made, by a dialect with exact hooks

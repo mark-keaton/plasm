@@ -64,24 +64,11 @@ let divide (dividend: decimal) (divisor: decimal) =
 let private binary (op: decimal -> decimal -> string) =
     fun (a: string) (b: string) -> if isNull a || isNull b then null else op (parse a) (parse b)
 
-/// The decimals of a JSON array of decimals as text or numbers, NULLs left out.
-let private ofJson (values: string) =
-    use doc = System.Text.Json.JsonDocument.Parse(values)
-
-    [ for v in doc.RootElement.EnumerateArray() do
-          match v.ValueKind with
-          | System.Text.Json.JsonValueKind.String -> yield parse (v.GetString())
-          | System.Text.Json.JsonValueKind.Number -> yield parse (v.GetRawText())
-          | _ -> () ]
-
-let private sum =
-    fun (acc: decimal option) (v: string) -> if isNull v then acc else Some(defaultArg acc 0m + parse v)
-
 /// Registers the collation, `plasm_decimal_compare(a, b)` (-1, 0 or 1, NULL
 /// when either is), `plasm_decimal_same(a, b)` (equal by value, NULLs
 /// equal), `plasm_decimal_add`, `_subtract`, `_multiply`, `_divide` and
-/// `_remainder` (NULL when either operand is), `plasm_decimal_sum(x)` (NULL
-/// over no rows, as SUM) and `plasm_decimal_avg(x)`.
+/// `_remainder` (NULL when either operand is); `plasm_decimal_sum(x)` and
+/// `plasm_decimal_avg(x)` are Windows.register's.
 let register (c: SqliteConnection) =
     c.CreateCollation(collation, fun (a: string) (b: string) -> compare (parse a) (parse b))
 
@@ -102,18 +89,3 @@ let register (c: SqliteConnection) =
     c.CreateFunction("plasm_decimal_multiply", binary (fun a b -> text (a * b)))
     c.CreateFunction("plasm_decimal_divide", binary divide)
     c.CreateFunction("plasm_decimal_remainder", binary (fun a b -> text (a % b)))
-
-    // A window's values, gathered as a JSON array (json_group_array over the
-    // window), summed or averaged exactly: NULLs are left out, NULL when none
-    // is left, as SUM and AVG over a window.
-    c.CreateFunction("plasm_decimal_json_sum", fun (values: string) -> match ofJson values with [] -> null | xs -> text (List.sum xs))
-    c.CreateFunction("plasm_decimal_json_avg", fun (values: string) -> match ofJson values with [] -> null | xs -> divide (List.sum xs) (decimal xs.Length))
-
-    c.CreateAggregate("plasm_decimal_sum", (None: decimal option), sum, (fun acc -> acc |> Option.map text |> Option.toObj))
-
-    c.CreateAggregate(
-        "plasm_decimal_avg",
-        (0m, 0),
-        (fun ((total: decimal), (n: int)) (v: string) -> if isNull v then (total, n) else (total + parse v, n + 1)),
-        (fun (total, n) -> if n = 0 then null else divide total (decimal n))
-    )

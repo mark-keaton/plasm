@@ -8,3 +8,5 @@ features/utc-only.feature	A time column holds one form, held to it by its check,
 features/utc-only.feature	A time column holding another form is a read error naming the column, on SQLite	SQLite's TEXT can hold what another tool wrote past the check; PostgreSQL's timestamptz holds only instants
 features/array-columns.feature	A double that is not a number cannot be stored in its own column on SQLite	Microsoft.Data.Sqlite cannot store NaN; PostgreSQL's float8 holds it
 features/array-columns.feature	A query among doubles one of which is not a number is refused on SQLite	SQLite cannot compare with NaN, as it cannot store one; PostgreSQL's float8 holds it
+features/providers.feature	SQLite's exact window sum and average follow a frame that rows leave and that empties	Plasm.Sqlite's own window functions called directly, by a frame Plasm's queries do not write; PostgreSQL's SUM and AVG over numeric are its own
+features/providers.feature	A value SQLite's exact window sum cannot read fails its query, and the connection goes on	SQLite's decimals are text another tool may have written; PostgreSQL's numeric holds only numbers

@@ -103,7 +103,7 @@ type Amount = { Id: AmountId; Value: decimal; Whole: int64 }
 
 /// The owed measurements (docs/status.md), timed, not compared: ordering and
 /// summing n decimals stored as text against n integers, and a running sum
-/// of decimals over a window of n rows (gathered as a JSON array per row).
+/// of decimals over a window of n rows (Plasm.Sqlite's window function).
 let measure (file: string) =
     let provider = Sqlite.connect ("Data Source=" + file)
     let repo = Repo.Start(Model.buildOrFail [] [ typeof<Amount> ], provider, typeof<Amount>.Assembly, RepoOptions.Unchecked).Result
@@ -130,10 +130,7 @@ let measure (file: string) =
         Console.WriteLine(
             string n + " rows: order decimals " + ms (all ordered) + " ms, integers " + ms (all orderedWhole)
             + " ms; sum decimals " + ms (all summed) + " ms, integers " + ms (all summedWhole)
-            + " ms; running sum of decimals "
-            // Quadratic: each row's sum adds up the rows before it. Over
-            // 100,000 rows one run is minutes, so it is timed to 30,000.
-            + (if n <= 30000 then ms (all running) + " ms" else "not timed (quadratic)"))
+            + " ms; running sum of decimals " + ms (all running) + " ms")
     conn.Dispose()
     0
 
@@ -252,6 +249,62 @@ let main argv =
             match repo.Transact(counted: Tx<string, unit>).Result with
             | Ok v -> "its own command sums " + v
             | Error e -> "failed: " + e.Display)
+
+        // Plasm.Sqlite's window functions (Windows.fs), through our own
+        // P/Invoke and callbacks, natively as under the runtime.
+        let overFrame (sql: string) =
+            Tx.run (fun ctx ->
+                task {
+                    use cmd = ctx.CreateCommand()
+                    cmd.CommandText <- sql
+                    use! r = cmd.ExecuteReaderAsync(ctx.CancellationToken)
+                    let read = Collections.Generic.List<string>()
+
+                    while r.Read() do
+                        read.Add(if r.IsDBNull 0 then "NULL" else r.GetString 0)
+
+                    return Ok(String.Join(", ", read))
+                })
+
+        let frame (f: string) (values: string) =
+            $"select {f}(v) over (order by i rows between 1 preceding and current row) from (select column1 as i, column2 as v from (values {values})) order by i"
+
+        step "a window sum and average over a frame rows leave and that empties" (fun () ->
+            let values = "(1, '1.10'), (2, null), (3, '2.205'), (4, null), (5, null)"
+
+            match repo.Transact(overFrame (frame "plasm_decimal_sum" values): Tx<string, unit>).Result, repo.Transact(overFrame (frame "plasm_decimal_avg" values): Tx<string, unit>).Result with
+            | Ok sums, Ok averages -> $"sums {sums}; averages {averages}"
+            | Error e, _
+            | _, Error e -> "failed: " + e.Display)
+
+        step "a value the window sum cannot read is its query's error, and the connection goes on" (fun () ->
+            let failed =
+                match repo.Transact(overFrame (frame "plasm_decimal_sum" "(1, '1.10'), (2, 'not a decimal')"): Tx<string, unit>).Result with
+                | Ok v -> "read " + v
+                | Error e ->
+                    match e.Failure with
+                    | TxFailure.Failed(DbError.Database f) -> "Database " + string f.Kind + ", naming the value: " + string (f.Message.Contains "not a decimal")
+                    | other -> "another failure: " + string other
+
+            match repo.Transact(overFrame "select '1'": Tx<string, unit>).Result with
+            | Ok next -> failed + "; next query reads " + next
+            | Error e -> failed + "; next query failed: " + e.Display)
+
+        step "no window total left after a failed and a cancelled window" (fun () ->
+            let conn = (provider :> IProvider).OpenConnection(CancellationToken.None).Result
+            use _ = conn
+            use cts = new CancellationTokenSource(300)
+            use cmd = conn.CreateCommand()
+            cmd.CommandText <- "select max(s) from (select plasm_decimal_sum(printf('%d.5', i)) over (order by i) as s from (with recursive n(i) as (select 1 union all select i + 1 from n where i < 100000000) select i from n))"
+
+            let ended =
+                try
+                    cmd.ExecuteScalarAsync(cts.Token).Result |> ignore
+                    "ran to its end"
+                with _ ->
+                    "cancelled"
+
+            $"{ended}; window totals left: {Plasm.Sqlite.Windows.live ()}")
 
         step "a running statement cancelled by its token" (fun () ->
             let conn = (provider :> IProvider).OpenConnection(CancellationToken.None).Result
