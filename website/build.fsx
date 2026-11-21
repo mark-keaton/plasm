@@ -219,7 +219,7 @@ let nav (prefix: string) (current: string) =
     $"""<header class="nav">
   <div class="wrap">
     <a class="brand" href="{prefix}index.html"><img src="{prefix}logo.svg" width="28" height="28" alt=""><span>Plasm</span></a>
-    {if current = "Docs" then search else "<span class=\"pill\">experimental · PostgreSQL · native AOT</span>"}
+    {if current = "Docs" then search else "<span class=\"pill\">version 0.1 · PostgreSQL · native AOT</span>"}
     <span class="spacer"></span>
     <nav class="links" aria-label="Main">
       {link "Docs" (prefix + firstDoc)}
@@ -466,7 +466,7 @@ let llms () =
     let summary =
         "Plasm is persistence for an F# domain over PostgreSQL, made to be embedded in a C# application: "
         + "the domain, its queries and its transactions are F#, and a C# host calls one F# facade. "
-        + "It is native AOT first, and Hot Chocolate friendly on the runtime. Experimental."
+        + "It is native AOT first, and Hot Chocolate friendly on the runtime. Plasm is new: this is version 0.1, and its API may change before 1.0."
 
     let index = StringBuilder()
     index.Append($"# Plasm\n\n> {summary}\n\n") |> ignore

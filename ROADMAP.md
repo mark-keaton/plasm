@@ -3,9 +3,9 @@
 What Plasm does today, what is being built, and what it will not do. The
 repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
-## Now: going public
+## Now: after 0.1.0
 
-- Plasm and Plasm.Postgres on NuGet: a pre-release is published; 0.1.0 is not
+- Koans lessons for what the course does not teach yet: composite keys and array columns
 
 ## Next: in the library
 
@@ -20,12 +20,13 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
 ## Shipped
 
+- Plasm, Plasm.Postgres and Plasm.HotChocolate on NuGet: 0.1.0, published from a GitHub release
 - Stored records by convention, owned and linked lists, unions with fields, array columns, composite keys
 - Typed queries: joins, grouping, exists, set operations, window functions, filtered aggregates, prepared queries, hand-written SQL
 - Recursive queries: a tree read in one statement, with each row's depth; a cycle in the data ends
 - Streaming reads: a query's rows as they are read, for records without lists and for projections; records that own or link lists are refused, not batched
 - Typed transactions with optimistic concurrency: a record read as the caller saw it, a stale copy refused at the read; row locks, and a step that may fail under a savepoint; a list's writes sent together
-- A `dotnet new` template, `Plasm.Templates`: `plasm-api` makes an F# domain, a C# API and tests; a pre-release, like the packages
+- A `dotnet new` template, `Plasm.Templates`: `plasm-api` makes an F# domain, a C# API and tests
 - Kanban's C# host and Lambda on the FSharp.Core a new project gets, 11.0.101
 - Start-up checks of every query and of the schema, every statement described by the database before any runs
 - Each command as an OpenTelemetry activity

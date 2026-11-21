@@ -6,8 +6,8 @@ stays C#. It stores the domain's own immutable records, reads them with
 queries the compiler checks, and writes them in typed transactions. It
 compiles ahead of time (native AOT), and every commit is checked natively.
 
-It is experimental and not production-ready. [Status](../status.md) says what
-is verified and what is missing.
+Plasm is new: this is version 0.1, and its API may change before 1.0.
+[Status](../status.md) says what is verified and what is missing.
 
 A new application starts from the template: an F# library on the packages,
 a C# minimal API that calls it through one type, and C# tests in a sandbox.
@@ -18,11 +18,10 @@ dotnet new install Plasm.Templates
 dotnet new plasm-api -n MyApp
 ```
 
-The packages are on NuGet as a pre-release, for an application that exists
-already:
+The packages are on NuGet, for an application that exists already:
 
 ```sh
-dotnet add package Plasm.Postgres --prerelease
+dotnet add package Plasm.Postgres
 ```
 
 The code on this page is from

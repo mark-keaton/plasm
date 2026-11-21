@@ -7,7 +7,7 @@ transaction. It is native AOT first: every commit is compiled ahead of time
 and checked natively. It also serves a long-running API through Hot Chocolate,
 on the runtime. Its design comes from [Ecto](https://github.com/elixir-ecto/ecto).
 
-> **Status: experimental, not production-ready.** PostgreSQL only.
+> **Status:** Plasm is new: this is version 0.1, and its API may change before 1.0. PostgreSQL only.
 > [`docs/status.md`](docs/status.md) says what is verified and what is missing.
 
 Site, docs and the koans in the browser: <https://mark-keaton.github.io/plasm/>
@@ -209,15 +209,13 @@ dotnet new plasm-api -n MyApp
 ```
 
 `Plasm.Postgres`, with `Plasm` and `Plasm.Annotations` under it, and
-`Plasm.HotChocolate` are on NuGet as a pre-release, for an application that
-exists already:
+`Plasm.HotChocolate` are on NuGet, for an application that exists already:
 
 ```sh
-dotnet add package Plasm.Postgres --prerelease
+dotnet add package Plasm.Postgres
 ```
 
-It is a pre-release: experimental, and not a stable release. A GitHub release
-tagged `vX.Y.Z` publishes them
+A GitHub release tagged `vX.Y.Z` publishes them
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
 ## Licence
