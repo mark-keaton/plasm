@@ -34,6 +34,7 @@ docker run --rm -v "$work:/work" -v plasm-lambda-sdk-arm64:/opt/dotnet -v plasm-
   echo "publish: $(ldd --version | head -1), SDK $(dotnet --version)"
   cd /work/repo/examples/Kanban/src/Lambda
   dotnet publish -c Release -r linux-arm64 -o /work/out -v m > /work/publish.log 2>&1 || { grep -E " error " /work/publish.log | sort -u | head -20; tail -5 /work/publish.log; exit 1; }
+  echo "publish: FSharp.Core $(grep -o "\"FSharp.Core/[^\"]*\"" obj/project.assets.json | head -1 | tr -d "\"" | cut -d/ -f2)"
   echo "publish: $(grep "warning IL" /work/publish.log | sort -u | wc -l) IL warnings, $(grep "warning IL" /work/publish.log | sort -u | grep -c Plasm || true) naming Plasm"
   echo "publish: bootstrap $(stat -c %s /work/out/bootstrap) bytes, newest glibc symbol $(objdump -T /work/out/bootstrap | grep -o "GLIBC_[0-9.]*" | sort -V | tail -1 | sed s/GLIBC_//)"
   echo "publish: Amazon Linux 2023 has glibc $(ldd --version | head -1 | grep -o "[0-9.]*$")"

@@ -21,6 +21,9 @@ Feature: Kanban as a Lambda function in C#
       Then the publish has no IL warning naming Plasm
       And bootstrap needs no glibc newer than Amazon Linux 2023's
 
+    Scenario: The function is built on the FSharp.Core a new project gets
+      Then the publish resolved FSharp.Core at the version Plasm's applications run on
+
     Scenario: KanbanData is opened once, in the function's init
       When I invoke it with {"call":"board","slug":"alpha"}
       Then the function's log says KanbanData was opened once, before its first event

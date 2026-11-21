@@ -22,6 +22,14 @@
   <ItemGroup>
     <PackageReference Include="Amazon.Lambda.RuntimeSupport" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The FSharp.Core a new project gets, not the 10.1 the F# server is held
+         to: Fable.Remoting holds it there, and this project does not reach
+         Fable.Remoting (Directory.Packages.props). Not private: a private
+         package is left out of the publish, and the native compiler would
+         not find FSharp.Core. -->
+    <PackageReference Include="FSharp.Core" VersionOverride="$(ApplicationFSharpCoreVersion)" />
+  </ItemGroup>
   <!-- Plasm's targets, from this repository rather than the package. -->
   <Import Project="../../../../src/Plasm/build/Plasm.Repository.targets" />
 </Project>

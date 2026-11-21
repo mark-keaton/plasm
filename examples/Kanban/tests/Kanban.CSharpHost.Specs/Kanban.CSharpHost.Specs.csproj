@@ -16,6 +16,18 @@
     <Compile Include="../Hosting/Hosting.cs" Link="Hosting.cs" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The host is run from its own output, on the packages its own build
+         resolved, not on this project's (which has the F# server's). -->
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>HostOutput</_Parameter1>
+      <_Parameter2>$(MSBuildThisFileDirectory)../../src/Host.CSharp/bin/$(Configuration)/$(TargetFramework)/</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>ApplicationFSharpCore</_Parameter1>
+      <_Parameter2>$(ApplicationFSharpCoreVersion)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
@@ -23,8 +35,10 @@
     <PackageReference Include="Testcontainers.PostgreSql" />
   </ItemGroup>
   <ItemGroup>
-    <!-- The host is run, not called: its output is located by its assembly. -->
-    <ProjectReference Include="../../src/Host.CSharp/Kanban.Host.CSharp.csproj" />
+    <!-- The host is run, not called, from its own output: it is built first,
+         but neither its assembly nor its packages come here. This project has
+         the F# server's FSharp.Core (Fable.Remoting's), the host its own. -->
+    <ProjectReference Include="../../src/Host.CSharp/Kanban.Host.CSharp.csproj" ReferenceOutputAssembly="false" ExcludeAssets="all" />
     <!-- Only for the F# server's migrations (Kanban.Server.Database.migrate); its
          ASP.NET Core packages come from the shared framework, as for Kanban.Specs. -->
     <ProjectReference Include="../../src/Server/Server.fsproj" />

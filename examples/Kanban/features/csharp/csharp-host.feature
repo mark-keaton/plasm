@@ -93,3 +93,10 @@ Feature: Kanban served by a C# host
         | /boards/alpha/cards | {}                                     |
         | /boards             | {"slug":"beta","name":null,"wipLimit":2} |
         | /boards             | {"slug":"beta","wipLimit":2}           |
+
+  Rule: The host runs on the FSharp.Core a new project gets
+
+    # Fable.Remoting holds the F# server below FSharp.Core 10.2; the C# host
+    # does not reach it, so it resolves what a new project gets.
+    Scenario: The host's build resolves the FSharp.Core a new project gets
+      Then the host's build resolved FSharp.Core at the version Plasm's applications run on

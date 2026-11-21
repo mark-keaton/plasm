@@ -272,6 +272,10 @@ public sealed class Steps(IReqnrollOutputHelper output)
 
     // -- Then -----------------------------------------------------------------
 
+    [Then("the publish resolved FSharp.Core at the version Plasm's applications run on")]
+    public void FunctionFSharpCore() =>
+        Equal(Built.Metadata("ApplicationFSharpCore"), published.Line(@"^publish: FSharp.Core (\S+)$"), "the FSharp.Core the function's publish resolved");
+
     [Then("the publish has no IL warning naming Plasm")]
     public void NoWarning()
     {

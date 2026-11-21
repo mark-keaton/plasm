@@ -74,7 +74,7 @@ public sealed class Steps : IAsyncDisposable
     public async Task HostServes()
     {
         connectionString = await Databases.Migrated();
-        host = await HostProcess.Start(typeof(Program).Assembly.Location, "KANBAN_CSHARP_HOST", connectionString, "/boards");
+        host = await HostProcess.Start(Path.Combine(Built.Metadata("HostOutput"), "Kanban.Host.CSharp.dll"), "KANBAN_CSHARP_HOST", connectionString, "/boards");
         http = new HttpClient { BaseAddress = host.Address };
     }
 
@@ -138,6 +138,12 @@ public sealed class Steps : IAsyncDisposable
 
     /// KanbanData's answers to a bad request say which field: {"problems": ...}
     /// or {"what": ...}. A body refused before the facade is neither.
+    [Then("the host's build resolved FSharp.Core at the version Plasm's applications run on")]
+    public void HostFSharpCore() =>
+        Equal(Built.Metadata("ApplicationFSharpCore"),
+            Built.FSharpCoreIn(Path.Combine(Built.Metadata("HostOutput"), "Kanban.Host.CSharp.deps.json")),
+            "the FSharp.Core the host's build resolved");
+
     [Then("the answer is not one of KanbanData's")]
     public void NotTheFacades()
     {

@@ -14,6 +14,20 @@ namespace Kanban.Hosting;
 /// run left is dropped by the next run on the same machine, whose first
 /// database finds that process gone; a database another machine made is
 /// never dropped here, and a process id since reused only delays a drop.
+/// What the test project's build recorded (AssemblyMetadata in its project
+/// file): where the host's own output is, and the FSharp.Core every
+/// application here runs on.
+public static class Built
+{
+    public static string Metadata(string key) =>
+        typeof(Built).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), false)
+            .Cast<System.Reflection.AssemblyMetadataAttribute>().Single(a => a.Key == key).Value!;
+
+    /// Every FSharp.Core version a deps.json names (its libraries).
+    public static string FSharpCoreIn(string depsJson) =>
+        string.Join(", ", Regex.Matches(File.ReadAllText(depsJson), "\"FSharp\\.Core/([^\"]+)\"").Select(m => m.Groups[1].Value).Distinct());
+}
+
 public static class Databases
 {
     /// This machine, as a database name may hold it: the first 8 hex digits

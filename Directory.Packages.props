@@ -1,10 +1,16 @@
 <Project>
+  <PropertyGroup>
+    <!-- The FSharp.Core a new project gets from the .NET 11 SDK; what every
+         application here runs on, and what Kanban's C# host and Lambda are
+         checked to resolve (examples/Kanban). -->
+    <ApplicationFSharpCoreVersion>11.0.101</ApplicationFSharpCoreVersion>
+  </PropertyGroup>
   <ItemGroup>
     <!-- What everything that runs Plasm as an application runs on: the .NET 11
          SDK's FSharp.Core, as a new project gets it. What the packages are built
          against is the floor, $(PlasmFSharpCoreFloor) in Directory.Build.props
          (docs/status.md). -->
-    <PackageVersion Include="FSharp.Core" Version="11.0.101" />
+    <PackageVersion Include="FSharp.Core" Version="$(ApplicationFSharpCoreVersion)" />
     <PackageVersion Include="Npgsql" Version="10.0.3" />
     <!-- Plasm.HotChocolate is built against this version (docs/hotchocolate.md). -->
     <PackageVersion Include="HotChocolate.Data" Version="16.7.6" />
