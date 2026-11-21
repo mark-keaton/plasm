@@ -60,6 +60,22 @@ module internal Lists =
 
         box (Encoding.UTF8.GetString(stream.ToArray()))
 
+    /// Why SQLite cannot hold a value (ISqlDialect.Refusal): a double that is
+    /// not a number, which Microsoft.Data.Sqlite cannot store; in a list, which
+    /// is JSON, infinity neither.
+    let refusal (v: obj) : string option =
+        let element (x: obj) =
+            match x with
+            | :? float as d when not (Double.IsFinite d) -> Some $"SQLite stores a list as JSON, which has no NaN or infinity: {d} cannot be one of its elements"
+            | :? float32 as d when not (Single.IsFinite d) -> Some $"SQLite stores a list as JSON, which has no NaN or infinity: {d} cannot be one of its elements"
+            | _ -> None
+
+        match v with
+        | :? float as d when Double.IsNaN d -> Some "SQLite holds no NaN: a double that is not a number cannot be stored or compared"
+        | :? float32 as d when Single.IsNaN d -> Some "SQLite holds no NaN: a double that is not a number cannot be stored or compared"
+        | :? Array as a when not (v :? byte[]) -> a |> Seq.cast<obj> |> Seq.tryPick element
+        | _ -> None
+
     /// A list column's JSON text as an array of `element`s, each read as its
     /// scalar column is. What is not a JSON array of such values (a file
     /// written by another tool) raises InvalidCastException naming the column

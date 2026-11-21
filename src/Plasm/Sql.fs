@@ -171,6 +171,10 @@ type ISqlDialect =
     abstract TextCast: string option
     /// The value a list is sent as, as one parameter (PostgreSQL: the array).
     abstract ListValue: Array -> obj
+    /// Why the database cannot hold a value Plasm would send (a column's, a
+    /// list's), asked before anything is sent: a write's refusal names its
+    /// field, a query's is a translation failure. None for one it holds.
+    abstract Refusal: value: obj -> string option
     /// Membership of `operand` in the list sent as the parameter `list`,
     /// cast as `cast` says when its elements have a database type of their
     /// own: `operand = ANY(list)` on PostgreSQL.
@@ -222,6 +226,9 @@ type ISqlDialect =
     abstract Begin: IsolationLevel -> string
 
 module internal Sql =
+    /// A query that cannot be translated or rendered, as DbError.Translation.
+    exception TranslationFailure of TranslationError
+
 
     /// A parameter whose value is bound at execution from a prepared query's
     /// arguments. Rendered like any parameter; resolved just before sending.
@@ -549,7 +556,19 @@ module internal Sql =
             | Some j -> j
             | None -> failwith $"{d.Name} has no JSON documents"
 
-        member _.Param(v: obj) =
+        /// `v`, unless the database cannot hold it (ISqlDialect.Refusal).
+        member _.Held(v: obj) =
+            match d.Refusal v with
+            | Some why -> raise (TranslationFailure(TranslationError.InvalidQuery why))
+            | None -> v
+
+        member r.Param(v: obj) =
+            // A prepared argument's is asked when it is bound (Execution), so
+            // it stays the one object it is wherever it is written.
+            let v =
+                match v with
+                | :? Bound -> v
+                | v -> r.Held v
             // A decimal is sent as the dialect's exact hooks send it.
             let v =
                 match d.Exact, v with
@@ -591,7 +610,7 @@ module internal Sql =
                 w "."
                 w (q n)
             | Param v -> w (r.Param v)
-            | ArrayParam v -> w (r.Param(d.ListValue v))
+            | ArrayParam v -> w (r.Param(d.ListValue(r.Held v :?> Array)))
             | Literal l -> w l
             | EmptyArray -> w d.EmptyArray
             | ListHas(element, column) -> d.ListHas(w, (fun () -> r.Expr element), (fun () -> r.Expr column))
@@ -664,7 +683,7 @@ module internal Sql =
                 r.Operand(b, false)
             | RowsInLists(columns, lists, casts) ->
                 let sent =
-                    List.map2 (fun (l: Array) (c: string list option) -> r.Param(d.ListValue l), c |> Option.bind (fun t -> castName d t true)) lists casts
+                    List.map2 (fun (l: Array) (c: string list option) -> r.Param(d.ListValue(r.Held l :?> Array)), c |> Option.bind (fun t -> castName d t true)) lists casts
 
                 w "("
                 d.RowsIn(w, columns |> List.map (fun c () -> r.Expr c), sent)
@@ -672,8 +691,8 @@ module internal Sql =
             | InListParam(a, list, cast) ->
                 let sent =
                     match list with
-                    | :? Bound as b -> box (Bound((fun args -> d.ListValue(b.Resolve args :?> Array)), b.Label))
-                    | v -> d.ListValue(v :?> Array)
+                    | :? Bound as b -> box (Bound((fun args -> d.ListValue(r.Held(b.Resolve args) :?> Array)), b.Label))
+                    | v -> d.ListValue(r.Held v :?> Array)
 
                 let name = r.Param sent
                 d.InList(w, (fun () -> r.Operand(a, true)), name, cast |> Option.bind (fun t -> castName d t true))

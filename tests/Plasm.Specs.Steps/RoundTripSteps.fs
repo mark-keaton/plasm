@@ -72,6 +72,7 @@ module RoundTripDomain =
                 member _.ListHas(w, element, column) = inner.Dialect.ListHas(w, element, column)
                 member _.ListIsEmpty(w, column) = inner.Dialect.ListIsEmpty(w, column)
                 member _.ListValue values = inner.Dialect.ListValue values
+                member _.Refusal v = inner.Dialect.Refusal v
                 member _.NotInList(w, operand, list, cast) = inner.Dialect.NotInList(w, operand, list, cast)
                 member _.ListRows(w, lists, alias) = inner.Dialect.ListRows(w, lists, alias)
                 member _.RowsIn(w, columns, lists) = inner.Dialect.RowsIn(w, columns, lists)

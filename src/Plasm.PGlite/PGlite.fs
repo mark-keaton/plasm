@@ -842,6 +842,7 @@ type internal PGliteDialect(maxKeys: int) =
             w ") = 0"
 
         member _.ListValue values = box values
+        member _.Refusal _ = None
 
         member _.NotInList(w, operand, list, cast) =
             operand ()

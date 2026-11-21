@@ -253,6 +253,7 @@ type internal SqliteDialect(options: SqliteOptions) =
             column ()
             w ") = 0"
         member _.ListValue values = Lists.json values
+        member _.Refusal v = Lists.refusal v
 
         member _.InList(w, operand, list, _) =
             operand ()

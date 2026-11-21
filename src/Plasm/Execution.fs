@@ -92,7 +92,8 @@ let readersFor (schema: SchemaInfo) =
 let private describe (v: obj) =
     if isNull v then "NULL" else $"{v} ({v.GetType().Name})"
 
-/// Resolves parameters bound from prepared-query arguments.
+/// Resolves parameters bound from prepared-query arguments, each refused as a
+/// query when the database cannot hold it (ISqlDialect.Refusal).
 let private bindArgs (s: Session) (cmd: Sql.Command) : Sql.Command =
     if cmd.Parameters |> List.exists (fun p -> p :? Sql.Bound) then
         { cmd with
@@ -100,7 +101,12 @@ let private bindArgs (s: Session) (cmd: Sql.Command) : Sql.Command =
                 cmd.Parameters
                 |> List.map (fun p ->
                     match p with
-                    | :? Sql.Bound as b -> b.Resolve s.Args
+                    | :? Sql.Bound as b ->
+                        let v = b.Resolve s.Args
+
+                        match s.Provider.Dialect.Refusal v with
+                        | Some why -> raise (Translate.TranslationFailure(TranslationError.InvalidQuery why))
+                        | None -> v
                     | p -> p) }
     else
         cmd

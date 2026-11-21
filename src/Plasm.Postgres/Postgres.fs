@@ -181,6 +181,7 @@ type internal PostgresDialect(options: PostgresOptions) =
             w ") = 0"
 
         member _.ListValue values = box values
+        member _.Refusal _ = None
 
         member _.NotInList(w, operand, list, cast) =
             operand ()

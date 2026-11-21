@@ -24,7 +24,9 @@ type Sample =
       Flags: bool list
       Bigs: int64 list
       Doubles: float list
-      Amounts: decimal list }
+      Amounts: decimal list
+      /// A double of its own column, beside the lists.
+      Ratio: float }
 
 module Samples =
     let model = Model.buildOrFail [] [ typeof<Sample> ]
@@ -48,7 +50,8 @@ module Samples =
           Flags = [ true; false ]
           Bigs = [ big; Int64.MaxValue; Int64.MinValue ]
           Doubles = [ 0.1; 1e308; -2.5e-300 ]
-          Amounts = [ 2.50m; 0.000001m; -79228162514264337593543950335m ] }
+          Amounts = [ 2.50m; 0.000001m; -79228162514264337593543950335m ]
+          Ratio = 0.5 }
 
 [<Binding>]
 type ArrayValueSteps(w: World) =
@@ -109,6 +112,59 @@ type ArrayValueSteps(w: World) =
         }
         :> Task
 
+    [<StepDefinition("a sample whose ratio is NaN is written")>]
+    member _.NaNRatio() =
+        task {
+            let repo = w.Db.RepoWith(model = Samples.model)
+            let! _ = w.Db.Exec("drop table if exists list_samples; " + repo.Ddl())
+
+            let! outcome =
+                task {
+                    try
+                        let! r = repo.Transact(Tx.insert { Samples.sample with Ratio = nan }: Tx<_, unit>)
+
+                        match r with
+                        | Ok _ ->
+                            let! back = repo.All(Query.from (tableOf<Sample>))
+                            return $"stored, read back as %A{back |> Result.map (List.map _.Ratio)}"
+                        | Error e ->
+                            return
+                                match e.Failure with
+                                | TxFailure.InvalidChanges(entity, errors) -> "InvalidChanges " + String.concat "; " [ for er in errors -> $"{entity}.{er.Field}: {er.Message}" ]
+                                | _ -> e.Display
+                    with e ->
+                        return "THROWN " + e.GetBaseException().GetType().Name + ": " + e.GetBaseException().Message
+                }
+
+            w.Set("nanOutcome", outcome)
+        }
+        :> Task
+
+    [<StepDefinition("I read the samples whose ratio is among 1.5 and NaN")>]
+    member _.AmongNaN() =
+        task {
+            let repo = w.Db.RepoWith(model = Samples.model)
+            let! _ = w.Db.Exec("drop table if exists list_samples; " + repo.Ddl())
+            let ratios = [ 1.5; nan ]
+
+            let! outcome =
+                task {
+                    try
+                        let! r = repo.All(plasm { for s in tableOf<Sample> do where (List.contains s.Ratio ratios) })
+                        return (match r with Ok xs -> $"read {xs.Length}" | Error(DbError.Translation t) -> "Translation " + string t | Error e -> string e)
+                    with e ->
+                        return "THROWN " + e.GetBaseException().GetType().Name + ": " + e.GetBaseException().Message
+                }
+
+            w.Set("nanRead", outcome)
+        }
+        :> Task
+
+    [<StepDefinition("^the read is refused as a query that cannot be translated, saying \"(.*)\"$")>]
+    member _.NaNReadRefused(text: string) =
+        let outcome = w.Get<string> "nanRead"
+        check (outcome.StartsWith "Translation" && outcome.Contains text) outcome
+
     [<StepDefinition("a sample with NaN among its doubles is written")>]
     member _.NaN() =
         task {
@@ -119,19 +175,26 @@ type ArrayValueSteps(w: World) =
                 task {
                     try
                         let! r = repo.Transact(Tx.insert { Samples.sample with Doubles = [ nan ] }: Tx<_, unit>)
-                        return (match r with Ok _ -> "stored" | Error e -> e.Display)
+
+                        return
+                            match r with
+                            | Ok _ -> "stored"
+                            | Error e ->
+                                match e.Failure with
+                                | TxFailure.InvalidChanges(entity, errors) -> "InvalidChanges " + String.concat "; " [ for er in errors -> $"{entity}.{er.Field}: {er.Message}" ]
+                                | _ -> e.Display
                     with e ->
-                        return e.GetBaseException().Message
+                        return "THROWN " + e.GetBaseException().GetType().Name + ": " + e.GetBaseException().Message
                 }
 
             w.Set("nanOutcome", outcome)
         }
         :> Task
 
-    [<StepDefinition("^the write is refused, saying \"(.*)\"$")>]
-    member _.NaNRefused(text: string) =
+    [<StepDefinition("^the write of the sample is refused as an invalid change of (\\w+\\.\\w+), saying \"(.*)\"$")>]
+    member _.NaNRefused(field: string, text: string) =
         let outcome = w.Get<string> "nanOutcome"
-        check (outcome.Contains text) outcome
+        check (outcome.StartsWith "InvalidChanges" && outcome.Contains $"{field}: " && outcome.Contains text) outcome
 
     [<StepDefinition("^the sample's (\\w+) column is set behind Plasm's back to (.*)$")>]
     member _.Behind(column: string, text: string) =

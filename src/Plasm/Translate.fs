@@ -14,7 +14,8 @@ open Microsoft.FSharp.Quotations.Patterns
 open Microsoft.FSharp.Quotations.DerivedPatterns
 open Microsoft.FSharp.Reflection
 
-exception TranslationFailure of TranslationError
+/// A query that cannot be translated (or rendered: Sql.TranslationFailure).
+exception TranslationFailure = Sql.TranslationFailure
 
 /// A source in the query's variable space. `Optional` marks a left-joined
 /// source, which F# code sees as `'T option`.

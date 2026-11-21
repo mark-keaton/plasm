@@ -145,7 +145,17 @@ Feature: A list of scalars is stored as one array column
     @sqlite
     Scenario: A double that is not a number cannot be stored in a list on SQLite
       When a sample with NaN among its doubles is written
-      Then the write is refused, saying "JSON, which has no NaN or infinity"
+      Then the write of the sample is refused as an invalid change of Sample.Doubles, saying "JSON, which has no NaN or infinity"
+
+    @sqlite
+    Scenario: A double that is not a number cannot be stored in its own column on SQLite
+      When a sample whose ratio is NaN is written
+      Then the write of the sample is refused as an invalid change of Sample.Ratio, saying "SQLite holds no NaN"
+
+    @sqlite
+    Scenario: A query among doubles one of which is not a number is refused on SQLite
+      When I read the samples whose ratio is among 1.5 and NaN
+      Then the read is refused as a query that cannot be translated, saying "no NaN"
 
     @sqlite
     Scenario: A list column holding what is not a JSON array is a read error naming the column

@@ -219,7 +219,9 @@ let rec private owned (model: Model) (s: CsState) : CsState =
         s
 
 /// Model-aware structural validation, run before any command is sent.
-let rec check (model: Model) (s: CsState) : CsState =
+/// `held` is the provider's ISqlDialect.Refusal: why its database cannot hold
+/// a value, asked of each column's value written.
+let rec check (model: Model) (held: obj -> string option) (s: CsState) : CsState =
     let s = owned model s
     let schema = schemaOf model s.Type
     let err (st: CsState) field kind msg = Cs.addError st field kind msg
@@ -269,9 +271,14 @@ let rec check (model: Model) (s: CsState) : CsState =
                 | Some(path, why) -> st <- err st f.Name (FieldErrorKind.Custom "utc") $"at {path} in the document, {why}"
                 | None -> ()
             | None ->
-                match f.ToColumns v |> List.tryPick Times.refusal with
+                let columns = f.ToColumns v
+
+                match columns |> List.tryPick Times.refusal with
                 | Some why -> st <- err st f.Name (FieldErrorKind.Custom "utc") why
-                | None -> ()
+                | None ->
+                    match columns |> List.tryPick (fun c -> if isNull c then None else held c) with
+                    | Some why -> st <- err st f.Name (FieldErrorKind.Custom "unstorable") why
+                    | None -> ()
 
     let children =
         s.Children
@@ -279,7 +286,7 @@ let rec check (model: Model) (s: CsState) : CsState =
             match schema.TryAssoc w.Field with
             | Some a when a.Kind = AssocKind.HasMany || (a.Owned && a.Kind = AssocKind.HasOne) ->
                 let target = schemaOf model a.Target
-                let checkedChildren = w.Children |> List.map (check model)
+                let checkedChildren = w.Children |> List.map (check model held)
 
                 let identities =
                     checkedChildren
@@ -905,7 +912,7 @@ and private keyArray (target: SchemaInfo) (keys: obj list) =
 /// record, or why not; None when its statements were not sent because an
 /// earlier one failed (Tx.traverse sends several writes together).
 let plan (model: Model) (sess: Session) (s: CsState) : Result<Round<Result<obj, Failure option>>, Failure> =
-    let s = check model s
+    let s = check model sess.Provider.Dialect.Refusal s
 
     if not (isValid s) then
         Error(Invalid s)
