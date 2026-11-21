@@ -54,9 +54,16 @@ type ISqlDialect =
     abstract QuoteIdentifier: string -> string
     abstract ParameterName: int -> string
     abstract Capabilities: ProviderCapabilities
-    /// Catalogue type names (information_schema data_type) a column may have
-    /// to hold values of this provider type; empty when not checked.
-    abstract ColumnTypes: Type -> string list
+    /// The type a column holding values of this provider type is declared as
+    /// (what Ddl prints); None when the dialect has none.
+    abstract ColumnType: Type -> string option
+    /// The type names the database's catalogue may give such a column (what
+    /// the schema check accepts, and scaffolding maps back); empty when not
+    /// checked.
+    abstract CatalogueTypes: Type -> string list
+    /// The type a scalar read out of a JSON document as text is cast to, to be
+    /// compared and read as this provider type; None when the dialect has none.
+    abstract CastType: Type -> string option
     /// The null-safe comparison operator: equality treating NULLs as equal
     /// (`IS NOT DISTINCT FROM`), or its negation when `negated`.
     abstract NullSafeComparison: negated: bool -> string
@@ -489,9 +496,9 @@ module internal Sql =
                     w "CAST("
                     json().Text(w, (fun () -> r.Expr doc))
 
-                    match d.ColumnTypes t with
-                    | name :: _ -> w $" AS {name})"
-                    | [] -> failwith $"{d.Name} has no column type for {t.Name}"
+                    match d.CastType t with
+                    | Some name -> w $" AS {name})"
+                    | None -> failwith $"{d.Name} has no type to cast {t.Name} to"
                 | _ -> json().Text(w, (fun () -> r.Expr doc))
             | JsonAny(doc, alias, condition) -> json().AnyElement(w, (fun () -> r.Expr doc), alias, (fun () -> r.Expr condition))
             | JsonElement alias -> json().Element(w, alias)

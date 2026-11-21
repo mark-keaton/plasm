@@ -32,6 +32,10 @@ Feature: Database-specific SQL comes from the provider
       When I explain a query filtering on the length of a name with the test dialect
       Then the length uses the dialect's function name
 
+    Scenario: The DDL declares the dialect's column type, whatever names its catalogue accepts
+      When I print the DDL with the test dialect, which accepts "character varying" before "text" for a string
+      Then a Customer's name is declared "text"
+
     Scenario: A write's every-column check compares by the dialect's null-safe operator
       Given a dialect that is PostgreSQL's, its null-safe comparison spelled its own way
       When a Customer read through it is renamed

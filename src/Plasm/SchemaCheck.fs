@@ -6,12 +6,21 @@ open System.Threading.Tasks
 /// The catalogue type names a column of a provider type may have: the
 /// dialect's, and for an array column (array-columns.feature) its elements'
 /// names followed by [], as the schema check reads an array column's type.
+/// And the type such a column is declared as, which Ddl prints.
 module internal ColumnTypes =
+    let private isArray (t: Type) = t.IsArray && t <> typeof<byte[]>
+
     let ofType (d: ISqlDialect) (t: Type) : string list =
-        if t.IsArray && t <> typeof<byte[]> then
-            d.ColumnTypes(t.GetElementType()) |> List.map (fun n -> n + "[]")
+        if isArray t then
+            d.CatalogueTypes(t.GetElementType()) |> List.map (fun n -> n + "[]")
         else
-            d.ColumnTypes t
+            d.CatalogueTypes t
+
+    let declared (d: ISqlDialect) (t: Type) : string option =
+        if isArray t then
+            d.ColumnType(t.GetElementType()) |> Option.map (fun n -> n + "[]")
+        else
+            d.ColumnType t
 
 module internal SchemaCheck =
 
@@ -593,9 +602,9 @@ module internal Ddl =
             match p.Mapping |> Option.bind (fun m -> m.StoreType) with
             | Some parts -> parts |> List.map name |> String.concat "."
             | None ->
-                match ColumnTypes.ofType dialect p.ProviderType with
-                | t :: _ -> t
-                | [] -> failwith $"{dialect.Name} has no column type for {p.ProviderType.Name}"
+                match ColumnTypes.declared dialect p.ProviderType with
+                | Some t -> t
+                | None -> failwith $"{dialect.Name} has no column type for {p.ProviderType.Name}"
 
         let out = Text.StringBuilder()
         let line (s: string) = out.AppendLine s |> ignore

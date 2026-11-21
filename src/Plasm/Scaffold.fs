@@ -88,7 +88,7 @@ module internal Scaffolding =
 
     let private generate (dialect: ISqlDialect) (table: string) (columns: Column list) =
         let fsharpType (c: Column) =
-            candidates |> List.tryFind (fun (t, _) -> List.contains c.DataType (dialect.ColumnTypes t)) |> Option.map snd
+            candidates |> List.tryFind (fun (t, _) -> List.contains c.DataType (dialect.CatalogueTypes t)) |> Option.map snd
 
         let mapped, unsupported = columns |> List.partition (fun c -> (fsharpType c).IsSome)
 

@@ -15,7 +15,11 @@ type TestDialectProvider(inner: IProvider) =
             member _.Name = "TestSQL"
             member _.QuoteIdentifier s = inner.Dialect.QuoteIdentifier s
             member _.ParameterName i = inner.Dialect.ParameterName i
-            member _.ColumnTypes t = inner.Dialect.ColumnTypes t
+            // A string column is declared text; the catalogue may also say
+            // character varying, which this dialect lists first.
+            member _.ColumnType t = inner.Dialect.ColumnType t
+            member _.CatalogueTypes t = if t = typeof<string> then [ "character varying"; "text" ] else inner.Dialect.CatalogueTypes t
+            member _.CastType t = inner.Dialect.CastType t
             member _.NullSafeComparison negated = if negated then "IS NOT" else "IS"
 
             member _.LikeEscape = " ESCAPE '\\'"
@@ -51,7 +55,9 @@ type MarkedComparisonProvider(inner: IProvider) =
             member _.Name = d.Name
             member _.QuoteIdentifier s = d.QuoteIdentifier s
             member _.ParameterName i = d.ParameterName i
-            member _.ColumnTypes t = d.ColumnTypes t
+            member _.ColumnType t = d.ColumnType t
+            member _.CatalogueTypes t = d.CatalogueTypes t
+            member _.CastType t = d.CastType t
             member _.NullSafeComparison negated = d.NullSafeComparison negated + " /* the dialect's */"
             member _.LikeEscape = d.LikeEscape
             member _.FunctionName name = d.FunctionName name
@@ -79,6 +85,16 @@ type ProviderSteps(w: World) =
     [<StepDefinition("a test dialect without array parameters, upserts, RETURNING or row locking, with its own null-safe comparison and string length")>]
     member _.TestDialect() =
         w.Set("testRepo", Repo(Schemas.model, TestDialectProvider(w.Db.Provider)))
+
+    [<StepDefinition("I print the DDL with the test dialect, which accepts \"character varying\" before \"text\" for a string")>]
+    member _.TestDdl() = w.Set("testDdl", repo().Ddl())
+
+    [<StepDefinition("a Customer's name is declared \"text\"")>]
+    member _.NameDeclared() =
+        let ddl = w.Get<string> "testDdl"
+        let customers = ddl.Substring(ddl.IndexOf "create table customers")
+        let name = customers.Split('\n') |> Array.find (fun l -> l.TrimStart().StartsWith "name ")
+        check (name.Trim().StartsWith "name text") name
 
     [<StepDefinition("a dialect that is PostgreSQL's, its null-safe comparison spelled its own way")>]
     member _.MarkedDialect() =

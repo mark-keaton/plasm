@@ -725,7 +725,12 @@ type internal PGliteDialect(maxKeys: int) =
         member _.QuoteIdentifier s = "\"" + s.Replace("\"", "\"\"") + "\""
         member _.ParameterName i = $"@p{i}"
 
-        member _.ColumnTypes t =
+        // A column is declared, and a JSON scalar cast, as the first name the
+        // catalogue gives for the type.
+        member this.ColumnType t = List.tryHead ((this :> ISqlDialect).CatalogueTypes t)
+        member this.CastType t = List.tryHead ((this :> ISqlDialect).CatalogueTypes t)
+
+        member _.CatalogueTypes t =
             match t with
             | t when t = typeof<int16> -> [ "smallint" ]
             | t when t = typeof<int> -> [ "integer" ]
