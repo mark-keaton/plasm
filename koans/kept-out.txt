@@ -44,3 +44,6 @@ ownsOptional    # an option of a record holding the owner's key is owned
 ownsOne         # a record holding the owner's key is owned
 linksOrderedBy  # a list of stored records without the owner's key, with [<JoinTable>]
 buildSchemas    # Model.build [] [ typeof<...> ]
+# Row locks are taught (lesson 26), but not what two transactions at once show.
+NoWait          # a lock another transaction holds: the browser course's database (PGlite) has one connection, so no second transaction can hold one
+SkipLocked      # as NoWait

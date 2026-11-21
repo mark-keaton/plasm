@@ -28,4 +28,5 @@ let lessons: Lesson list =
       L22_TestingWithPlasm.lesson
       L23_UnionsWithFields.lesson
       L24_SetOperations.lesson
-      L25_WindowsAndRowAggregates.lesson ]
+      L25_WindowsAndRowAggregates.lesson
+      L26_LocksAndTries.lesson ]

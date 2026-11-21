@@ -1,0 +1,14 @@
+# A transaction locks the rows it reads
+[ OrderId 2L ]
+true
+# What an order owns is read, not locked
+2
+1
+# A tried step's failure is a value
+[ "Email" ]
+"ada.2@example.com"
+# A tried step that succeeds is kept
+true
+4L
+# A tried Conflict is a value
+Error(TxFailure.Conflict("Order", OrderId 1L))
