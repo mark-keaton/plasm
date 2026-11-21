@@ -115,6 +115,51 @@ public class BookingTests(Database db)
         }, TestContext.Current.CancellationToken);
     }
 
+    // Times from outside (a request's, a clock's) come with an offset; the
+    // facade stores them as the instants they are, in UTC.
+    static readonly TimeSpan Paris = TimeSpan.FromHours(1);
+
+    [Fact]
+    public Task A_booking_given_with_an_offset_is_stored_as_the_same_instants_in_UTC() => Sandboxed(async data =>
+    {
+        var projector = await Add(data, "Projector");
+        Stored(await data.BookAsync(projector.Id, projector.Version, "Ada", Nine.ToOffset(Paris), Nine.AddHours(2).ToOffset(Paris), CancellationToken.None));
+        var read = await data.EquipmentAsync(projector.Id, CancellationToken.None) switch
+        {
+            EquipmentView e => e,
+            Missing m => throw new Exception(m.What),
+        };
+        var booking = Assert.Single(read.Bookings);
+        Assert.Equal((Nine, Nine.AddHours(2)), (booking.From, booking.Until));
+        Assert.Equal((TimeSpan.Zero, TimeSpan.Zero), (booking.From.Offset, booking.Until.Offset));
+    });
+
+    [Fact]
+    public Task Time_given_with_an_offset_that_someone_else_has_in_UTC_is_refused() => Sandboxed(async data =>
+    {
+        var projector = await Add(data, "Projector");
+        // 09:00 to 10:00 UTC, and 10:30 to 11:30 at +01:00, which is 09:30 to
+        // 10:30 UTC: they overlap as instants, not by the clock's reading.
+        var booked = Stored(await data.BookAsync(projector.Id, projector.Version, "Ada", Nine, Nine.AddHours(1), CancellationToken.None));
+        var grace = new DateTimeOffset(2026, 11, 20, 10, 30, 0, Paris);
+        var refused = Assert.IsType<Refused>((await data.BookAsync(booked.Id, booked.Version, "Grace", grace, grace.AddHours(1), CancellationToken.None)).Value);
+        Assert.Equal("AlreadyBooked", refused.Code);
+    });
+
+    [Fact]
+    public async Task Out_of_service_since_a_clock_that_answers_with_an_offset_is_that_instant_in_UTC()
+    {
+        var data = await BookingData.OpenAsync(db.DataSource, new FixedTime(Nine.ToOffset(Paris)), CancellationToken.None);
+        await data.SandboxAsync(async data =>
+        {
+            var projector = await Add(data, "Projector");
+            var withdrawn = Stored(await data.TakeOutOfServiceAsync(projector.Id, projector.Version, "lamp broken", CancellationToken.None));
+            var since = Assert.IsType<Withdrawn>(withdrawn.Condition.Value).Since;
+            Assert.Equal((Nine, TimeSpan.Zero), (since, since.Offset));
+            return true;
+        }, TestContext.Current.CancellationToken);
+    }
+
     [Theory]
     [InlineData("   ", "is required")]
     [InlineData("A name far longer than sixty characters, which no label would hold", "must be at most 60 characters")]

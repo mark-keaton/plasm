@@ -265,12 +265,16 @@ type BookingData private (repo: Repo, time: TimeProvider) =
             | Error error -> return unavailable "reading equipment" error
         }
 
-    /// Books the equipment, if `version` is the one stored.
+    /// Books the equipment, if `version` is the one stored. `from` and
+    /// `until` may come with any offset (a request's, a user's): they are the
+    /// instants they say, kept in UTC, as Plasm stores times.
     member _.BookAsync(id: Guid, version: int, who: string, from: DateTimeOffset, until: DateTimeOffset, cancellationToken: CancellationToken) =
-        changed (Db.change (EquipmentId id) version (Equipment.book (BookingId(Guid.CreateVersion7())) who from until)) cancellationToken
+        changed (Db.change (EquipmentId id) version (Equipment.book (BookingId(Guid.CreateVersion7())) who (from.ToUniversalTime()) (until.ToUniversalTime()))) cancellationToken
 
+    /// Out of service from now, as the clock says it in UTC, whatever offset
+    /// the clock answers with.
     member _.TakeOutOfServiceAsync(id: Guid, version: int, reason: string, cancellationToken: CancellationToken) =
-        changed (Db.change (EquipmentId id) version (Equipment.takeOutOfService reason (time.GetUtcNow()))) cancellationToken
+        changed (Db.change (EquipmentId id) version (Equipment.takeOutOfService reason (time.GetUtcNow().ToUniversalTime()))) cancellationToken
 
     member _.ReturnToServiceAsync(id: Guid, version: int, cancellationToken: CancellationToken) =
         changed (Db.change (EquipmentId id) version Equipment.returnToService) cancellationToken

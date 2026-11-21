@@ -76,7 +76,8 @@ sealed class StartingAt(DateTimeOffset start) : TimeProvider
 {
     readonly long started = System.GetTimestamp();
 
-    public override DateTimeOffset GetUtcNow() => start + System.GetElapsedTime(started);
+    // In UTC whatever offset ClockStart was written with, as GetUtcNow says.
+    public override DateTimeOffset GetUtcNow() => start.ToUniversalTime() + System.GetElapsedTime(started);
 }
 
 record NewEquipment(string Name);
