@@ -236,6 +236,14 @@ let readBack (name: string) : Tx<Customer option, string> =
         let set = update.Sql.Substring(0, update.Sql.IndexOf "\nWHERE ")
         check (set.Contains "\"name\"" && not (set.Contains "\"email\"")) update.Sql
 
+    [<StepDefinition("a draft Order, inserted")>]
+    member _.DraftInserted() =
+        task {
+            let! o = w.Repo.Transact(Tx.insert (New.order None Draft 10m): Tx<_, unit>)
+            w.Set("order", ok o)
+        }
+        |> unit
+
     [<StepDefinition("a draft Order whose version is 2")>]
     member _.Version2() =
         task {
@@ -390,6 +398,31 @@ let readBack (name: string) : Tx<Customer option, string> =
         let e = failure ()
         check e.Failure.IsConflict $"expected a conflict, got %A{e.Failure}"
         equal ("TypedTxSteps.fs", w.Get<int> "knownLine", "oneAsSeen Order") (System.IO.Path.GetFileName e.Step.File, e.Step.Line, e.Step.Action) "the step"
+
+    [<StepDefinition("^a transaction updates that Order's placed time to (.+)$")>]
+    member _.PlacedTime(written: string) =
+        let o = w.Get<Order> "order"
+        let at = System.DateTime.Parse(written, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind)
+
+        task {
+            let! r = transact (Tx.update (o, { o with PlacedAt = at }))
+            w.Set("givenBack", ok r)
+        }
+        |> unit
+
+    [<StepDefinition("^the Order it gives back was placed at (.+)$")>]
+    member _.GivenBackAt(stored: string) =
+        let at = System.DateTime.Parse(stored, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind)
+        equal at.Ticks (w.Get<Order> "givenBack").PlacedAt.Ticks "the placed time given back, in ticks"
+
+    [<StepDefinition("the Order read again is the Order it gave back")>]
+    member _.ReadAgain() =
+        task {
+            let given = w.Get<Order> "givenBack"
+            let! r = w.Repo.One(plasm { for x in tableOf<Order> do where (x.Id = given.Id) })
+            equal (Some given) (ok r) "the Order read again"
+        }
+        |> unit
 
     [<StepDefinition("the failure is a conflict, and the Order keeps the other writer's change")>]
     member _.ConflictKeepsOther() =

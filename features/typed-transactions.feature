@@ -142,6 +142,18 @@ Feature: Transactions are typed, and their steps need no names
       When a transaction reads that Customer as seen at version 1
       Then the failure says Customer has no version field, and to read it with Tx.one
 
+    Scenario Outline: A write gives back the record as stored, its time to the microsecond
+      Given a draft Order, inserted
+      When a transaction updates that Order's placed time to <written>
+      Then the Order it gives back was placed at <stored>
+      And the Order read again is the Order it gave back
+
+      # PostgreSQL keeps microseconds; Npgsql drops what is finer, toward 2000-01-01.
+      Examples:
+        | written                      | stored                       |
+        | 2026-01-01T00:00:00.0000019Z | 2026-01-01T00:00:00.0000010Z |
+        | 1999-01-01T00:00:00.0000019Z | 1999-01-01T00:00:00.0000020Z |
+
     Scenario: Deleting the record read deletes it
       Given a Customer named "Ada"
       When a transaction deletes that Customer
