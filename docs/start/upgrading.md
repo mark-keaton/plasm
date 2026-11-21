@@ -57,6 +57,11 @@ This part matters only to an application that implements `ISqlDialect` or
 `IProvider` itself, or builds a `ProviderCapabilities` record. One that uses
 `Plasm.Postgres` as it comes has nothing to do.
 
+These interfaces are still changing while a second provider is built, so a
+dialect or provider of your own should expect further changes in the next
+versions. Application code that uses Plasm with `Plasm.Postgres` is not
+affected by those.
+
 Every piece of database-specific SQL now sits behind the dialect, so the
 interfaces grew, and a dialect written against 0.1.0 no longer compiles
 until it gives the new members:
@@ -66,6 +71,9 @@ until it gives the new members:
   (`StoreCast`, `TextCast`), for a limit before an offset (`UnboundedLimit`),
   for exact decimals (`Exact`), for what the database cannot hold
   (`Refusal`), and two groups of their own, `Ddl` and `Catalogue`.
+- In `Ddl`, a column's check is one member, `ColumnCheck(column, holds)`,
+  told what the column holds as a `ColumnHolds`: a scalar, a list, a
+  document or an enum with its labels.
 - `ISqlDialect.ColumnTypes` is now three members, one for each use:
   `ColumnType`, `CatalogueTypes` and `CastType`.
 - `IJsonDialect` gained `StoreType`.
@@ -78,7 +86,8 @@ until it gives the new members:
 The answers that keep what 0.1.0 did on PostgreSQL: `Refusal` answers `None`
 for every value; `Exact` and `UnboundedLimit` are `None`; `ColumnType` and
 `CastType` are the first name the old `ColumnTypes` list gave, and
-`CatalogueTypes` is the whole list; `WritersTakeTurns` is false. Aggregate
+`CatalogueTypes` is the whole list; `ColumnCheck` answers `None` for every
+column; `WritersTakeTurns` is false. Aggregate
 and window function names now pass through `FunctionName` as other
 functions' do, so a dialect that renames functions sees `COUNT`, `SUM` and
 the rest.
