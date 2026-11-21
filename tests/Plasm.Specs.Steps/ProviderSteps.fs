@@ -36,6 +36,33 @@ type ProviderSteps(w: World) =
         let m = w.Get<string> "madeWith"
         check (m.Contains fields && m.Contains $"has no {capability}") m
 
+    [<StepDefinition("I explain, with the test dialect, whether any of each customer's Orders is published")>]
+    member _.AnyPublished() =
+        w.Set("explained", (repo().Explain(plasm { for o in tableOf<Order> do groupBy o.CustomerId; select (o.CustomerId, Agg.any (o.Status = Published)) }) |> ok).Sql)
+
+    [<StepDefinition("the aggregate is the dialect's name for it")>]
+    member _.AggregateName() =
+        let sql = w.Get<string> "explained"
+        check (sql.Contains "MAX(" && not (sql.Contains "BOOL_OR")) sql
+
+    [<StepDefinition("I explain, with the test dialect, each customer's Order totals in the order they were placed")>]
+    member _.TotalsListed() =
+        w.Set("explained", (repo().Explain(plasm { for o in tableOf<Order> do groupBy o.CustomerId; select (o.CustomerId, Agg.listBy o.Total o.PlacedAt) }) |> ok).Sql)
+
+    [<StepDefinition("a customer with no Orders has the dialect's empty array")>]
+    member _.EmptyArray() =
+        let sql = w.Get<string> "explained"
+        check (sql.Contains ", '[]')" && not (sql.Contains "'{}'")) sql
+
+    [<StepDefinition("I explain, with the test dialect, the least status of the Orders")>]
+    member _.LeastStatus() =
+        w.Set("explained", (repo().Explain(plasm { for o in tableOf<Order> do select (Agg.min o.Status) }) |> ok).Sql)
+
+    [<StepDefinition("the name is read back from its position by a CASE, with no array")>]
+    member _.NameByCase() =
+        let sql = w.Get<string> "explained"
+        check (not (sql.Contains "ARRAY[") && sql.Contains "THEN 'draft'") sql
+
     [<StepDefinition("I explain a query of the shipments whose status is Shipped, with a dialect that stores an enum as text")>]
     member _.EnumAsText() =
         let repo = Repo(PgEnums.model, StoredAsDialectSays(w.Db.Provider, [ "json" ]))

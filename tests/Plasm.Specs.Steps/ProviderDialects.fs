@@ -22,6 +22,7 @@ type TestDialectProvider(inner: IProvider) =
             member _.CastType t = inner.Dialect.CastType t
             member _.StoreCast(t, array) = inner.Dialect.StoreCast(t, array)
             member _.TextCast = inner.Dialect.TextCast
+            member _.EmptyArray = "'[]'"
             member _.UnboundedLimit = Some "-1"
             member _.NullSafeComparison negated = if negated then "IS NOT" else "IS"
 
@@ -29,6 +30,8 @@ type TestDialectProvider(inner: IProvider) =
             member _.FunctionName name =
                 match name with
                 | "char_length" -> "length"
+                // Over 0 and 1, the greatest is whether any is true.
+                | "BOOL_OR" -> "MAX"
                 | n -> n
 
             member _.Json = None
@@ -78,6 +81,7 @@ type StoredAsDialectSays(inner: IProvider, documentType: string list) =
             member _.CastType t = d.CastType t
             member _.StoreCast(_, _) = None
             member _.TextCast = None
+            member _.EmptyArray = d.EmptyArray
             member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated
             member _.LikeEscape = d.LikeEscape
@@ -111,6 +115,7 @@ type MarkedComparisonProvider(inner: IProvider) =
             member _.CastType t = d.CastType t
             member _.StoreCast(t, array) = d.StoreCast(t, array)
             member _.TextCast = d.TextCast
+            member _.EmptyArray = d.EmptyArray
             member _.UnboundedLimit = d.UnboundedLimit
             member _.NullSafeComparison negated = d.NullSafeComparison negated + " /* the dialect's */"
             member _.LikeEscape = d.LikeEscape

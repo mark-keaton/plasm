@@ -31,6 +31,18 @@ Feature: Database-specific SQL comes from the provider
       When I explain a query filtering on the length of a name with the test dialect
       Then the length uses the dialect's function name
 
+    Scenario: Aggregates are named by the dialect
+      When I explain, with the test dialect, whether any of each customer's Orders is published
+      Then the aggregate is the dialect's name for it
+
+    Scenario: An aggregate's empty list is the dialect's empty array
+      When I explain, with the test dialect, each customer's Order totals in the order they were placed
+      Then a customer with no Orders has the dialect's empty array
+
+    Scenario: The least stored name of an ordered union is read back without an array
+      When I explain, with the test dialect, the least status of the Orders
+      Then the name is read back from its position by a CASE, with no array
+
     Scenario: A value stored as a type of the database's own is sent as the dialect casts it
       When I explain a query of the shipments whose status is Shipped, with a dialect that stores an enum as text
       Then the status is compared with its parameter as it is, cast to no type

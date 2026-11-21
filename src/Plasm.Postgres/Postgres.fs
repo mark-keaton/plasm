@@ -111,6 +111,8 @@ type internal PostgresDialect(options: PostgresOptions) =
 
         member _.TextCast = Some "text"
 
+        member _.EmptyArray = "'{}'"
+
         member _.UnboundedLimit = None
 
         member _.NullSafeComparison negated =

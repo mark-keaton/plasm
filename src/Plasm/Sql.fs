@@ -82,6 +82,9 @@ type ISqlDialect =
     /// The type a column of a database type of its own is read as, to be read
     /// as text; None reads it as it is.
     abstract TextCast: string option
+    /// An empty array's literal: a list aggregate's value over no rows
+    /// (`'{}'`).
+    abstract EmptyArray: string
     /// What LIMIT takes for no limit, when the dialect needs a LIMIT before an
     /// OFFSET (SQLite's -1); None when OFFSET stands on its own (PostgreSQL).
     abstract UnboundedLimit: string option
@@ -118,6 +121,9 @@ module internal Sql =
         /// A typed provider array, used for key and membership lists.
         | ArrayParam of values: Array
         | Literal of string
+        /// An empty array, as the dialect writes one: a list aggregate's value
+        /// over no rows.
+        | EmptyArray
         | Binary of op: string * Expr * Expr
         | Not of Expr
         /// `(a) IS NOT TRUE`: F#'s `not`, for which an unknown (NULL) operand,
@@ -417,6 +423,7 @@ module internal Sql =
             | Param v -> w (r.Param v)
             | ArrayParam v -> w (r.Param v)
             | Literal l -> w l
+            | EmptyArray -> w d.EmptyArray
             | Binary(("AND" | "OR") as op, _, _) ->
                 let rec operands (x: Expr) =
                     match x with
@@ -549,7 +556,7 @@ module internal Sql =
 
                 w ")"
             | Aggregate(name, distinct, arg) ->
-                w name
+                w (d.FunctionName name)
                 w "("
 
                 match arg with
@@ -560,7 +567,7 @@ module internal Sql =
 
                 w ")"
             | Window(name, args, partition, order, frame) ->
-                w name
+                w (d.FunctionName name)
                 w "("
 
                 args
@@ -595,7 +602,7 @@ module internal Sql =
 
                 w ")"
             | AggregateBy(name, args, order, filter) ->
-                w name
+                w (d.FunctionName name)
                 w "("
 
                 if args.IsEmpty then
@@ -662,6 +669,7 @@ module internal Sql =
             | Param _
             | ArrayParam _
             | Literal _
+            | EmptyArray
             | Func _
             | Cast _
             | AsText _

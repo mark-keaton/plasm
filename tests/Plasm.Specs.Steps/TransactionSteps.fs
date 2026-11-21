@@ -48,6 +48,7 @@ type LimitedProvider(inner: IProvider) =
             member _.CastType t = inner.Dialect.CastType t
             member _.StoreCast(t, array) = inner.Dialect.StoreCast(t, array)
             member _.TextCast = inner.Dialect.TextCast
+            member _.EmptyArray = inner.Dialect.EmptyArray
             member _.UnboundedLimit = inner.Dialect.UnboundedLimit
             member _.NullSafeComparison negated = inner.Dialect.NullSafeComparison negated
             member _.LikeEscape = inner.Dialect.LikeEscape

@@ -559,11 +559,16 @@ let private positionOf (names: string list) (stored: Sql.Expr) : Sql.Expr =
         @ [ Choice1Of2 " END" ]
     )
 
-/// `(ARRAY['a', 'b', ...])[position + 1]`: the stored name at a position.
+/// `CASE position WHEN 0 THEN 'a' WHEN 1 THEN 'b' ... END`: the stored name
+/// at a position, in any SQL.
 let private nameAt (names: string list) (position: Sql.Expr) : Sql.Expr =
     let quote (n: string) = "'" + n.Replace("'", "''") + "'"
-    let array = names |> List.map quote |> String.concat ", "
-    Sql.Fragment [ Choice1Of2 $"(ARRAY[{array}])["; Choice2Of2 position; Choice1Of2 " + 1]" ]
+
+    Sql.Fragment(
+        [ Choice1Of2 "CASE "; Choice2Of2 position ]
+        @ (names |> List.mapi (fun i n -> Choice1Of2 $" WHEN {i} THEN {quote n}"))
+        @ [ Choice1Of2 " END" ]
+    )
 
 // ---------------------------------------------------------------------------
 // Row field resolution
@@ -1253,7 +1258,7 @@ and aggregate ctx (e: Expr) (mi: Reflection.MethodInfo) (args: Expr list) : Sql.
     | "listBy"
     | "listByDescending" as name ->
         match args with
-        | [ value; key ] -> Sql.Func("COALESCE", [ Sql.AggregateBy("ARRAY_AGG", [ scalar ctx value ], orderOf ctx key (name.EndsWith "Descending"), None); Sql.Literal "'{}'" ])
+        | [ value; key ] -> Sql.Func("COALESCE", [ Sql.AggregateBy("ARRAY_AGG", [ scalar ctx value ], orderOf ctx key (name.EndsWith "Descending"), None); Sql.EmptyArray ])
         | _ -> fail e "unexpected aggregate arguments"
     | "stringConcatBy"
     | "stringConcatByDescending" as name ->
