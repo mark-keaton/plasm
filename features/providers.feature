@@ -43,6 +43,15 @@ Feature: Database-specific SQL comes from the provider
 
   Rule: Constructs the dialect cannot express are refused before execution
 
+    Scenario Outline: A model storing <what> is refused when the repository is made, by a dialect without <capability>
+      When a repository is made with the test dialect for a model storing <what>
+      Then it is refused when made, naming <fields> and saying it has no <capability>
+
+      Examples:
+        | what                     | capability    | fields                                                                  |
+        | a status as an enum type | enum types    | Shipment.Status, Shipment.PreviousStatus                                |
+        | lists of scalars         | array columns | Issue.Labels, Issue.Assignees, Issue.Points, Issue.Topics, Issue.Kinds |
+
     Scenario Outline: <operation> needs <capability>
       When I attempt <operation> with the test dialect
       Then it fails before execution as unsupported by the provider, naming <capability>

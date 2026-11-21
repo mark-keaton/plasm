@@ -758,7 +758,9 @@ type internal PGliteDialect(maxKeys: int) =
               RowLocking = true
               Batching = false
               DefersBegin = false
-              Describe = false }
+              Describe = false
+              EnumTypes = true
+              ArrayColumns = true }
 
         member _.Begin isolation = Values.beginAt isolation
 

@@ -42,8 +42,9 @@
     <Compile Include="TxAttemptSteps.fs" />
     <Compile Include="OwnedSteps.fs" />
     <Compile Include="LinkedSteps.fs" />
-    <Compile Include="ProviderSteps.fs" />
     <Compile Include="ReadingSteps.fs" />
+    <!-- The test providers, which several features use. -->
+    <Compile Include="ProviderDialects.fs" />
     <Compile Include="PgEnumSteps.fs" />
     <Compile Include="ConventionSteps.fs" />
     <Compile Include="ExistsSteps.fs" />
@@ -62,6 +63,8 @@
     <Compile Include="PageEachSteps.fs" />
     <Compile Include="RetryWaitSteps.fs" />
     <Compile Include="ArraySteps.fs" />
+    <!-- After the array and enum steps: its refusals use their models. -->
+    <Compile Include="ProviderSteps.fs" />
     <Compile Include="CompositeKeySteps.fs" />
     <Compile Include="CompositeReferenceSteps.fs" />
     <Compile Include="TransactionEventSteps.fs" />

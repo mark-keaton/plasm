@@ -75,6 +75,35 @@ type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
                 Err.config
                     $"""{provider.Dialect.Name} has no JSON documents, so it cannot store {String.concat ", " documents} ([<Json>]); use a provider that has them, or store these fields another way"""
 
+    // Nor one without enum types a field stored as one, nor one without array
+    // columns a list of scalars: refused now, naming each field
+    // (providers.feature).
+    do
+        let caps = provider.Dialect.Capabilities
+
+        let storing (stores: ColumnPart -> bool) =
+            [ for s in model.Schemas.Values do
+                  for f in s.Fields do
+                      if f.Parts |> List.exists stores then
+                          yield $"{s.Name}.{f.Name}" ]
+
+        let refuse (fields: string list) (what: string) (instead: string) =
+            if not fields.IsEmpty then
+                Err.config
+                    $"""{provider.Dialect.Name} has no {what}, so it cannot store {String.concat ", " fields}; {instead}"""
+
+        if not caps.EnumTypes then
+            let enumType (p: ColumnPart) =
+                match p.Mapping with
+                | Some m -> m.StoreType.IsSome && not m.Cases.IsEmpty
+                | None -> false
+
+            refuse (storing enumType) "enum types" "store them as text (Scalar.enum without Scalar.asPgEnum), or use a provider that has enum types"
+
+        if not caps.ArrayColumns then
+            let array (p: ColumnPart) = p.ProviderType.IsArray && p.ProviderType <> typeof<byte[]>
+            refuse (storing array) "array columns" "store each list as an owned list or as one [<Json>] document, or use a provider that has array columns"
+
     // Queries are immutable values, so a plan can be reused for the same value,
     // unless translation evaluated something volatile (Plan.Reusable = false).
     let plans = ConditionalWeakTable<QueryDef, Planner.Plan>()

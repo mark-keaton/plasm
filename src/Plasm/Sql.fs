@@ -30,7 +30,15 @@ type ProviderCapabilities =
       /// A statement can be described without running it (PostgreSQL's
       /// Parse and Describe): Repo.Start has the database describe every
       /// statement a module defines (statement-check.feature).
-      Describe: bool }
+      Describe: bool
+      /// A field can be stored as a database enum type (Scalar.asPgEnum);
+      /// without, a model that stores one is refused when the repository is
+      /// made.
+      EnumTypes: bool
+      /// A list of scalars can be stored as one array column
+      /// (array-columns.feature); without, a model that stores one is refused
+      /// when the repository is made.
+      ArrayColumns: bool }
 
 /// How a provider stores and reads JSON documents (json-columns.feature).
 /// Each member writes SQL through `write`; `doc`, `value` and `condition`

@@ -90,7 +90,9 @@ type internal PostgresDialect(options: PostgresOptions) =
               RowLocking = true
               Batching = true
               DefersBegin = true
-              Describe = true }
+              Describe = true
+              EnumTypes = true
+              ArrayColumns = true }
 
         // What Npgsql sends, as PostgreSQL logs it: its wording differs by level.
         member _.Begin isolation =
