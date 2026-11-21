@@ -216,7 +216,7 @@ exists already:
 dotnet add package Plasm.Postgres --prerelease
 ```
 
-It is an alpha: experimental, and not a stable release. A GitHub release
+It is a pre-release: experimental, and not a stable release. A GitHub release
 tagged `vX.Y.Z` publishes them
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 

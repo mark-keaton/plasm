@@ -25,7 +25,7 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 - Recursive queries: a tree read in one statement, with each row's depth; a cycle in the data ends
 - Streaming reads: a query's rows as they are read, for records without lists and for projections; records that own or link lists are refused, not batched
 - Typed transactions with optimistic concurrency: a record read as the caller saw it, a stale copy refused at the read; row locks, and a step that may fail under a savepoint; a list's writes sent together
-- A `dotnet new` template, `Plasm.Templates`: `plasm-api` makes an F# domain, a C# API and tests; an alpha, like the packages
+- A `dotnet new` template, `Plasm.Templates`: `plasm-api` makes an F# domain, a C# API and tests; a pre-release, like the packages
 - Kanban's C# host and Lambda on the FSharp.Core a new project gets, 11.0.101
 - Start-up checks of every query and of the schema, every statement described by the database before any runs
 - Each command as an OpenTelemetry activity
