@@ -70,7 +70,7 @@ the reference application in the same style.
 | 10 | Writes | Every write is a transaction step: `Tx.insert`, `Tx.update (original, changed)`, `Tx.delete`, run by `repo.Transact`. Only what differs is written; a stale copy is a `TxFailure.Conflict`, checked by version or, without one, by every column; `Tx.oneAsSeen` for a caller's copy. |
 | 11 | Constructors and constraints | Plasm validates no input: the domain's constructors (`Email.create`) do, and stored values are read back through them. A duplicate, a missing reference or a broken check comes back as the field's error, by the constraint's default name; any other constraint is a database failure. |
 | 12 | Writing an aggregate | Inserting an order inserts its lines; an update writes the difference by key; a line left out is deleted; a line's error is the order's; deleting an order deletes its lines. |
-| 13 | Transactions | `Tx<'T, 'E>` as a value; steps compose with `let!`; reading inside with `Tx.one` and `Tx.count`; the transaction's own rejections (`Tx.fail`, `Tx.orReject`, `Tx.ofResult`); where a failed step is written; retries; custom steps. |
+| 13 | Transactions | `Tx<'T, 'E>` as a value; steps compose with `let!`; reading inside with `Tx.one` and `Tx.count`; the transaction's own rejections (`Tx.fail`, `Tx.orReject`, `Tx.ofResult`); read, decide, write, reading the record as the caller saw it (`Tx.oneAsSeen`), so a stale copy is refused before anything is decided; where a failed step is written; retries; custom steps. |
 
 Writes come before constructors and constraints, since a constraint's error is
 met through a write. Each error case is named where a koan first meets it

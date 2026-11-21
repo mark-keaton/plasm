@@ -32,10 +32,11 @@ let cancel (reason: string) (order: Order) : Result<Order, string> =
     else
         Ok { order with Status = Cancelled; CancellationReason = Some reason }
 
-/// Read what the decision needs, let the domain decide, write what it decided.
-let private cancelOrder (id: OrderId) : Tx<Order, Refusal> =
+/// Read what the decision needs, as the caller saw it (`seen`, the version its
+/// copy was read at), let the domain decide, write what it decided.
+let private cancelOrder (id: OrderId) (seen: int) : Tx<Order, Refusal> =
     transaction {
-        let! order = Tx.one (plasm { for o in tableOf<Order> do where (o.Id = id) }) |> Tx.orReject (Missing "order")
+        let! order = Tx.oneAsSeen (plasm { for o in tableOf<Order> do where (o.Id = id) }, seen) |> Tx.orReject (Missing "order")
         let! cancelled = cancel "duplicate" order |> Tx.ofResult Refused
         return! Tx.update (order, cancelled)
     }
@@ -189,11 +190,26 @@ let lesson =
                   task {
                       // cancelOrder (above, under Given) reads an order, lets cancel decide,
                       // and writes what it decided. Tx.ofResult turns the decision's Error
-                      // into a rejection. Order 2 is a draft; order 1 is published.
-                      let! draft = repo.Transact(cancelOrder (OrderId 2L))
+                      // into a rejection. Order 2 is a draft; order 1 is published. Both
+                      // copies were read at version 1, as every order under Given is.
+                      let! draft = repo.Transact(cancelOrder (OrderId 2L) 1)
                       (ok draft).Status |> shouldBe __
-                      let! published = repo.Transact(cancelOrder (OrderId 1L))
+                      let! published = repo.Transact(cancelOrder (OrderId 1L) 1)
                       (err published).Failure |> shouldBe __
+                  }
+          )
+
+          Koan.Task(
+              "A stale copy is refused before the domain decides",
+              fun repo ->
+                  task {
+                      // A caller's copy of order 2 says it was read at version 7. Tx.oneAsSeen
+                      // reads the order only if its stored version is the one seen: the
+                      // transaction stops there, before cancel decides anything.
+                      let! stale = repo.Transact(cancelOrder (OrderId 2L) 7)
+                      (err stale).Failure |> shouldBe __
+                      let! order = repo.One(plasm { for o in tableOf<Order> do where (o.Id = OrderId 2L) })
+                      (ok order).Value.Status |> shouldBe __
                   }
           )
 

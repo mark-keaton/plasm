@@ -23,6 +23,9 @@ TxFailure.Rejected(Missing "customer Zed")
 # The domain decides, the transaction writes
 Cancelled
 TxFailure.Rejected(Refused "a published order cannot be cancelled")
+# A stale copy is refused before the domain decides
+TxFailure.Conflict("Order", OrderId 2L)
+Draft
 # An empty transaction is fine
 Ok 42
 # Retries are opt-in
