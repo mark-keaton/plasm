@@ -55,6 +55,14 @@ let cancel id seen reason = changeOrder id seen (Order.cancel reason)
 A record without a version field is checked by every column of the record
 the change was made from, in the same command.
 
+The record a write gives back is the stored one: keep it, not the copy you
+built. PostgreSQL keeps a time to the microsecond, and what is finer is
+dropped on the way in (by Npgsql, toward 2000-01-01; Plasm adds no
+rounding). So a copy built with a finer time is not equal to the record
+given back, while the record given back equals the record read again. The
+scenario "A write gives back the record as stored, its time to the
+microsecond" in `features/typed-transactions.feature` shows it.
+
 ## A step that may fail
 
 `Tx.attempt` runs a step under a savepoint. Its failure is a value, the
