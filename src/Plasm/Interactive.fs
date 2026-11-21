@@ -76,6 +76,7 @@ type internal PlaygroundProvider(inner: IProvider) =
 
     interface IProvider with
         member _.Dialect = inner.Dialect
+        member _.Describe(c, ct) = inner.Describe(c, ct)
         member p.Classify ex =
             // A lost connection can surface wrapped (e.g. the transaction
             // reports itself disposed, with the server's error inside).

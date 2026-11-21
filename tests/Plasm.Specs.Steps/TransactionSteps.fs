@@ -59,6 +59,7 @@ type LimitedProvider(inner: IProvider) =
 
     interface IProvider with
         member _.Dialect = dialect
+        member _.Describe(c, ct) = inner.Describe(c, ct)
         member _.OpenConnection ct = inner.OpenConnection ct
         member _.Classify ex = inner.Classify ex
         member _.BeginSnapshot(_, _) = Task.FromResult None

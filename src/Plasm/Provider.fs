@@ -57,6 +57,17 @@ module internal Closed =
                   Exception = ex }
         | _ -> None
 
+/// What a provider's description of a statement found (statement-check.feature).
+[<RequireQualifiedAccess>]
+type DescribeOutcome =
+    /// The database accepts the statement: its tables, columns and types fit.
+    | Described
+    /// The database refuses it, as it would when the statement runs.
+    | Refused of DbFailure
+    /// The database cannot tell a parameter's type from the statement alone;
+    /// the statement is checked when it runs.
+    | CannotType
+
 /// A database provider: dialect, connections and error classification.
 /// Provider-specific behaviour lives behind this interface and `ISqlDialect`
 /// (see docs/status.md for what is still PostgreSQL-shaped in the core).
@@ -70,6 +81,10 @@ type IProvider =
     /// only SELECTs in it), or None if the provider cannot.
     abstract BeginSnapshot: DbConnection * CancellationToken -> Task<DbTransaction option>
     abstract BeginTransaction: DbConnection * IsolationLevel * CancellationToken -> Task<DbTransaction>
+    /// Describes a command without running it: its text and parameters set,
+    /// on an open connection. Asked only of a provider whose dialect's
+    /// Capabilities.Describe is true (Repo.Start's statement check).
+    abstract Describe: DbCommand * CancellationToken -> Task<DescribeOutcome>
 
 /// A provider whose transactions already report their commands to
 /// OnCommand (transaction-events.feature): a repository does not wrap it again.

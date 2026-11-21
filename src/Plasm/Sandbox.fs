@@ -101,6 +101,7 @@ type internal SandboxProvider(inner: IProvider, connection: DbConnection, transa
 
     interface IProvider with
         member _.Dialect = inner.Dialect
+        member _.Describe(c, ct) = inner.Describe(c, ct)
         member _.Classify ex = Closed.failure ex |> Option.orElse (inner.Classify ex)
 
         member _.OpenConnection(ct: CancellationToken) : Task<DbConnection> =

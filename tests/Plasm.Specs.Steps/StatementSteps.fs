@@ -72,6 +72,18 @@ type NoDescribe(inner: IProvider) =
 
     interface IProvider with
         member _.Dialect = dialect
+        member _.Describe(c, ct) = inner.Describe(c, ct)
+        member _.OpenConnection ct = inner.OpenConnection ct
+        member _.Classify ex = inner.Classify ex
+        member _.BeginSnapshot(c, ct) = inner.BeginSnapshot(c, ct)
+        member _.BeginTransaction(c, i, ct) = inner.BeginTransaction(c, i, ct)
+
+/// A provider like the database's whose description of a statement is its
+/// own: it refuses every one, saying `saying`.
+type RefusingDescribe(inner: IProvider, saying: string) =
+    interface IProvider with
+        member _.Dialect = inner.Dialect
+        member _.Describe(_, _) = Task.FromResult(DescribeOutcome.Refused { Kind = DbFailureKind.OtherDatabaseError; SqlState = None; Constraint = None; Message = saying; Exception = exn saying })
         member _.OpenConnection ct = inner.OpenConnection ct
         member _.Classify ex = inner.Classify ex
         member _.BeginSnapshot(c, ct) = inner.BeginSnapshot(c, ct)
@@ -93,6 +105,24 @@ type StatementSteps(w: World) =
             w.Set("described", problems)
         }
         :> Task
+
+    [<StepDefinition("^a provider like the database's that refuses every statement it is asked to describe, saying \"(.*)\"$")>]
+    member _.Refusing(saying: string) =
+        w.Set("ownRepo", Repo(w.Db.Model, RefusingDescribe(w.Db.Provider, saying)))
+
+    [<StepDefinition("it describes the statements of the module of accepted ones")>]
+    member _.OwnDescribes() =
+        task {
+            let! problems = w.Get<Repo>("ownRepo").Describe(assembly, accepted)
+            w.Set("described", problems)
+        }
+        :> Task
+
+    [<StepDefinition("^each of them is reported as refused, saying \"(.*)\"$")>]
+    member _.EachRefused(saying: string) =
+        let problems = w.Get<StartupProblem list> "described"
+        let refused = problems |> List.choose (function StartupProblem.Refused r -> Some r | _ -> None)
+        check (not refused.IsEmpty && refused.Length = problems.Length && refused |> List.forall (fun r -> r.Failure.Message = saying)) $"%A{problems |> List.map string}"
 
     [<StepDefinition("the database describes the statements of the module of accepted ones")>]
     member _.DescribeAccepted() =

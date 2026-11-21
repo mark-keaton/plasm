@@ -186,6 +186,23 @@ type PostgresProvider(dataSource: NpgsqlDataSource, ?options: PostgresOptions) =
 
         member _.Classify ex = Classify.classify ex
 
+        // Parse and Describe: a reader asked for the schema only is not run.
+        // 42P18 is a parameter sent untyped that nothing in the statement types.
+        member _.Describe(command, ct) =
+            task {
+                try
+                    use! _ = command.ExecuteReaderAsync(CommandBehavior.SchemaOnly, ct)
+                    return DescribeOutcome.Described
+                with ex ->
+                    match (match ex with :? OperationCanceledException -> None | _ -> Classify.classify ex) with
+                    | Some f when f.SqlState = Some "42P18" -> return DescribeOutcome.CannotType
+                    | Some f -> return DescribeOutcome.Refused f
+                    | None ->
+                        // Cancelled, or not a database failure: raised as it was.
+                        Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
+                        return DescribeOutcome.Described
+            }
+
         // REPEATABLE READ alone gives the snapshot; Plasm sends only SELECTs
         // in it. No SET, which a pooler in transaction mode may pin on.
         member _.BeginSnapshot(conn, ct) =

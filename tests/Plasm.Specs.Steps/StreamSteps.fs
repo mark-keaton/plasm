@@ -34,6 +34,7 @@ module StreamDomain =
 
         interface IProvider with
             member _.Dialect = inner.Dialect
+            member _.Describe(c, ct) = inner.Describe(c, ct)
             member _.Classify ex = inner.Classify ex
             member _.BeginSnapshot(c, ct) = inner.BeginSnapshot(c, ct)
             member _.BeginTransaction(c, i, ct) = inner.BeginTransaction(c, i, ct)

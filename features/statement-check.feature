@@ -62,6 +62,11 @@ Feature: The database describes every statement before any runs
 
   Rule: A provider that cannot describe says so
 
+    Scenario: The provider describes each statement, and what it says is reported
+      Given a provider like the database's that refuses every statement it is asked to describe, saying "not by this provider"
+      When it describes the statements of the module of accepted ones
+      Then each of them is reported as refused, saying "not by this provider"
+
     Scenario: A provider that cannot describe notes the statements it did not
       When a provider that cannot describe describes the statements of the module of refused ones
       Then it notes that 3 statements were not described, and reports none as refused

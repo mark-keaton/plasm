@@ -590,24 +590,16 @@ type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
 
                                 c.Parameters.Add p |> ignore)
 
-                            try
-                                // Parsed and described, not run.
-                                use! r = c.ExecuteReaderAsync(Data.CommandBehavior.SchemaOnly, ct)
-                                ()
-                            with
-                            | :? OperationCanceledException as ex -> Err.rethrow ex
-                            | ex ->
-                                match provider.Classify ex with
-                                // The description's limit, not the statement's
-                                // fault: a parameter sent untyped that nothing
-                                // in the statement types.
-                                | Some f when f.SqlState = Some "42P18" ->
-                                    failed <- true
-                                    untyped.Add name
-                                | Some f ->
-                                    failed <- true
-                                    refused.Add(StartupProblem.Refused { Statement = name; Sql = cmd.Sql; Failure = f })
-                                | None -> Err.rethrow ex
+                            // Described by the provider, not run.
+                            match! provider.Describe(c, ct) with
+                            | DescribeOutcome.Described -> ()
+                            // The description's limit, not the statement's fault.
+                            | DescribeOutcome.CannotType ->
+                                failed <- true
+                                untyped.Add name
+                            | DescribeOutcome.Refused f ->
+                                failed <- true
+                                refused.Add(StartupProblem.Refused { Statement = name; Sql = cmd.Sql; Failure = f })
 
                 let noted =
                     if untyped.Count = 0 then

@@ -840,6 +840,11 @@ type PGliteProvider(bridge: IPGliteBridge, ?options: PGliteOptions) =
     interface IProvider with
         member _.Dialect = dialect
 
+        // Its dialect cannot describe (Capabilities.Describe is false), so
+        // Plasm never asks.
+        member _.Describe(_, _) =
+            Task.FromException<DescribeOutcome>(NotSupportedException "PGlite cannot describe a statement without running it")
+
         member _.OpenConnection ct =
             task {
                 let! entered = gate.WaitAsync(options.SessionWait, ct)
