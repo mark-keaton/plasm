@@ -45,6 +45,7 @@ Feature: A field can be unique within other fields
       When I check the tenant tags against the database
       Then the missing uniqueness of Tag.Name within tenant is reported
 
+    @postgres
     Scenario: A uniqueness held under another name is reported, with the rename
       Given the tenant_tags table's constraint tenant_tags_tenant_name_key is renamed tenant_tags_per_tenant
       When I check the tenant tags against the database

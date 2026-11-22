@@ -127,7 +127,7 @@ type CompositeLinkSteps(w: World) =
     [<StepDefinition("^threads and cards linked to labels and watchers, keyed by several parts$")>]
     member _.Tables() =
         task {
-            let! _ = w.Db.Exec CompositeLinks.tables
+            do! w.Db.MakeTables(CompositeLinks.tables, CompositeLinks.model)
             w.Set("linkRepo", w.Db.RepoWith(model = CompositeLinks.model))
         }
         :> Task

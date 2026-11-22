@@ -162,7 +162,7 @@ type RowLockSteps(w: World) =
     [<StepDefinition("jobs with their notes")>]
     member _.Tables() =
         task {
-            let! _ = w.Db.Exec Schemas.tables
+            do! w.Db.MakeTables(Schemas.tables, Schemas.model)
             w.Set("jobsRepo", w.Db.RepoWith(model = Schemas.model))
         }
         :> Task

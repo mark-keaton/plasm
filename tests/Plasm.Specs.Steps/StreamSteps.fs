@@ -119,7 +119,7 @@ type StreamSteps(w: World) =
     [<StepDefinition("five customers named Ann, Bea, Cal, Dee and Eve")>]
     member _.People() =
         task {
-            let! _ = w.Db.Exec StreamDomain.tables
+            do! w.Db.MakeTables(StreamDomain.tables, StreamDomain.model)
             counting <- Counting(w.Db.Provider)
             repo <- Repo(model, counting, { RepoOptions.Default with OnCommand = Some events.Add })
         }

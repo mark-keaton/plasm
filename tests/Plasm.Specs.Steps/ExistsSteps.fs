@@ -89,7 +89,7 @@ type ExistsSteps(w: World) =
     [<StepDefinition("orders and payments as separate aggregates")>]
     member _.Tables() =
         task {
-            let! _ = w.Db.Exec Schemas.tables
+            do! w.Db.MakeTables(Schemas.tables, Schemas.model)
             w.Set("existsRepo", w.Db.RepoWith(model = Schemas.model))
         }
         |> unit

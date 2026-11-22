@@ -132,7 +132,7 @@ type ValueRecordSteps(w: World) =
     [<StepDefinition("customers with an address and an optional billing address, in one table")>]
     member _.Tables() =
         task {
-            let! _ = w.Db.Exec Schemas.tables
+            do! w.Db.MakeTables(Schemas.tables, Schemas.model)
             w.Set("valueRepo", w.Db.RepoWith(model = Schemas.model))
         }
         |> unit
@@ -172,8 +172,8 @@ type ValueRecordSteps(w: World) =
             let name = w.Get<string> "valueName"
             let! s = column name "address_street"
             let! c = column name "address_city"
-            let! l = column name "address_geo_lat"
-            equal (box street, box city, lat) (s, c, unbox<decimal> l) "address columns"
+            let! l = w.Db.Scalar<decimal>("select address_geo_lat from value_customers where name = @n", [ "n", box name ])
+            equal (box street, box city, lat) (s, c, l) "address columns"
         }
         |> unit
 
@@ -183,11 +183,12 @@ type ValueRecordSteps(w: World) =
             let name = w.Get<string> "valueName"
 
             let! n =
-                column
-                    name
-                    "(billing_street is null and billing_city is null and billing_note is null and billing_geo_lat is null and billing_geo_lon is null)"
+                w.Db.Scalar<bool>(
+                    "select (billing_street is null and billing_city is null and billing_note is null and billing_geo_lat is null and billing_geo_lon is null) from value_customers where name = @n",
+                    [ "n", box name ]
+                )
 
-            check (unbox<bool> n) "some billing column holds a value"
+            check n "some billing column holds a value"
         }
         |> unit
 
@@ -203,6 +204,11 @@ type ValueRecordSteps(w: World) =
     [<StepDefinition("Ada's billing_street is set to \"(.*)\" behind Plasm's back, with no billing_city")>]
     member _.Partly(street: string) =
         task {
+            // Behind Plasm's back: past the check SQLite's Ddl holds the
+            // value's columns with, as another tool might go.
+            if w.Db.Kind = Plasm.TestDomain.Database.SQLite then
+                do! w.Db.DropConstraint("value_customers", "value_customers_billing_present")
+
             let! _ = w.Db.Exec("update value_customers set billing_street = @s where name = 'Ada'", [ "s", box street ])
             ()
         }

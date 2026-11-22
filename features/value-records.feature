@@ -124,9 +124,16 @@ Feature: A record without a table is stored in its owner's row
 
   Rule: The database's tables are described and checked
 
+    @postgres
     Scenario: Ddl prints a value's columns and the CHECK for an optional one
       When I print the DDL of the customers model
       Then it has the columns address_street text not null, address_note text, address_geo_lat numeric not null and billing_street text
+      And it has a check that the billing columns are all NULL or all present
+
+    @sqlite
+    Scenario: Ddl prints a value's columns and the CHECK for an optional one on SQLite
+      When I print the DDL of the customers model
+      Then it has the columns address_street text not null, address_note text, address_geo_lat text not null and billing_street text
       And it has a check that the billing columns are all NULL or all present
 
     Scenario: The schema check finds a value's missing column

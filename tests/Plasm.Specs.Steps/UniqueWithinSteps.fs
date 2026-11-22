@@ -101,7 +101,7 @@ type UniqueWithinSteps(w: World) =
     [<StepDefinition("tags unique within their tenant")>]
     member _.Tables() =
         task {
-            let! _ = w.Db.Exec Schemas.tables
+            do! w.Db.MakeTables(Schemas.tables, Schemas.model)
             w.Set("tagsRepo", w.Db.RepoWith(model = Schemas.model))
         }
         :> Task
@@ -129,7 +129,7 @@ type UniqueWithinSteps(w: World) =
         | other -> failwithf "expected the field's uniqueness error, got %A" other
 
     [<StepDefinition("^the tenant_tags table has lost its constraint (\\w+)$")>]
-    member _.Lost(name: string) = w.Db.Exec $"alter table tenant_tags drop constraint {name}" |> unit
+    member _.Lost(name: string) = w.Db.DropConstraint("tenant_tags", name) |> unit
 
     [<StepDefinition("^the tenant_tags table's constraint (\\w+) is renamed (\\w+)$")>]
     member _.Renamed(name: string, other: string) =

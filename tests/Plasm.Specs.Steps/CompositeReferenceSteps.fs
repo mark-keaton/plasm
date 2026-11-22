@@ -216,7 +216,7 @@ type CompositeReferenceSteps(w: World) =
     [<StepDefinition("a tracker's tables, written by hand")>]
     member _.Tables() =
         task {
-            let! _ = w.Db.Exec Schemas.tables
+            do! w.Db.MakeTables(Schemas.tables, Schemas.model)
             w.Set("trackerRepo", w.Db.RepoWith(model = Schemas.model))
         }
         |> unit

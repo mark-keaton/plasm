@@ -148,7 +148,7 @@ type RoundTripSteps(w: World) =
     [<StepDefinition("sheets with rows, and cards with comments and labels")>]
     member _.Tables() =
         task {
-            let! _ = w.Db.Exec RoundTripDomain.tables
+            do! w.Db.MakeTables(RoundTripDomain.tables, RoundTripDomain.model)
             w.Set("rtRepo", w.Db.RepoWith(model = RoundTripDomain.model))
         }
         |> unit

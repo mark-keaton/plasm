@@ -491,6 +491,34 @@ type TestDb =
                 | SQLite, v -> unbox<'T> v
         }
 
+    /// A scenario's own tables: `postgres`'s hand-written DDL on PostgreSQL; on
+    /// SQLite, the tables Ddl makes for `model`, as Plasm.Sqlite declares them,
+    /// and the rows the script inserts.
+    member db.MakeTables(postgres: string, model: Model) =
+        task {
+            let! _ =
+                match db.Kind with
+                | PostgreSQL -> db.Exec postgres
+                | SQLite ->
+                    // Made again where the template has them, as the
+                    // PostgreSQL scripts drop theirs first.
+                    let ddl = Repo(model, db.Provider).Ddl()
+
+                    let drops =
+                        [ for m in Text.RegularExpressions.Regex.Matches(ddl, "create table \"?(\\w+)\"?", Text.RegularExpressions.RegexOptions.IgnoreCase) ->
+                              $"drop table if exists {m.Groups.[1].Value};" ]
+                        |> String.concat " "
+
+                    // The rows the script writes, in SQL both read.
+                    let rows =
+                        [ for m in Text.RegularExpressions.Regex.Matches(postgres, "insert into [^;]*;", Text.RegularExpressions.RegexOptions.IgnoreCase) -> m.Value ]
+                        |> String.concat " "
+
+                    db.Exec($"PRAGMA foreign_keys = OFF; {drops} {ddl}; PRAGMA foreign_keys = ON; {rows}")
+
+            ()
+        }
+
     /// SQLite's table made again from its own text, `edit`ed (SQLite alters
     /// no constraint), its rows and indexes kept, foreign keys off while it is.
     member db.RebuildTable(table: string, edit: string -> string) =
@@ -528,7 +556,16 @@ type TestDb =
                 let! _ = db.Exec $"alter table {table} drop constraint if exists {name}"
                 ()
             }
-        | SQLite -> db.RebuildTable(table, fun text -> Text.RegularExpressions.Regex.Replace(text, $",\\s*constraint {name}\\b[^\\n]*", ""))
+        // Its line taken out with the comma before it, the one after it kept;
+        // a table without it is left as it is, as IF EXISTS leaves it.
+        | SQLite ->
+            task {
+                let! text = db.Scalar<string>("select sql from sqlite_schema where type = 'table' and name = @t", [ "t", box table ])
+                let line = $"(?m),\\s*constraint {name}\\b.*?(?=,?\\s*$)"
+
+                if Text.RegularExpressions.Regex.IsMatch(text, line, Text.RegularExpressions.RegexOptions.IgnoreCase) then
+                    do! db.RebuildTable(table, fun t -> Text.RegularExpressions.Regex.Replace(t, line, "", Text.RegularExpressions.RegexOptions.IgnoreCase))
+            }
 
     /// A repo over the same database with different options or model.
     member db.RepoWith(?model: Model, ?options: PostgresOptions, ?includeParameterValues: bool) =

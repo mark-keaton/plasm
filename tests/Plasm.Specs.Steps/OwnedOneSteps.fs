@@ -121,7 +121,7 @@ type OwnedOneSteps(w: World) =
     [<StepDefinition("accounts, profiles and settings tables")>]
     member _.Tables() =
         task {
-            let! _ = w.Db.Exec OwnedAccounts.tables
+            do! w.Db.MakeTables(OwnedAccounts.tables, OwnedAccounts.model)
             w.Set("accountRepo", w.Db.RepoWith(model = OwnedAccounts.model))
         }
         |> unit
@@ -222,7 +222,7 @@ type OwnedOneSteps(w: World) =
     member _.SecondProfile() =
         task {
             let (AccountId raw) = (w.Get<Account> "account").Id
-            let! _ = w.Db.Exec "alter table owned_profiles drop constraint owned_profiles_account_key"
+            do! w.Db.DropConstraint("owned_profiles", "owned_profiles_account_key")
             let! _ = w.Db.Exec $"insert into owned_profiles(account, bio) values ({raw}, 'again')"
             ()
         }

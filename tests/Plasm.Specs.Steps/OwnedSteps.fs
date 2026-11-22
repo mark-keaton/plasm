@@ -87,14 +87,21 @@ type OwnedSteps(w: World) =
     let storedLines (id: InvoiceId) =
         task {
             let (InvoiceId raw) = id
-            let! text = w.Db.Scalar<string>($"select coalesce(string_agg(item || ' ' || trim(to_char(amount, 'FM9999990.##')), ', ' order by id), '') from invoice_lines where invoice = {raw}")
+            // Each amount without its trailing zeros: PostgreSQL's numeric by
+            // to_char, SQLite's text as it is kept.
+            let amount =
+                match w.Db.Kind with
+                | Plasm.TestDomain.Database.PostgreSQL -> "trim(to_char(amount, 'FM9999990.##'))"
+                | Plasm.TestDomain.Database.SQLite -> "(CASE WHEN instr(amount, '.') > 0 THEN rtrim(rtrim(amount, '0'), '.') ELSE amount END)"
+
+            let! text = w.Db.Scalar<string>($"select coalesce(string_agg(item || ' ' || {amount}, ', ' order by id), '') from invoice_lines where invoice = {raw}")
             return text
         }
 
     [<StepDefinition("invoices and invoice_lines tables")>]
     member _.Tables() =
         task {
-            let! _ = w.Db.Exec OwnedInvoices.tables
+            do! w.Db.MakeTables(OwnedInvoices.tables, OwnedInvoices.model)
             w.Set("invoiceRepo", w.Db.RepoWith(model = OwnedInvoices.model))
         }
         |> unit

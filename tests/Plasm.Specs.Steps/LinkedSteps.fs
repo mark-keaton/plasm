@@ -68,7 +68,7 @@ type LinkedSteps(w: World) =
     [<StepDefinition("tags \"urgent\", \"docs\" and \"bug\", and cards, linked through card_tags")>]
     member _.Tables() =
         task {
-            let! _ = w.Db.Exec LinkedTags.tables
+            do! w.Db.MakeTables(LinkedTags.tables, LinkedTags.model)
             w.Set("tagRepo", w.Db.RepoWith(model = LinkedTags.model))
         }
         |> unit
@@ -239,7 +239,7 @@ type LinkedSteps(w: World) =
         |> unit
 
     [<StepDefinition("card_tags has lost its foreign key on tag_id")>]
-    member _.DropFk() = w.Db.Exec "alter table card_tags drop constraint card_tags_tag_id_fkey" |> unit
+    member _.DropFk() = w.Db.DropConstraint("card_tags", "card_tags_tag_id_fkey") |> unit
 
     [<StepDefinition("I check the cards and tags model against the database")>]
     member _.Check() =

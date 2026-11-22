@@ -35,3 +35,9 @@ features/composite-keys.feature	*ARecordWhoseIdIsARecordHasAKeyOfSeveralColumnsF
 features/query-check.feature	*ARepositoryStartsOnlyWhenItsQueriesAndTheDatabaseFitFeature*
 features/statement-check.feature	*TheDatabaseDescribesEveryStatementBeforeAnyRunsFeature*
 features/raw-sql.feature	*TypedSQLEscapeHatchesFeature*
+features/query-exists.feature	*AQueryCanAskWhetherAnotherQueryFindsAnythingFeature*
+features/value-records.feature	*ARecordWithoutATableIsStoredInItsOwnersRowFeature*
+features/linked-collections.feature	*ALinkedCollectionIsAPlainListOfSharedRecordsLoadedWithItsOwnerFeature*
+features/unique-within.feature	*AFieldCanBeUniqueWithinOtherFieldsFeature*
+features/owned-records.feature	*AnOwnedRecordIsAPlainFieldLoadedAndWrittenWithItsOwnerFeature*
+features/owned-collections.feature	*AnOwnedCollectionIsAPlainListLoadedAndWrittenWithItsOwnerFeature*
