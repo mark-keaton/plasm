@@ -137,8 +137,8 @@ It finds a foreign key's by running the failed statement again under a
 savepoint with the check deferred, and reading `pragma_foreign_key_check`
 before and after. It reads only the tables the statement can break: an
 INSERT's own table, an UPDATE's and those referring to it, a DELETE's referring
-tables. It then rolls back to as the failure left things. A violation is then
-the field's error, by its table and columns, under any constraint name. In a
+tables. Then it rolls back to the savepoint, so the database is as the failure
+left it. A violation is the field's error, by its table and columns, under any constraint name. In a
 database with triggers the statement is not run again, and the failure stays a
 database failure naming no constraint.
 
