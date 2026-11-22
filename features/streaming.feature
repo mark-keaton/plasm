@@ -37,6 +37,11 @@ Feature: A query's rows can be read as a stream
       Then the stream gives Ann, Bea, Cal, Dee and Eve, each as a value
       And the stream was reported once, with 5 rows
 
+    Scenario: A projection whose value the database returns as another type streams it as its own
+      Given three moments, each a time with its offset
+      When I stream each moment's id and time, by id
+      Then the stream gives the three times, each with its offset
+
     Scenario: Nothing is sent until the caller asks for the first row
       When I make a stream of the customers and do not read it
       Then no command was sent

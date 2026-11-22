@@ -20,6 +20,19 @@ module StreamDomain =
     [<Table "stream_people">]
     type Person = { Id: PersonId; Name: string; Place: int }
 
+    type MomentId = MomentId of int64
+
+    /// A time with its offset: read on PostgreSQL as a DateTime, then by the
+    /// DateTimeOffset reader, the column read twice (Execution's projections).
+    [<Table "stream_moments">]
+    type Moment = { Id: MomentId; At: DateTimeOffset }
+
+    let moments = Model.buildOrFail [] [ typeof<Moment> ]
+
+    let momentTables =
+        "drop table if exists stream_moments;
+         create table stream_moments (id bigint generated always as identity primary key, at timestamptz not null);"
+
     let model = Model.buildOrFail [] [ typeof<Person>; typeof<Order> ]
 
     let tables =
@@ -124,6 +137,30 @@ type StreamSteps(w: World) =
             repo <- Repo(model, counting, { RepoOptions.Default with OnCommand = Some events.Add })
         }
         :> Task
+
+    [<StepDefinition("^three moments, each a time with its offset$")>]
+    member _.Moments() =
+        task {
+            do! w.Db.MakeTables(StreamDomain.momentTables, StreamDomain.moments)
+            let r = Repo(StreamDomain.moments, w.Db.Provider)
+            w.Set("momentRepo", r)
+
+            for h in [ 1; 2; 3 ] do
+                let! m = r.Transact(Tx.insert { Id = MomentId 0L; At = DateTimeOffset(2026, 1, 2, h, 30, 0, TimeSpan.Zero) }: Tx<_, unit>)
+                ok m |> ignore
+        }
+        :> Task
+
+    [<StepDefinition("^I stream each moment's id and time, by id$")>]
+    member _.StreamMoments() =
+        let r = w.Get<Repo> "momentRepo"
+        streamAll (r.Stream(plasm { for m in tableOf<Moment> do orderBy m.Id; select (m.Id, m.At) })) :> Task
+
+    [<StepDefinition("^the stream gives the three times, each with its offset$")>]
+    member _.GivesMoments() =
+        check (seen |> Seq.forall Result.isOk) $"expected only values: %A{seen}"
+        let times = values () |> List.map (fun v -> snd (v :?> MomentId * DateTimeOffset))
+        equal [ for h in 1..3 -> DateTimeOffset(2026, 1, 2, h, 30, 0, TimeSpan.Zero) ] times "the times"
 
     [<StepDefinition("I stream the customers ordered by name")>]
     member _.StreamByName() = streamAll (repo.Stream byName) :> Task
