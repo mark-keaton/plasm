@@ -1,6 +1,6 @@
 <Project>
   <ItemGroup>
-    <PackageVersion Include="Plasm.Postgres" Version="0.2.0" />
+    <PackageVersion Include="Plasm.Postgres" Version="0.3.0" />
     <PackageVersion Include="FSharp.Core" Version="11.0.101" />
     <PackageVersion Include="xunit.v3.aot" Version="4.0.3" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.16.0" />
