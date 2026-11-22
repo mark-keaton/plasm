@@ -254,28 +254,18 @@ echo "--- GraphQL consumer"; cat "$work/gql.txt"
 expected='{"data":{"sql":"SELECT \"t\".\"id\", \"t\".\"title\", \"t\".\"points\" FROM \"tickets\" AS \"t\" WHERE \"t\".\"points\" > @p0 ORDER BY \"t\".\"points\" DESC"}}'
 if [ "$(cat "$work/gql.txt")" = "$expected" ]; then echo "the GraphQL consumer's where and order are Plasm's SQL"; else echo "the GraphQL consumer answered otherwise"; failed=1; fi
 
-# A SQLite application on Plasm.Sqlite, from the same feed: a file made from
-# the model's DDL, a decimal, a time, a list and a document written and read
-# back, under the runtime and as a native binary with no warning naming Plasm.
-# SQLite's native library arrives with the package for each platform Plasm is
-# checked on: beside the native binary here, and beside a publish for each
-# other platform (not run there; run-linux.sh runs Plasm.Sqlite on Linux).
+# A SQLite application on Plasm.Sqlite, from the same feed
+# (tests/Plasm.Package/sqlite/run.sh): a file made from the model's DDL, a
+# decimal, a time, a list and a document written and read back, under the
+# runtime and as a native binary with no warning naming Plasm, SQLite's native
+# library beside it. run-linux.sh runs the same on Linux, from a feed packed
+# there; here the library is also checked to arrive in a publish for each
+# other platform Plasm is checked on.
+bash "$here/sqlite/run.sh" "$feed" "$version" || failed=1
 sqa="$work/sqlite-app"
 mkdir -p "$sqa"
 cp "$here/sqlite/SqliteConsumer.fsproj" "$here/sqlite/Program.fs" "$app/nuget.config" "$sqa/"
-dotnet build "$sqa" -c Release -p:PlasmVersion="$version" -o "$work/sq-jit" -v q > "$work/sq-build.log" 2>&1 || { cat "$work/sq-build.log"; exit 1; }
-dotnet "$work/sq-jit/SqliteConsumer.dll" "$work/sq-jit.db" > "$work/sq-jit.txt" 2>&1 || true
-dotnet publish "$sqa" -c Release -r "$rid" -p:PlasmVersion="$version" -o "$work/sq-native" -v m > "$work/sq-native.log" 2>&1 || { tail -30 "$work/sq-native.log"; exit 1; }
-"$work/sq-native/SqliteConsumer" "$work/sq-native.db" > "$work/sq-native.txt" 2>&1 || true
-echo "--- SQLite consumer, runtime"; cat "$work/sq-jit.txt"
-echo "--- SQLite consumer, native"; cat "$work/sq-native.txt"
-if ! grep -q '^read: as written$' "$work/sq-native.txt"; then echo "the SQLite consumer's native binary did not read back what it wrote"; failed=1; fi
-if diff -u "$work/sq-jit.txt" "$work/sq-native.txt"; then echo "the SQLite consumer's native binary prints what the runtime prints"; else echo "the SQLite consumer's native binary differs from the runtime"; failed=1; fi
-sqwarn=$(grep 'warning IL' "$work/sq-native.log" | grep -c 'Plasm' || true)
-echo "the SQLite consumer, native: $(grep -c 'warning IL' "$work/sq-native.log" || true) IL warning lines, $sqwarn naming Plasm"
-if [ "$sqwarn" != 0 ]; then grep 'warning IL' "$work/sq-native.log" | grep 'Plasm' | sort -u; failed=1; fi
 native_lib() { case "$1" in osx-*) echo libe_sqlite3.dylib;; *) echo libe_sqlite3.so;; esac; }
-if [ -f "$work/sq-native/$(native_lib "$rid")" ]; then echo "SQLite's native library is beside the $rid binary"; else echo "no $(native_lib "$rid") beside the $rid binary"; failed=1; fi
 for other in osx-arm64 linux-x64 linux-arm64; do
   [ "$other" = "$rid" ] && continue
   dotnet publish "$sqa" -c Release -r "$other" --self-contained false -p:PublishAot=false -p:PlasmVersion="$version" -o "$work/sq-$other" -v q > "$work/sq-$other.log" 2>&1 || { tail -30 "$work/sq-$other.log"; exit 1; }

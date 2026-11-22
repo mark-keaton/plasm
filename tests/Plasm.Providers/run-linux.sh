@@ -1,7 +1,10 @@
 #!/bin/bash
 # The SQLite checks on Linux, in a container, as CI would run them: the SQLite
 # run of the features sqlite-features.txt lists, the leftover files check with
-# a run killed mid-way, and Plasm.Sqlite's native-AOT check.
+# a run killed mid-way, Plasm.Sqlite's native-AOT check, and an application
+# on Plasm.Sqlite's packages alone, packed in the container, run under the
+# runtime and natively (tests/Plasm.Package/sqlite/run.sh): that SQLite's
+# native library, which the package brings, resolves on Linux.
 #   tests/Plasm.Providers/run-linux.sh          linux-arm64 (or the machine's own)
 #   tests/Plasm.Providers/run-linux.sh x64      linux-x64, under emulation on arm64
 # The repository's files (tracked, and untracked but not ignored) are copied to
@@ -36,6 +39,6 @@ docker run --rm --platform "$platform" \
   -v "$copy:/work" -w /work \
   -v "plasm-aot-nuget-$arch:/root/.nuget/packages" \
   -e DOTNET_CLI_TELEMETRY_OPTOUT=1 -e DOTNET_NOLOGO=1 \
-  "$image" bash -c 'uname -m && dotnet build Plasm.slnx -v q -m:1 -nodeReuse:false 2>&1 | grep -E " error |Build succeeded" | sort -u && bash tests/Plasm.Providers/sqlite-run.sh /tmp/sqlite-logs && echo "sqlite-run exit 0" && bash tests/Plasm.Providers/no-leftover-files.sh --prove && echo "no-leftover-files exit 0" && bash tests/Plasm.Aot.Sqlite/run.sh | grep -E "^runtime:|IL warnings|prints what|differs|threw|cancelled|native binary:"' || code=$?
+  "$image" bash -c 'uname -m && dotnet build Plasm.slnx -v q -m:1 -nodeReuse:false 2>&1 | grep -E " error |Build succeeded" | sort -u && bash tests/Plasm.Providers/sqlite-run.sh /tmp/sqlite-logs && echo "sqlite-run exit 0" && bash tests/Plasm.Providers/no-leftover-files.sh --prove && echo "no-leftover-files exit 0" && bash tests/Plasm.Aot.Sqlite/run.sh | grep -E "^runtime:|IL warnings|prints what|differs|threw|cancelled|native binary:" && bash tests/Plasm.Package/sqlite/run.sh --pack && echo "sqlite-consumer exit 0"' || code=$?
 echo "linux-$arch: $(( $(date +%s) - start )) s"
 exit $code
