@@ -87,9 +87,10 @@ module internal SqliteDdl =
 
 /// SQLite's catalogue: the table-valued pragmas, joined to the list of tables
 /// sent as JSON (schema-check.feature). Constraint names SQLite keeps only in
-/// each table's own text, so a unique constraint or a foreign key is reported
-/// by the name Plasm gives it (`t_c_key`, `t_c_fkey`): a misnamed one cannot
-/// be found.
+/// each table's own text, and a violation names none: a unique constraint or
+/// index and a foreign key are their field's by their table and columns
+/// (constraints.feature), so each is reported by the name Plasm gives it
+/// (`t_c_key`, `t_c_fkey`), and none is misnamed.
 module internal SqliteCatalogue =
     let catalogue =
         { new ICatalogueDialect with
@@ -105,7 +106,7 @@ module internal SqliteCatalogue =
 
             member _.UniqueIndexes tables =
                 "SELECT t.value, (SELECT string_agg(ii.name, ',' ORDER BY ii.seqno) FROM pragma_index_info(il.name) AS ii), "
-                + "CASE WHEN il.origin = 'u' THEN t.value || '_' || (SELECT string_agg(ii.name, '_' ORDER BY ii.seqno) FROM pragma_index_info(il.name) AS ii) || '_key' ELSE il.name END, "
+                + "CASE WHEN il.origin = 'pk' THEN il.name ELSE t.value || '_' || (SELECT string_agg(ii.name, '_' ORDER BY ii.seqno) FROM pragma_index_info(il.name) AS ii) || '_key' END, "
                 + "il.origin IN ('u', 'pk') FROM json_each("
                 + tables
                 + ") AS t JOIN pragma_index_list(t.value) AS il WHERE il.\"unique\" = 1"
@@ -388,35 +389,40 @@ module internal Classify =
         | e when e &&& 0xff = 5 || e &&& 0xff = 6 -> DbFailureKind.Timeout // SQLITE_BUSY, SQLITE_LOCKED, after the busy timeout
         | _ -> DbFailureKind.OtherDatabaseError
 
-    /// The constraint a message names: a CHECK's name; a UNIQUE's columns, as
-    /// the name Plasm gives such a constraint (`t_c_key`).
+    /// The constraint a message names: a CHECK's name. SQLite names no other.
     let private constraintOf (extended: int) (message: string) =
-        let detail =
-            match message.IndexOf "constraint failed: " with
-            | -1 -> None
-            | i -> Some(message.Substring(i + "constraint failed: ".Length).TrimEnd('\'', '.'))
-
-        match extended, detail with
-        | 275, Some name -> Some name
-        | (2067 | 1555), Some columns ->
-            // "customers.email" or "t.a, t.b"
-            let parts = columns.Split(", ") |> Array.map (fun c -> c.Split('.'))
-
-            if parts.Length > 0 && parts |> Array.forall (fun p -> p.Length = 2) then
-                Some(parts.[0].[0] + "_" + (parts |> Array.map (fun p -> p.[1]) |> String.concat "_") + "_key")
-            else
-                None
+        match extended, message.IndexOf "constraint failed: " with
+        | 275, i when i >= 0 -> Some(message.Substring(i + "constraint failed: ".Length).TrimEnd('\'', '.'))
         | _ -> None
+
+    /// A UNIQUE's table and columns, from "t.a" or "t.a, t.b".
+    let private uniqueOf (extended: int) (message: string) =
+        match extended, message.IndexOf "constraint failed: " with
+        | (2067 | 1555), i when i >= 0 ->
+            let parts =
+                message.Substring(i + "constraint failed: ".Length).TrimEnd('\'', '.').Split(", ")
+                |> Array.map (fun c -> c.Split('.'))
+
+            if parts.Length > 0 && parts |> Array.forall (fun p -> p.Length = 2 && p.[0] = parts.[0].[0]) then
+                Some parts.[0].[0], [ for p in parts -> p.[1] ]
+            else
+                None, []
+        | _ -> None, []
+
+    let private failure (se: SqliteException) (table: string option, columns: string list) =
+        { Kind = kindOf se.SqliteExtendedErrorCode
+          SqlState = None
+          Constraint = constraintOf se.SqliteExtendedErrorCode se.Message
+          Table = table
+          Columns = columns
+          Message = se.Message
+          Exception = se }
 
     let rec classify (ex: exn) : DbFailure option =
         match ex with
-        | :? SqliteException as se ->
-            Some
-                { Kind = kindOf se.SqliteExtendedErrorCode
-                  SqlState = None
-                  Constraint = constraintOf se.SqliteExtendedErrorCode se.Message
-                  Message = se.Message
-                  Exception = ex }
+        // A foreign key failure, with the key it broke (ForeignKeys).
+        | :? ForeignKeys.Broken as b -> Some(failure b.Failure (Some b.Table, b.Columns))
+        | :? SqliteException as se -> Some(failure se (uniqueOf se.SqliteExtendedErrorCode se.Message))
         | :? AggregateException as ae when ae.InnerExceptions.Count = 1 -> classify ae.InnerException
         | _ -> None
 

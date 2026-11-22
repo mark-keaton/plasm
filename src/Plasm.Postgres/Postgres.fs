@@ -288,6 +288,8 @@ module internal Classify =
                 { Kind = kindOf pe.SqlState
                   SqlState = Some pe.SqlState
                   Constraint = Option.ofObj pe.ConstraintName
+                  Table = Option.ofObj pe.TableName
+                  Columns = []
                   Message = pe.MessageText
                   Exception = ex }
         | :? NpgsqlException as ne ->
@@ -300,6 +302,8 @@ module internal Classify =
                 { Kind = kind
                   SqlState = None
                   Constraint = None
+                  Table = None
+                  Columns = []
                   Message = ne.Message
                   Exception = ex }
         | :? SocketException ->
@@ -307,6 +311,8 @@ module internal Classify =
                 { Kind = DbFailureKind.ConnectionFailure
                   SqlState = None
                   Constraint = None
+                  Table = None
+                  Columns = []
                   Message = ex.Message
                   Exception = ex }
         | :? TimeoutException ->
@@ -314,6 +320,8 @@ module internal Classify =
                 { Kind = DbFailureKind.Timeout
                   SqlState = None
                   Constraint = None
+                  Table = None
+                  Columns = []
                   Message = ex.Message
                   Exception = ex }
         | :? AggregateException as ae when ae.InnerExceptions.Count = 1 -> classify ae.InnerException

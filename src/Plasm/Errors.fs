@@ -62,7 +62,16 @@ type DbFailureKind =
 type DbFailure =
     { Kind: DbFailureKind
       SqlState: string option
+      /// The violated constraint's name, where the database gives it
+      /// (PostgreSQL always; SQLite a CHECK's).
       Constraint: string option
+      /// The table a violated constraint is on, where the database gives it.
+      Table: string option
+      /// The columns a violated unique constraint or foreign key holds, in its
+      /// order, where the database gives them (SQLite); else empty. With
+      /// Table, they say which constraint failed when no name does
+      /// (constraints.feature).
+      Columns: string list
       Message: string
       Exception: exn }
 

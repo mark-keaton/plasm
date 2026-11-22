@@ -327,50 +327,80 @@ let rec check (model: Model) (held: obj -> string option) (s: CsState) : CsState
 let rec isValid (s: CsState) =
     s.Errors.IsEmpty && s.Children |> List.forall (fun w -> w.Children |> List.forall isValid)
 
-/// The field a violated constraint belongs to, by PostgreSQL's default
-/// names: <table>_<column>_key (unique), _fkey (reference) and _check (a
-/// column check). Any other name stays a database failure (constraints.feature).
-let private conventional (schema: SchemaInfo) (name: string) =
+/// A constraint a field claims: its default name, the columns it holds, the
+/// field error it is and that error's message.
+type private Claim =
+    { Name: string
+      Columns: string list
+      Field: string
+      Kind: FieldErrorKind
+      Says: string }
+
+/// What the failure says of its constraint: a name, or a table and columns
+/// (SQLite names neither a unique constraint nor a foreign key).
+let private claimed (table: string) (f: DbFailure) (c: Claim) =
+    match f.Constraint with
+    | Some name -> name = c.Name
+    | None ->
+        not f.Columns.IsEmpty
+        && f.Table = Some table
+        && f.Columns = c.Columns
+        && (match f.Kind, c.Kind with
+            | DbFailureKind.UniqueViolation, FieldErrorKind.UniqueConstraint _
+            | DbFailureKind.ForeignKeyViolation, FieldErrorKind.ForeignKeyConstraint _ -> true
+            | _ -> false)
+
+/// The field a violated constraint belongs to (constraints.feature): by
+/// PostgreSQL's default names, <table>_<column>_key (unique), _fkey
+/// (reference) and _check (a column check), or by the table and columns of
+/// a unique constraint or reference where the database names no constraint.
+/// Any other violation stays a database failure.
+let private conventional (schema: SchemaInfo) (f: DbFailure) =
     let table = schema.Table.Split('.') |> Array.last
 
-    // A linked list's join table: a link to a record that does not exist.
-    let linked =
-        schema.Assocs
-        |> Array.tryPick (fun a ->
-            match a.Through with
-            | Some j when a.Linked && name = $"{j.Table}_{j.TargetColumn}_fkey" -> Some(a.Name, FieldErrorKind.ForeignKeyConstraint name, "does not exist")
-            | _ -> None)
+    let claim name columns field kind says =
+        { Name = name
+          Columns = columns
+          Field = field
+          Kind = kind name
+          Says = says }
 
-    if linked.IsSome then linked else
+    let claims =
+        [ // A linked list's join table: a link to a record that does not exist.
+          for a in schema.Assocs do
+              match a.Through with
+              | Some j when a.Linked ->
+                  j.Table, claim $"{j.Table}_{j.TargetColumn}_fkey" [ j.TargetColumn ] a.Name FieldErrorKind.ForeignKeyConstraint "does not exist"
+              | _ -> ()
 
-    schema.Fields
-    |> Array.tryPick (fun f ->
-        // A field of several columns (a reference to a key of several parts):
-        // PostgreSQL names its constraint by every column.
-        let columns = if f.Composite then f.Parts |> List.map (fun p -> p.Name) |> String.concat "_" else f.Column
-        let stem = $"{table}_{columns}"
+          for fd in schema.Fields do
+              // A field of several columns (a reference to a key of several
+              // parts): PostgreSQL names its constraint by every column.
+              let columns = if fd.Composite then fd.Parts |> List.map (fun p -> p.Name) else [ fd.Column ]
+              let stem = $"""{table}_{String.concat "_" columns}"""
 
-        // A union's case field or a value's field that refers to a record is
-        // the field's (union-references.feature).
-        let caseReference =
-            f.Name <> schema.Key.Name
-            && f.NestedReferences |> List.exists (fun (_, l) -> name = $"{table}_{l.Column}_fkey")
+              // A field unique within others is named by all its columns
+              // (unique-within.feature).
+              if fd.Unique then
+                  table, claim $"""{table}_{String.concat "_" fd.UniqueColumns}_key""" fd.UniqueColumns fd.Name FieldErrorKind.UniqueConstraint "has already been taken"
 
-        // A field unique within others is named by all its columns
-        // (unique-within.feature).
-        let uniqueName = $"""{table}_{String.concat "_" f.UniqueColumns}_key"""
+              table, claim (stem + "_key") columns fd.Name FieldErrorKind.UniqueConstraint "has already been taken"
+              table, claim (stem + "_fkey") columns fd.Name FieldErrorKind.ForeignKeyConstraint "does not exist"
 
-        if f.Unique && name = uniqueName then Some(f.Name, FieldErrorKind.UniqueConstraint name, "has already been taken")
-        elif name = stem + "_key" then Some(f.Name, FieldErrorKind.UniqueConstraint name, "has already been taken")
-        elif name = stem + "_fkey" || caseReference then Some(f.Name, FieldErrorKind.ForeignKeyConstraint name, "does not exist")
-        elif name = stem + "_check" then Some(f.Name, FieldErrorKind.CheckConstraint name, "is invalid")
-        else None)
+              // A union's case field or a value's field that refers to a
+              // record is the field's (union-references.feature).
+              if fd.Name <> schema.Key.Name then
+                  for _, l in fd.NestedReferences do
+                      table, claim $"{table}_{l.Column}_fkey" [ l.Column ] fd.Name FieldErrorKind.ForeignKeyConstraint "does not exist"
+
+              table, claim (stem + "_check") [] fd.Name FieldErrorKind.CheckConstraint "is invalid" ]
+
+    claims
+    |> List.tryFind (fun (on, c) -> claimed on f c)
+    |> Option.map (fun (_, c) -> c.Field, c.Kind, c.Says)
 
 let private constraintError (schema: SchemaInfo) (s: CsState) (f: DbFailure) : CsState option =
-    match f.Constraint with
-    | Some name ->
-        conventional schema name |> Option.map (fun (field, kind, message) -> Cs.addError s field kind message)
-    | None -> None
+    conventional schema f |> Option.map (fun (field, kind, message) -> Cs.addError s field kind message)
 
 /// Why a write's statement failed; or that it was not sent, because one
 /// before it failed (round-trips.feature).
@@ -713,10 +743,18 @@ and private writeLinks model (sess: Session) (schema: SchemaInfo) (s: CsState) (
         // target side's default name, over every column of a key of several parts.
         let linkKey = j.Table + "_" + (targets |> List.map fst |> String.concat "_") + "_fkey"
 
+        let link =
+            { Name = linkKey
+              Columns = targets |> List.map fst
+              Field = a.Name
+              Kind = FieldErrorKind.ForeignKeyConstraint linkKey
+              Says = "does not exist" }
+
         let failed (f: DbFailure) =
-            match f.Constraint with
-            | Some name when name = linkKey -> Fail(Invalid(Cs.addError s a.Name (FieldErrorKind.ForeignKeyConstraint name) "does not exist"))
-            | _ -> failedWrite schema s f
+            if claimed j.Table f link then
+                Fail(Invalid(Cs.addError s link.Field link.Kind link.Says))
+            else
+                failedWrite schema s f
 
         match l.Mode with
         | PutLinks ->

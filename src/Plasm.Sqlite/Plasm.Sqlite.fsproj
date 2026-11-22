@@ -12,6 +12,7 @@
     <Compile Include="Windows.fs" />
     <Compile Include="Times.fs" />
     <Compile Include="Lists.fs" />
+    <Compile Include="ForeignKeys.fs" />
     <Compile Include="Connection.fs" />
     <Compile Include="Sqlite.fs" />
   </ItemGroup>

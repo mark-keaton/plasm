@@ -96,6 +96,8 @@ type internal PlaygroundProvider(inner: IProvider) =
                             { Kind = DbFailureKind.ConnectionFailure
                               SqlState = None
                               Constraint = None
+                              Table = None
+                              Columns = []
                               Message = ex.Message
                               Exception = ex }
                     | other -> other

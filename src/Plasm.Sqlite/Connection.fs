@@ -235,6 +235,17 @@ and internal HearingCommand(inner: SqliteCommand, connection: DbConnection, inte
             | :? DateTimeOffset -> p.Value <- Times.kept p.Value
             | _ -> ()
 
+    /// `f`, a foreign key failure raised with the key it broke (ForeignKeys):
+    /// found outside the token's hearing, so no interrupt meets its cleanup,
+    /// and not looked for once `ct` is cancelled.
+    let keyed (ct: CancellationToken) (f: unit -> 'T) : 'T =
+        try
+            f ()
+        with :? SqliteException as e when e.SqliteExtendedErrorCode = ForeignKeys.Code ->
+            match ForeignKeys.diagnose inner (fun () -> ct.IsCancellationRequested) e with
+            | :? ForeignKeys.Broken as b -> raise b
+            | _ -> reraise ()
+
     member _.Inner = inner
     override _.CommandText with get () = inner.CommandText and set v = inner.CommandText <- v
     override _.CommandTimeout with get () = inner.CommandTimeout and set v = inner.CommandTimeout <- v
@@ -259,20 +270,20 @@ and internal HearingCommand(inner: SqliteCommand, connection: DbConnection, inte
     override _.Cancel() = inner.Cancel()
     override _.CreateDbParameter() = inner.CreateParameter() :> DbParameter
     override _.Prepare() = inner.Prepare()
-    override _.ExecuteNonQuery() = kept (); inner.ExecuteNonQuery()
-    override _.ExecuteScalar() = kept (); inner.ExecuteScalar()
+    override _.ExecuteNonQuery() = kept (); keyed CancellationToken.None (fun () -> inner.ExecuteNonQuery())
+    override _.ExecuteScalar() = kept (); keyed CancellationToken.None (fun () -> inner.ExecuteScalar())
     // Read as the asynchronous reader reads (its times in Plasm's form).
     override _.ExecuteDbDataReader(behavior) =
         kept ()
-        new HearingReader(inner.ExecuteReader(behavior), CancellationToken.None, { new IDisposable with member _.Dispose() = () }) :> DbDataReader
+        new HearingReader(keyed CancellationToken.None (fun () -> inner.ExecuteReader(behavior)), CancellationToken.None, { new IDisposable with member _.Dispose() = () }) :> DbDataReader
 
     override _.ExecuteNonQueryAsync(ct: CancellationToken) =
         kept ()
-        Task.FromResult(Interrupted.run ct interrupts.Hear (fun () -> tried ct (fun () -> inner.ExecuteNonQuery())))
+        Task.FromResult(keyed ct (fun () -> Interrupted.run ct interrupts.Hear (fun () -> tried ct (fun () -> inner.ExecuteNonQuery()))))
 
     override _.ExecuteScalarAsync(ct: CancellationToken) =
         kept ()
-        Task.FromResult(Interrupted.run ct interrupts.Hear (fun () -> tried ct (fun () -> inner.ExecuteScalar())))
+        Task.FromResult(keyed ct (fun () -> Interrupted.run ct interrupts.Hear (fun () -> tried ct (fun () -> inner.ExecuteScalar()))))
 
     override _.ExecuteDbDataReaderAsync(behavior, ct: CancellationToken) =
         ct.ThrowIfCancellationRequested()
@@ -280,7 +291,17 @@ and internal HearingCommand(inner: SqliteCommand, connection: DbConnection, inte
         let heard = interrupts.Hear ct
 
         try
-            let reader = tried ct (fun () -> inner.ExecuteReader(behavior))
+            let reader =
+                try
+                    tried ct (fun () -> inner.ExecuteReader(behavior))
+                with :? SqliteException as se when se.SqliteExtendedErrorCode = ForeignKeys.Code ->
+                    // Its key found once the token is no longer heard (keyed).
+                    heard.Dispose()
+
+                    match ForeignKeys.diagnose inner (fun () -> ct.IsCancellationRequested) se with
+                    | :? ForeignKeys.Broken as b -> raise b
+                    | _ -> reraise ()
+
             Task.FromResult(new HearingReader(reader, ct, heard) :> DbDataReader)
         with e ->
             heard.Dispose()

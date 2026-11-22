@@ -53,6 +53,8 @@ module internal Closed =
                 { Kind = DbFailureKind.RepositoryClosed
                   SqlState = None
                   Constraint = None
+                  Table = None
+                  Columns = []
                   Message = m
                   Exception = ex }
         | _ -> None
@@ -282,6 +284,8 @@ module internal Driver =
                 { Kind = DbFailureKind.OtherDatabaseError
                   SqlState = None
                   Constraint = None
+                  Table = None
+                  Columns = []
                   Message = "the provider could not send or read a value: " + inner.Message
                   Exception = inner }
         | :? AggregateException as ae when ae.InnerExceptions.Count = 1 && (ae.InnerException :? DriverFault) -> classify provider ae.InnerException

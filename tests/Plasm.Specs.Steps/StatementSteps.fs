@@ -97,7 +97,7 @@ type NoDescribe(inner: IProvider) =
 type RefusingDescribe(inner: IProvider, saying: string) =
     interface IProvider with
         member _.Dialect = inner.Dialect
-        member _.Describe(_, _) = Task.FromResult(DescribeOutcome.Refused { Kind = DbFailureKind.OtherDatabaseError; SqlState = None; Constraint = None; Message = saying; Exception = exn saying })
+        member _.Describe(_, _) = Task.FromResult(DescribeOutcome.Refused { Kind = DbFailureKind.OtherDatabaseError; SqlState = None; Constraint = None; Table = None; Columns = []; Message = saying; Exception = exn saying })
         member _.OpenConnection ct = inner.OpenConnection ct
         member _.Classify ex = inner.Classify ex
         member _.BeginSnapshot(c, ct) = inner.BeginSnapshot(c, ct)

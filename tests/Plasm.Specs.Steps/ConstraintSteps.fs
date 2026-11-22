@@ -1,8 +1,10 @@
 namespace Plasm.Specs
 
+open System.Text.RegularExpressions
 open Reqnroll
 open Plasm
 open Plasm.TestDomain
+open Plasm.TestDomain.Database
 open Plasm.TestDomain.Domain
 
 /// A second record keyed by CustomerId, for the shared-key scenario.
@@ -22,6 +24,45 @@ type ConstraintSteps(w: World) =
         | Error other -> failwithf "unexpected %A" other
 
     let failure () = w.Get<Choice<FieldError list, DbFailure>> "constraintFailure"
+
+    /// SQLite drops and renames no unique constraint or foreign key: the
+    /// table is made again from its own text, `edit`ed, its rows and indexes
+    /// kept, with foreign keys off while it is.
+    let rebuild (table: string) (edit: string -> string) =
+        task {
+            let! text = w.Db.Scalar<string>("select sql from sqlite_schema where type = 'table' and name = @t", [ "t", box table ])
+            let! indexes =
+                w.Db.Scalar<string>(
+                    "select coalesce(group_concat(sql || '; ', ''), '') from sqlite_schema where type = 'index' and tbl_name = @t and sql is not null",
+                    [ "t", box table ]
+                )
+            let edited = edit text
+            check (edited <> text) $"the edit changed nothing in {text}"
+            let made = Regex.Replace(edited, $"^create table {table}\\b", $"create table {table}_rebuilt", RegexOptions.IgnoreCase)
+
+            let! _ =
+                w.Db.Exec(
+                    $"PRAGMA foreign_keys = OFF; {made}; insert into {table}_rebuilt select * from {table}; drop table {table}; "
+                    + $"alter table {table}_rebuilt rename to {table}; "
+                    + indexes
+                    + "PRAGMA foreign_keys = ON;"
+                )
+
+            ()
+        }
+
+    /// The table's text without its constraint `name` (on its own line).
+    let without (name: string) (text: string) =
+        Regex.Replace(text, $",\\s*constraint {name}\\b[^\\n]*", "")
+
+    let renamed (name: string) (other: string) (text: string) =
+        Regex.Replace(text, $"\\bconstraint {name}\\b", $"constraint {other}")
+
+    /// `postgres` on PostgreSQL; on SQLite, `table` rebuilt as `edit` makes it.
+    let altered (postgres: string) (table: string) (edit: string -> string) =
+        match w.Db.Kind with
+        | PostgreSQL -> task { let! _ = w.Db.Exec postgres in () }
+        | SQLite -> rebuild table edit
 
     [<StepDefinition("^a Customer with the email \"(.*)\"$")>]
     member _.Customer(email: string) =
@@ -87,6 +128,31 @@ type ConstraintSteps(w: World) =
         | Choice2Of2 f -> equal (Some name) f.Constraint "constraint"
         | Choice1Of2 errors -> failwithf "expected a database failure, got the field errors %A" errors
 
+    /// A line breaking order_lines' other foreign key (its order), of a
+    /// product that exists: first in the table, before the line a scenario
+    /// then writes.
+    [<StepDefinition("^an order line of the Order with id (\\d+), written while the database did not check its foreign keys$")>]
+    member _.HeldViolation(order: int64) =
+        let line = $"insert into products (sku, name) values ('held', 'Held'); insert into order_lines (order_id, product_id, quantity, unit_price) select {order}, id, 1, 1 from products where sku = 'held'"
+
+        match w.Db.Kind with
+        | PostgreSQL -> w.Db.Exec($"set session_replication_role = replica; {line}") |> unit
+        | SQLite -> w.Db.Exec($"PRAGMA foreign_keys = OFF; {line}; PRAGMA foreign_keys = ON") |> unit
+
+    [<StepDefinition("^a trigger on customers$")>]
+    member _.Trigger() =
+        w.Db.Exec "create trigger customers_seen after insert on customers begin select 1; end" |> unit
+
+    [<StepDefinition("^the insert fails as a foreign key failure naming no constraint$")>]
+    member _.UnnamedForeignKey() =
+        match failure () with
+        | Choice2Of2 f ->
+            equal DbFailureKind.ForeignKeyViolation f.Kind "kind"
+            equal None f.Constraint "constraint"
+            equal None f.Table "table"
+            equal ([]: string list) f.Columns "columns"
+        | Choice1Of2 errors -> failwithf "expected a database failure, got the field errors %A" errors
+
     [<StepDefinition("^no Order was written$")>]
     member _.NoOrder() =
         task {
@@ -122,11 +188,11 @@ type ConstraintSteps(w: World) =
 
     [<StepDefinition("^the customers table has lost its unique constraint on email$")>]
     member _.DropUnique() =
-        w.Db.Exec "alter table customers drop constraint customers_email_key" |> unit
+        altered "alter table customers drop constraint customers_email_key" "customers" (without "customers_email_key") |> unit
 
     [<StepDefinition("^the orders table has lost its foreign key on customer_id$")>]
     member _.DropReference() =
-        w.Db.Exec "alter table orders drop constraint orders_customer_id_fkey" |> unit
+        altered "alter table orders drop constraint orders_customer_id_fkey" "orders" (without "orders_customer_id_fkey") |> unit
 
     [<StepDefinition("^the missing uniqueness of (\\w+)\\.(\\w+) is reported$")>]
     member _.MissingUnique(model: string, field: string) =
@@ -144,11 +210,16 @@ type ConstraintSteps(w: World) =
 
     [<StepDefinition("^the unique constraint on customers.email is renamed to (\\w+)$")>]
     member _.RenameUnique(name: string) =
-        w.Db.Exec $"alter table customers rename constraint customers_email_key to {name}" |> unit
+        altered $"alter table customers rename constraint customers_email_key to {name}" "customers" (renamed "customers_email_key" name) |> unit
 
     [<StepDefinition("^the unique constraint on customers.email is replaced by the unique index (\\w+)$")>]
     member _.UniqueIndex(name: string) =
-        w.Db.Exec $"alter table customers drop constraint customers_email_key; create unique index {name} on customers (email)" |> unit
+        task {
+            do! altered "alter table customers drop constraint customers_email_key" "customers" (without "customers_email_key")
+            let! _ = w.Db.Exec $"create unique index {name} on customers (email)"
+            ()
+        }
+        |> unit
 
     [<StepDefinition("^the unique constraint customers_email_key is added on customers.email$")>]
     member _.AddUnique() =
@@ -156,7 +227,7 @@ type ConstraintSteps(w: World) =
 
     [<StepDefinition("^the foreign key on orders.customer_id is renamed to (\\w+)$")>]
     member _.RenameReference(name: string) =
-        w.Db.Exec $"alter table orders rename constraint orders_customer_id_fkey to {name}" |> unit
+        altered $"alter table orders rename constraint orders_customer_id_fkey to {name}" "orders" (renamed "orders_customer_id_fkey" name) |> unit
 
     [<StepDefinition("^(\\w+)\\.(\\w+) is reported as misnamed, saying to rename (\\w+) to (\\w+)$")>]
     member _.Misnamed(model: string, field: string, actual: string, expected: string) =

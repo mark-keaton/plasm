@@ -306,6 +306,71 @@ let main argv =
 
             $"{ended}; window totals left: {Plasm.Sqlite.Windows.live ()}")
 
+        // A foreign key failure is run again to find its key (ForeignKeys):
+        // in a transaction, whatever the re-run meets, the transaction is as
+        // the failure left it. A wrong state throws, which fails run.sh.
+        for case, meets in
+            [ "as it was", (fun (_: CancellationTokenSource) (_: Microsoft.Data.Sqlite.SqliteCommand) -> ())
+              "failing again", (fun _ c -> (use p = c.Connection.CreateCommand() in p.Transaction <- c.Transaction; p.CommandText <- "PRAGMA defer_foreign_keys = OFF"; p.ExecuteNonQuery() |> ignore))
+              "adding no violation", (fun _ c -> (use p = c.Connection.CreateCommand() in p.Transaction <- c.Transaction; p.CommandText <- "insert into customers (id, name, email) values (999, 'Late', 'late@example.com')"; p.ExecuteNonQuery() |> ignore))
+              "its token cancelled", (fun cts _ -> cts.Cancel()) ] do
+            step $"a foreign key failure run again, the re-run {case}, leaves the transaction as the failure did" (fun () ->
+                let conn = (provider :> IProvider).OpenConnection(CancellationToken.None).Result
+                use _ = conn
+                use tx = conn.BeginTransaction()
+                use cts = new CancellationTokenSource()
+                let command (sql: string) =
+                    let c = conn.CreateCommand()
+                    c.Transaction <- tx
+                    c.CommandText <- sql
+                    c
+                let orphan = "insert into orders (customer_id, total, note, placed_at) values (999, '1.00', null, '2026-01-01 00:00:00')"
+
+                Plasm.Sqlite.ForeignKeys.rerunning <- meets cts
+
+                let failure =
+                    try
+                        use c = command orphan
+                        c.ExecuteNonQueryAsync(cts.Token).Result |> ignore
+                        failwith "the orphan was written"
+                    with ex ->
+                        Plasm.Sqlite.ForeignKeys.rerunning <- ignore
+
+                        match (provider :> IProvider).Classify ex with
+                        | Some f when f.Kind = DbFailureKind.ForeignKeyViolation ->
+                            match f.Table with
+                            | Some t -> $"""names {t} ({String.Join(", ", f.Columns)})"""
+                            | None -> "unnamed"
+                        | other -> failwith $"not a foreign key failure: %A{other}"
+
+                Plasm.Sqlite.ForeignKeys.rerunning <- ignore
+                use deferred = command "PRAGMA defer_foreign_keys"
+                let deferred = Convert.ToInt64(deferred.ExecuteScalar())
+                if deferred <> 0L then failwith "defer_foreign_keys left on"
+
+                let savepoint =
+                    try
+                        use r = command "RELEASE plasm_foreign_key"
+                        r.ExecuteNonQuery() |> ignore
+                        "left"
+                    with _ ->
+                        "none"
+
+                if savepoint <> "none" then failwith "the savepoint was left"
+
+                let again =
+                    try
+                        use c = command orphan
+                        c.ExecuteNonQuery() |> ignore
+                        failwith "a second orphan was written: foreign keys are not checked at once"
+                    with ex when ((provider :> IProvider).Classify ex |> Option.map (fun f -> f.Kind)) = Some DbFailureKind.ForeignKeyViolation -> "refused at once"
+
+                use orphans = command "select count(*) from orders where customer_id = 999"
+                let orphans = Convert.ToInt64(orphans.ExecuteScalar())
+                if orphans <> 0L then failwith $"{orphans} orphans written"
+                tx.Rollback()
+                $"{failure}; defer_foreign_keys 0, no savepoint, the next orphan {again}, no orphan written")
+
         step "a running statement cancelled by its token" (fun () ->
             let conn = (provider :> IProvider).OpenConnection(CancellationToken.None).Result
             use _ = conn

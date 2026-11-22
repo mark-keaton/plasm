@@ -948,6 +948,8 @@ module internal Classify =
                 { Kind = kindOf pe.SqlState
                   SqlState = Some pe.SqlState
                   Constraint = Option.ofObj pe.ConstraintName
+                  Table = None
+                  Columns = []
                   Message = pe.MessageText
                   Exception = ex }
         | :? PGliteException as pe ->
@@ -956,6 +958,8 @@ module internal Classify =
                 { Kind = DbFailureKind.ConnectionFailure
                   SqlState = None
                   Constraint = None
+                  Table = None
+                  Columns = []
                   Message = pe.MessageText
                   Exception = ex }
         | :? TimeoutException ->
@@ -963,6 +967,8 @@ module internal Classify =
                 { Kind = DbFailureKind.Timeout
                   SqlState = None
                   Constraint = None
+                  Table = None
+                  Columns = []
                   Message = ex.Message
                   Exception = ex }
         | :? AggregateException as ae when ae.InnerExceptions.Count = 1 -> classify ae.InnerException
