@@ -1,10 +1,57 @@
-# Upgrading from 0.1.0 to 0.2.0
+# Upgrading
 
-What changed in 0.2.0 that can break an application written against 0.1.0,
-the most serious first. [`docs/status.md`](../status.md) has every entry in
-full, under "Changed".
+What changed in each version that can break an application written against
+the one before, the newest first and, within a version, the most serious
+first. [`docs/status.md`](../status.md) has every entry in full, under
+"Changed".
 
-## Times are stored only in UTC
+## From 0.2.0 to the next version
+
+An application that uses `Plasm.Postgres` as it comes has two things to look
+at; the rest is for a dialect or provider of your own.
+
+### A transaction at a level the database cannot run at
+
+`Repo.Transact` at the isolation level Chaos is now refused before anything
+is sent, as `TxFailure.Failed` holding a `DbError.Translation` that names
+the level. In 0.2.0 it raised the driver's exception. Code that caught that
+exception now reads the failure value.
+
+### DbFailure has two fields more
+
+`DbFailure` gained `Table` and `Columns`: the table a violated constraint is
+on, and the columns a violated unique constraint or foreign key holds, where
+the database gives them. PostgreSQL gives the table and the constraint's
+name, and `Columns` is empty. Code that reads a `DbFailure` is unchanged.
+Code that builds one, a test double or a provider's `Classify`, adds
+`Table = None; Columns = []`.
+
+### A dialect or provider of your own
+
+The interfaces grew again, so a dialect or provider written against 0.2.0
+gives the new members before it compiles:
+
+- `ISqlDialect.Division(write, op, dividend, divisor)`: how a division or
+  remainder of numbers is written, so that a zero divisor fails the
+  statement.
+- `ISqlDialect.Cycle`, a `CycleCheck`: how a recursive query leaves out the
+  rows that close a cycle.
+- `ICatalogueDialect.Checks`: SQL giving each table and the text of its
+  named check constraints, which the schema check reads.
+- `ProviderCapabilities.IsolationLevels`: the levels a transaction can run
+  at.
+
+The answers that keep what 0.2.0 did on PostgreSQL: `Division` writes
+`dividend (); write $" {op} "; divisor ()`; `Cycle` is
+`CycleCheck.Clause (fun key flag path -> "CYCLE " + String.concat ", " key + " SET " + flag + " USING " + path)`;
+`Checks` gives no rows, `SELECT NULL::text, NULL::text WHERE false`; and
+`IsolationLevels` lists the levels the database runs. A dialect, catalogue
+or provider that wraps another passes each on, and a capabilities record
+copied from another's keeps its levels.
+
+## From 0.1.0 to 0.2.0
+
+### Times are stored only in UTC
 
 Plasm now refuses a time that is not an instant in UTC, before anything is
 sent: a `DateTime` whose Kind is not Utc, or a `DateTimeOffset` whose offset
@@ -19,7 +66,7 @@ where 0.1.0 took them. Give a time Kind Utc with `DateTime.UtcNow` or
 `DateTime.SpecifyKind`, or convert a local one with `ToUniversalTime()`; give
 a `DateTimeOffset` the offset zero the same way.
 
-### What 0.1.0 stored
+#### What 0.1.0 stored
 
 0.1.0 did not refuse these values. It stored them wrongly:
 
@@ -32,7 +79,7 @@ a `DateTimeOffset` the offset zero the same way.
 - A `DateTimeOffset` in a column with an offset other than zero was not
   stored: the write threw an exception.
 
-### Rows already written
+#### Rows already written
 
 Nothing rewrites stored data. If an application on 0.1.0 wrote times that
 were not UTC, those rows are still off, a column's by the server zone's
@@ -43,7 +90,7 @@ where they were written, and correct them by that offset.
 Read back, a document's `DateTime` is now of Kind Utc and its
 `DateTimeOffset` at the offset zero, as a column's are.
 
-## Fewer exceptions
+### Fewer exceptions
 
 Nothing a provider throws while sending a value leaves `Repo`, `Transact`,
 `Stream` or a prepared query as an exception. A value the driver cannot send
@@ -51,7 +98,7 @@ is `DbError.Database`, and a value in hand-written SQL of a type Plasm does
 not map is `DbError.Translation`; both were exceptions in 0.1.0. Code that
 caught those exceptions now reads the failure value.
 
-## A dialect or provider of your own
+### A dialect or provider of your own
 
 This part matters only to an application that implements `ISqlDialect` or
 `IProvider` itself, or builds a `ProviderCapabilities` record. One that uses
@@ -101,7 +148,7 @@ the rest.
 The entries under "Changed" in [`docs/status.md`](../status.md) say what
 each member is asked and what PostgreSQL answers.
 
-## The template
+### The template
 
 A machine that installed the template at 0.1.0 keeps that one:
 `dotnet new install Plasm.Templates` leaves it as it is. Run
