@@ -12,6 +12,7 @@ fails unless:
     " on SQLite"), or is named in
     sqlite-only.txt with its reason;
   - a listed scenario exists, is tagged for its provider, and is listed once;
+  - docs/sqlite.md's table of differences is differences.txt's;
   - an untagged scenario (tags on its feature or Rule count) has a Then that is not scoped to one provider
     ("Then on PostgreSQL ...", "And on SQLite ..."): else it would assert
     nothing on the other provider's run.
@@ -126,6 +127,15 @@ for f, ss in features.items():
         for s in thens:
             if s:
                 scoped[s] += 1
+
+# docs/sqlite.md's table of differences is differences.txt's, row for row.
+doc = os.path.join(root, "docs", "sqlite.md")
+if os.path.exists(doc):
+    rows = [l.rstrip("\n").split("\t") for l in open(os.path.join(here, "differences.txt")) if l.strip() and not l.startswith("#")]
+    table = ["| " + " | ".join(x.replace("|", "\\|") for x in r[:3]) + " |" for r in rows]
+    text = open(doc).read()
+    if "\n".join(table) not in text:
+        failures.append("docs/sqlite.md's table of differences is not differences.txt's: make it again from it")
 
 for line in failures:
     print("tags: " + line)
