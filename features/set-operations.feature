@@ -60,7 +60,16 @@ Feature: Two queries can be combined, and a query can be joined
         | what                          | query                                                   | message                                       |
         | An operand that orders itself | the union of the Customers ordered by name and the rest | order and page the combined rows, not an operand |
         | An operand that pages itself  | the union of the first Customer and the rest            | order and page the combined rows, not an operand |
-        | A locked union                | the union of two Customer queries, locked for update    | a set operation's rows cannot be locked       |
+
+    @postgres
+    Scenario: A locked union is refused
+      When I read the union of two Customer queries, locked for update
+      Then the combined read is refused, saying "a set operation's rows cannot be locked"
+
+    @sqlite
+    Scenario: A locked union is refused on SQLite
+      When I read the union of two Customer queries, locked for update
+      Then the combined read is refused, saying "Provider SQLite does not support row locks"
 
   Rule: Two projections combine into their rows
 

@@ -191,6 +191,13 @@ type QuerySemanticsSteps(w: World) =
         let sql = w.Get<string> "sql"
         check (sql.Contains "\"o\".\"total\" <= @p0" && not (sql.Contains "NOT")) $"expected total <= 15: {sql}"
 
+    // SQLite compares decimals stored as text by plasm_decimal_compare, which
+    // no index on the column serves.
+    [<StepDefinition("the SQL writes the opposite comparison of the decimals by value")>]
+    member _.OppositeByValue() =
+        let sql = w.Get<string> "sql"
+        check (sql.Contains "plasm_decimal_compare(\"o\".\"total\", @p0) <= 0" && not (sql.Contains "NOT")) $"expected total <= 15: {sql}"
+
     [<StepDefinition("I run a query comparing with DateTime.UtcNow twice, a moment apart")>]
     member _.Clock() =
         task {

@@ -11,3 +11,13 @@ features/json-columns.feature	*FieldMarkedJson*
 features/constraints.feature	*DatabaseConstraintsAreStatedOnce*
 features/recursive-queries.feature	*AQueryCanFollowARecord*
 features/column-checks.feature	*AColumnSCheckIsTheModel*
+features/distinct.feature	*AQueryCanReturnEachSelectedValueOnceFeature*
+features/reading.feature	*ReadingAtMostOneRowFeature*
+features/tx-steps.feature	*TransactionStepsDoWhatTheySayFeature*
+features/window-functions.feature	*ASelectCanReadValuesOverAWindowOfRowsFeature*
+features/joins.feature	*ExplicitTypedJoinsFeature*
+features/set-operations.feature	*TwoQueriesCanBeCombinedAndAQueryCanBeJoinedFeature*
+features/referring.feature	*ATieThatTheTypedIdsProveIsLeftToPlasmFeature*
+features/bulk-writes.feature	*BulkWritesAndUpsertsFeature*
+features/query-semantics.feature	*QueriesKeepTheirFMeaningFeature*
+features/error-model.feature	*FailuresAreValuesWithQualifiedNamesFeature*

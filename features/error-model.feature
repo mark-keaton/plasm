@@ -28,6 +28,7 @@ Feature: Failures are values with qualified names
       Then the read returns an error saying the repository is closed
       And no exception is thrown
 
+    @postgres
     Scenario: A written row that cannot be read back
       Given the database changes an inserted OrderLine's quantity to zero
       When I insert an OrderLine

@@ -468,7 +468,14 @@ type JoinSteps(w: World) =
         let rows: (Order * Customer) list = w.Get "pairs"
         equal [ (w.Get<OrderId list> "orders").[1] ] (rows |> List.map (fun (o, _) -> o.Id)) "orders"
         let cmd = w.QueryCommands |> List.exactlyOne
-        check (cmd.Sql.Contains "\"c\".\"name\" = @p0" && cmd.Sql.Contains "\"o\".\"total\" > @p1") cmd.Sql
+        // A decimal compared by value as the dialect compares it (SQLite: by
+        // plasm_decimal_compare, its text being no number).
+        let total =
+            match w.Db.Kind with
+            | PostgreSQL -> "\"o\".\"total\" > @p1"
+            | SQLite -> "plasm_decimal_compare(\"o\".\"total\", @p1) > 0"
+
+        check (cmd.Sql.Contains "\"c\".\"name\" = @p0" && cmd.Sql.Contains total) cmd.Sql
         equal 1 cmd.Rows "rows transferred"
 
     // Scenario: Joined queries can be inspected without database access

@@ -227,7 +227,12 @@ type ReferringSteps(w: World) =
     [<StepDefinition("the Categories \"Tools\", \"Saws\" and \"Drills\" in Tools, and \"Hand saws\" in Saws")>]
     member _.Categories() =
         task {
-            let! _ = w.Db.Exec Schemas.tables
+            let! _ =
+                match w.Db.Kind with
+                | Plasm.TestDomain.Database.PostgreSQL -> w.Db.Exec Schemas.tables
+                // The categories' table as Ddl makes it on SQLite.
+                | Plasm.TestDomain.Database.SQLite ->
+                    w.Db.Exec("drop table if exists ref_categories; " + Repo(Model.buildOrFail [] [ typeof<Category> ], w.Db.Provider).Ddl())
 
             let! _ =
                 w.Db.Exec

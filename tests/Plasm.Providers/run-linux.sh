@@ -7,7 +7,8 @@
 # The repository's files (tracked, and untracked but not ignored) are copied to
 # a temporary directory the container builds in; from a copy that is no git
 # checkout (a tree exported for its check), every file but bin and obj. No PostgreSQL is started: the
-# SQLite run must not need one.
+# SQLite run must not need one. The build runs in one MSBuild node, none kept: under x64 emulation
+# on arm64, its worker nodes have hung the build for hours.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
@@ -35,6 +36,6 @@ docker run --rm --platform "$platform" \
   -v "$copy:/work" -w /work \
   -v "plasm-aot-nuget-$arch:/root/.nuget/packages" \
   -e DOTNET_CLI_TELEMETRY_OPTOUT=1 -e DOTNET_NOLOGO=1 \
-  "$image" bash -c 'uname -m && dotnet build Plasm.slnx -v q 2>&1 | grep -E " error |Build succeeded" | sort -u && bash tests/Plasm.Providers/sqlite-run.sh /tmp/sqlite-logs && echo "sqlite-run exit 0" && bash tests/Plasm.Providers/no-leftover-files.sh --prove && echo "no-leftover-files exit 0" && bash tests/Plasm.Aot.Sqlite/run.sh | grep -E "^runtime:|IL warnings|prints what|differs|threw|cancelled|native binary:"' || code=$?
+  "$image" bash -c 'uname -m && dotnet build Plasm.slnx -v q -m:1 -nodeReuse:false 2>&1 | grep -E " error |Build succeeded" | sort -u && bash tests/Plasm.Providers/sqlite-run.sh /tmp/sqlite-logs && echo "sqlite-run exit 0" && bash tests/Plasm.Providers/no-leftover-files.sh --prove && echo "no-leftover-files exit 0" && bash tests/Plasm.Aot.Sqlite/run.sh | grep -E "^runtime:|IL warnings|prints what|differs|threw|cancelled|native binary:"' || code=$?
 echo "linux-$arch: $(( $(date +%s) - start )) s"
 exit $code

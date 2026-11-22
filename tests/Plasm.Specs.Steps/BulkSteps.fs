@@ -101,7 +101,14 @@ type BulkSteps(w: World) =
         task {
             let! totals = w.Get<OrderId list> "published" |> List.map totalOf |> System.Threading.Tasks.Task.WhenAll
             equal [| 20m; 30m |] totals "totals"
-            check ((w.CommandsSinceMark |> List.exactlyOne).Sql.Contains "\"total\" = \"orders\".\"total\" + @p") "computed in SQL"
+            // As the dialect adds decimals (SQLite: by value, its text being no number).
+            let computed =
+                match w.Db.Kind with
+                | PostgreSQL -> "\"total\" = \"orders\".\"total\" + @p"
+                | SQLite -> "\"total\" = plasm_decimal_add(\"orders\".\"total\", @p"
+
+            let sql = (w.CommandsSinceMark |> List.exactlyOne).Sql
+            check (sql.Contains computed) $"computed in SQL: {sql}"
         }
         |> unit
 
@@ -109,7 +116,12 @@ type BulkSteps(w: World) =
     member _.OnlyMentioned() =
         let sql = (w.CommandsSinceMark |> List.exactlyOne).Sql
         let set = sql.Substring(sql.IndexOf "\nSET ", sql.IndexOf "\nWHERE " - sql.IndexOf "\nSET ")
-        equal "\nSET \"total\" = \"orders\".\"total\" + @p0, \"version\" = \"orders\".\"version\" + 1" set "SET clause"
+        let total =
+            match w.Db.Kind with
+            | PostgreSQL -> "\"orders\".\"total\" + @p0"
+            | SQLite -> "plasm_decimal_add(\"orders\".\"total\", @p0)"
+
+        equal $"\nSET \"total\" = {total}, \"version\" = \"orders\".\"version\" + 1" set "SET clause"
 
     // Scenario: Bulk updates respect optimistic concurrency
 
