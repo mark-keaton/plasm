@@ -85,6 +85,27 @@ type TextMatchKind =
     | EndsWith
     | Contains
 
+/// How a recursive query leaves out the rows that close a cycle
+/// (recursive-queries.feature): a row whose key a row above it holds is not
+/// read, nor followed.
+[<RequireQualifiedAccess>]
+type CycleCheck =
+    /// A clause after the recursive query's parentheses, made from its key's
+    /// columns, the flag column and the path column, each quoted: PostgreSQL's
+    /// `CYCLE k SET flag USING path`. The rows read are those whose flag is
+    /// not set.
+    | Clause of clause: (string list -> string -> string -> string)
+    /// A path of the keys found, which each row carries in a column of its
+    /// own, where the dialect has no such clause (SQLite). `start write key`
+    /// writes the start's path of its key's parts; `extend write path key`
+    /// the step's, the row found's path with the key added; `holds write path
+    /// key` whether a path holds a key. A step's row whose key the path of the
+    /// row it follows holds is left out.
+    | Path of
+        start: ((string -> unit) * (unit -> unit) list -> unit) *
+        extend: ((string -> unit) * (unit -> unit) * (unit -> unit) list -> unit) *
+        holds: ((string -> unit) * (unit -> unit) * (unit -> unit) list -> unit)
+
 /// What a column holds, as Ddl tells a dialect asked for its check
 /// (IDdlDialect.ColumnCheck).
 [<RequireQualifiedAccess>]
@@ -224,6 +245,9 @@ type ISqlDialect =
     /// What LIMIT takes for no limit, when the dialect needs a LIMIT before an
     /// OFFSET (SQLite's -1); None when OFFSET stands on its own (PostgreSQL).
     abstract UnboundedLimit: string option
+    /// How a recursive query leaves out the rows that close a cycle
+    /// (recursive-queries.feature).
+    abstract Cycle: CycleCheck
     /// The null-safe comparison operator: equality treating NULLs as equal
     /// (`IS NOT DISTINCT FROM`), or its negation when `negated`.
     abstract NullSafeComparison: negated: bool -> string
@@ -324,6 +348,11 @@ module internal Sql =
         | JsonElement of alias: string
         /// Whether an array document contains every element of a document parameter.
         | JsonContains of document: Expr * value: Expr
+        /// A recursive query's path of the keys found (CycleCheck.Path): the
+        /// start's of its key, or the step's, `path` with its key added.
+        | CyclePath of path: Expr option * key: Expr list
+        /// Whether a recursive query's path holds a key (CycleCheck.Path).
+        | CycleHolds of path: Expr * key: Expr list
         /// A comparison, null-safe comparison, arithmetic, aggregate or window
         /// aggregate of decimals, made by value as the dialect's IExactDialect makes it, or
         /// a decimal taken by value as a GROUP BY takes its keys, IN its
@@ -345,8 +374,9 @@ module internal Sql =
         /// as one table named `alias` (set-operations.feature).
         | Compound of kind: string * left: Select * right: Select * alias: string
         /// A recursive query (recursive-queries.feature): WITH RECURSIVE `name`
-        /// AS (start UNION ALL step), with CYCLE on `key`, read as one table
-        /// named `alias`, without the rows that closed a cycle.
+        /// AS (start UNION ALL step), its cycles stopped on `key` as the
+        /// dialect stops them (ISqlDialect.Cycle), read as one table named
+        /// `alias`, without the rows that closed a cycle.
         | Recursive of name: string * start: Select * step: Select * key: string list * alias: string
 
     and Join =
@@ -794,6 +824,17 @@ module internal Sql =
             | JsonAny(doc, alias, condition) -> json().AnyElement(w, (fun () -> r.Expr doc), alias, (fun () -> r.Expr condition))
             | JsonElement alias -> json().Element(w, alias)
             | JsonContains(doc, value) -> json().Contains(w, (fun () -> r.Expr doc), (fun () -> r.Expr value))
+            | CyclePath(path, key) ->
+                let parts = key |> List.map (fun k -> fun () -> r.Expr k)
+
+                match d.Cycle, path with
+                | CycleCheck.Path(start, _, _), None -> start (w, parts)
+                | CycleCheck.Path(_, extend, _), Some p -> extend (w, (fun () -> r.Expr p), parts)
+                | CycleCheck.Clause _, _ -> invalidOp "a dialect with a cycle clause has no path of its own"
+            | CycleHolds(path, key) ->
+                match d.Cycle with
+                | CycleCheck.Path(_, _, holds) -> holds (w, (fun () -> r.Expr path), key |> List.map (fun k -> fun () -> r.Expr k))
+                | CycleCheck.Clause _ -> invalidOp "a dialect with a cycle clause has no path of its own"
             | RowNumber(p, order) ->
                 w "ROW_NUMBER() OVER (PARTITION BY "
                 r.Expr p
@@ -1011,6 +1052,41 @@ module internal Sql =
                 w indent
                 w ("WITH RECURSIVE " + q name + " AS (")
                 indent <- outer + "        "
+                // Where the dialect has no CYCLE clause, each row carries the
+                // path of the keys above it, and the step leaves out a row
+                // whose key the path of the row it follows holds.
+                let start, step =
+                    match d.Cycle with
+                    | CycleCheck.Clause _ -> start, step
+                    | CycleCheck.Path _ ->
+                        // The recursive query's columns are named by the start's;
+                        // the step's are its columns in the same places.
+                        let places =
+                            key
+                            |> List.map (fun k ->
+                                let named (e, a) =
+                                    a = k
+                                    || (String.IsNullOrEmpty a
+                                        && match e with
+                                           | Column(_, c) -> c = k
+                                           | _ -> false)
+
+                                match start.Columns |> List.tryFindIndex named with
+                                | Some i -> i
+                                | None -> invalidOp $"a recursive query's start has no column {k} of its key")
+
+                        let keyOf (s: Select) = places |> List.map (fun i -> fst s.Columns.[i])
+
+                        let found =
+                            match step.Joins |> List.tryFind (fun j -> j.Table = name && j.Sub.IsNone) with
+                            | Some j -> Column(j.Alias, "plasm_path")
+                            | None -> invalidOp "a recursive query's step does not join the rows found"
+
+                        { start with Columns = start.Columns @ [ CyclePath(None, keyOf start), "plasm_path" ] },
+                        { step with
+                            Columns = step.Columns @ [ CyclePath(Some found, keyOf step), "plasm_path" ]
+                            Where = step.Where @ [ Not(CycleHolds(found, keyOf step)) ] }
+
                 w "\n"
                 w indent
                 r.Select start
@@ -1023,12 +1099,18 @@ module internal Sql =
                 indent <- outer + "    "
                 w "\n"
                 w indent
-                w ") CYCLE "
-                w (key |> List.map q |> String.concat ", ")
-                w (" SET " + q "plasm_cycle" + " USING " + q "plasm_path")
-                w "\n"
-                w indent
-                w ("SELECT * FROM " + q name + " WHERE NOT " + q "plasm_cycle")
+                w ")"
+
+                match d.Cycle with
+                | CycleCheck.Clause clause ->
+                    w (" " + clause (key |> List.map q) (q "plasm_cycle") (q "plasm_path"))
+                    w "\n"
+                    w indent
+                    w ("SELECT * FROM " + q name + " WHERE NOT " + q "plasm_cycle")
+                | CycleCheck.Path _ ->
+                    w "\n"
+                    w indent
+                    w ("SELECT * FROM " + q name)
                 indent <- outer
                 w "\n"
                 w indent

@@ -1,4 +1,3 @@
 # count<TAB>file<TAB>pattern<TAB># why it is allowed
 1	src/Plasm/Sql.fs	= ANY\(	# a captured list as one array parameter: only where Capabilities.ArrayParameters is true, else an IN list
-1	src/Plasm/Sql.fs	CYCLE 	# recursive queries (recursive-queries.feature): moves behind the dialect with the SQLite provider (B6)
 2	src/Plasm/SchemaCheck.fs	alter table	# Ddl's foreign keys added after the tables, only where IDdlDialect.ForeignKeysInTables is false; and advice in a schema issue, how to rename a misnamed constraint, a name only PostgreSQL's catalogue gives

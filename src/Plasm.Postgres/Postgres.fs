@@ -241,6 +241,7 @@ type internal PostgresDialect(options: PostgresOptions) =
         member _.Ddl = PostgresDdl.ddl
 
         member _.UnboundedLimit = None
+        member _.Cycle = CycleCheck.Clause(fun key flag path -> "CYCLE " + String.concat ", " key + " SET " + flag + " USING " + path)
 
         member _.NullSafeComparison negated =
             if negated then "IS DISTINCT FROM" else "IS NOT DISTINCT FROM"

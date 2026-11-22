@@ -5,6 +5,7 @@ open System.Threading.Tasks
 open Reqnroll
 open Plasm
 open Plasm.Specs.Recursive
+open Plasm.TestDomain.Database
 
 /// Feature: A query can follow a record that refers to its own kind
 [<Binding>]
@@ -62,7 +63,10 @@ type RecursiveSteps(w: World) =
     [<StepDefinition("the categories:")>]
     member _.Categories(table: DataTable) =
         task {
-            let! _ = w.Db.Exec Tree.tables
+            let! _ =
+                match w.Db.Kind with
+                | PostgreSQL -> w.Db.Exec Tree.tables
+                | SQLite -> w.Db.Exec(Repo(Tree.model, w.Db.Provider).Ddl())
 
             for row in table.Rows do
                 let parent = row.["parent"]
@@ -91,18 +95,37 @@ type RecursiveSteps(w: World) =
     [<StepDefinition("I read the categories under Tools, with their depth, by depth and name, on a connection whose statements time out after 5 seconds")>]
     member _.UnderToolsTimed() =
         task {
-            let timed = Plasm.Postgres.Postgres.connect (w.Db.ConnectionString + ";Options=-c statement_timeout=5000")
-            let limited = Repo(Tree.model, timed, { RepoOptions.Default with OnCommand = Some events.Add })
-            events.Clear()
-            let! r = limited.All(plasm { for c in under "Tools" do orderBy (Query.depth c); thenBy c.Name; select (c.Name, Query.depth c) })
-            keep r
+            let query = plasm { for c in under "Tools" do orderBy (Query.depth c); thenBy c.Name; select (c.Name, Query.depth c) }
+
+            match w.Db.Kind with
+            | PostgreSQL ->
+                let timed = Plasm.Postgres.Postgres.connect (w.Db.ConnectionString + ";Options=-c statement_timeout=5000")
+                let limited = Repo(Tree.model, timed, { RepoOptions.Default with OnCommand = Some events.Add })
+                events.Clear()
+                let! r = limited.All query
+                keep r
+            | SQLite ->
+                // SQLite has no statement timeout: a token cancelled after 5
+                // seconds interrupts the statement (cancellation.feature).
+                use cts = new Threading.CancellationTokenSource(TimeSpan.FromSeconds 5.0)
+                events.Clear()
+                let! r = repo.All(query, cts.Token)
+                keep r
         }
         :> Task
 
     [<StepDefinition("the statement sent stops a cycle by the category's key")>]
     member _.CycleClause() =
         match events |> Seq.filter (fun e -> e.Kind = CommandKind.Statement) |> List.ofSeq with
-        | [ e ] -> check (e.Sql.Contains "CYCLE \"id\" SET") e.Sql
+        | [ e ] ->
+            match w.Db.Kind with
+            | PostgreSQL -> check (e.Sql.Contains "CYCLE \"id\" SET") e.Sql
+            // The path of the keys above each row (ISqlDialect.Cycle).
+            | SQLite ->
+                check
+                    (e.Sql.Contains "json_array(json_array(\"c\".\"id\")) AS \"plasm_path\""
+                     && e.Sql.Contains "EXISTS (SELECT 1 FROM json_each(\"p\".\"plasm_path\") WHERE value = json_array(\"c\".\"id\"))")
+                    e.Sql
         | other -> failwithf "expected one statement, got %A" (other |> List.map (fun e -> e.Sql))
 
     [<StepDefinition("I read the categories above Hand saws, with their depth, by depth")>]

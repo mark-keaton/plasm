@@ -96,9 +96,15 @@ Feature: A query can follow a record that refers to its own kind
       When I read a recursive query whose start takes one row
       Then it is refused, saying "order and page the rows a recursive query finds, not its start"
 
+    @postgres
     Scenario: A recursive query is not locked
       When I lock the categories under Tools in a transaction
       Then it is refused, saying "a recursive query's rows cannot be locked"
+
+    @sqlite
+    Scenario: A recursive query is not locked on SQLite
+      When I lock the categories under Tools in a transaction
+      Then it is refused, saying "Provider SQLite does not support row locks"
 
     Scenario: The depth of a row that no recursive query found is refused
       When I read the depth of the categories of a query that is not recursive

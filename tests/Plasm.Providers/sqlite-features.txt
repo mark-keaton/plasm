@@ -9,3 +9,4 @@ features/utc-only.feature	*OnlyUTC*
 features/text-matching.feature	*TextIsMatched*
 features/json-columns.feature	*FieldMarkedJson*
 features/constraints.feature	*DatabaseConstraintsAreStatedOnce*
+features/recursive-queries.feature	*AQueryCanFollowARecord*

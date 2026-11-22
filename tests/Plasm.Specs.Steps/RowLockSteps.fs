@@ -77,6 +77,7 @@ type NoRowLocks(inner: IProvider, turns: bool) =
             member _.Catalogue = inner.Dialect.Catalogue
             member _.Ddl = inner.Dialect.Ddl
             member _.UnboundedLimit = inner.Dialect.UnboundedLimit
+            member _.Cycle = inner.Dialect.Cycle
             member _.NullSafeComparison negated = inner.Dialect.NullSafeComparison negated
             member _.TextMatch(w, kind, operand, pattern) = inner.Dialect.TextMatch(w, kind, operand, pattern)
             member _.FunctionName name = inner.Dialect.FunctionName name

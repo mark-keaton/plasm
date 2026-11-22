@@ -324,6 +324,34 @@ type internal SqliteDialect(options: SqliteOptions) =
         member _.Catalogue = SqliteCatalogue.catalogue
         member _.Ddl = SqliteDdl.ddl
         member _.UnboundedLimit = Some "-1"
+
+        // No CYCLE clause: each row carries the keys above it as a JSON array
+        // of each key's parts, `[[1],[2]]`, and a step's row whose key is in
+        // it is left out (recursive-queries.feature).
+        member _.Cycle =
+            let parts (w: string -> unit) (key: (unit -> unit) list) =
+                w "json_array("
+                key |> List.iteri (fun i k -> (if i > 0 then w ", "); k ())
+                w ")"
+
+            CycleCheck.Path(
+                (fun (w, key) ->
+                    w "json_array("
+                    parts w key
+                    w ")"),
+                (fun (w, path, key) ->
+                    w "json_insert("
+                    path ()
+                    w ", '$[#]', "
+                    parts w key
+                    w ")"),
+                (fun (w, path, key) ->
+                    w "EXISTS (SELECT 1 FROM json_each("
+                    path ()
+                    w ") WHERE value = "
+                    parts w key
+                    w ")")
+            )
         member _.NullSafeComparison negated = if negated then "IS NOT" else "IS"
         // GLOB, not LIKE, which ignores ASCII case: GLOB keeps every
         // character's case, and its own *, ? and [ are written [*], [?] and
