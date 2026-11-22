@@ -42,7 +42,7 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   # The libraries published, in dependency order. Plasm.PGlite is a spike and
   # is not packed; Plasm.FieldGetters travels inside Plasm's package.
-  PACKAGES: Plasm.Annotations Plasm Plasm.Postgres Plasm.HotChocolate
+  PACKAGES: Plasm.Annotations Plasm Plasm.Postgres Plasm.Sqlite Plasm.HotChocolate
   # The dotnet new template: examples/Starter as a package, with no assembly.
   TEMPLATES: Plasm.Templates
 
