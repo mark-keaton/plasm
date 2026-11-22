@@ -9,6 +9,9 @@ open System.Text
 type ProviderCapabilities =
     { /// Multi-command reads inside one snapshot (e.g. REPEATABLE READ).
       SnapshotReads: bool
+      /// The isolation levels a transaction can be run at (Repo.Transact): one
+      /// not among them is refused as UnsupportedByProvider, nothing sent.
+      IsolationLevels: IsolationLevel list
       /// Key lists can be sent as one array parameter.
       ArrayParameters: bool
       /// Upper bound on keys sent in one command loading an owned or linked list.

@@ -143,6 +143,14 @@ type internal PostgresDialect(options: PostgresOptions) =
 
         member _.Capabilities =
             { SnapshotReads = true
+              // Npgsql's: Snapshot is REPEATABLE READ; it has no Chaos.
+              IsolationLevels =
+                [ IsolationLevel.Unspecified
+                  IsolationLevel.ReadUncommitted
+                  IsolationLevel.ReadCommitted
+                  IsolationLevel.RepeatableRead
+                  IsolationLevel.Serializable
+                  IsolationLevel.Snapshot ]
               ArrayParameters = true
               MaxKeysPerCommand = options.MaxKeysPerCommand
               Returning = true

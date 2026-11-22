@@ -351,3 +351,14 @@ Feature: Database-specific SQL comes from the provider
         | call               |
         | an insert step     |
         | a bulk write step  |
+
+  Rule: A transaction runs at the isolation levels the provider has
+
+    Scenario: A transaction at an isolation level the provider cannot run at is refused, nothing sent
+      When I run a transaction at Chaos isolation
+      Then it fails before execution as unsupported by the provider, naming Chaos isolation
+
+    @sqlite
+    Scenario: A transaction at Snapshot isolation is refused on SQLite, nothing sent
+      When I run a transaction at Snapshot isolation
+      Then it fails before execution as unsupported by the provider, naming Snapshot isolation

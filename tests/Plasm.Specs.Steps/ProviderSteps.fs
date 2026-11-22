@@ -305,6 +305,21 @@ type ProviderSteps(w: World) =
         }
         |> unit
 
+    /// On the scenario's own provider: a transaction that would write.
+    [<StepDefinition("^I run a transaction at (\\w+) isolation$")>]
+    member _.AtIsolation(level: string) =
+        task {
+            let isolation = System.Enum.Parse<System.Data.IsolationLevel> level
+            w.MarkCommands()
+            let tx: Tx<unit, unit> = Tx.insert (New.customer "Ada" "ada@example.com") |> Tx.map ignore
+            let! x = w.Repo.Transact(tx, isolation)
+
+            match x with
+            | Error { Failure = TxFailure.Failed(DbError.Translation(TranslationError.UnsupportedByProvider(op, _))) } -> w.Set("refused", op)
+            | other -> failwithf "expected the isolation level refused, got %A" other
+        }
+        |> unit
+
     [<StepDefinition("it fails before execution as unsupported by the provider, naming (.*)")>]
     member _.Refused(capability: string) =
         let op = w.Get<string> "refused"

@@ -22,3 +22,4 @@ features/column-checks.feature	On SQLite a union stored as text without its chec
 features/column-checks.feature	On SQLite a time column without its check is reported, with the check to add	a column check Ddl writes, which PostgreSQL's does not: timestamptz holds a time itself
 features/column-checks.feature	On SQLite a check as Ddl writes it, in other case and spacing, is not reported	a column check Ddl writes, which PostgreSQL's does not
 features/column-checks.feature	On SQLite a time column's check other than Ddl's is reported	a column check Ddl writes, which PostgreSQL's does not: timestamptz holds a time
+features/providers.feature	A transaction at Snapshot isolation is refused on SQLite, nothing sent	PostgreSQL runs a Snapshot transaction, as REPEATABLE READ (Npgsql); every SQLite transaction is serializable and none is a snapshot of its own

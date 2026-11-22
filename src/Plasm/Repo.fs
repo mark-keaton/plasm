@@ -912,6 +912,15 @@ type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
         task {
             match tx with
             | Pure v -> return Ok v
+            | _ when not (List.contains isolation provider.Dialect.Capabilities.IsolationLevels) ->
+                // A level the provider cannot run at: refused, nothing sent.
+                return
+                    Error
+                        { Step = { File = ""; Line = 0; Action = "begin" }
+                          Failure = TxFailure.Failed(DbError.Translation(TranslationError.UnsupportedByProvider($"{isolation} isolation", provider.Dialect.Name)))
+                          RolledBack = []
+                          Attempts = 0
+                          Waited = TimeSpan.Zero }
             | _ ->
                 let mutable attempt = 0
                 let mutable outcome = None

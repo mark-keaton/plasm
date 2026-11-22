@@ -394,6 +394,14 @@ type internal SqliteDialect(options: SqliteOptions) =
 
         member _.Capabilities =
             { SnapshotReads = true
+              // Every SQLite transaction is serializable: the levels that ask
+              // for no more run as it; it has no Snapshot or Chaos.
+              IsolationLevels =
+                [ IsolationLevel.Unspecified
+                  IsolationLevel.ReadUncommitted
+                  IsolationLevel.ReadCommitted
+                  IsolationLevel.RepeatableRead
+                  IsolationLevel.Serializable ]
               ArrayParameters = false
               MaxKeysPerCommand = options.MaxKeysPerCommand
               Returning = true
