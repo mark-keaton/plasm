@@ -45,7 +45,7 @@ type ConcurrencySteps(w: World) =
     [<StepDefinition("a notes table")>]
     member _.Table() =
         task {
-            let! _ = w.Db.Exec Notes.table
+            do! w.Db.MakeTables(Notes.table, Notes.model)
             w.Set("noteRepo", w.Db.RepoWith(model = Notes.model))
         }
         |> unit
@@ -122,10 +122,18 @@ type ConcurrencySteps(w: World) =
         let commands = w.CommandsSinceMark
         equal 1 commands.Length "commands"
         let sql = commands.Head.Sql
-        check (sql.StartsWith "UPDATE" && sql.Contains "\"text\" IS NOT DISTINCT FROM" && sql.Contains "\"author\" IS NOT DISTINCT FROM") sql
+        // The dialect's null-safe comparison: PostgreSQL's IS NOT DISTINCT FROM, SQLite's IS.
+        let same = if w.Db.Kind = Plasm.TestDomain.Database.PostgreSQL then "IS NOT DISTINCT FROM" else "IS"
+        check (sql.StartsWith "UPDATE" && sql.Contains $"\"text\" {same} " && sql.Contains $"\"author\" {same} ") sql
 
     [<StepDefinition("another writer changes its total without changing its version")>]
-    member _.OtherTotal() = w.Db.Exec "update orders set total = total + 1" |> unit
+    member _.OtherTotal() =
+        match w.Db.Kind with
+        | Plasm.TestDomain.Database.PostgreSQL -> w.Db.Exec "update orders set total = total + 1" |> unit
+        // A decimal kept as text, added by value (Plasm.Sqlite's function).
+        // On the test's own connection, which has none of Plasm.Sqlite's
+        // functions: any change of the total does.
+        | Plasm.TestDomain.Database.SQLite -> w.Db.Exec "update orders set total = CAST(CAST(total AS REAL) + 1 AS TEXT)" |> unit
 
     [<StepDefinition("I change the status of the Order I read")>]
     member _.ChangeOrder() =

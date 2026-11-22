@@ -43,7 +43,7 @@ type DdlSteps(w: World) =
     let repoFor name = w.Db.RepoWith(model = modelNamed name)
 
     [<StepDefinition("an empty database")>]
-    member _.Empty() = w.Db.Exec "drop schema public cascade; create schema public;" |> unit
+    member _.Empty() = w.Db.Empty() |> unit
 
     [<StepDefinition("^I run the DDL Plasm prints for (.+)$")>]
     member _.RunDdl(name: string) =

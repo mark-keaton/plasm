@@ -7,12 +7,20 @@ set -uo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 logs="$1"; mkdir -p "$logs"; status=0
 summary="$logs/sqlite-provider.txt"; : > "$summary"
-while IFS=$'\t' read -r feature class; do
+while IFS=$'\t' read -r feature class only; do
   case "$feature" in ''|'#'*) continue;; esac
   [ -f "$root/$feature" ] || { echo "sqlite-features.txt names $feature, which is no feature file"; status=1; continue; }
   log="$logs/sqlite-$(basename "$feature" .feature).log"
   env -u PLASM_TEST_PG PLASM_TEST_PROVIDER=sqlite PLASM_TEST_SUMMARY="$summary" \
-    dotnet test "$root/tests/Plasm.Specs" --no-build --output Detailed -- --filter-class "$class" > "$log" 2>&1 || status=1
+    dotnet test "$root/tests/Plasm.Specs" --no-build --output Detailed -- --filter-class "$class" > "$log" 2>&1
+  code=$?
+  # A feature every scenario of which is PostgreSQL's (postgres-only.txt)
+  # runs none here, which the test platform reports as exit 8; only it may.
+  if [ "$only" = "postgres-only" ]; then
+    [ $code -eq 8 ] || { echo "$feature is listed as PostgreSQL's alone, but its run exited $code"; status=1; }
+  elif [ $code -ne 0 ]; then
+    status=1
+  fi
   # Without the colours dotnet test writes where it thinks a terminal is (CI's).
   perl -pi -e 's/\e\[[0-9;]*[A-Za-z]//g' "$log"
   echo "SQLite $feature: $(grep -E '^\s+total:|^\s+failed:' "$log" | tr -s ' ' | tr '\n' ' ')"

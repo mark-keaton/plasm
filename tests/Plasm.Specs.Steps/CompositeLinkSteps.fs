@@ -109,20 +109,7 @@ type CompositeLinkSteps(w: World) =
         }
         :> Task
 
-    let rows (sql: string) =
-        task {
-            use conn = new Npgsql.NpgsqlConnection(w.Db.ConnectionString + ";Pooling=false")
-            do! conn.OpenAsync()
-            use cmd = conn.CreateCommand()
-            cmd.CommandText <- sql
-            use! reader = cmd.ExecuteReaderAsync()
-            let found = ResizeArray<string>()
-
-            while reader.Read() do
-                found.Add(reader.GetString 0)
-
-            return List.ofSeq found
-        }
+    let rows (sql: string) = w.Db.Texts sql
 
     [<StepDefinition("^threads and cards linked to labels and watchers, keyed by several parts$")>]
     member _.Tables() =
@@ -227,7 +214,14 @@ type CompositeLinkSteps(w: World) =
 
     [<StepDefinition("^the join table thread_labels has lost its column label_name$")>]
     member _.LostColumn() =
-        w.Db.Exec "alter table thread_labels drop column label_name" |> unit
+        match w.Db.Kind with
+        | Plasm.TestDomain.Database.PostgreSQL -> w.Db.Exec "alter table thread_labels drop column label_name" |> unit
+        // SQLite drops no column of a primary key: the join table is made
+        // again without it.
+        | Plasm.TestDomain.Database.SQLite ->
+            w.Db.Exec
+                "drop table thread_labels; create table thread_labels (thread_repo TEXT not null, thread_number INTEGER not null, label_repo TEXT not null, primary key (thread_repo, thread_number, label_repo));"
+            |> unit
 
     [<StepDefinition("^I check the linked threads against the database$")>]
     member _.Check() =

@@ -54,6 +54,11 @@ Feature: Database constraints are stated once, in the model
       When I insert an Order for the Customer with id 999
       Then the insert fails as a foreign key failure naming no constraint
 
+    Scenario: Deleting a record another refers to is a database failure naming the reference
+      Given a Customer with the email "ada@example.com" and an Order of theirs
+      When I delete that Customer
+      Then the delete fails as a database failure naming the reference from orders.customer_id
+
     Scenario: A broken column check is the field's error
       When I insert an Order with the total -1
       Then the insert fails with a check error on Total, naming orders_total_check

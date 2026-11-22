@@ -491,6 +491,35 @@ type TestDb =
                 | SQLite, v -> unbox<'T> v
         }
 
+    /// The first column of each row of raw SQL, as text.
+    member db.Texts(sql: string) =
+        task {
+            use! conn = db.Raw()
+            use cmd = db.Command(conn, sql, [])
+            use! reader = cmd.ExecuteReaderAsync()
+            let found = ResizeArray<string>()
+
+            while reader.Read() do
+                found.Add(string (reader.GetValue 0))
+
+            return List.ofSeq found
+        }
+
+    /// The database without a table: PostgreSQL's public schema made again;
+    /// every table of SQLite's file dropped, foreign keys off while they are.
+    member db.Empty() =
+        task {
+            match db.Kind with
+            | PostgreSQL ->
+                let! _ = db.Exec "drop schema public cascade; create schema public;"
+                ()
+            | SQLite ->
+                let! tables = db.Texts "select name from sqlite_schema where type = 'table' and name not like 'sqlite_%'"
+                let drops = tables |> List.map (fun t -> $"drop table if exists \"{t}\";") |> String.concat " "
+                let! _ = db.Exec $"PRAGMA foreign_keys = OFF; {drops} PRAGMA foreign_keys = ON;"
+                ()
+        }
+
     /// A scenario's own tables: `postgres`'s hand-written DDL on PostgreSQL; on
     /// SQLite, the tables Ddl makes for `model`, as Plasm.Sqlite declares them,
     /// and the rows the script inserts.

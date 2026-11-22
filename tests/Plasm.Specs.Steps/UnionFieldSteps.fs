@@ -143,7 +143,7 @@ type UnionFieldSteps(w: World) =
         task {
             let! values =
                 w.Db.Scalar<string>(
-                    "select concat_ws('|', stage, coalesce(stage_assignee, '~'), coalesce(stage_since::text, '~'), coalesce(stage_resolution, '~'), coalesce(stage_resolution_reason, '~'), coalesce(stage_at::text, '~')) from cards limit 1"
+                    "select concat_ws('|', stage, coalesce(stage_assignee, '~'), coalesce(CAST(stage_since AS TEXT), '~'), coalesce(stage_resolution, '~'), coalesce(stage_resolution_reason, '~'), coalesce(CAST(stage_at AS TEXT), '~')) from cards limit 1"
                 )
 
             let parts = values.Split '|'
@@ -153,7 +153,7 @@ type UnionFieldSteps(w: World) =
     [<StepDefinition("a cards table with the Stage columns")>]
     member _.Table() =
         task {
-            let! _ = w.Db.Exec UnionCards.table
+            do! w.Db.MakeTables(UnionCards.table, UnionCards.model)
             w.Set("cardRepo", w.Db.RepoWith(model = UnionCards.model))
         }
         |> unit
@@ -225,7 +225,8 @@ type UnionFieldSteps(w: World) =
 
     [<StepDefinition("a cards row whose stage is doing without an assignee")>]
     member _.DoingWithoutAssignee() =
-        w.Db.Exec "insert into cards (title, stage, stage_since) values ('t', 'doing', now())" |> unit
+        let now = if w.Db.Kind = Plasm.TestDomain.Database.PostgreSQL then "now()" else "'2026-01-01 00:00:00+00:00'"
+        w.Db.Exec $"insert into cards (title, stage, stage_since) values ('t', 'doing', {now})" |> unit
 
     [<StepDefinition("a cards row whose stage is backlog with an assignee")>]
     member _.BacklogWithAssignee() =
@@ -466,7 +467,16 @@ type UnionFieldSteps(w: World) =
         |> unit
 
     [<StepDefinition("the cards table has lost its stage_since column")>]
-    member _.DropColumn() = w.Db.Exec "alter table cards drop column stage_since" |> unit
+    member _.DropColumn() =
+        task {
+            // SQLite drops no column a check names: the check goes first.
+            if w.Db.Kind = Plasm.TestDomain.Database.SQLite then
+                do! w.Db.DropConstraint("cards", "cards_stage_since_check")
+
+            let! _ = w.Db.Exec "alter table cards drop column stage_since"
+            ()
+        }
+        |> unit
 
     [<StepDefinition("I check the cards model against the database")>]
     member _.CheckCards() =

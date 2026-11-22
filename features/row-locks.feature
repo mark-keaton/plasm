@@ -26,16 +26,19 @@ Feature: A transaction can lock the rows it reads
 
   Rule: Two transactions see each other's locks
 
+    @postgres
     Scenario: Two workers claiming with SKIP LOCKED each get a different job
       Given three queued jobs
       When two workers each claim the first queued job, skipping locked ones, the first holding its lock until the second has claimed
       Then the workers claimed different jobs
 
+    @postgres
     Scenario: A claim with NOWAIT on a job another worker holds fails at once
       Given three queued jobs
       When a worker holds the first queued job and a second claims it without waiting
       Then the second's transaction fails as a lock that is not available
 
+    @postgres
     Scenario: A shared lock is shared, and keeps out a lock for update
       Given three queued jobs
       When a worker holds the first queued job with a shared lock, a second takes a shared lock on it without waiting, and a third locks it for update without waiting
@@ -44,6 +47,7 @@ Feature: A transaction can lock the rows it reads
 
   Rule: The lock is part of the query, and only a transaction reads it
 
+    @postgres
     Scenario: A locked read sends its lock on the query's own rows, not on what they own
       Given three queued jobs
       When a transaction reads the first queued job locked for update, with its notes

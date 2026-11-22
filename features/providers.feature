@@ -385,3 +385,22 @@ Feature: Database-specific SQL comes from the provider
       Then the insert of "Cy" fails as a timeout at its BEGIN
       And no Customer named "Cy" is stored
 
+    # RetryPolicy.OnSerializationFailure runs a transaction again after a
+    # serialization failure or a deadlock, as on PostgreSQL; a SQLite
+    # transaction meets neither, holding the write lock from its BEGIN, and a
+    # Timeout is not retried: the busy timeout is the wait the caller chose.
+    @sqlite
+    Scenario: On SQLite a retrying transaction whose BEGIN outwaits its busy timeout fails once, its steps not run
+      Given another session holds the database's write lock
+      When a transaction retrying serialization failures 5 times, with a step of its own, inserts a Customer "Di" through a repository whose busy timeout is 200 ms, the other session holding the lock for 3 seconds
+      Then the insert of "Di" fails as a timeout at its BEGIN, after 1 attempt
+      And the step of its own ran 0 times
+      And no Customer named "Di" is stored
+
+  Rule: SQLite has no enum types
+
+    @sqlite
+    Scenario: On SQLite a model storing a status as an enum type is refused when the repository is made
+      When a repository is made for a model storing a status as an enum type
+      Then it is refused when made, naming Shipment.Status, Shipment.PreviousStatus and saying it has no enum types
+

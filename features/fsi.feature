@@ -25,14 +25,14 @@ Feature: Using Plasm from F# Interactive
 
     Scenario: Referencing the packages is enough for Plasm values to display
       Given a new F# Interactive session
-      When I reference Plasm and the PostgreSQL provider
+      When I reference Plasm and the database's provider
       And I evaluate the mappings and a repository
       And I evaluate a query for a customer's published Orders
       Then the session displays the SQL with each parameter and its value
       And no setup call was needed
 
     Scenario: Referencing Plasm twice is harmless
-      When I reference Plasm and the PostgreSQL provider again
+      When I reference Plasm and the database's provider again
       And I evaluate a query for a customer's published Orders
       Then the session reports no errors
       And the query is displayed once
@@ -136,6 +136,7 @@ Feature: Using Plasm from F# Interactive
       When a sandbox inside the playground inserts another Customer
       Then after the sandbox ends the playground still has only its own Customer
 
+    @postgres
     Scenario: A playground whose connection was lost says so and starts afresh
       Given a playground in which a Customer was inserted
       When the playground's database connection is terminated

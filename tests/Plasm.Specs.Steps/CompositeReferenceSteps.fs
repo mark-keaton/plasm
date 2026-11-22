@@ -260,7 +260,9 @@ type CompositeReferenceSteps(w: World) =
         let ddl = w.Get<string> "trackerDdl"
 
         for h in holders.Replace(" and ", ", ").Split(", ") do
-            let lines = ddl.Split('\n') |> Array.filter (fun l -> l.StartsWith $"alter table {h} ")
+            // After the tables (PostgreSQL), or in the table's own (SQLite's
+            // foreign keys are in their tables).
+            let lines = Array.append (ddl.Split('\n') |> Array.filter (fun l -> l.StartsWith $"alter table {h} ")) ((ddlOf h ddl).Split('\n'))
             check (lines |> Array.exists (fun l -> l.Contains $"foreign key ({columns}) references {table} ({target})")) ddl
 
     [<StepDefinition("^it has no foreign key over (.*)$")>]
@@ -273,7 +275,7 @@ type CompositeReferenceSteps(w: World) =
     [<StepDefinition("the foreign key from ticket_notes to tickets is dropped")>]
     member _.DropReference() =
         task {
-            let! _ = w.Db.Exec "alter table ticket_notes drop constraint ticket_notes_project_ticket_number_fkey"
+            do! w.Db.DropConstraint("ticket_notes", "ticket_notes_project_ticket_number_fkey")
             ()
         }
         |> unit
@@ -371,7 +373,7 @@ type CompositeReferenceSteps(w: World) =
 
             let! stored =
                 w.Db.Scalar<obj>(
-                    "select (parent_project is null and parent_number is null)::text from tickets where project = @p and number = @n",
+                    "select CASE WHEN parent_project is null and parent_number is null THEN 'true' ELSE 'false' END from tickets where project = @p and number = @n",
                     [ "p", box k.Project; "n", box k.Number ]
                 )
 
@@ -391,6 +393,10 @@ type CompositeReferenceSteps(w: World) =
     member _.PartialParent(k: string, n: int) =
         task {
             let k = key k
+
+            // Past the check SQLite's Ddl holds the reference's parts with.
+            if w.Db.Kind = Plasm.TestDomain.Database.SQLite then
+                do! w.Db.DropConstraint("tickets", "tickets_parent_present")
 
             let! _ =
                 w.Db.Exec(

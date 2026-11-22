@@ -116,13 +116,31 @@ type TransactionEventSteps(w: World) =
 
     [<StepDefinition("^OnCommand reported, in order:$")>]
     member _.Reported(table: DataTable) =
-        let expected = [ for row in table.Rows -> row.["Kind"], row.["Sql"] ]
+        /// A transaction's BEGIN as the scenario's database sends it: the text
+        /// PostgreSQL logs for its level, or the dialect's for that level (SQLite:
+        /// BEGIN IMMEDIATE for every transaction).
+        let beginOf (sql: string) =
+            let level =
+                match sql with
+                | "BEGIN TRANSACTION ISOLATION LEVEL READ COMMITTED" -> Some IsolationLevel.ReadCommitted
+                | "BEGIN ISOLATION LEVEL REPEATABLE READ" -> Some IsolationLevel.RepeatableRead
+                | "BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE" -> Some IsolationLevel.Serializable
+                | _ -> None
+
+            match level with
+            | Some l when w.Db.Kind = Plasm.TestDomain.Database.SQLite -> w.Db.Provider.Dialect.Begin l
+            | _ -> sql
+
+        let expected = [ for row in table.Rows -> row.["Kind"], (if row.["Kind"] = "Begin" then beginOf row.["Sql"] else row.["Sql"]) ]
         let actual = events ()
         let shown = actual |> List.map (fun e -> $"{e.Kind} {e.Sql}") |> String.concat "\n"
         equal expected.Length actual.Length $"events reported:\n{shown}\n"
 
         for (kind, sql), e in List.zip expected actual do
-            check (string e.Kind = kind && e.Sql.StartsWith sql) $"expected {kind} \"{sql}\", reported:\n{shown}"
+            // A BEGIN or SAVEPOINT exactly (BEGIN is not BEGIN IMMEDIATE); a
+            // statement by how it starts.
+            let matches = if kind = "Begin" then e.Sql = sql else e.Sql.StartsWith sql
+            check (string e.Kind = kind && matches) $"expected {kind} \"{sql}\", reported:\n{shown}"
 
     [<StepDefinition("^(\\d+) of them (?:is a statement|are statements), by its Kind$")>]
     member _.Statements(n: int) =

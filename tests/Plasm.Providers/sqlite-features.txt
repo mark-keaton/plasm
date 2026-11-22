@@ -1,5 +1,7 @@
 # The features the SQLite run runs, while the rest are brought onto it one by
-# one (docs/status.md): each line a feature file and its generated test class.
+# one (docs/status.md): each line a feature file and its generated test class,
+# and `postgres-only` after a feature none of whose scenarios runs on SQLite
+# (each of them in postgres-only.txt).
 # When every feature is here, the SQLite run is the whole of tests/Plasm.Specs.
 features/core.feature	*PredictableFunctional*
 features/providers.feature	*Database_SpecificSQLComesFromTheProviderFeature*
@@ -41,3 +43,18 @@ features/linked-collections.feature	*ALinkedCollectionIsAPlainListOfSharedRecord
 features/unique-within.feature	*AFieldCanBeUniqueWithinOtherFieldsFeature*
 features/owned-records.feature	*AnOwnedRecordIsAPlainFieldLoadedAndWrittenWithItsOwnerFeature*
 features/owned-collections.feature	*AnOwnedCollectionIsAPlainListLoadedAndWrittenWithItsOwnerFeature*
+features/streaming.feature	*AQuerysRowsCanBeReadAsAStreamFeature*
+features/round-trips.feature	*AWriteAndEachLevelOfLoadsIsOneRoundTripFeature*
+features/row-locks.feature	*ATransactionCanLockTheRowsItReadsFeature*
+features/composite-links.feature	*ALinkedListJoinsRecordsKeyedBySeveralPartsFeature*
+features/composite-references.feature	*AKeyOfSeveralPartsIsReferredToAndOwnsAsAKeyOfOneDoesFeature*
+features/concurrency.feature	*ChangesAreCheckedAgainstWhatWasReadFeature*
+features/union-fields.feature	*AUnionWithFieldsIsStoredAcrossColumnsFeature*
+features/transaction-events.feature	*ATransactionsOwnCommandsAreReportedFeature*
+features/scalar-conventions.feature	*DomainScalarsAreStoredByConventionFeature*
+features/stored-records.feature	*ARecordSaysHowItIsStoredFeature*
+features/readable-sql.feature	*TheSQLAQuerySendsReadsAsAPersonWouldWriteItFeature*
+features/ddl.feature	*PlasmPrintsTheDDLItsModelExpectsFeature*
+features/elegance.feature	*IdiomaticAndPrincipledFPersistenceFeature*
+features/pg-enums.feature	*FieldlessUnionsStoredAsPostgreSQLEnumTypesFeature*	postgres-only
+features/fsi.feature	*UsingPlasmFromFInteractiveFeature*

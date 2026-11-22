@@ -153,6 +153,40 @@ type ConstraintSteps(w: World) =
             equal ([]: string list) f.Columns "columns"
         | Choice1Of2 errors -> failwithf "expected a database failure, got the field errors %A" errors
 
+    [<StepDefinition("^a Customer with the email \"(.*)\" and an Order of theirs$")>]
+    member _.CustomerWithOrder(email: string) =
+        task {
+            let! r = w.Repo.Transact(Tx.insert (New.customer "Ada" email): Tx<_, unit>)
+            let c = ok r
+            let! o = w.Repo.Transact(Tx.insert (New.order (Some c.Id) Draft 5m): Tx<_, unit>)
+            ok o |> ignore
+            w.Set("referred", c)
+        }
+        |> unit
+
+    [<StepDefinition("^I delete that Customer$")>]
+    member _.DeleteReferred() =
+        task {
+            let! r = w.Repo.Transact(Tx.delete (w.Get<Customer> "referred"): Tx<_, unit>)
+            insertResult r
+        }
+        |> unit
+
+    /// By its name on PostgreSQL; by its table and columns on SQLite, which
+    /// names no foreign key (ForeignKeys).
+    [<StepDefinition("^the delete fails as a database failure naming the reference from (\\w+)\\.(\\w+)$")>]
+    member _.DeleteRefused(table: string, column: string) =
+        match failure () with
+        | Choice2Of2 f ->
+            equal DbFailureKind.ForeignKeyViolation f.Kind "kind"
+
+            match w.Db.Kind with
+            | PostgreSQL -> equal (Some $"{table}_{column}_fkey") f.Constraint "constraint"
+            | SQLite ->
+                equal (Some table) f.Table "table"
+                equal [ column ] f.Columns "columns"
+        | Choice1Of2 errors -> failwithf "expected a database failure, got the field errors %A" errors
+
     [<StepDefinition("^no Order was written$")>]
     member _.NoOrder() =
         task {

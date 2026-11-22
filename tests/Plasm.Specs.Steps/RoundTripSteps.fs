@@ -219,7 +219,11 @@ type RoundTripSteps(w: World) =
 
             let! _ =
                 w.Db.Exec(
-                    $"insert into payments (order_id, amount, status, created_at) values ({id}, 4, 'succeeded', now()), ({id}, 6, 'succeeded', now())"
+                    match w.Db.Kind with
+                    | Plasm.TestDomain.Database.PostgreSQL ->
+                        $"insert into payments (order_id, amount, status, created_at) values ({id}, 4, 'succeeded', now()), ({id}, 6, 'succeeded', now())"
+                    | Plasm.TestDomain.Database.SQLite ->
+                        $"insert into payments (order_id, amount, status, created_at) values ({id}, '4', 'succeeded', '2026-01-01 00:00:00'), ({id}, '6', 'succeeded', '2026-01-01 00:00:00')"
                 )
 
             w.Set("rtOrder", o)

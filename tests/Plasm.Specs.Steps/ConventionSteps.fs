@@ -179,7 +179,15 @@ type ConventionSteps(w: World) =
         | Error errors -> w.Set("refusal", errors)
 
     [<StepDefinition("a tickets table")>]
-    member _.Table() = w.Db.Exec Conventions.table |> unit
+    member _.Table() =
+        match w.Db.Kind with
+        | Plasm.TestDomain.Database.PostgreSQL -> w.Db.Exec Conventions.table |> unit
+        // The same plain table in SQLite's DDL: its priority held to no names,
+        // as the scenarios map it to different ones.
+        | Plasm.TestDomain.Database.SQLite ->
+            w.Db.Exec
+                "drop table if exists tickets; create table tickets (id INTEGER not null primary key, code TEXT not null, title TEXT not null, priority TEXT not null, reviewer TEXT);"
+            |> unit
 
     [<StepDefinition("Tickets in a model built with no scalar mappings")>]
     member _.NoMappings() =
@@ -286,7 +294,13 @@ type ConventionSteps(w: World) =
     [<StepDefinition("the Tickets titled \"(.*)\" and \"(.*)\" are returned")>]
     member _.BothTitled(a: string, b: string) = equal [ a; b ] (w.Get<Ticket list> "kept" |> List.map (fun t -> t.Title.Value)) "titles kept"
 
-    [<StepDefinition("the query's SQL reads '(.*)'")>]
+    /// As the dialect matches text (text-matching.feature): PostgreSQL's
+    /// LIKE, SQLite's GLOB.
+    [<StepDefinition("^on (PostgreSQL|SQLite) the query's SQL reads '(.*)'$")>]
+    member this.SqlReadsOn(database: string, text: string) =
+        if string w.Db.Kind = database then this.SqlReads text
+
+    [<StepDefinition("^the query's SQL reads '(.*)'$")>]
     member _.SqlReads(text: string) =
         let sql = (w.Get<string> "keptSql").Replace("\n", " ")
         check (sql.Contains text) $"the SQL does not read {text}: {sql}"

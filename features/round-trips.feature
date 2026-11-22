@@ -36,16 +36,19 @@ Feature: A write, and each level of loads, is one round trip
 
   Rule: A write is one round trip, after the key it needs
 
+    @postgres
     Scenario: An Order inserted with two Lines is two round trips, its Lines together
       When I insert an Order with two Lines
       Then the write took 2 round trips
       And both Lines' INSERTs travelled in the second
 
+    @postgres
     Scenario: A record whose key the application assigns is inserted with what it owns in one round trip
       When I insert a Sheet with two Rows
       Then the write took 1 round trip
       And the Sheet reads back with its two Rows
 
+    @postgres
     Scenario: An Order with one Line changed and one removed is written in one round trip
       Given an Order with three Lines
       When I change its first Line's quantity and remove its last Line
@@ -73,17 +76,20 @@ Feature: A write, and each level of loads, is one round trip
 
   Rule: The loads of one level are one round trip
 
+    @postgres
     Scenario: A Card's comments and labels are read together
       Given a Card with two comments and two labels
       When I read the Cards with what they own and link
       Then the read took 2 round trips
       And the Card reads with its two comments and two labels
 
+    @postgres
     Scenario: Loads bound with let! and and! are read together
       Given an Order with three Lines and two Payments
       When I read the Orders binding their Payments with let! and their Customer with and!
       Then the read took 2 round trips
 
+    @postgres
     Scenario: A load of what a load read waits for its records
       Given an Order with three Lines and two Payments
       When I read the Customers binding their Orders, each binding its Payments
@@ -99,11 +105,13 @@ Feature: A write, and each level of loads, is one round trip
     are what was rolled back, as if they had run one after another. An item of
     more than one step runs after the one before it.
 
+    @postgres
     Scenario: Three Sheets inserted by Tx.traverse are one round trip
       When I insert three Sheets with two Rows each by Tx.traverse
       Then the write took 1 round trip
       And three Sheets read back with two Rows each
 
+    @postgres
     Scenario: Orders whose keys the database generates take two round trips, however many
       When I insert three Orders with a Line each by Tx.traverse
       Then the write took 2 round trips

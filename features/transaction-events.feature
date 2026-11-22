@@ -16,6 +16,10 @@ Feature: A transaction's own commands are reported
   to do it. A savepoint is the Begin of a nested transaction; releasing it is
   its Commit, and rolling back to it its Rollback.
 
+  On SQLite a transaction's BEGIN is the dialect's for its level, BEGIN
+  IMMEDIATE for every one, which these scenarios' tables give as PostgreSQL
+  logs it; a read in one snapshot begins with a deferred BEGIN.
+
   Npgsql sends BEGIN, and SAVEPOINT, with whatever the connection sends next,
   so the event has the round trip of the command it travelled with. COMMIT,
   ROLLBACK and the release of a savepoint are round trips of their own. A
@@ -37,6 +41,7 @@ Feature: A transaction's own commands are reported
         | Commit    | COMMIT                                           |
       And 1 of them is a statement, by its Kind
 
+    @postgres
     Scenario Outline: BEGIN names the isolation level the transaction runs at
       When a transaction at <isolation> inserts a Customer
       Then the first event is a Begin, "<begin>"
@@ -47,6 +52,19 @@ Feature: A transaction's own commands are reported
         | RepeatableRead | BEGIN ISOLATION LEVEL REPEATABLE READ            |
         | Serializable   | BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE   |
 
+    # Every SQLite transaction is serializable, and takes the write lock at its BEGIN.
+    @sqlite
+    Scenario Outline: On SQLite a transaction at <isolation> begins BEGIN IMMEDIATE
+      When a transaction at <isolation> inserts a Customer
+      Then the first event is a Begin, "BEGIN IMMEDIATE"
+
+      Examples:
+        | isolation      |
+        | ReadCommitted  |
+        | RepeatableRead |
+        | Serializable   |
+
+    @postgres
     Scenario: BEGIN travels with the first statement, and COMMIT on its own
       When a transaction inserts a Customer
       Then the Begin has the round trip of the INSERT
@@ -70,6 +88,7 @@ Feature: A transaction's own commands are reported
         | Rollback  | ROLLBACK                                         |
       And the INSERT did not succeed
 
+    @postgres
     Scenario: A transaction that sends no statement sends BEGIN and ROLLBACK together
       When a transaction refuses before it reads anything
       Then OnCommand reported, in order:
@@ -78,6 +97,7 @@ Feature: A transaction's own commands are reported
         | Rollback | ROLLBACK                                         |
       And they share one round trip
 
+    @postgres
     Scenario: A read in one snapshot reports the transaction it reads in
       Given an Order with one Line
       When I read the Orders in one snapshot
@@ -87,6 +107,17 @@ Feature: A transaction's own commands are reported
         | Statement | SELECT                                |
         | Statement | SELECT                                |
         | Commit    | COMMIT                                |
+
+    @sqlite
+    Scenario: A read in one snapshot reports the transaction it reads in on SQLite
+      Given an Order with one Line
+      When I read the Orders in one snapshot
+      Then OnCommand reported, in order:
+        | Kind      | Sql    |
+        | Begin     | BEGIN  |
+        | Statement | SELECT |
+        | Statement | SELECT |
+        | Commit    | COMMIT |
 
   Rule: A sandbox reports its ROLLBACK, and the savepoints it works in
 

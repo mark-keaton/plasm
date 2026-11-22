@@ -40,10 +40,13 @@ module internal Scaffolding =
 
     /// F# types in preference order (the first whose column types include the
     /// column's type is used), with their F# spelling.
+    /// The F# types a column may be, the first whose catalogue types name the
+    /// column's taken: so where a dialect names several alike, the widest
+    /// (SQLite's INTEGER is 64-bit, as int16, int and int64 are declared).
     let private candidates =
-        [ typeof<int16>, "int16"
+        [ typeof<int64>, "int64"
           typeof<int>, "int"
-          typeof<int64>, "int64"
+          typeof<int16>, "int16"
           typeof<string>, "string"
           typeof<bool>, "bool"
           typeof<decimal>, "decimal"

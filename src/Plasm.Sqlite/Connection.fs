@@ -186,12 +186,15 @@ type internal HearingReader(inner: SqliteDataReader, ct: CancellationToken, hear
 
 /// SQLite's transaction, its COMMIT tried while the database is busy (readers
 /// of a rollback-journal file), hearing the token between tries.
-and internal HearingTransaction(inner: SqliteTransaction, connection: DbConnection, busy: TimeSpan) =
+/// A deferred one (`snapshot`) reads in one snapshot and says so: its
+/// IsolationLevel is Snapshot, as what it begins with (`BEGIN`) differs from a
+/// transaction's (`BEGIN IMMEDIATE`, transaction-events.feature).
+and internal HearingTransaction(inner: SqliteTransaction, connection: DbConnection, busy: TimeSpan, snapshot: bool) =
     inherit DbTransaction()
 
     member _.Inner = inner
     override _.DbConnection = connection
-    override _.IsolationLevel = inner.IsolationLevel
+    override _.IsolationLevel = if snapshot then IsolationLevel.Snapshot else inner.IsolationLevel
     override _.Commit() = inner.Commit()
     override _.Rollback() = inner.Rollback()
     override _.SupportsSavepoints = inner.SupportsSavepoints
@@ -315,10 +318,15 @@ and internal HearingCommand(inner: SqliteCommand, connection: DbConnection, inte
         base.Dispose disposing
 
 /// Microsoft.Data.Sqlite's connection, as Plasm uses it: its commands hear
-/// their tokens. `Sqlite.connectionOf` gives the SqliteConnection itself.
-type internal HearingConnection(inner: SqliteConnection, busy: TimeSpan) =
+/// their tokens, and its state changes are its own (StateChange), as the
+/// connection it wraps raises them. `Sqlite.connectionOf` gives the
+/// SqliteConnection itself.
+type internal HearingConnection(inner: SqliteConnection, busy: TimeSpan) as this =
     inherit DbConnection()
     let interrupts = Interrupts(inner)
+    do inner.StateChange.Add(fun e -> this.Changed e)
+
+    member private _.Changed(e: StateChangeEventArgs) = base.OnStateChange e
 
     member _.Inner = inner
     override _.ConnectionString with get () = inner.ConnectionString and set v = inner.ConnectionString <- v
@@ -328,11 +336,11 @@ type internal HearingConnection(inner: SqliteConnection, busy: TimeSpan) =
     override _.State = inner.State
     override _.ChangeDatabase name = inner.ChangeDatabase name
     override _.Open() = inner.Open()
-    override this.BeginDbTransaction(isolation) = new HearingTransaction(inner.BeginTransaction(isolation), this, busy) :> DbTransaction
+    override this.BeginDbTransaction(isolation) = new HearingTransaction(inner.BeginTransaction(isolation), this, busy, false) :> DbTransaction
     override this.CreateDbCommand() = new HearingCommand(inner.CreateCommand(), this, interrupts, busy) :> DbCommand
 
     /// SQLite's transaction as this connection's (its COMMIT heard as a command is).
-    member this.Hearing(tx: SqliteTransaction) = new HearingTransaction(tx, this, busy) :> DbTransaction
+    member this.Hearing(tx: SqliteTransaction, snapshot: bool) = new HearingTransaction(tx, this, busy, snapshot) :> DbTransaction
 
     override _.Close() =
         interrupts.EndAll()

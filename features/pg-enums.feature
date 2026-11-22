@@ -1,7 +1,7 @@
 # Executable acceptance specification (Reqnroll): PostgreSQL enum types.
 # Written before the implementation, following the conventions of core.feature.
 # The research behind it is in docs/comparisons/enums.md.
-@implemented
+@implemented @postgres
 Feature: Fieldless unions stored as PostgreSQL enum types
   As an F# application developer
   I want to map a fieldless union to a PostgreSQL enum type

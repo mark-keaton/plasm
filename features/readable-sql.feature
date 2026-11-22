@@ -38,6 +38,7 @@ Feature: The SQL a query sends reads as a person would write it
 
   Rule: A read says what it reads and no more
 
+    @postgres
     Scenario: Each clause on a line, columns under their own names, conditions in one list, ascending unmarked
       When I explain the Customers named "Ada" whose email starts with "a", other than 3, by name and then email descending, taking 10
       Then the SQL is:
@@ -49,6 +50,19 @@ Feature: The SQL a query sends reads as a person would write it
         LIMIT @p3
         """
 
+    @sqlite
+    Scenario: Each clause on a line, columns under their own names, conditions in one list, ascending unmarked on SQLite
+      When I explain the Customers named "Ada" whose email starts with "a", other than 3, by name and then email descending, taking 10
+      Then the SQL is:
+        """
+        SELECT "c"."id", "c"."name", "c"."email"
+        FROM "customers" AS "c"
+        WHERE "c"."name" = @p0 AND "c"."email" GLOB @p1 AND "c"."id" <> @p2
+        ORDER BY "c"."name", "c"."email" DESC
+        LIMIT @p3
+        """
+
+    @postgres
     Scenario: An OR inside an AND keeps its parentheses, and a negated equality is <>
       When I explain the ids and totals of the Orders over 10 or under 2 that are not drafts
       Then the SQL is:
@@ -56,6 +70,16 @@ Feature: The SQL a query sends reads as a person would write it
         SELECT "o"."id" AS "c0", "o"."total" AS "c1"
         FROM "orders" AS "o"
         WHERE ("o"."total" > @p0 OR "o"."total" < @p1) AND "o"."status" <> @p2
+        """
+
+    @sqlite
+    Scenario: An OR inside an AND keeps its parentheses, and a negated equality is <> on SQLite
+      When I explain the ids and totals of the Orders over 10 or under 2 that are not drafts
+      Then the SQL is:
+        """
+        SELECT "o"."id" AS "c0", "o"."total" AS "c1"
+        FROM "orders" AS "o"
+        WHERE (plasm_decimal_compare("o"."total", @p0) > 0 OR plasm_decimal_compare("o"."total", @p1) < 0) AND "o"."status" <> @p2
         """
 
     Scenario: A record selected names its columns after its fields
@@ -67,6 +91,7 @@ Feature: The SQL a query sends reads as a person would write it
         INNER JOIN "customers" AS "c" ON "o"."customer_id" = "c"."id"
         """
 
+    @postgres
     Scenario: An operation inside a comparison needs no parentheses
       When I explain the Orders without a cancellation reason whose doubled total is over 10
       Then the SQL is:
@@ -76,6 +101,17 @@ Feature: The SQL a query sends reads as a person would write it
         WHERE "o"."cancellation_reason" IS NULL AND "o"."total" * @p0 > @p1
         """
 
+    @sqlite
+    Scenario: An operation inside a comparison needs no parentheses on SQLite
+      When I explain the Orders without a cancellation reason whose doubled total is over 10
+      Then the SQL is:
+        """
+        SELECT "o"."id", "o"."customer_id", "o"."status", "o"."total", "o"."cancellation_reason", "o"."placed_at", "o"."version"
+        FROM "orders" AS "o"
+        WHERE "o"."cancellation_reason" IS NULL AND plasm_decimal_compare(plasm_decimal_multiply("o"."total", @p0), @p1) > 0
+        """
+
+    @postgres
     Scenario: A derived table has a name of its own, and is indented under its parenthesis
       When I explain the Orders by total, binding their two newest Payments
       Then the Payments load's SQL is:
@@ -90,6 +126,22 @@ Feature: The SQL a query sends reads as a person would write it
         ORDER BY "ranked"."__rn"
         """
 
+    @sqlite
+    Scenario: A derived table has a name of its own, and is indented under its parenthesis on SQLite
+      When I explain the Orders by total, binding their two newest Payments
+      Then the Payments load's SQL is:
+        """
+        SELECT "ranked"."id", "ranked"."order_id", "ranked"."amount", "ranked"."status", "ranked"."created_at"
+        FROM (
+            SELECT "p"."id", "p"."order_id", "p"."amount", "p"."status", "p"."created_at", ROW_NUMBER() OVER (PARTITION BY "p"."order_id" ORDER BY "p"."created_at" DESC, "p"."id") AS "__rn"
+            FROM "payments" AS "p"
+            WHERE "p"."order_id" IN (@p0)
+        ) AS "ranked"
+        WHERE "ranked"."__rn" <= @p1
+        ORDER BY "ranked"."__rn"
+        """
+
+    @postgres
     Scenario: An if, elif and else is one CASE
       When I explain the Orders' sizes in words, through if, elif and else on the total
       Then the SQL is:
@@ -98,9 +150,24 @@ Feature: The SQL a query sends reads as a person would write it
         FROM "orders" AS "o"
         """
 
+    @sqlite
+    Scenario: An if, elif and else is one CASE on SQLite
+      When I explain the Orders' sizes in words, through if, elif and else on the total
+      Then the SQL is:
+        """
+        SELECT CASE WHEN plasm_decimal_compare("o"."total", @p0) > 0 THEN 'big' WHEN plasm_decimal_compare("o"."total", @p1) > 0 THEN 'medium' ELSE 'small' END AS "c0"
+        FROM "orders" AS "o"
+        """
+
+    @postgres
     Scenario: Every line meeting a condition is no line failing it, written plainly on the condition's line
       When I explain the Orders all of whose lines cost more than 5
       Then the SQL ends "WHERE NOT EXISTS (SELECT 1 FROM "order_lines" AS "l" WHERE "l"."order_id" = "o"."id" AND "l"."unit_price" <= @p0)"
+
+    @sqlite
+    Scenario: Every line meeting a condition is no line failing it, written plainly on the condition's line on SQLite
+      When I explain the Orders all of whose lines cost more than 5
+      Then the SQL ends "WHERE NOT EXISTS (SELECT 1 FROM "order_lines" AS "l" WHERE "l"."order_id" = "o"."id" AND plasm_decimal_compare("l"."unit_price", @p0) <= 0)"
 
     Scenario: An option the query has proved present is ordered as a plain column
       When I explain the Orders with a cancellation reason, ordered by it
@@ -113,10 +180,17 @@ Feature: The SQL a query sends reads as a person would write it
 
   Rule: A source is named after the variable that reads it
 
+    @postgres
     Scenario: A subquery's variable that shadows the query's is numbered
       When I explain the Orders for which some Order is over 100, both read by o
       Then the SQL ends "WHERE EXISTS (SELECT 1 FROM "orders" AS "o2" WHERE "o2"."total" > @p0)"
 
+    @sqlite
+    Scenario: A subquery's variable that shadows the query's is numbered on SQLite
+      When I explain the Orders for which some Order is over 100, both read by o
+      Then the SQL ends "WHERE EXISTS (SELECT 1 FROM "orders" AS "o2" WHERE plasm_decimal_compare("o2"."total", @p0) > 0)"
+
+    @postgres
     Scenario: A variable that is no identifier is quoted like any name
       When I explain the Orders over 10, read by ``an order``
       Then the SQL is:
@@ -124,6 +198,16 @@ Feature: The SQL a query sends reads as a person would write it
         SELECT "an order"."id", "an order"."customer_id", "an order"."status", "an order"."total", "an order"."cancellation_reason", "an order"."placed_at", "an order"."version"
         FROM "orders" AS "an order"
         WHERE "an order"."total" > @p0
+        """
+
+    @sqlite
+    Scenario: A variable that is no identifier is quoted like any name on SQLite
+      When I explain the Orders over 10, read by ``an order``
+      Then the SQL is:
+        """
+        SELECT "an order"."id", "an order"."customer_id", "an order"."status", "an order"."total", "an order"."cancellation_reason", "an order"."placed_at", "an order"."version"
+        FROM "orders" AS "an order"
+        WHERE plasm_decimal_compare("an order"."total", @p0) > 0
         """
 
     Scenario: A load's variable never takes the name of the table Plasm derives
@@ -201,6 +285,7 @@ Feature: The SQL a query sends reads as a person would write it
         LIMIT @p0
         """
 
+    @postgres
     Scenario: A load by the key of the record it reads is not sorted, and its table, read by no variable, is named once
       When I explain the Orders binding the Customer each refers to
       Then the Customers load's SQL is:
@@ -208,6 +293,16 @@ Feature: The SQL a query sends reads as a person would write it
         SELECT "customers"."id", "customers"."name", "customers"."email"
         FROM "customers"
         WHERE "customers"."id" = ANY(@p0)
+        """
+
+    @sqlite
+    Scenario: A load by the key of the record it reads is not sorted, and its table, read by no variable, is named once on SQLite
+      When I explain the Orders binding the Customer each refers to
+      Then the Customers load's SQL is:
+        """
+        SELECT "customers"."id", "customers"."name", "customers"."email"
+        FROM "customers"
+        WHERE "customers"."id" IN (@p0)
         """
 
     Scenario: A version's increment is written, not sent

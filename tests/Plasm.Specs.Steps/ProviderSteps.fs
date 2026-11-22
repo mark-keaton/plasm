@@ -31,6 +31,15 @@ type ProviderSteps(w: World) =
         with :? PlasmConfigurationException as e ->
             w.Set("madeWith", e.Message)
 
+    /// On the scenario's own provider (SQLite: EnumTypes false).
+    [<StepDefinition("^a repository is made for a model storing a status as an enum type$")>]
+    member _.MakeOnProvider() =
+        try
+            Repo(PgEnums.model, w.Db.Provider) |> ignore
+            w.Set("madeWith", "made")
+        with :? PlasmConfigurationException as e ->
+            w.Set("madeWith", e.Message)
+
     [<StepDefinition("^it is refused when made, naming (.*) and saying it has no (.*)$")>]
     member _.RefusedWhenMade(fields: string, capability: string) =
         let m = w.Get<string> "madeWith"

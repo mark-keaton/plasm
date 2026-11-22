@@ -84,14 +84,16 @@ Feature: Domain scalars are stored by convention
       And Tickets titled "Write the spec" and "Ship it"
       When I keep the Tickets whose title's value contains "spec"
       Then only the Ticket titled "Write the spec" is returned
-      And the query's SQL reads 'WHERE "t"."title" LIKE @p0'
+      And on PostgreSQL the query's SQL reads 'WHERE "t"."title" LIKE @p0'
+      And on SQLite the query's SQL reads 'WHERE "t"."title" GLOB @p0'
 
     Scenario: A wrapper's value is compared and started with as its column
       Given Tickets in a model built with no scalar mappings
       And Tickets titled "Write the spec" and "Ship it"
       When I keep the Tickets whose title's value starts with "Ship" or is "Write the spec"
       Then the Tickets titled "Write the spec" and "Ship it" are returned
-      And the query's SQL reads 'WHERE "t"."title" LIKE @p0 OR "t"."title" = @p1'
+      And on PostgreSQL the query's SQL reads 'WHERE "t"."title" LIKE @p0 OR "t"."title" = @p1'
+      And on SQLite the query's SQL reads 'WHERE "t"."title" GLOB @p0 OR "t"."title" = @p1'
 
     Scenario: A member Plasm cannot read is refused, saying how to make it readable
       Given Tickets in a model built with no scalar mappings

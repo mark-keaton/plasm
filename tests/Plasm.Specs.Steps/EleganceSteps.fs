@@ -512,8 +512,13 @@ type EleganceSteps(w: World) =
     [<StepDefinition("the planned batching strategy")>]
     member _.Strategy() =
         let plan: QueryPlan = w.Get "plan"
-        check (plan.Loads |> List.forall (fun l -> l.Strategy = LoadStrategy.BatchedByKeys 5000)) "batched by keys"
-        check (plan.Loads |> List.forall (fun l -> l.Sql.Contains "= ANY(@p0)")) "one key-list parameter per batch"
+        // As many keys a command as the provider sends (PostgreSQL 5000, SQLite 30000).
+        let keys = w.Db.Provider.Dialect.Capabilities.MaxKeysPerCommand
+        check (plan.Loads |> List.forall (fun l -> l.Strategy = LoadStrategy.BatchedByKeys keys)) "batched by keys"
+        // The keys as the dialect sends a list: one array parameter, or one
+        // parameter each (SQLite).
+        let list = if w.Db.Kind = Plasm.TestDomain.Database.PostgreSQL then "= ANY(@p0)" else "IN (@p0"
+        check (plan.Loads |> List.forall (fun l -> l.Sql.Contains list)) "the keys of a batch, as the dialect sends a list"
 
     [<StepDefinition("inspection performs no database reads or writes")>]
     member _.InspectNoDb() = equal 0 w.CommandsSinceMark.Length "commands"
@@ -524,15 +529,28 @@ type EleganceSteps(w: World) =
     member _.DifferentCounts() =
         task {
             let! _ =
-                w.Db.Exec("insert into orders(status, total, placed_at) select 'published', g, now() from generate_series(1, 150) g")
+                match w.Db.Kind with
+                | Plasm.TestDomain.Database.PostgreSQL ->
+                    w.Db.Exec("insert into orders(status, total, placed_at) select 'published', g, now() from generate_series(1, 150) g")
+                | Plasm.TestDomain.Database.SQLite ->
+                    w.Db.Exec(
+                        "with recursive s(g) as (select 1 union all select g + 1 from s where g < 150) insert into orders(status, total, placed_at) select 'published', CAST(g AS TEXT), '2026-01-01 00:00:00' from s"
+                    )
 
             let! p = Seed.product w.Db "SKU"
 
             let! _ =
-                w.Db.Exec(
-                    "insert into order_lines(order_id, product_id, quantity, unit_price) select o.id, @p, 1, 1 from orders o, generate_series(1, 3)",
-                    [ "p", box (let (ProductId v) = p in v) ]
-                )
+                match w.Db.Kind with
+                | Plasm.TestDomain.Database.PostgreSQL ->
+                    w.Db.Exec(
+                        "insert into order_lines(order_id, product_id, quantity, unit_price) select o.id, @p, 1, 1 from orders o, generate_series(1, 3)",
+                        [ "p", box (let (ProductId v) = p in v) ]
+                    )
+                | Plasm.TestDomain.Database.SQLite ->
+                    w.Db.Exec(
+                        "with recursive n(k) as (select 1 union all select k + 1 from n where k < 3) insert into order_lines(order_id, product_id, quantity, unit_price) select o.id, @p, 1, '1' from orders o, n",
+                        [ "p", box (let (ProductId v) = p in v) ]
+                    )
 
             ()
         }
@@ -566,13 +584,26 @@ type EleganceSteps(w: World) =
             let! p = Seed.product w.Db "SKU"
 
             let! _ =
-                w.Db.Exec("insert into orders(status, total, placed_at) select 'published', g, now() - g * interval '1 minute' from generate_series(1, 5000) g")
+                match w.Db.Kind with
+                | Plasm.TestDomain.Database.PostgreSQL ->
+                    w.Db.Exec("insert into orders(status, total, placed_at) select 'published', g, now() - g * interval '1 minute' from generate_series(1, 5000) g")
+                | Plasm.TestDomain.Database.SQLite ->
+                    w.Db.Exec(
+                        "with recursive s(g) as (select 1 union all select g + 1 from s where g < 5000) insert into orders(status, total, placed_at) select 'published', CAST(g AS TEXT), datetime('2026-01-01 00:00:00', '-' || g || ' minutes') from s"
+                    )
 
             let! _ =
-                w.Db.Exec(
-                    "insert into order_lines(order_id, product_id, quantity, unit_price) select o.id, @p, 1, 1 from orders o, generate_series(1, 2)",
-                    [ "p", box (let (ProductId v) = p in v) ]
-                )
+                match w.Db.Kind with
+                | Plasm.TestDomain.Database.PostgreSQL ->
+                    w.Db.Exec(
+                        "insert into order_lines(order_id, product_id, quantity, unit_price) select o.id, @p, 1, 1 from orders o, generate_series(1, 2)",
+                        [ "p", box (let (ProductId v) = p in v) ]
+                    )
+                | Plasm.TestDomain.Database.SQLite ->
+                    w.Db.Exec(
+                        "with recursive n(k) as (select 1 union all select k + 1 from n where k < 2) insert into order_lines(order_id, product_id, quantity, unit_price) select o.id, @p, 1, '1' from orders o, n",
+                        [ "p", box (let (ProductId v) = p in v) ]
+                    )
 
             ()
         }
@@ -607,9 +638,16 @@ type EleganceSteps(w: World) =
     member _.Restricted() =
         let lines = commandsOn "order_lines" w.CommandsSinceMark |> List.exactlyOne
         equal 40 lines.Rows "line rows transferred"
-        let keys = (snd lines.Parameters.Head).Value
         let selected = w.Get<Order list> "orders" |> List.map (fun o -> let (OrderId v) = o.Id in string v)
-        equal ("[" + String.concat ", " selected + "]") keys "keys sent are exactly the selected parents"
+
+        // One array parameter, or a parameter for each key (SQLite).
+        match w.Db.Kind with
+        | Plasm.TestDomain.Database.PostgreSQL ->
+            let keys = (snd lines.Parameters.Head).Value
+            equal ("[" + String.concat ", " selected + "]") keys "keys sent are exactly the selected parents"
+        | Plasm.TestDomain.Database.SQLite ->
+            let keys = lines.Parameters |> List.map (fun (_, v) -> v.Value)
+            equal selected keys "keys sent are exactly the selected parents"
 
     // == Rule: Transaction retries do not conceal repeated execution ===========
 

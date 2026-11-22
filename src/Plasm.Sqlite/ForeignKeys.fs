@@ -3,8 +3,10 @@
 /// statement fails so, it is run again under a savepoint with the check
 /// deferred, PRAGMA foreign_key_check before and after finds the row it left
 /// without a parent, and the savepoint is rolled back: the database is as the
-/// failure left it. This costs two scans of the database's foreign keys, on
-/// that failure only; a database with triggers is not run again.
+/// failure left it. The check scans only the tables whose foreign keys the
+/// statement can break (an INSERT's or UPDATE's own table, and for an UPDATE
+/// or DELETE the tables that refer to it), twice, on that failure only; a
+/// database with triggers is not run again.
 module internal Plasm.Sqlite.ForeignKeys
 
 open System
@@ -37,11 +39,55 @@ let private run (failed: SqliteCommand) (sql: string) =
 /// check (tests/Plasm.Aot.Sqlite), which changes what the re-run meets.
 let mutable internal rerunning: SqliteCommand -> unit = ignore
 
-/// Every violation pragma_foreign_key_check finds: (table, rowid, fkid).
-let private violations (failed: SqliteCommand) =
-    use check = command failed "SELECT \"table\", coalesce(rowid, -1), fkid FROM pragma_foreign_key_check"
-    use r = check.ExecuteReader()
-    set [ while r.Read() do yield r.GetString 0, r.GetInt64 1, r.GetInt64 2 ]
+/// The tables whose foreign keys a statement can break: an INSERT its own
+/// table's, an UPDATE those and the keys of the tables that refer to it, a
+/// DELETE only the latter. None for a statement of another form, whose check
+/// is the whole file's.
+let private scope (failed: SqliteCommand) : string list option =
+    let m =
+        Text.RegularExpressions.Regex.Match(
+            failed.CommandText,
+            "^\\s*(INSERT\\s+INTO|UPDATE|DELETE\\s+FROM)\\s+\"([^\"]+)\"",
+            Text.RegularExpressions.RegexOptions.IgnoreCase
+        )
+
+    if not m.Success then
+        None
+    else
+        let table = m.Groups.[2].Value
+        let verb = m.Groups.[1].Value.ToUpperInvariant()
+
+        let referring () =
+            use c =
+                command
+                    failed
+                    "SELECT DISTINCT m.name FROM sqlite_schema AS m JOIN pragma_foreign_key_list(m.name) AS f WHERE m.type = 'table' AND f.\"table\" = $t COLLATE NOCASE"
+
+            c.Parameters.AddWithValue("$t", table) |> ignore
+            use r = c.ExecuteReader()
+            [ while r.Read() do yield r.GetString 0 ]
+
+        match verb with
+        | v when v.StartsWith "INSERT" -> Some [ table ]
+        | "UPDATE" -> Some(table :: referring () |> List.distinct)
+        | _ -> Some(referring ())
+
+/// The violations pragma_foreign_key_check finds in `tables` (every table's
+/// when None): (table, rowid, fkid).
+let private violations (failed: SqliteCommand) (tables: string list option) =
+    let read (sql: string) (table: string option) =
+        use check = command failed sql
+
+        match table with
+        | Some t -> check.Parameters.AddWithValue("$t", t) |> ignore
+        | None -> ()
+
+        use r = check.ExecuteReader()
+        [ while r.Read() do yield r.GetString 0, r.GetInt64 1, r.GetInt64 2 ]
+
+    match tables with
+    | None -> set (read "SELECT \"table\", coalesce(rowid, -1), fkid FROM pragma_foreign_key_check" None)
+    | Some ts -> set [ for t in ts do yield! read "SELECT \"table\", coalesce(rowid, -1), fkid FROM pragma_foreign_key_check($t)" (Some t) ]
 
 /// The columns of `table`'s foreign key `id`, in the key's order.
 let private columnsOf (failed: SqliteCommand) (table: string) (id: int64) =
@@ -80,11 +126,12 @@ let diagnose (failed: SqliteCommand) (cancelled: unit -> bool) (e: exn) : exn =
                     try
                         try
                             run failed "PRAGMA defer_foreign_keys = ON"
-                            let before = violations failed
+                            let tables = scope failed
+                            let before = violations failed tables
                             rerunning failed
                             failed.ExecuteNonQuery() |> ignore
 
-                            Set.difference (violations failed) before
+                            Set.difference (violations failed tables) before
                             |> Seq.tryHead
                             |> Option.bind (fun (table, _, id) ->
                                 match columnsOf failed table id with

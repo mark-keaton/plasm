@@ -92,7 +92,15 @@ type FsiSteps(w: World) =
         [ typeof<Plasm.TableAttribute>.Assembly.Location
           typeof<Plasm.Query>.Assembly.Location
           typeof<Plasm.Postgres.PostgresProvider>.Assembly.Location
-          typeof<Npgsql.NpgsqlConnection>.Assembly.Location ]
+          typeof<Npgsql.NpgsqlConnection>.Assembly.Location
+          typeof<Plasm.Sqlite.SqliteProvider>.Assembly.Location
+          typeof<Microsoft.Data.Sqlite.SqliteConnection>.Assembly.Location ]
+
+    /// The scenario's database's provider, as a submission names it.
+    let connect () =
+        match w.Db.Kind with
+        | Plasm.TestDomain.Database.PostgreSQL -> $"Plasm.Postgres.Postgres.connect @\"{w.Db.ConnectionString};Pooling=false\""
+        | Plasm.TestDomain.Database.SQLite -> $"Plasm.Sqlite.Sqlite.connect @\"{w.Db.ConnectionString};Pooling=False\""
 
     let domainSource =
         Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, "..", "Plasm.TestDomain", "Domain.fs"))
@@ -121,7 +129,7 @@ type FsiSteps(w: World) =
                   "open Plasm.Interactive"
                   "open Plasm.TestDomain.Domain"
                   "let commands = ResizeArray<string>()"
-                  $"let repo = Repo.Start(Schemas.model, Plasm.Postgres.Postgres.connect @\"{w.Db.ConnectionString};Pooling=false\", queriesIn = typeof<Customer>.Assembly, options = {{ RepoOptions.Unchecked with OnCommand = Some(fun e -> commands.Add e.Sql) }}) |> wait" ]
+                  $"let repo = Repo.Start(Schemas.model, {connect ()}, queriesIn = typeof<Customer>.Assembly, options = {{ RepoOptions.Unchecked with OnCommand = Some(fun e -> commands.Add e.Sql) }}) |> wait" ]
         )
         |> ignore
 
@@ -194,8 +202,8 @@ type FsiSteps(w: World) =
     [<StepDefinition("a new F# Interactive session")>]
     member _.NewSession() = start ()
 
-    [<StepDefinition("I reference Plasm and the PostgreSQL provider")>]
-    [<StepDefinition("I reference Plasm and the PostgreSQL provider again")>]
+    [<StepDefinition("I reference Plasm and the database's provider")>]
+    [<StepDefinition("I reference Plasm and the database's provider again")>]
     member _.Reference() = reference ()
 
     [<StepDefinition("I evaluate the mappings and a repository")>]
@@ -422,14 +430,20 @@ type FsiSteps(w: World) =
 
         let issues =
             fsi().Value<string>(
-                $"match (Repo.Start(Model.buildOrFail [] [ typeof<``{name}``> ], Plasm.Postgres.Postgres.connect @\"{w.Db.ConnectionString};Pooling=false\", queriesIn = typeof<``{name}``>.Assembly, options = RepoOptions.Unchecked) |> wait).CheckSchema() |> wait with Ok [] -> \"none\" | other -> sprintf \"%%A\" other"
+                $"match (Repo.Start(Model.buildOrFail [] [ typeof<``{name}``> ], {connect ()}, queriesIn = typeof<``{name}``>.Assembly, options = RepoOptions.Unchecked) |> wait).CheckSchema() |> wait with Ok [] -> \"none\" | other -> sprintf \"%%A\" other"
             )
 
         equal "none" issues "schema check of the scaffolded mapping"
 
     [<StepDefinition("I scaffold a table with a nullable column, a generated key and a column of an unsupported type")>]
     member _.ScaffoldGadgets() =
-        w.Db.Exec("create table gadgets (id bigint generated always as identity primary key, label text not null, note text, location point)").Wait()
+        // SQLite's generated key is an INTEGER PRIMARY KEY, its row id.
+        match w.Db.Kind with
+        | Plasm.TestDomain.Database.PostgreSQL ->
+            w.Db.Exec("create table gadgets (id bigint generated always as identity primary key, label text not null, note text, location point)").Wait()
+        | Plasm.TestDomain.Database.SQLite ->
+            w.Db.Exec("create table gadgets (id INTEGER not null primary key, label TEXT not null, note TEXT, location point)").Wait()
+
         scaffold "gadgets"
 
     [<StepDefinition("the nullable column becomes an option field")>]
@@ -501,7 +515,12 @@ type FsiSteps(w: World) =
 
     [<StepDefinition("I scaffold a table named \"type\" with columns \"Weird Col\" and \"2fa\"")>]
     member _.ScaffoldOddNames() =
-        w.Db.Exec("create table \"type\" (id bigint generated always as identity primary key, \"Weird Col\" text, \"2fa\" boolean not null)").Wait()
+        match w.Db.Kind with
+        | Plasm.TestDomain.Database.PostgreSQL ->
+            w.Db.Exec("create table \"type\" (id bigint generated always as identity primary key, \"Weird Col\" text, \"2fa\" boolean not null)").Wait()
+        | Plasm.TestDomain.Database.SQLite ->
+            w.Db.Exec("create table \"type\" (id INTEGER not null primary key, \"Weird Col\" TEXT, \"2fa\" INTEGER not null)").Wait()
+
         scaffold "type"
 
     [<StepDefinition("I scaffold a table whose only column has an unsupported type")>]

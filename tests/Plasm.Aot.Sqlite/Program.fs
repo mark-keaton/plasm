@@ -134,10 +134,62 @@ let measure (file: string) =
     conn.Dispose()
     0
 
+/// The owed measurement of a foreign key failure's diagnosis (ForeignKeys):
+/// timed, not compared. Over n children of 1000 parents, with and without an
+/// index on the child's key, each failing statement through Plasm.Sqlite,
+/// which runs it again to find its key, and on the connection itself, which
+/// does not.
+let measureForeignKeys (file: string) =
+    let provider = Sqlite.connect ("Data Source=" + file)
+    let conn = (provider :> IProvider).OpenConnection(CancellationToken.None).Result
+    let raw = Sqlite.connectionOf conn
+
+    let exec (c: Data.Common.DbConnection) (sql: string) =
+        use cmd = c.CreateCommand()
+        cmd.CommandText <- sql
+        cmd.ExecuteNonQuery() |> ignore
+
+    let failing (c: Data.Common.DbConnection) (sql: string) =
+        let w = Diagnostics.Stopwatch.StartNew()
+
+        try
+            exec c sql
+            failwith $"did not fail: {sql}"
+        with
+        | :? Microsoft.Data.Sqlite.SqliteException
+        | :? Data.Common.DbException -> ()
+
+        w.Elapsed.TotalMilliseconds.ToString("F1", Globalization.CultureInfo.InvariantCulture)
+
+    for n in [ 100000; 1000000 ] do
+        for indexed in [ false; true ] do
+            exec conn "drop table if exists fk_children; drop table if exists fk_parents"
+            exec conn "create table fk_parents (id INTEGER not null primary key); create table fk_children (id INTEGER not null primary key, parent INTEGER not null, constraint fk_children_parent_fkey foreign key (parent) references fk_parents (id))"
+            if indexed then exec conn "create index fk_children_parent_idx on fk_children (parent)"
+            exec conn "with recursive k(k) as (select 1 union all select k + 1 from k where k < 1000) insert into fk_parents (id) select k from k"
+            exec conn ("with recursive k(k) as (select 1 union all select k + 1 from k where k < " + string n + ") insert into fk_children (id, parent) select k, 1 + k % 1000 from k")
+
+            let cases =
+                [ "insert", "insert into \"fk_children\" (id, parent) values (0, 5000)"
+                  "update", "update \"fk_children\" set parent = 5000 where id = 1"
+                  "delete", "delete from \"fk_parents\" where id = 1" ]
+
+            let timed =
+                [ for name, sql in cases -> name + " " + failing conn sql + " ms (without the diagnosis " + failing raw sql + " ms)" ]
+
+            let how = if indexed then "indexed" else "no index"
+            Console.WriteLine(string n + " children, " + how + ": " + String.Join("; ", timed))
+
+    conn.Dispose()
+    0
+
 [<EntryPoint>]
 let main argv =
     if argv.[0] = "measure" then
         exit (measure argv.[1])
+
+    if argv.[0] = "measure-fk" then
+        exit (measureForeignKeys argv.[1])
 
     if argv.[0] = "mode" then
         Console.WriteLine(if Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported then "dynamic code on" else "dynamic code off")

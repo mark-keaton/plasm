@@ -239,6 +239,25 @@ type StreamSteps(w: World) =
     member _.Divide() =
         streamAll (repo.Stream(plasm { for p in tableOf<Person> do select (100 / (p.Place - 5)) })) :> Task
 
+    /// Plasm.Sqlite's decimal functions refuse a value that is no decimal:
+    /// the third order's total, written so behind Plasm's back.
+    [<StepDefinition("I stream each Order's total plus one, in the order they were written, the third's total being no decimal")>]
+    member _.BadDecimal() =
+        task {
+            let! _ =
+                w.Db.Exec
+                    "insert into orders (status, total, placed_at) values ('draft', '1.50', '2026-01-01 00:00:00'), ('draft', '2.50', '2026-01-01 00:00:00'), ('draft', 'no number', '2026-01-01 00:00:00');"
+
+            do! streamAll (repo.Stream(plasm { for o in tableOf<Plasm.TestDomain.Domain.Order> do select (o.Total + 1m) }))
+        }
+        :> Task
+
+    [<StepDefinition("the stream gives two values and then a database error naming the value")>]
+    member _.ThenDatabaseNaming() =
+        match List.ofSeq seen with
+        | [ Ok _; Ok _; Error(DbError.Database f) ] -> check (f.Message.Contains "no number") f.Message
+        | other -> failwithf "expected two values and a database error, got %A" other
+
     [<StepDefinition("the stream gives two values and then a database error")>]
     member _.ThenDatabase() =
         match List.ofSeq seen with
@@ -248,14 +267,23 @@ type StreamSteps(w: World) =
     [<StepDefinition("three order lines whose quantities are 1, 2 and 0")>]
     member _.Lines() =
         task {
-            let! _ =
-                w.Db.Exec
+            let lines =
+                match w.Db.Kind with
+                | Plasm.TestDomain.Database.PostgreSQL ->
                     "insert into products (sku, name) values ('s-pen', 'Pen');
                      insert into orders (status, total, placed_at) values ('Draft', 0, now());
                      insert into order_lines (order_id, product_id, quantity, unit_price)
                      select (select max(id) from orders), (select id from products where sku = 's-pen'), q, 1
                      from unnest(array[1, 2, 0]) as q;"
+                // The same rows in SQLite's SQL: its time as Plasm keeps one.
+                | Plasm.TestDomain.Database.SQLite ->
+                    "insert into products (sku, name) values ('s-pen', 'Pen');
+                     insert into orders (status, total, placed_at) values ('draft', '0', '2026-01-01 00:00:00');
+                     insert into order_lines (order_id, product_id, quantity, unit_price)
+                     select (select max(id) from orders), (select id from products where sku = 's-pen'), q.value, '1'
+                     from json_each('[1, 2, 0]') as q;"
 
+            let! _ = w.Db.Exec lines
             ()
         }
         :> Task

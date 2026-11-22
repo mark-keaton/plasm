@@ -126,11 +126,13 @@ Feature: Idiomatic and principled F# persistence
 
   Rule: Transaction retries do not conceal repeated execution
 
+    @postgres
     Scenario: Retry behavior is explicit
       Given an operation encounters a retryable database failure
       When no retry policy is configured
       Then the library does not silently rerun application callbacks
 
+    @postgres
     Scenario: Retried transactions use a fresh attempt context
       Given a configured transaction retry policy
       When a transaction is retried
@@ -145,12 +147,14 @@ Feature: Idiomatic and principled F# persistence
     # first Order's transaction is held there, prepared but not visible
     # (PREPARE TRANSACTION), while the second's runs: it reads the published
     # Orders, as the first did, and cancels the second Order.
+    @postgres
     Scenario: Retried at once, a transaction loses every attempt to a commit still being written
       Given two published Orders
       And the first Order cancelled by a serializable transaction that read the published Orders, prepared but not yet committed
       When the second Order is cancelled the same way, retried up to 5 times without waiting
       Then it fails as a serialization failure after 5 attempts
 
+    @postgres
     Scenario: Waiting between attempts, a transaction tries again once that commit has landed
       Given two published Orders
       And the first Order cancelled by a serializable transaction that read the published Orders, prepared but not yet committed
@@ -158,12 +162,14 @@ Feature: Idiomatic and principled F# persistence
       Then the second Order's change is committed
       And both Orders are cancelled
 
+    @postgres
     Scenario: A transaction that fails after waiting says how long it waited
       Given two published Orders
       And the first Order cancelled by a serializable transaction that read the published Orders, prepared but not yet committed
       When the second Order is cancelled the same way, retried up to 3 times waiting 50 ms between attempts
       Then it fails as a serialization failure after 3 attempts, having waited at least 100 ms
 
+    @postgres
     Scenario: A wait between attempts ends when the transaction is cancelled
       Given two published Orders
       And the first Order cancelled by a serializable transaction that read the published Orders, prepared but not yet committed

@@ -414,8 +414,9 @@ type internal SqliteDialect(options: SqliteOptions) =
               EnumTypes = false
               ArrayColumns = true }
 
-        // Every transaction takes the write lock from its first statement.
-        member _.Begin _ = "BEGIN IMMEDIATE"
+        // A transaction takes the write lock at its BEGIN IMMEDIATE; a
+        // snapshot read's deferred BEGIN takes none.
+        member _.Begin isolation = if isolation = IsolationLevel.Snapshot then "BEGIN" else "BEGIN IMMEDIATE"
 
 module internal Classify =
     let private kindOf (extended: int) =
@@ -485,9 +486,9 @@ module internal Connections =
         | other -> invalidArg "connection" $"a {other.GetType().Name} is not a connection Plasm.Sqlite opened"
 
     /// SQLite's transaction as the connection Plasm.Sqlite opened gives it.
-    let hearing (connection: DbConnection) (tx: SqliteTransaction) : DbTransaction =
+    let hearing (connection: DbConnection) (snapshot: bool) (tx: SqliteTransaction) : DbTransaction =
         match connection with
-        | :? HearingConnection as h -> h.Hearing tx
+        | :? HearingConnection as h -> h.Hearing(tx, snapshot)
         | _ -> tx :> DbTransaction
 
 type SqliteProvider(connectionString: string, ?options: SqliteOptions) =
@@ -594,7 +595,7 @@ type SqliteProvider(connectionString: string, ?options: SqliteOptions) =
         member _.BeginSnapshot(conn, _) =
             task {
                 let tx = (Connections.connectionOf conn).BeginTransaction(IsolationLevel.Serializable, true)
-                return Some(Connections.hearing conn tx)
+                return Some(Connections.hearing conn true tx)
             }
 
         // Serializable whatever is asked, which is never weaker; begun IMMEDIATE,
@@ -624,7 +625,7 @@ type SqliteProvider(connectionString: string, ?options: SqliteOptions) =
                             with :? SqliteException as e when e.SqliteErrorCode = 5 && waited.Elapsed < options.BusyTimeout ->
                                 ()
 
-                        return Connections.hearing conn began.Value
+                        return Connections.hearing conn false began.Value
                     finally
                         c.DefaultTimeout <- int options.BusyTimeout.TotalSeconds
             }
