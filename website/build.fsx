@@ -219,7 +219,7 @@ let nav (prefix: string) (current: string) =
     $"""<header class="nav">
   <div class="wrap">
     <a class="brand" href="{prefix}index.html"><img src="{prefix}logo.svg" width="28" height="28" alt=""><span>Plasm</span></a>
-    {if current = "Docs" then search else "<span class=\"pill\">version 0.2 · PostgreSQL · native AOT</span>"}
+    {if current = "Docs" then search else "<span class=\"pill\">version 0.3 · PostgreSQL and SQLite · native AOT</span>"}
     <span class="spacer"></span>
     <nav class="links" aria-label="Main">
       {link "Docs" (prefix + firstDoc)}
@@ -236,7 +236,7 @@ let nav (prefix: string) (current: string) =
 let footer (prefix: string) =
     $"""<footer>
   <div class="wrap">
-    <span>Plasm: persistence for an F# domain over PostgreSQL. Its design comes from Ecto, whose behavioural test cases it adapts (Apache-2.0).</span>
+    <span>Plasm: persistence for an F# domain over PostgreSQL or SQLite. Its design comes from Ecto, whose behavioural test cases it adapts (Apache-2.0).</span>
     <nav aria-label="Footer">
       <a href="{prefix}{firstDoc}">Docs</a>
       <a href="{prefix}koans/">Koans</a>
@@ -464,9 +464,9 @@ let docsPage (index: int) (page: Page) =
 
 let llms () =
     let summary =
-        "Plasm is persistence for an F# domain over PostgreSQL, made to be embedded in a C# application: "
+        "Plasm is persistence for an F# domain over PostgreSQL or SQLite, made to be embedded in a C# application: "
         + "the domain, its queries and its transactions are F#, and a C# host calls one F# facade. "
-        + "It is native AOT first, and Hot Chocolate friendly on the runtime. Plasm is new: this is version 0.2, and its API may change before 1.0."
+        + "It is native AOT first, and Hot Chocolate friendly on the runtime. Plasm is new: this is version 0.3, and its API may change before 1.0."
 
     let index = StringBuilder()
     index.Append($"# Plasm\n\n> {summary}\n\n") |> ignore

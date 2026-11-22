@@ -260,7 +260,7 @@ Test counts in the repo (`[<Test>]` attributes per folder, against AdventureWork
 
 Write-record detection for generated columns is PostgreSQL-only.
 
-**Plasm:** PostgreSQL only, behind an `IProvider`/`ISqlDialect` boundary that has not yet been tested by a second provider.
+**Plasm:** PostgreSQL and SQLite, behind an `IProvider`/`ISqlDialect` boundary that both providers are written against.
 
 ## 8. Maintenance
 

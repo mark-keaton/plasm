@@ -85,7 +85,7 @@ Sources: [README](https://github.com/Dzoukr/Dapper.FSharp/blob/master/README.md)
 - MySQL: no `InsertOutput` ([#61](https://github.com/Dzoukr/Dapper.FSharp/issues/61)).
 
 Roughly, MSSQL and PostgreSQL get the most attention. All four cover the same basic CRUD subset. *Relative quality per database is my reading of the issues, not measured.*
-**Plasm:** PostgreSQL only. A provider and dialect boundary with capabilities exists, but no second provider has been built.
+**Plasm:** PostgreSQL and SQLite, each a provider behind a dialect boundary with capabilities.
 **Verdict:** Dapper.FSharp wins on breadth. On PostgreSQL depth, Plasm offers more (arrays via `= ANY`, upserts, snapshot reads, row locking, SQLSTATE classification).
 
 ## 8. Maintenance

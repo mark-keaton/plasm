@@ -5,7 +5,11 @@ the one before, the newest first and, within a version, the most serious
 first. [`docs/status.md`](../status.md) has every entry in full, under
 "Changed".
 
-## From 0.2.0 to the next version
+## From 0.2.0 to 0.3.0
+
+0.3.0 adds a second provider, SQLite, as the package `Plasm.Sqlite`:
+[SQLite](../sqlite.md) says how to use it. Nothing changes for PostgreSQL
+beyond what follows.
 
 An application that uses `Plasm.Postgres` as it comes has two things to look
 at; the rest is for a dialect or provider of your own.

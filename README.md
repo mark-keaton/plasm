@@ -1,13 +1,14 @@
 # Plasm
 
-The F# domain core of a C# application, over PostgreSQL. Keep ASP.NET, your
+The F# domain core of a C# application, over PostgreSQL or SQLite. Keep ASP.NET, your
 host and your team's C#; put the domain and its persistence in F#, where Plasm
 stores immutable records, checks every query and makes every write a typed
 transaction. It is native AOT first: every commit is compiled ahead of time
 and checked natively. It also serves a long-running API through Hot Chocolate,
 on the runtime. Its design comes from [Ecto](https://github.com/elixir-ecto/ecto).
 
-> **Status:** Plasm is new: this is version 0.2, and its API may change before 1.0. PostgreSQL only.
+> **Status:** Plasm is new: this is version 0.3, and its API may change before 1.0.
+> It runs on PostgreSQL and on SQLite; [`docs/sqlite.md`](docs/sqlite.md) says where SQLite differs.
 > [`docs/status.md`](docs/status.md) says what is verified and what is missing.
 
 Site, docs and the koans in the browser: <https://mark-keaton.github.io/plasm/>

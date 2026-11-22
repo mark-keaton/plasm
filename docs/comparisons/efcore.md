@@ -301,7 +301,7 @@ Isaac Abraham's comment on #34357 sums up the F# usage model: disconnected, no t
 The gap list for an EF Core replacement. Plasm status is from `docs/status.md` (2026-11-12/13).
 
 **Platform and tooling**
-1. Providers: SQL Server, Azure SQL, SQLite, Cosmos DB, InMemory, plus third-party MySQL/MariaDB (Pomelo), Oracle and others. Plasm is PostgreSQL only.
+1. Providers: SQL Server, Azure SQL, SQLite, Cosmos DB, InMemory, plus third-party MySQL/MariaDB (Pomelo), Oracle and others. Plasm has PostgreSQL and SQLite.
 2. Migrations: generation from model diffs, snapshots, bundles, idempotent scripts, `database update --add`, seeding (`HasData`, `UseSeeding`), `EnsureCreated`. Plasm has none, by design: it prints the DDL its model expects and checks the schema as the repository starts.
 3. Reverse engineering of a whole database into a context, with relationships (`dotnet ef dbcontext scaffold`; EFCore.FSharp emits F#). Plasm's `Scaffold` does one table and no relationships.
 4. Compiled models (startup), DbContext pooling, `AddDbContext`/`AddDbContextFactory` DI integration, health checks. The compiled model is also half of EF Core's Native AOT path, with precompiled queries, which its documentation calls "highly experimental" and "not yet suited for production use" ([NativeAOT Support and Precompiled Queries (Experimental)](https://learn.microsoft.com/en-us/ef/core/performance/nativeaot-and-precompiled-queries), read 2026-11-19).

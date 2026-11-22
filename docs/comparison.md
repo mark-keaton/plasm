@@ -90,8 +90,8 @@ F# types and semantics throughout.
 
 In rough order of importance for teams leaving EF Core:
 
-1. **One database.** PostgreSQL only. SqlHydra supports five, Dapper.FSharp
-   four, SQLProvider about ten, EF Core many.
+1. **Two databases.** PostgreSQL and SQLite. SqlHydra supports five,
+   Dapper.FSharp four, SQLProvider about ten, EF Core many.
 2. **No migrations.** Plasm checks the schema but does not change it. EF Core
    generates migrations; the others leave schema to other tools, as Plasm does.
 3. ~~**PostgreSQL enum types.**~~ Done with `Scalar.asPgEnum` (below). Before

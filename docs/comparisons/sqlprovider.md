@@ -127,7 +127,7 @@ SQLProvider supports far more databases: MSSQL (+SSDT dacpac), PostgreSQL, MySQL
 
 Download counts per package (`SQLProvider.Oracle` 8,659, `.Firebird` 8,694, `.DuckDb` 8,959, `.SQLite` 8,799) sit close together. Likely a floor of mirror/bot downloads, so real per-database usage is hard to read from them **[inferred]**.
 
-**Plasm:** PostgreSQL only (Npgsql, plus a `Plasm.PGlite` project in `src/`). An `ISqlDialect`/capability abstraction exists, but no other provider is built.
+**Plasm:** PostgreSQL (Npgsql) and SQLite (Microsoft.Data.Sqlite), plus a `Plasm.PGlite` project in `src/`, each behind an `ISqlDialect`/capability abstraction.
 
 ## 8. Maintenance
 
@@ -164,7 +164,7 @@ Download counts per package (`SQLProvider.Oracle` 8,659, `.Firebird` 8,694, `.Du
 
 - **Compile-time schema checking**: removed/renamed columns break the build, and typed ``Create(...)`` enforces required columns at compile time. Plasm checks at run time: the schema check runs as the repository starts and by default fails start-up.
 - **No mapping code at all**; you can explore an unknown database from IntelliSense or FSI, including column comments and `Individuals` (rows as members).
-- **Many databases**: SQL Server (+ dacpac offline builds), MySQL/MariaDB, SQLite, Oracle, Firebird, DuckDB, Access, ODBC. Plasm has PostgreSQL only.
+- **Many databases**: SQL Server (+ dacpac offline builds), MySQL/MariaDB, SQLite, Oracle, Firebird, DuckDB, Access, ODBC. Plasm has PostgreSQL and SQLite.
 - **Stored procedures and functions** as typed members, including refcursors and multiple result sets (`programmability.fsx`, sproc fixes #877/#878). Plasm has `repo.Sql` only **[unverified whether Plasm calls functions beyond raw SQL]**.
 - **Views and materialized views** typed automatically. Composite keys are at least representable (entity per table) **[unverified for writes]**. Plasm has composite keys (`features/composite-keys.feature`) and no views.
 - **A mock data context** for testing query logic without a database.

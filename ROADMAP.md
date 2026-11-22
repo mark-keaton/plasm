@@ -3,13 +3,12 @@
 What Plasm does today, what is being built, and what it will not do. The
 repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
-## Now: after 0.2.0
+## Now: after 0.3.0
 
-- A second database provider: SQLite
+- Selection inside a GraphQL card's comments and labels
 
 ## Next: in the library
 
-- Selection inside a GraphQL card's comments and labels
 - Kanban's own F# server as a native binary
 
 ## Later: not started
@@ -19,7 +18,7 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
 ## Shipped
 
-- Plasm, Plasm.Postgres and Plasm.HotChocolate on NuGet: 0.2.0, published from a GitHub release
+- Plasm, Plasm.Postgres and Plasm.HotChocolate on NuGet: 0.3.0, published from a GitHub release
 - Stored records by convention, owned and linked lists, unions with fields, array columns, composite keys
 - Typed queries: joins, grouping, exists, set operations, window functions, filtered aggregates, prepared queries, hand-written SQL
 - Recursive queries: a tree read in one statement, with each row's depth; a cycle in the data ends
@@ -28,6 +27,7 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 - A `dotnet new` template, `Plasm.Templates`: `plasm-api` makes an F# domain, a C# API and tests
 - Kanban's C# host and Lambda on the FSharp.Core a new project gets, 11.0.101
 - The provider boundary: every piece of database-specific SQL behind the dialect
+- A second database provider: SQLite, as the package Plasm.Sqlite; every acceptance feature runs on it
 - Start-up checks of every query and of the schema, every statement described by the database before any runs
 - Each command as an OpenTelemetry activity
 - Native AOT, with a Lambda function in F# and one in C# over F#

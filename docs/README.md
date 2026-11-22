@@ -24,6 +24,7 @@ Reference are the engineering records the library is built against.
 - [From C#](csharp.md)
 - [Hot Chocolate](hotchocolate.md)
 - [Native AOT and Lambda](aot.md)
+- [SQLite](sqlite.md)
 - [The Kanban example](kanban-host.md)
 
 ## Reference
