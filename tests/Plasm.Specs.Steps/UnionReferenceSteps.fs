@@ -83,8 +83,7 @@ type UnionReferenceSteps(w: World) =
     member _.TablesWithoutKey() =
         task {
             let! _ = w.Db.Exec(repo().Ddl())
-            let! _ = w.Db.Exec "alter table shelves drop constraint if exists shelves_status_borrower_fkey"
-            ()
+            do! w.Db.DropConstraint("shelves", "shelves_status_borrower_fkey")
         }
         :> Threading.Tasks.Task
 
@@ -163,8 +162,7 @@ type UnionReferenceSteps(w: World) =
     member this.PeopleWithoutKey() =
         task {
             let! _ = w.Db.Exec(this.People().Ddl())
-            let! _ = w.Db.Exec "alter table people drop constraint if exists people_home_city_fkey"
-            ()
+            do! w.Db.DropConstraint("people", "people_home_city_fkey")
         }
         :> Threading.Tasks.Task
 

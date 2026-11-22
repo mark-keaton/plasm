@@ -27,10 +27,17 @@ Feature: Checking the model against the database schema
       Then the missing column is reported with its model and field
       And the missing table is reported with its model
 
+    @postgres
     Scenario: Incompatible column types are reported
       Given a model that maps a text field to a numeric column
       When I check the model against the database
       Then the incompatible type is reported with the expected and actual types
+
+    @sqlite
+    Scenario: Incompatible column types are reported on SQLite
+      Given a model that maps a text field to an integer column
+      When I check the model against the database
+      Then the incompatible type of the integer column is reported with the expected and actual types
 
     Scenario: A required field over a nullable column is reported
       Given a model that maps a non-optional field to a nullable column

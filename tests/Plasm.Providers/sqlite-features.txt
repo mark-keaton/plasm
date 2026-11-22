@@ -21,3 +21,11 @@ features/referring.feature	*ATieThatTheTypedIdsProveIsLeftToPlasmFeature*
 features/bulk-writes.feature	*BulkWritesAndUpsertsFeature*
 features/query-semantics.feature	*QueriesKeepTheirFMeaningFeature*
 features/error-model.feature	*FailuresAreValuesWithQualifiedNamesFeature*
+features/sandbox.feature	*TestSandboxesFeature*
+features/schema-check.feature	*CheckingTheModelAgainstTheDatabaseSchemaFeature*
+features/prepared-queries.feature	*PreparedQueriesFeature*
+features/loads.feature	*AQueryBindsWhatItReadsForEachRecordWithLetAndBuildsItsRowWithReturnFeature*
+features/activities.feature	*EachCommandIsAnActivityATracerCanListenToFeature*
+features/union-references.feature	*AnIdInsideAUnionCaseOrAValueIsAReferenceFeature*
+features/typed-transactions.feature	*TransactionsAreTypedAndTheirStepsNeedNoNamesFeature*
+features/tx-attempt.feature	*ATransactionCanTryAStepAndGoOnWhenItFailsFeature*

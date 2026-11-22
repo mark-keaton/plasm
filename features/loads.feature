@@ -63,10 +63,17 @@ Feature: A query binds what it reads for each record with let!, and builds its r
         | 200   |                                       |
       And the Order of 10 still has its line
 
+    @postgres
     Scenario: The Payments are read with one more command, however many Orders
       When I read the Orders by total, binding their Payments by minute
       Then 3 commands are sent: the Orders, their lines, and the Payments
       And the Payments command takes the Orders' ids as one parameter
+
+    @sqlite
+    Scenario: The Payments are read with one more command, however many Orders on SQLite
+      When I read the Orders by total, binding their Payments by minute
+      Then 3 commands are sent: the Orders, their lines, and the Payments
+      And the Payments command takes one parameter for each Order
       And the plan lists the Payments as one more load, named payments
 
     Scenario: A field of the record, or a member of it, goes in the row beside the loads

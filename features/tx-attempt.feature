@@ -55,12 +55,14 @@ Feature: A transaction can try a step and go on when it fails
       Then the inner attempt gave its failure and the outer one succeeded
       And the Customer the outer attempt inserted is stored
 
+    @postgres
     Scenario: A failure that ends the transaction is not caught
       When a transaction tries a step that fails as a serialization failure
       Then the transaction fails as a serialization failure, not as a value of the attempt
 
   Rule: A retried transaction runs its own steps again
 
+    @postgres
     Scenario: A step of your own runs once per attempt, its database work undone and done again
       When a transaction with a retry policy inserts a Customer in a step of its own and fails as a serialization failure the first time it runs
       Then the transaction committed on its second attempt

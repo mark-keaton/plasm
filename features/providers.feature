@@ -362,3 +362,26 @@ Feature: Database-specific SQL comes from the provider
     Scenario: A transaction at Snapshot isolation is refused on SQLite, nothing sent
       When I run a transaction at Snapshot isolation
       Then it fails before execution as unsupported by the provider, naming Snapshot isolation
+
+  Rule: On SQLite writers take turns
+
+    A SQLite transaction takes the database's write lock at its BEGIN
+    (BEGIN IMMEDIATE): a second writer waits there, for as long as
+    SqliteOptions.BusyTimeout, and then writes, or fails as a timeout having
+    written nothing. No change lands between a transaction's read and its
+    write, so none is stale there, and none fails as a serialization failure.
+
+    @sqlite
+    Scenario: On SQLite a second writer waits at its BEGIN for the first, then writes
+      Given another session holds the database's write lock
+      When I insert a Customer "Bo", and the other session lets go of the lock 500 ms later
+      Then the insert of "Bo" waited at its BEGIN for at least 400 ms, and succeeded
+      And the Customer named "Bo" is stored
+
+    @sqlite
+    Scenario: On SQLite a second writer fails as a timeout when its busy timeout passes first
+      Given another session holds the database's write lock
+      When I insert a Customer "Cy" through a repository whose busy timeout is 200 ms, the other session holding the lock for 2 seconds
+      Then the insert of "Cy" fails as a timeout at its BEGIN
+      And no Customer named "Cy" is stored
+

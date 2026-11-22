@@ -176,13 +176,16 @@ type SandboxSteps(w: World) =
     [<StepDefinition("code inside a sandbox starts several reads at once")>]
     member _.Overlapping() =
         task {
+            // Committed before the sandbox begins: on SQLite the sandbox's
+            // transaction holds the write lock, and a write from outside would
+            // wait for it to end.
+            for i in 1..3 do
+                let! _ = Seed.order w.Db None "draft" 1m (Seed.at i)
+                ()
+
             let! results =
                 w.Repo.Sandbox(fun repo ->
                     task {
-                        for i in 1..3 do
-                            let! _ = Seed.order w.Db None "draft" 1m (Seed.at i) // committed outside: visible inside
-                            ()
-
                         let! r = insert repo "Ada"
                         ok r |> ignore
                         let a = repo.Count(Query.from (tableOf<Order>))

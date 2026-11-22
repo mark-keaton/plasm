@@ -627,7 +627,9 @@ type LoadsSteps(w: World) =
     member _.OneCommands() =
         let sql = w.CommandsSinceMark |> List.map (fun e -> e.Sql)
         equal 3 sql.Length $"commands: %A{sql}"
-        check (sql.[2].Contains "\"customers\"" && sql.[2].Contains "ANY(") $"commands: %A{sql}"
+        // The keys as the dialect sends a list: one array, or one parameter each.
+        let keys = if w.Db.Kind = PostgreSQL then "ANY(" else "IN (@p0"
+        check (sql.[2].Contains "\"customers\"" && sql.[2].Contains keys) $"commands: %A{sql}"
 
     [<StepDefinition("I read the Orders by total, binding the name of the Customer each refers to and their Payments")>]
     member _.OneNameAndPayments() =
@@ -844,6 +846,14 @@ let shown (repo: Repo) = task { let! r = repo.All q in return r |> Result.map sh
         equal 3 sql.Length $"commands: %A{sql}"
         check (sql.[0].Contains "\"orders\"" && sql.[1].Contains "\"order_lines\"" && sql.[2].Contains "\"payments\"") $"commands: %A{sql}"
 
+    [<StepDefinition("the Payments command takes one parameter for each Order")>]
+    member _.ParameterEach() =
+        let payments = w.CommandsSinceMark |> List.last
+        let orders = (payments.Sql.Split "@p").Length - 1
+        check (payments.Sql.Contains "IN (@p0") payments.Sql
+        equal orders payments.Parameters.Length $"parameters of {payments.Sql}"
+        check (orders > 1) payments.Sql
+
     [<StepDefinition("the Payments command takes the Orders' ids as one parameter")>]
     member _.OneParameter() =
         let payments = w.CommandsSinceMark |> List.last
@@ -853,7 +863,8 @@ let shown (repo: Repo) = task { let! r = repo.All q in return r |> Result.map sh
     [<StepDefinition("the plan lists the Payments as one more load, named payments")>]
     member _.Plan() =
         let plan = ok (w.Repo.Explain LoadsGood.withPayments)
-        check (plan.Loads |> List.exists (fun l -> l.Path = "payments" && l.Target = "Payment" && l.Sql.Contains "ANY(")) $"loads: %A{plan.Loads}"
+        let keys = if w.Db.Kind = PostgreSQL then "ANY(" else "IN ("
+        check (plan.Loads |> List.exists (fun l -> l.Path = "payments" && l.Target = "Payment" && l.Sql.Contains keys)) $"loads: %A{plan.Loads}"
 
     // -- Compiling -------------------------------------------------------------------
 

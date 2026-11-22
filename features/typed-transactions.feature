@@ -108,6 +108,7 @@ Feature: Transactions are typed, and their steps need no names
       Then the failure is a conflict, and the Order is unchanged
       And the read sent one SELECT, of the Order's own row, and none of its Lines
 
+    @postgres
     Scenario: A change landing between the read and the write is stale
       Given a draft Order whose version is 2
       When a transaction reads that Order as seen at version 2, and another writer changes it before the update
@@ -123,6 +124,7 @@ Feature: Transactions are typed, and their steps need no names
       When a transaction reads both with Tx.traverse as seen at version 1
       Then the failure is a conflict naming the second Order's key
 
+    @postgres
     Scenario: A stale update's conflict names the Order's key
       Given a draft Order whose version is 2
       When a transaction reads that Order as seen at version 2, and another writer changes it before the update

@@ -23,3 +23,5 @@ features/column-checks.feature	On SQLite a time column without its check is repo
 features/column-checks.feature	On SQLite a check as Ddl writes it, in other case and spacing, is not reported	a column check Ddl writes, which PostgreSQL's does not
 features/column-checks.feature	On SQLite a time column's check other than Ddl's is reported	a column check Ddl writes, which PostgreSQL's does not: timestamptz holds a time
 features/providers.feature	A transaction at Snapshot isolation is refused on SQLite, nothing sent	PostgreSQL runs a Snapshot transaction, as REPEATABLE READ (Npgsql); every SQLite transaction is serializable and none is a snapshot of its own
+features/providers.feature	On SQLite a second writer waits at its BEGIN for the first, then writes	SQLite's one write lock, taken at BEGIN IMMEDIATE: PostgreSQL's writers go on together, row locks apart
+features/providers.feature	On SQLite a second writer fails as a timeout when its busy timeout passes first	SqliteOptions.BusyTimeout, a wait for SQLite's one write lock; PostgreSQL's writers do not wait at BEGIN

@@ -27,6 +27,15 @@ module Drift =
           Total: string
           PlacedAt: DateTime }
 
+    /// orders.version is an integer column on both databases.
+    [<Table "orders">]
+    type OrderVersionAsText =
+        { Id: OrderId
+          Status: OrderStatus
+          Total: decimal
+          PlacedAt: DateTime
+          Version: string }
+
     [<Table "orders">]
     type OrderRequiredReason =
         { Id: OrderId
@@ -81,7 +90,10 @@ type SchemaCheckSteps(w: World) =
         check (not cmds.IsEmpty) "the catalogue was read"
 
         for c in cmds do
-            let catalogue = [ "information_schema.columns"; "pg_index"; "pg_constraint"; "pg_type" ]
+            let catalogue =
+                match w.Db.Kind with
+                | PostgreSQL -> [ "information_schema.columns"; "pg_index"; "pg_constraint"; "pg_type" ]
+                | SQLite -> [ "pragma_table_xinfo"; "pragma_index_list"; "pragma_foreign_key_list"; "pragma_table_info"; "sqlite_schema" ]
             check (c.Sql.StartsWith "SELECT" && catalogue |> List.exists c.Sql.Contains) c.Sql
 
     [<StepDefinition("a model with a field whose column does not exist and a record whose table does not exist")>]
@@ -108,6 +120,17 @@ type SchemaCheckSteps(w: World) =
         let i = find SchemaIssueKind.IncompatibleType "OrderTotalAsText"
         equal (Some "Total") i.Field "field"
         check (i.Message.Contains "column is numeric" && i.Message.Contains "needs text") i.Message
+        equal 1 (issues () |> List.length) "only the type is reported"
+
+    [<StepDefinition("a model that maps a text field to an integer column")>]
+    member _.TextOverInteger() =
+        useModel [ typeof<Drift.OrderVersionAsText> ]
+
+    [<StepDefinition("the incompatible type of the integer column is reported with the expected and actual types")>]
+    member _.IncompatibleInteger() =
+        let i = find SchemaIssueKind.IncompatibleType "OrderVersionAsText"
+        equal (Some "Version") i.Field "field"
+        check (i.Message.Contains "column is INTEGER" && i.Message.Contains "needs TEXT") i.Message
         equal 1 (issues () |> List.length) "only the type is reported"
 
     [<StepDefinition("a model that maps a non-optional field to a nullable column")>]

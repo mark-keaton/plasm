@@ -22,6 +22,7 @@ Feature: Each command is an activity a tracer can listen to
     Given a configured relational database
     And mappings for Customers, Orders, OrderLines, Products, and Payments
 
+  @postgres
   Scenario: A read is an activity named by its operation and table
     Given something listening to Plasm's activities
     When I count the Customers named "Zed" through a repository with no OnCommand
@@ -30,16 +31,34 @@ Feature: Each command is an activity a tracer can listen to
     And its db.query.text is the statement sent, with "@p0" and not "Zed" in it
     And its db.response.returned_rows is 1
 
+  @sqlite
+  Scenario: A read is an activity named by its operation and table on SQLite
+    Given something listening to Plasm's activities
+    When I count the Customers named "Zed" through a repository with no OnCommand
+    Then one Client activity is recorded, named "SELECT customers"
+    And it is tagged db.system.name "sqlite", db.operation.name "SELECT", db.collection.name "customers"
+    And its db.query.text is the statement sent, with "@p0" and not "Zed" in it
+    And its db.response.returned_rows is 1
+
   Scenario: A transaction's own commands are activities too
     Given something listening to Plasm's activities
     When a transaction inserts a Customer through a repository with no OnCommand
     Then the activities recorded are named "BEGIN", "INSERT customers" and "COMMIT", in order
 
+  @postgres
   Scenario: A failed statement's activity says what failed
     Given something listening to Plasm's activities
     And a Customer with the email "ada@example.com"
     When a transaction inserts another Customer with the email "ada@example.com" through a repository with no OnCommand
     Then the INSERT's activity has error.type "23505" and the status Error
+
+  # SQLite gives no SQLSTATE: the error's type is the exception's.
+  @sqlite
+  Scenario: A failed statement's activity says what failed on SQLite
+    Given something listening to Plasm's activities
+    And a Customer with the email "ada@example.com"
+    When a transaction inserts another Customer with the email "ada@example.com" through a repository with no OnCommand
+    Then the INSERT's activity has error.type "SqliteException" and the status Error
 
   Scenario: With nothing listening, a repository's OnCommand still has every event
     When a transaction inserts a Customer

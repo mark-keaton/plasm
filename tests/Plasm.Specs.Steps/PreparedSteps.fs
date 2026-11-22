@@ -153,7 +153,12 @@ type PreparedSteps(w: World) =
             let sql = (w.Repo.Explain q |> ok).Sql
             equal [ (orders ()).[1] ] (ok rows |> ids) "rows read"
             equal 1L (ok n |> int64) "count"
-            check (sql.Contains "LIMIT" && sql.Contains "DESC" && sql.Contains "\"total\" >") $"explained SQL lacks the extension: {sql}"
+            let total =
+                match w.Db.Kind with
+                | PostgreSQL -> "\"total\" >"
+                | SQLite -> "plasm_decimal_compare(\"o\".\"total\""
+
+            check (sql.Contains "LIMIT" && sql.Contains "DESC" && sql.Contains total) $"explained SQL lacks the extension: {sql}"
         }
         |> unit
 
@@ -231,13 +236,22 @@ type PreparedSteps(w: World) =
     member _.SameText() =
         let texts = w.QueryCommands |> List.map (fun c -> c.Sql) |> List.distinct
         equal 1 texts.Length $"distinct SQL texts: %A{texts}"
-        check (texts.Head.Contains "= ANY(") texts.Head
+        // The list one parameter, as the dialect sends a list: an array, or
+        // JSON text (SQLite).
+        let list =
+            match w.Db.Kind with
+            | PostgreSQL -> "= ANY("
+            | SQLite -> "IN (SELECT value FROM json_each("
+
+        check (texts.Head.Contains list) texts.Head
         w.Set("optionalText", texts.Head)
 
     [<StepDefinition("the optional argument is compared as a value or as absent, so an index on the column can serve it")>]
     member _.IndexableOptional() =
         let text = w.Get<string> "optionalText"
-        check (text.Contains "\"o\".\"customer_id\" = @p0 OR (\"o\".\"customer_id\" IS NULL AND @p0 IS NULL)") text
+        // PostgreSQL sends the argument once, SQLite once for each use.
+        let absent = if w.Db.Kind = PostgreSQL then "@p0" else "@p1"
+        check (text.Contains $"\"o\".\"customer_id\" = @p0 OR (\"o\".\"customer_id\" IS NULL AND {absent} IS NULL)") text
 
     // Scenario: Paging arguments
 

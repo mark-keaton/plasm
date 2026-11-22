@@ -3,7 +3,6 @@
 # empty and the SQLite run covers every feature file (sqlite-run.sh says how
 # many it covers).
 Lists of scalars as JSON text (the two array-column dialect members): until then refused on SQLite (ArrayColumns false), their scenarios tagged @postgres
-The two-writer scenario: a second writer waits at BEGIN IMMEDIATE, then proceeds, or fails when SqliteOptions.BusyTimeout passes
 Every feature file on SQLite: brought on one by one (sqlite-features.txt)
 The measurements taken again on an idle machine before the docs give them (ordering and summing 100,000 decimals against integers; the window sum)
 The SQLite docs: the caller's thread, the escape hatch (Sqlite.connectionOf) and what it gives up, journal modes and their waits, the differences (differences.txt)

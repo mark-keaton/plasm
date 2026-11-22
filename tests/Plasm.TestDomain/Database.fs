@@ -117,6 +117,15 @@ create table outbox (
 /// catalogues back (sqliteTemplate), and the constraints the scenarios
 /// violate. A decimal is TEXT, so its CHECK compares it as a number: text
 /// compared with 0 is always the greater.
+/// A time column held as Ddl holds it (utc-only.feature): the dialect's own
+/// check, which the schema check compares (column-checks.feature).
+let private timeCheck (table: string) (column: string) =
+    let ddl = (Sqlite.connect "Data Source=:memory:" :> IProvider).Dialect.Ddl
+
+    match ddl.ColumnCheck(column, ColumnHolds.Scalar typeof<DateTime>) with
+    | Some check -> $"constraint {table}_{column}_check {check},"
+    | None -> ""
+
 let schemaSqlite =
     """
 create table accounts (
@@ -150,6 +159,7 @@ create table orders (
   cancellation_reason TEXT,
   placed_at TEXT not null,
   version INTEGER not null default 1,
+  {placed_at check}
   constraint orders_customer_id_fkey foreign key (customer_id) references customers (id)
 );
 create index orders_customer_id_idx on orders (customer_id);
@@ -170,6 +180,7 @@ create table payments (
   amount TEXT not null,
   status TEXT not null,
   created_at TEXT not null,
+  {created_at check}
   constraint payments_order_id_fkey foreign key (order_id) references orders (id)
 );
 create index payments_order_id_idx on payments (order_id);
@@ -195,6 +206,8 @@ create table outbox (
   payload TEXT not null
 );
 """
+    |> fun s -> s.Replace("{placed_at check}", timeCheck "orders" "placed_at").Replace("{created_at check}", timeCheck "payments" "created_at")
+
 
 let private template = "plasm_template"
 
@@ -476,6 +489,40 @@ type TestDb =
                 | SQLite, (:? string as text) when typeof<'T> = typeof<decimal> -> unbox<'T> (box (Decimal.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture)))
                 | SQLite, v when not (isNull v) && not (v :? DBNull) -> Convert.ChangeType(v, typeof<'T>, CultureInfo.InvariantCulture) :?> 'T
                 | SQLite, v -> unbox<'T> v
+        }
+
+    /// The table without its constraint `name`: ALTER TABLE on PostgreSQL; on
+    /// SQLite, which drops no unique constraint or foreign key, the table made
+    /// again from its own text without the constraint's line, its rows and
+    /// indexes kept, foreign keys off while it is.
+    member db.DropConstraint(table: string, name: string) =
+        task {
+            match db.Kind with
+            | PostgreSQL ->
+                let! _ = db.Exec $"alter table {table} drop constraint if exists {name}"
+                ()
+            | SQLite ->
+                let! text = db.Scalar<string>("select sql from sqlite_schema where type = 'table' and name = @t", [ "t", box table ])
+                let edited = Text.RegularExpressions.Regex.Replace(text, $",\\s*constraint {name}\\b[^\\n]*", "")
+
+                if edited = text then
+                    failwith $"no constraint {name} on its own line in {text}"
+
+                let! indexes =
+                    db.Scalar<string>(
+                        "select coalesce(group_concat(sql || '; ', ''), '') from sqlite_schema where type = 'index' and tbl_name = @t and sql is not null",
+                        [ "t", box table ]
+                    )
+
+                let made = Text.RegularExpressions.Regex.Replace(edited, $"^create table \"?{table}\"?", $"create table {table}_rebuilt", Text.RegularExpressions.RegexOptions.IgnoreCase)
+
+                let! _ =
+                    db.Exec(
+                        $"PRAGMA foreign_keys = OFF; {made}; insert into {table}_rebuilt select * from {table}; drop table {table}; "
+                        + $"alter table {table}_rebuilt rename to {table}; {indexes}PRAGMA foreign_keys = ON;"
+                    )
+
+                ()
         }
 
     /// A repo over the same database with different options or model.
