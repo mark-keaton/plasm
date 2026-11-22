@@ -5,10 +5,11 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
 ## Now: after 0.3.0
 
-- Selection inside a GraphQL card's comments and labels
+- A SQLite choice in the template and the Starter, for a new project that needs no database server
 
 ## Next: in the library
 
+- Selection inside a GraphQL card's comments and labels
 - Kanban's own F# server as a native binary
 
 ## Later: not started
