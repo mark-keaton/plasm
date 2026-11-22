@@ -100,6 +100,23 @@ The schema check reads those checks back. One that refuses a case's name, or
 allows a name no case has, or holds a column to something else, is reported.
 So is a column without its check, where PostgreSQL's type would hold the value.
 
+## Where SQLite answers differently without failing
+
+An integer divided by zero, or its remainder by zero, is NULL on SQLite, where
+PostgreSQL fails with a division by zero. A required field reading it is a
+materialisation error, so the read still fails, later and in other words. An
+optional field reads it as None, quietly, where the same query on PostgreSQL
+fails. This is the one place SQLite answers a query differently without an
+error. Where a divisor can be zero, test it in the query, before dividing.
+
+## What the statement check cannot tell
+
+The statement check has SQLite prepare each statement. SQLite gives a parameter
+no type, so a statement whose parameter PostgreSQL cannot type alone is
+described, not noted. The schema check cannot tell a string field over a
+decimal's column, because SQLite stores a decimal as TEXT as it stores a
+string. A field over an INTEGER column that needs TEXT is still reported.
+
 ## When a constraint fails
 
 SQLite names no unique constraint or foreign key in a violation. Plasm.Sqlite
@@ -124,14 +141,12 @@ BEGIN sent through it, and OnCommand does not report it.
 ## Where SQLite differs
 
 Generated from `tests/Plasm.Providers/differences.txt`, which names where each
-difference is stated.
+difference is stated; the tests' own differences are left out.
 
 | What | PostgreSQL | SQLite |
 |---|---|---|
 | A key of decimals | keyed by value: numeric keys compare by value | refused when the repository is made (2.0 and 2.00 would be two keys) |
 | A decimal's scale | a numeric(p,s) column fixes it (2.0 stored as 2.00) | TEXT keeps the scale written (2.0 stays 2.0); compared, ordered and added by value |
-| A CHECK on a decimal (the test schema's) | compares numerics exactly | CAST(x AS REAL) >= 0: a sign test only, not an exact comparison (text compared with 0 is always greater) |
-| A transaction's identity (test steps) | txid_current() | none: the transaction object stands for it |
 | A writer waiting for another | waits on the row it locks | waits at BEGIN IMMEDIATE for the database, in tries of a second that hear cancellation, up to SqliteOptions.BusyTimeout |
 | A window SUM or AVG of decimals | SUM/AVG over numeric | plasm_decimal_sum and plasm_decimal_avg, Plasm.Sqlite's own window functions (Windows.fs, through sqlite3_create_window_function), adding the decimals' values exactly; linear, as numeric's are |
 | Every call's thread | Npgsql awaits I/O | Microsoft.Data.Sqlite runs each async call on the caller's thread for the statement's length (an ASP.NET request thread is held for its query; repo.Stream holds one while each row is stepped); only a writer's wait for BEGIN IMMEDIATE moves to the thread pool |

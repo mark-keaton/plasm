@@ -131,7 +131,7 @@ for f, ss in features.items():
 # docs/sqlite.md's table of differences is differences.txt's, row for row.
 doc = os.path.join(root, "docs", "sqlite.md")
 if os.path.exists(doc):
-    rows = [l.rstrip("\n").split("\t") for l in open(os.path.join(here, "differences.txt")) if l.strip() and not l.startswith("#")]
+    rows = [r for r in (l.rstrip("\n").split("\t") for l in open(os.path.join(here, "differences.txt")) if l.strip() and not l.startswith("#")) if r[4:5] != ["tests"]]
     table = ["| " + " | ".join(x.replace("|", "\\|") for x in r[:3]) + " |" for r in rows]
     text = open(doc).read()
     if "\n".join(table) not in text:
