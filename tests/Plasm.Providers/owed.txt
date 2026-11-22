@@ -1,6 +1,3 @@
-# What the SQLite provider owes before it is called whole (docs/status.md),
-# each with where it is decided. Plasm.Sqlite is not packed until this list is
-# empty and the SQLite run covers every feature file (sqlite-run.sh says how
-# many it covers).
+# What the SQLite provider still owes (docs/status.md). Plasm.Sqlite is
+# packed; this list empties when docs/sqlite.md gives the measurements.
 The measurements taken again on an idle machine before the docs give them (ordering and summing 100,000 decimals against integers; the window sum; a foreign key failure's diagnosis over 100,000 and 1,000,000 children, with and without an index on the child's key: Plasm.Aot.Sqlite measure-fk; a division written so that zero fails, against SQLite's own, some 40% more over 1,000,000 rows)
-The package check's assertion that Plasm.Sqlite packs to nothing, taken out in the commit that calls the provider whole

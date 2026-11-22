@@ -2,8 +2,8 @@
   <PropertyGroup>
     <Description>SQLite provider for Plasm (Microsoft.Data.Sqlite).</Description>
     <PackageId>Plasm.Sqlite</PackageId>
-    <!-- Not packed until the provider is whole (docs/status.md). -->
-    <IsPackable>false</IsPackable>
+    <!-- The shared tags, with SQLite's name in place of PostgreSQL's. -->
+    <PackageTags>fsharp;csharp;orm;ecto;database;sqlite;persistence;aot</PackageTags>
     <!-- Trim and AOT analysis at every build, as Plasm's (docs/aot.md). -->
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>

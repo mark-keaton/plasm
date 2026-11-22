@@ -476,8 +476,9 @@ These are medians from a machine shared with other work; times varied by up to
 
 **Not built, and with no API.** Absent features are not partly supported:
 
-- Providers other than PostgreSQL (`Plasm.PGlite`, used by the browser koans,
-  is a spike and is not packaged).
+- Providers other than PostgreSQL and SQLite (`Plasm.Sqlite`, whose
+  differences [sqlite.md](sqlite.md) gives; `Plasm.PGlite`, used by the
+  browser koans, is a spike and is not packaged).
 - Migrations: Plasm prints the DDL the model expects and checks the database
   against the model, but generates no migration. Keep your migration tool.
 - Right and full outer joins, joins on non-equality conditions, joins to
@@ -694,6 +695,13 @@ row's type, not in a field that may be unloaded.
 
 Changes that break code written against an earlier alpha, newest first.
 
+- 2026-11-21: Reading, with no interface change: a value the database
+  returns as another type than its field's provider type (a decimal or a
+  time kept as text, a bool as an integer: a computed value, an aggregated
+  list, hand-written SQL's) is read by the provider type's own reader, and
+  one that reader cannot read is `DbError.Materialization` naming the field
+  and the value. An aggregated list is read as an array of its element's
+  provider type. On PostgreSQL every value is read as before.
 - 2026-11-21: `ISqlDialect` has a member more, `Division(write, op, dividend,
   divisor)`: how a division or remainder of numbers is written, so that a
   zero divisor fails the statement. A dialect over a database that fails so,
@@ -1091,6 +1099,7 @@ Changes that break code written against an earlier alpha, newest first.
 | 2026-11-21 | docs/sqlite.md: the SQLite provider as it stands, not yet packaged and linked from no public page: connecting and its options, the caller's thread and how a token interrupts it, transactions (BEGIN IMMEDIATE, writers taking turns, the isolation levels taken and refused, what a retry policy does), journal modes and their waits, how each value is stored and held by a check the schema check reads back, constraint failures and the foreign key re-run, the escape hatch (Sqlite.connectionOf) and what it gives up, and the differences, generated from differences.txt | `docs/sqlite.md` |
 | 2026-11-21 | docs/sqlite.md says plainly where SQLite answers differently without failing (an integer divided by zero is NULL, an optional field's None where PostgreSQL fails) and what the statement and schema checks cannot tell there; its table leaves out the tests' own differences, marked `tests` in differences.txt, which the tag guard leaves out too | `docs/sqlite.md`, `tests/Plasm.Providers/differences.txt` |
 | 2026-11-21 | A division or remainder by zero fails on every database (division-by-zero.feature, `ISqlDialect.Division`): of an integer, a double or a decimal, in what a query selects, its condition, an aggregate's argument and a bulk update's set clause, each a database failure (OtherDatabaseError) saying "division by zero", PostgreSQL's with SQLSTATE 22012. SQLite answered an integer's and a double's with NULL, read by an optional field as None; its dialect writes each as `CASE WHEN divisor = 0 THEN plasm_division_by_zero(divisor) ELSE dividend / divisor END`, and Plasm.Sqlite's decimal division and remainder refuse zero in the same words. Red first: 21 of 22 failed on SQLite. A literal divisor other than zero divides (the CASE's zero branch is not evaluated ahead). Some 40% over SQLite's own division over 1,000,000 rows, to be measured again idle. streaming.feature's failure mid-stream now holds on both, its SQLite sibling gone; docs/sqlite.md says no query answers differently without failing. Breaking for a custom dialect: see Changed | `src/Plasm/Sql.fs`, `src/Plasm.Sqlite/Sqlite.fs`, `src/Plasm.Sqlite/Decimals.fs` |
+| 2026-11-21 | Plasm.Sqlite is packed, a sixth package beside Plasm.Annotations, Plasm, Plasm.Postgres, Plasm.HotChocolate and Plasm.Templates, released with them from 0.3.0. The package check asserts the feed is exactly those six; that Plasm.Sqlite carries its assembly, its documentation and the readme and nothing else, and depends on Plasm at the version packed, Microsoft.Data.Sqlite at the repository's version and FSharp.Core's floor; and that its readme says Plasm is new and names no version. An application outside the repository, restoring Plasm only from the packed feed, makes a SQLite file from its model's DDL, passes the schema check, and writes and reads back a decimal of 19 digits, a UTC time to the millisecond, a list and a document, under the runtime and as a native binary (they print the same; 2 IL warning lines, FSharp.Core's summary lines, 0 naming Plasm); SQLite's native library is beside that binary, and in a publish for each of the other platforms checked (macOS arm64, Linux x64, Linux arm64). The packages' readme names Plasm.Sqlite; docs/sqlite.md gives its install line, from 0.3.0. Red first: expecting six, the check failed with no Plasm.Sqlite package in the feed | `src/Plasm.Sqlite/Plasm.Sqlite.fsproj`, `tests/Plasm.Package`, `src/PACKAGE.md`, `docs/sqlite.md` |
 | 2026-11-21 | Kanban's `tests/Hosting/no-leftover-hosts.sh` kills a spec run only once one of its hosts is up, and a run that starts no host within the wait (180 s, the run built beforehand) is its own failure, "no host started within N s", shown with the run's own output, where before it was a fail of the leak condition with the output thrown away. One full check had found no host in 60 s; the run's output, now kept, shows a run still starting its PostgreSQL containers. A host left behind is still a failure, named. Proved both ways with test-only plants (`KANBAN_LEFTOVER_PLANT=leak`, `=never`). The orphaned C# host seen twice (cause unproven; suspected race in the test-only stdin exit) is a separate item | `examples/Kanban/tests/Hosting/no-leftover-hosts.sh` |
 | 2026-11-21 | The Starter, and so the template, on Plasm.Postgres 0.1.0 from nuget.org, the first release that is not a pre-release: a version bump from 0.1.0-rc.1, nothing else. Restored from nuget.org alone: 11 tests at runtime, the API published natively warning only IL2104 and IL3053, and the tests published and run natively, 11 passing | `examples/Starter/Directory.Packages.props` |
 | 2026-11-21 | Kanban's `tests/Hosting/no-leftover-hosts.sh` sees the C# host again. Since the C# host's scenarios start it from its own output (src/Host.CSharp/bin), the script, which looked for hosts in the scenarios' own output, counted none: a leftover C# host would have gone unseen, and the case of a run killed mid-scenario failed, finding no host up to kill. The host's output is now one MSBuild property, `KanbanHostOutput`, which the scenarios read through their assembly and the script asks MSBuild for. Red: the script as it was exits 1, "0 host(s) up when killed". Green: 1 up when killed, 0 left. A mutation in which hosts no longer exit when their standard input closes leaves 1 after a killed run, and the script exits 1. It was not in the repository's full check, which is why its failure went unseen; it is now | `examples/Kanban/tests/Hosting/no-leftover-hosts.sh` |
@@ -1102,12 +1111,11 @@ Changes that break code written against an earlier alpha, newest first.
 1. Publish pre-release packages (the CI already builds them); the licence is
    MIT and the repository is public.
 2. `Query.prepare3` for projections.
-3. A second provider, to prove the `IProvider` / `ISqlDialect` boundary
-   (SQLite, under way): every construct a provider renders differently is
-   behind the dialect now. `src/Plasm.Sqlite` is in the repository and is
-   not packed or released (the package check fails if it is). The SQLite run
-   covers 4 of 52 feature files (`tests/Plasm.Providers/sqlite-features.txt`);
-   "the SQLite run passed" means those, not every feature.
+3. Release Plasm.Sqlite, the second provider, packed with the others from
+   0.3.0: every feature file runs on it, and [sqlite.md](sqlite.md) says
+   where it answers otherwise. Before the release, the measurements in
+   `tests/Plasm.Providers/owed.txt`, taken on an idle machine, go into
+   sqlite.md.
 4. Open question: hosting. `Repo.Start` is asynchronous, and ASP.NET Core's
    service registration is synchronous, so Kanban's Host.fs starts the
    repository after the migrations and hands it to the services through a

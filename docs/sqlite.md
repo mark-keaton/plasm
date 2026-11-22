@@ -1,10 +1,22 @@
 # SQLite
 
-Plasm.Sqlite is Plasm's second provider, over Microsoft.Data.Sqlite. It is not
-packaged yet (`IsPackable` false): what it still owes is in
-`tests/Plasm.Providers/owed.txt`, and this page describes it as it stands. Every
+Plasm.Sqlite is Plasm's second provider, over Microsoft.Data.Sqlite. Every
 feature file runs on it (`tests/Plasm.Providers/sqlite-run.sh`); the scenarios
 that are PostgreSQL's alone, and why, are in `postgres-only.txt`.
+
+## Installing
+
+From 0.3.0:
+
+```sh
+dotnet add package Plasm.Sqlite
+```
+
+The package brings Plasm, and Microsoft.Data.Sqlite, which brings SQLite's own
+library. The package check (`tests/Plasm.Package/run.sh`) checks that this
+library arrives for macOS arm64, Linux x64 and Linux arm64. It also checks that
+an application on the packages alone writes and reads a SQLite file, under the
+runtime and as a native AOT binary.
 
 ## Connecting
 

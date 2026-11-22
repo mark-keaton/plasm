@@ -6,7 +6,7 @@
 
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
 
-  <!-- NuGet package metadata shared by Plasm and Plasm.Postgres. -->
+  <!-- NuGet package metadata shared by the packages under src/. -->
   <PropertyGroup>
     <!-- CI sets VersionSuffix to alpha.<run number>; local packs are 0.1.0-alpha. -->
     <VersionPrefix>0.1.0</VersionPrefix>
