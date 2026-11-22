@@ -13,6 +13,97 @@ module internal ColumnTypes =
 
     let declared (d: ISqlDialect) (t: Type) : string option = d.ColumnType t
 
+/// The checks Ddl writes on a table's columns where their types do not hold
+/// what they hold (IDdlDialect.ColumnCheck), and how the schema check reads
+/// them back (column-checks.feature).
+module internal ColumnChecks =
+    let private plain = Text.RegularExpressions.Regex "^[a-z_][a-z0-9_]*$"
+
+    /// A table or column named as Ddl names it: quoted where it is a reserved
+    /// word or not plain.
+    let name (dialect: ISqlDialect) (n: string) =
+        if plain.IsMatch n && not (dialect.Ddl.Reserved.Contains n) then n else dialect.QuoteIdentifier n
+
+    /// What a field's column holds: a union stored as its cases' names (as
+    /// text, or as an enum type), a document, a list, or one scalar.
+    let holds (f: FieldMap) (p: ColumnPart) =
+        match p.Mapping with
+        | Some m when not m.Cases.IsEmpty && f.Json.IsNone -> ColumnHolds.Enum(m.Cases |> List.map snd)
+        | _ when f.Json.IsSome -> ColumnHolds.Document
+        | _ when p.ProviderType.IsArray && p.ProviderType <> typeof<byte[]> -> ColumnHolds.List(p.ProviderType.GetElementType())
+        | _ -> ColumnHolds.Scalar p.ProviderType
+
+    /// A union stored as its cases' names in a text column, not an enum type
+    /// of the database's own: nothing holds it to them on PostgreSQL.
+    let textUnion (f: FieldMap) (p: ColumnPart) =
+        match holds f p, p.Mapping with
+        | ColumnHolds.Enum _, Some m -> m.StoreType.IsNone
+        | _ -> false
+
+    /// Each column's check, the enums' first: field, column part, constraint
+    /// name `<table>_<column>_check` (unquoted), the check.
+    let expected (dialect: ISqlDialect) (s: SchemaInfo) =
+        let columns = [ for f in s.Fields do for p in f.Parts -> f, p, holds f p ]
+        let isEnum (_, _, h) = match h with ColumnHolds.Enum _ -> true | _ -> false
+
+        [ for f, p, h in (columns |> List.filter isEnum) @ (columns |> List.filter (isEnum >> not)) do
+              match dialect.Ddl.ColumnCheck(name dialect p.Name, h) with
+              | Some check -> yield f, p, s.Table + "_" + p.Name + "_check", check
+              | None -> () ]
+
+    /// SQL text as compared: without whitespace or case, outside quotes.
+    let normal (text: string) =
+        let b = Text.StringBuilder()
+        let mutable quote = None
+
+        for ch in text do
+            match quote with
+            | Some q ->
+                b.Append ch |> ignore
+                if ch = q then quote <- None
+            | None when ch = '\'' || ch = '"' ->
+                quote <- Some ch
+                b.Append ch |> ignore
+            | None when Char.IsWhiteSpace ch -> ()
+            | None -> b.Append(Char.ToLowerInvariant ch) |> ignore
+
+        b.ToString()
+
+    /// The named checks a text writes, `constraint <name> check (...)`: name
+    /// (unquoted), `check (...)`, its parentheses balanced outside quotes.
+    let named (text: string) : Map<string, string> =
+        let found = Text.RegularExpressions.Regex.Matches(text, "constraint\\s+(\"([^\"]+)\"|(\\w+))\\s+(check)\\s*\\(", Text.RegularExpressions.RegexOptions.IgnoreCase)
+
+        [ for m in found do
+              let name = if m.Groups.[2].Success then m.Groups.[2].Value else m.Groups.[3].Value
+              let start = m.Groups.[4].Index
+              let mutable depth = 0
+              let mutable i = m.Index + m.Length - 1
+              let mutable quote = None
+              let mutable ended = -1
+
+              while ended < 0 && i < text.Length do
+                  let ch = text.[i]
+
+                  match quote with
+                  | Some q -> if ch = q then quote <- None
+                  | None when ch = '\'' || ch = '"' -> quote <- Some ch
+                  | None when ch = '(' -> depth <- depth + 1
+                  | None when ch = ')' ->
+                      depth <- depth - 1
+                      if depth = 0 then ended <- i
+                  | None -> ()
+
+                  i <- i + 1
+
+              if ended > 0 then
+                  yield name, text.Substring(start, ended - start + 1) ]
+        |> Map.ofList
+
+    /// The quoted labels a check holds, in its order.
+    let labels (check: string) =
+        [ for m in Text.RegularExpressions.Regex.Matches(check, "'((?:[^']|'')*)'") -> m.Groups.[1].Value.Replace("''", "'") ]
+
 module internal SchemaCheck =
 
     type private Column =
@@ -520,6 +611,73 @@ module internal SchemaCheck =
                             None
                             $"{name}.{path} refers to {target.Name}, but no foreign key over ({listed}) of {table} references {target.Table}; add `foreign key ({listed}) references {target.Table} ({keyColumns})`"
 
+            // Each column's check Ddl writes, compared with the check of its
+            // name the table has (column-checks.feature): one that refuses a
+            // label the model writes, or allows one it cannot read, or holds
+            // the column to something else, is reported. A table without the
+            // check refuses nothing the model writes, and is not.
+            let withChecks =
+                schemas
+                |> List.map (fun sc -> sc, ColumnChecks.expected dialect sc)
+                |> List.filter (snd >> List.isEmpty >> not)
+
+            if not withChecks.IsEmpty then
+                let names = withChecks |> List.map (fun (sc, _) -> sc.Table) |> List.distinct |> Array.ofList
+
+                let! texts =
+                    Execution.query
+                        s
+                        { Sql = dialect.Catalogue.Checks(dialect.ParameterName 0)
+                          Parameters = [ dialect.ListValue names ] }
+                        (fun r -> r.GetString 0, r.GetString 1)
+
+                let found =
+                    texts
+                    |> Seq.groupBy fst
+                    |> Seq.map (fun (t, rs) -> t, rs |> Seq.collect (snd >> ColumnChecks.named >> Map.toSeq) |> Map.ofSeq)
+                    |> Map.ofSeq
+
+                for sc, expected in withChecks do
+                    let held = found.TryFind sc.Table |> Option.defaultValue Map.empty
+
+                    for f, p, constraintName, check in expected do
+                        match held.TryFind constraintName with
+                        | Some actual when ColumnChecks.normal actual <> ColumnChecks.normal check ->
+                            let issue kind message = add kind sc.Name (Some f.Name) sc.Table (Some p.Name) message
+
+                            match ColumnChecks.holds f p, p.Mapping with
+                            | ColumnHolds.Enum stored, Some m ->
+                                // A check of the same labels in another form or
+                                // order holds the column as the model's does.
+                                let labels = ColumnChecks.labels actual
+                                let domain = Reflection.typeName m.DomainType
+
+                                for l in labels do
+                                    if not (List.contains l stored) then
+                                        issue SchemaIssueKind.EnumLabels $"check {constraintName} allows {l}, which is not a {domain} case; reading it would fail"
+
+                                for case, l in m.Cases do
+                                    if not (List.contains l labels) then
+                                        issue SchemaIssueKind.EnumLabels $"check {constraintName} has no label {l} for {case}; writing it would fail"
+                            | _ ->
+                                issue
+                                    SchemaIssueKind.IncompatibleType
+                                    $"check {constraintName} is `{actual}`, where Ddl writes `{check}`: it may refuse what the model writes"
+                        // No check: where PostgreSQL's type would hold the value
+                        // (an enum type, a list, a document, a time), the check
+                        // is this database's only way to, and its lack is
+                        // reported. A union stored as text is held by nothing
+                        // on PostgreSQL either.
+                        | None when not (ColumnChecks.textUnion f p) ->
+                            add
+                                SchemaIssueKind.IncompatibleType
+                                sc.Name
+                                (Some f.Name)
+                                sc.Table
+                                (Some p.Name)
+                                $"column has no check {constraintName}, so it may hold what {sc.Name}.{f.Name} cannot read: add `constraint {constraintName} {check}`"
+                        | _ -> ()
+
             return List.ofSeq issues
         }
 
@@ -649,22 +807,8 @@ module internal Ddl =
                   // hold it, the enums' checks first: an enum's labels, a list
                   // (array-columns.feature), a time (utc-only.feature), a
                   // document (json-columns.feature).
-                  let holds (f: FieldMap) (p: ColumnPart) =
-                      match p.Mapping with
-                      | Some m when m.StoreType.IsSome && not m.Cases.IsEmpty && f.Json.IsNone -> ColumnHolds.Enum(m.Cases |> List.map snd)
-                      | _ when f.Json.IsSome -> ColumnHolds.Document
-                      | _ when p.ProviderType.IsArray && p.ProviderType <> typeof<byte[]> -> ColumnHolds.List(p.ProviderType.GetElementType())
-                      | _ -> ColumnHolds.Scalar p.ProviderType
-
-                  let columns = [ for f in s.Fields do for p in f.Parts -> p, holds f p ]
-                  let isEnum = function ColumnHolds.Enum _ -> true | _ -> false
-
-                  for p, h in (columns |> List.filter (snd >> isEnum)) @ (columns |> List.filter (snd >> isEnum >> not)) do
-                      match ddl.ColumnCheck(name p.Name, h) with
-                      | Some check ->
-                          let constraintName = name (s.Table + "_" + p.Name + "_check")
-                          yield $"  constraint {constraintName} {check}"
-                      | None -> ()
+                  for _, _, constraintName, check in ColumnChecks.expected dialect s do
+                      yield $"  constraint {name constraintName} {check}"
 
                   // A key of several parts (composite-keys.feature): one
                   // primary key over them, in the key record's order.

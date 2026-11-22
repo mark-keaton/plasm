@@ -127,6 +127,10 @@ module internal SqliteCatalogue =
                 + tables
                 + ") AS t JOIN pragma_foreign_key_list(t.value) AS f GROUP BY t.value, f.id"
 
+            member _.Checks tables =
+                "SELECT t.value, s.sql FROM json_each("
+                + tables
+                + ") AS t JOIN sqlite_schema AS s ON s.type = 'table' AND s.name = t.value"
             member _.TableColumns table =
                 "SELECT c.name, c.type, c.\"notnull\" = 0 AND c.pk = 0, c.pk = 1 AND upper(c.type) = 'INTEGER', c.pk > 0, "
                 + "c.dflt_value IS NOT NULL OR (c.pk = 1 AND upper(c.type) = 'INTEGER') FROM pragma_table_xinfo("

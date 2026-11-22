@@ -75,6 +75,11 @@ type ICatalogueDialect =
     /// column, data type, nullable, identity, in the primary key, has a default
     /// (the last five booleans): the columns of the one table `table`, in order.
     abstract TableColumns: table: string -> string
+    /// table, text: where the named CHECK constraints of the tables in
+    /// `tables` are written, `constraint <name> check (...)` (column-checks
+    /// feature): each table's CREATE TABLE (SQLite), or each constraint's
+    /// definition (PostgreSQL).
+    abstract Checks: tables: string -> string
 
 /// How Ddl prints a model's tables in the database's own DDL (ddl.feature).
 /// How text is matched (text-matching.feature): String.StartsWith,

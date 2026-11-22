@@ -76,6 +76,7 @@
     <Compile Include="TransactionEventSteps.fs" />
     <Compile Include="StreamSteps.fs" />
     <Compile Include="RecursiveSteps.fs" />
+    <Compile Include="ColumnCheckSteps.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Plasm.TestDomain/Plasm.TestDomain.fsproj" />

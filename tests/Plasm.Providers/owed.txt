@@ -3,7 +3,6 @@
 # empty and the SQLite run covers every feature file (sqlite-run.sh says how
 # many it covers).
 Lists of scalars as JSON text (the two array-column dialect members): until then refused on SQLite (ArrayColumns false), their scenarios tagged @postgres
-An enum stored as text with a CHECK in the DDL, compared by the schema check (CHECKs from sqlite_schema, normalised)
 Snapshot and Chaos isolation reported as UnsupportedByProvider, not raised
 The two-writer scenario: a second writer waits at BEGIN IMMEDIATE, then proceeds, or fails when SqliteOptions.BusyTimeout passes
 Every feature file on SQLite: brought on one by one (sqlite-features.txt)
