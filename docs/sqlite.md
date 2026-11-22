@@ -117,7 +117,9 @@ So is a column without its check, where PostgreSQL's type would hold the value.
 Nowhere a query could tell. A division or remainder by zero, which SQLite
 answers with NULL, fails on SQLite as on PostgreSQL: its dialect writes each
 division and remainder so that a zero divisor fails the statement, in the
-same words, "division by zero". It costs some 40% over SQLite's own division.
+same words, "division by zero". It costs some 40% over SQLite's own division,
+over 1,000,000 rows, measured on a busy machine; the idle-machine figure is to
+come.
 
 ## What the statement check cannot tell
 
@@ -174,7 +176,7 @@ difference is stated; the tests' own differences are left out.
 | A string field over a decimal's column, in the schema check | incompatible: numeric is no text | not told apart: a decimal is stored as TEXT, as a string is |
 | Two writers at once | they go on together: a change can land between one's read and its write (stale, a Conflict), and serializable ones can fail as serialization failures | they take turns: the second waits at its BEGIN IMMEDIATE for the first to end, for SqliteOptions.BusyTimeout (tried a second at a time), then writes or fails as a Timeout; nothing lands between a transaction's read and its write |
 | A stale copy across two transactions (read in one, written from in a later one) | caught by the version column: Tx.oneAsSeen at the version the caller saw is a Conflict once the row has moved on | caught the same way: only a change landing inside one transaction cannot happen, its BEGIN IMMEDIATE holding the write lock |
-| A division or remainder by zero | a database failure, SQLSTATE 22012 (DbFailureKind.OtherDatabaseError) | a database failure too, in the same words, with no SQLSTATE (OtherDatabaseError): SQLite answers NULL, so its dialect writes each division and remainder as a CASE whose zero divisor reaches a function that fails, and a decimal's are Plasm.Sqlite's functions, which refuse zero; some 40% over SQLite's own division |
+| A division or remainder by zero | a database failure, SQLSTATE 22012 (DbFailureKind.OtherDatabaseError) | a database failure too, in the same words, with no SQLSTATE (OtherDatabaseError): SQLite answers NULL, so its dialect writes each division and remainder as a CASE whose zero divisor reaches a function that fails, and a decimal's are Plasm.Sqlite's functions, which refuse zero; some 40% over SQLite's own division, measured on a busy machine |
 | Statements sent together | a write's statements, and a level's loads, travel in one round trip (a DbBatch) | one statement at a time: SQLite runs in the process, with no network to wait for; the statements and their results are the same |
 | A retrying transaction (RetryPolicy.OnSerializationFailure) | run again after a serialization failure or a deadlock | never run again: a SQLite transaction meets neither, holding the write lock from its BEGIN; a busy wait that outlasts SqliteOptions.BusyTimeout is a Timeout, which no policy retries, so the wait is the one the caller chose |
 | A locked read (FOR UPDATE, FOR SHARE, NOWAIT, SKIP LOCKED) | the rows locked as asked | refused as unsupported (RowLocking false). A possible later change, breaking no one: inside a write transaction, which holds the database's write lock from its BEGIN, FOR UPDATE's guarantee already holds, so a locked read there could be honoured with no SQL |
