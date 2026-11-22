@@ -136,7 +136,10 @@ type CompositeKeySteps(w: World) =
     [<StepDefinition("issues keyed by their repository and number")>]
     member _.Tables() =
         task {
-            let! _ = w.Db.Exec Schemas.tables
+            let! _ =
+                match w.Db.Kind with
+                | Plasm.TestDomain.Database.PostgreSQL -> w.Db.Exec Schemas.tables
+                | Plasm.TestDomain.Database.SQLite -> w.Db.Exec("drop table if exists keyed_issues; " + Repo(Schemas.model, w.Db.Provider).Ddl())
             w.Set("keyedRepo", w.Db.RepoWith(model = Schemas.model))
         }
         |> unit
@@ -338,10 +341,12 @@ type CompositeKeySteps(w: World) =
     [<StepDefinition("^the keyed issues' primary key is \\(repo\\) alone$")>]
     member _.OnePartPk() =
         task {
-            let! _ =
-                w.Db.Exec "alter table keyed_issues drop constraint keyed_issues_pkey; alter table keyed_issues add primary key (repo)"
-
-            ()
+            match w.Db.Kind with
+            | Plasm.TestDomain.Database.PostgreSQL ->
+                let! _ = w.Db.Exec "alter table keyed_issues drop constraint keyed_issues_pkey; alter table keyed_issues add primary key (repo)"
+                ()
+            | Plasm.TestDomain.Database.SQLite ->
+                do! w.Db.RebuildTable("keyed_issues", fun t -> t.Replace("primary key (repo, number)", "primary key (repo)"))
         }
         |> unit
 

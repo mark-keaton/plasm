@@ -29,3 +29,9 @@ features/activities.feature	*EachCommandIsAnActivityATracerCanListenToFeature*
 features/union-references.feature	*AnIdInsideAUnionCaseOrAValueIsAReferenceFeature*
 features/typed-transactions.feature	*TransactionsAreTypedAndTheirStepsNeedNoNamesFeature*
 features/tx-attempt.feature	*ATransactionCanTryAStepAndGoOnWhenItFailsFeature*
+features/aggregates.feature	*CountsAggregatesAndGroupingFeature*
+features/build-query.feature	*AProgramBuildsAQueryAtRunTimeFromDeclaredFieldsFeature*
+features/composite-keys.feature	*ARecordWhoseIdIsARecordHasAKeyOfSeveralColumnsFeature*
+features/query-check.feature	*ARepositoryStartsOnlyWhenItsQueriesAndTheDatabaseFitFeature*
+features/statement-check.feature	*TheDatabaseDescribesEveryStatementBeforeAnyRunsFeature*
+features/raw-sql.feature	*TypedSQLEscapeHatchesFeature*

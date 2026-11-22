@@ -491,39 +491,44 @@ type TestDb =
                 | SQLite, v -> unbox<'T> v
         }
 
+    /// SQLite's table made again from its own text, `edit`ed (SQLite alters
+    /// no constraint), its rows and indexes kept, foreign keys off while it is.
+    member db.RebuildTable(table: string, edit: string -> string) =
+        task {
+            let! text = db.Scalar<string>("select sql from sqlite_schema where type = 'table' and name = @t", [ "t", box table ])
+            let edited = edit text
+
+            if edited = text then
+                failwith $"the edit changed nothing in {text}"
+
+            let! indexes =
+                db.Scalar<string>(
+                    "select coalesce(group_concat(sql || '; ', ''), '') from sqlite_schema where type = 'index' and tbl_name = @t and sql is not null",
+                    [ "t", box table ]
+                )
+
+            let made = Text.RegularExpressions.Regex.Replace(edited, $"^create table \"?{table}\"?", $"create table {table}_rebuilt", Text.RegularExpressions.RegexOptions.IgnoreCase)
+
+            let! _ =
+                db.Exec(
+                    $"PRAGMA foreign_keys = OFF; {made}; insert into {table}_rebuilt select * from {table}; drop table {table}; "
+                    + $"alter table {table}_rebuilt rename to {table}; {indexes}PRAGMA foreign_keys = ON;"
+                )
+
+            ()
+        }
+
     /// The table without its constraint `name`: ALTER TABLE on PostgreSQL; on
     /// SQLite, which drops no unique constraint or foreign key, the table made
-    /// again from its own text without the constraint's line, its rows and
-    /// indexes kept, foreign keys off while it is.
+    /// again without the constraint's line (RebuildTable).
     member db.DropConstraint(table: string, name: string) =
-        task {
-            match db.Kind with
-            | PostgreSQL ->
+        match db.Kind with
+        | PostgreSQL ->
+            task {
                 let! _ = db.Exec $"alter table {table} drop constraint if exists {name}"
                 ()
-            | SQLite ->
-                let! text = db.Scalar<string>("select sql from sqlite_schema where type = 'table' and name = @t", [ "t", box table ])
-                let edited = Text.RegularExpressions.Regex.Replace(text, $",\\s*constraint {name}\\b[^\\n]*", "")
-
-                if edited = text then
-                    failwith $"no constraint {name} on its own line in {text}"
-
-                let! indexes =
-                    db.Scalar<string>(
-                        "select coalesce(group_concat(sql || '; ', ''), '') from sqlite_schema where type = 'index' and tbl_name = @t and sql is not null",
-                        [ "t", box table ]
-                    )
-
-                let made = Text.RegularExpressions.Regex.Replace(edited, $"^create table \"?{table}\"?", $"create table {table}_rebuilt", Text.RegularExpressions.RegexOptions.IgnoreCase)
-
-                let! _ =
-                    db.Exec(
-                        $"PRAGMA foreign_keys = OFF; {made}; insert into {table}_rebuilt select * from {table}; drop table {table}; "
-                        + $"alter table {table}_rebuilt rename to {table}; {indexes}PRAGMA foreign_keys = ON;"
-                    )
-
-                ()
-        }
+            }
+        | SQLite -> db.RebuildTable(table, fun text -> Text.RegularExpressions.Regex.Replace(text, $",\\s*constraint {name}\\b[^\\n]*", ""))
 
     /// A repo over the same database with different options or model.
     member db.RepoWith(?model: Model, ?options: PostgresOptions, ?includeParameterValues: bool) =

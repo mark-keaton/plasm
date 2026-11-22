@@ -136,7 +136,13 @@ type AggregateSteps(w: World) =
         let cmd = one w.CommandsSinceMark
         equal 1 cmd.Rows "rows transferred"
 
-        for f in [ "COUNT(*)"; "SUM(\"o\".\"total\")"; "MIN("; "MAX("; "AVG(" ] do
+        // As the dialect aggregates decimals (SQLite: by value, its text being no number).
+        let aggregates =
+            match w.Db.Kind with
+            | PostgreSQL -> [ "COUNT(*)"; "SUM(\"o\".\"total\")"; "MIN("; "MAX("; "AVG(" ]
+            | SQLite -> [ "COUNT(*)"; "plasm_decimal_sum(\"o\".\"total\")"; "MIN("; "MAX("; "plasm_decimal_avg(" ]
+
+        for f in aggregates do
             check (cmd.Sql.Contains f) $"{f} in {cmd.Sql}"
 
     [<StepDefinition("the results are typed values that match the stored totals")>]

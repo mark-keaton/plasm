@@ -55,7 +55,12 @@ type RawSqlSteps(w: World) =
         task {
             let minimum = 5m
             w.MarkCommands()
-            let! r = w.Repo.Sql<Order>($"SELECT * FROM orders WHERE total >= {minimum} ORDER BY id")
+            // Hand-written SQL is the database's own: SQLite keeps a decimal as
+            // text, compared by value with Plasm.Sqlite's function.
+            let! r =
+                match w.Db.Kind with
+                | PostgreSQL -> w.Repo.Sql<Order>($"SELECT * FROM orders WHERE total >= {minimum} ORDER BY id")
+                | SQLite -> w.Repo.Sql<Order>($"SELECT * FROM orders WHERE plasm_decimal_compare(total, {minimum}) >= 0 ORDER BY id")
             w.Set("rawOrders", ok r)
         }
         |> unit
@@ -175,13 +180,24 @@ type RawSqlSteps(w: World) =
             w.MarkCommands()
             let pattern = "a%"
 
+            // The database's own operator, each a literal: PostgreSQL's ILIKE,
+            // and SQLite's LIKE, which ignores the case of ASCII letters too.
             let! r =
-                w.Repo.All(
-                    plasm {
-                        for c in tableOf<Customer> do
-                            where (Raw.fragment<bool> "{0} ILIKE {1}" (c.Name, pattern))
-                    }
-                )
+                match w.Db.Kind with
+                | PostgreSQL ->
+                    w.Repo.All(
+                        plasm {
+                            for c in tableOf<Customer> do
+                                where (Raw.fragment<bool> "{0} ILIKE {1}" (c.Name, pattern))
+                        }
+                    )
+                | SQLite ->
+                    w.Repo.All(
+                        plasm {
+                            for c in tableOf<Customer> do
+                                where (Raw.fragment<bool> "{0} LIKE {1}" (c.Name, pattern))
+                        }
+                    )
 
             w.Set("fragmentCustomers", ok r)
         }
@@ -190,7 +206,8 @@ type RawSqlSteps(w: World) =
     [<StepDefinition("the fragment is part of the executed SQL with its arguments as columns and parameters")>]
     member _.FragmentSql() =
         let cmd = w.CommandsSinceMark |> List.exactlyOne
-        check (cmd.Sql.Contains "WHERE (\"c\".\"name\" ILIKE @p0)") cmd.Sql
+        let like = if w.Db.Kind = PostgreSQL then "ILIKE" else "LIKE"
+        check (cmd.Sql.Contains $"WHERE (\"c\".\"name\" {like} @p0)") cmd.Sql
 
     [<StepDefinition("the results are typed records")>]
     member _.FragmentResults() =
@@ -238,7 +255,11 @@ type RawSqlSteps(w: World) =
             let! r =
                 w.Repo.Transact(
                     transaction {
-                        let! n = Tx.executeSql $"UPDATE orders SET total = total + 100"
+                        let! n =
+                            match w.Db.Kind with
+                            | PostgreSQL -> Tx.executeSql $"UPDATE orders SET total = total + 100"
+                            // A decimal kept as text, added by value (Plasm.Sqlite's function).
+                            | SQLite -> Tx.executeSql $"UPDATE orders SET total = plasm_decimal_add(total, '100')"
                         let! rows = Tx.sql<decimal, _> $"SELECT total FROM orders ORDER BY id"
                         equal 4 n "updated inside the transaction"
                         equal [ 110m; 120m; 130m; 140m ] rows "visible inside the transaction"

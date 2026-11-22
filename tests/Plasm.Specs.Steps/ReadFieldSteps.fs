@@ -10,6 +10,10 @@ open Plasm.TestDomain.Database
 /// "A program reads the fields its caller chose".
 [<Binding>]
 type ReadFieldSteps(w: World) =
+    /// The keys a load sends, as the dialect sends a list: one array
+    /// (PostgreSQL), or a parameter each (SQLite).
+    let keys = if w.Db.Kind = Plasm.TestDomain.Database.PostgreSQL then "ANY(" else "IN (@p0"
+
 
     let statusF = lazy ReadField.value "status" <@ fun (o: Order) -> o.Status @>
     let totalF = lazy ReadField.value "total" <@ fun (o: Order) -> o.Total @>
@@ -119,7 +123,7 @@ type ReadFieldSteps(w: World) =
         match this.Sent with
         | [ orders; lines ] ->
             check (orders.Contains "\"total\"" && not (orders.Contains "\"status\"")) orders
-            check (lines.Contains "\"order_lines\"" && lines.Contains "ANY(") lines
+            check (lines.Contains "\"order_lines\"" && lines.Contains keys) lines
         | sent -> failwithf "commands sent: %A" sent
 
     [<StepDefinition("each row holds its Order's total and 2 lines")>]
@@ -131,7 +135,7 @@ type ReadFieldSteps(w: World) =
         match this.Sent with
         | [ articles; tags ] ->
             check (articles.Contains "\"title\"") articles
-            check (tags.Contains "\"tags\"" && tags.Contains "ANY(") tags
+            check (tags.Contains "\"tags\"" && tags.Contains keys) tags
         | sent -> failwithf "commands sent: %A" sent
 
     [<StepDefinition("the rows are {string}")>]

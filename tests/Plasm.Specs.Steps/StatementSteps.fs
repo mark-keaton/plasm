@@ -27,7 +27,7 @@ module Accepted =
     let startingWithA =
         plasm {
             for c in tableOf<Customer> do
-                where (Raw.fragment<bool> "{0} ILIKE {1}" (c.Name, "a%"))
+                where (Raw.fragment<bool> "{0} LIKE {1}" (c.Name, "a%"))
         }
 
     let everyCustomerGone: FormattableString = $"delete from customers"

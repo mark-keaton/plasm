@@ -2764,7 +2764,11 @@ let rec projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr 
                         | None -> Ok(makeList items)
                     | other -> Error $"expected an array, the database gave {other.GetType().Name}"
 
-                Leaf(i, typeof<obj>, read, show e)
+                // Read as an array of the element's provider type, as a list
+                // column is: the dialect's reader gives one, whatever the
+                // database returns it as (SQLite's JSON text).
+                let arrayType = (model.ProviderTypeOf element).Value.MakeArrayType()
+                Leaf(i, arrayType, read, show e)
             | _ ->
                 let t = e.Type
                 let scalarT = if Reflection.isOption t then Reflection.elementType t else t
@@ -2779,10 +2783,14 @@ let rec projection (model: Model) (vol: bool ref) (def: QueryDef) (select: Expr 
 
                 let i = add sql (show e)
                 // Computed values (arithmetic, aggregates, fragments) are read as
-                // whatever the database returns and converted to the F# type; a
-                // decimal as a decimal, as its column is, whatever the database
-                // keeps it as (SQLite's text).
-                let read = if model.ProviderTypeOf scalarT = Some typeof<decimal> then typeof<decimal> else typeof<obj>
+                // whatever the database returns and converted to the F# type, a
+                // number exactly; a value a database may keep as another type
+                // (SQLite: a decimal and a time as text, a bool as an integer)
+                // as its column is, by the provider type's reader.
+                let read =
+                    match model.ProviderTypeOf scalarT with
+                    | Some p when Reflection.keptAsAnother.Contains p -> p
+                    | _ -> typeof<obj>
                 Leaf(i, read, (fun v -> model.ScalarFromDb(t, v)), show e)
 
         let rec shape (ctx: Ctx) (e: Expr) : Shape =

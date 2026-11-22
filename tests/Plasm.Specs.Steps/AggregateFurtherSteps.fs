@@ -23,7 +23,7 @@ type AggregateFurtherSteps(w: World) =
                     Agg.any (o.Total > 30m),
                     Agg.all (o.Status = Published),
                     Agg.listBy o.Total o.PlacedAt,
-                    Agg.stringConcatBy ", " (Raw.fragment<string> "{0}::text" o.Status) o.PlacedAt
+                    Agg.stringConcatBy ", " (Raw.fragment<string> "CAST({0} AS TEXT)" o.Status) o.PlacedAt
                 )
         }
 
@@ -96,7 +96,7 @@ type AggregateFurtherSteps(w: World) =
                                 Agg.any (o.Total > 30m),
                                 Agg.all (o.Status = Published),
                                 Agg.listBy o.Total o.PlacedAt,
-                                Agg.stringConcatBy ", " (Raw.fragment<string> "{0}::text" o.Status) o.PlacedAt
+                                Agg.stringConcatBy ", " (Raw.fragment<string> "CAST({0} AS TEXT)" o.Status) o.PlacedAt
                             )
                     }
                 )

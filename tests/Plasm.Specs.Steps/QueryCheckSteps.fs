@@ -89,7 +89,16 @@ type QueryCheckSteps(w: World) =
 
     [<StepDefinition("the customers table has lost its email column")>]
     member _.DropEmail() =
-        w.Db.Exec "alter table customers drop column email" |> unit
+        task {
+            // SQLite drops no column a unique constraint names: the constraint
+            // goes first.
+            if w.Db.Kind = Plasm.TestDomain.Database.SQLite then
+                do! w.Db.DropConstraint("customers", "customers_email_key")
+
+            let! _ = w.Db.Exec "alter table customers drop column email"
+            ()
+        }
+        |> unit
 
     [<StepDefinition("the repository starts")>]
     member _.Starts() =

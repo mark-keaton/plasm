@@ -51,6 +51,7 @@ Feature: Typed SQL escape hatches
     a bigint 4 or a numeric 3 is an int. A value that would be rounded, or text
     that would be parsed, is a materialization error naming both types.
 
+    @postgres
     Scenario Outline: <sql> is read as an int: <outcome>
       When I read an int with the hand-written SQL "<sql>"
       Then the read <outcome>
@@ -61,6 +62,19 @@ Feature: Typed SQL escape hatches
         | SELECT 3::numeric        | gives 3                                    |
         | SELECT 2.5::numeric      | fails, saying a Decimal 2.5 is not an int  |
         | SELECT '42'::text        | fails, saying a String 42 is not an int    |
+
+    # SQLite's values are integers, reals and text.
+    @sqlite
+    Scenario Outline: <sql> is read as an int: <outcome> on SQLite
+      When I read an int with the hand-written SQL "<sql>"
+      Then the read <outcome>
+
+      Examples:
+        | sql                      | outcome                                    |
+        | SELECT 4                 | gives 4                                    |
+        | SELECT 3.0               | gives 3                                    |
+        | SELECT 2.5               | fails, saying a Double 2.5 is not an int   |
+        | SELECT '42'              | fails, saying a String 42 is not an int    |
 
   Rule: SQL fragments extend typed queries
 

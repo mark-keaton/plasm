@@ -206,6 +206,12 @@ module Shown =
 let private numeric =
     HashSet<Type> [ typeof<byte>; typeof<sbyte>; typeof<int16>; typeof<uint16>; typeof<int>; typeof<uint32>; typeof<int64>; typeof<uint64>; typeof<decimal>; typeof<float32>; typeof<float> ]
 
+/// The provider types a value is read as by the type's own reader where the
+/// database may keep it as another (SQLite: a decimal and a time as text, a
+/// bool as an integer): a computed value, and hand-written SQL's.
+let keptAsAnother =
+    HashSet<Type> [ typeof<decimal>; typeof<bool>; typeof<DateTime>; typeof<DateTimeOffset>; typeof<Guid>; typeof<DateOnly>; typeof<TimeOnly>; typeof<TimeSpan> ]
+
 /// Converts a value read from the database to `target` only when `target`
 /// holds it exactly: a number into another number type when converting back
 /// gives the same value (a bigint 4 or a numeric 3 is an int; a numeric 2.5

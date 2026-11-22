@@ -36,6 +36,9 @@ Feature: The database describes every statement before any runs
 
   Rule: What the database refuses is a problem named by its value
 
+    # The reason is the database's own words, which name the misspelled column
+    # on both (PostgreSQL: column "totl" does not exist; SQLite: no such
+    # column: totl).
     Scenario Outline: <what> the database refuses is reported by its name
       When the database describes the statements of the module of refused ones
       Then "<name>" is reported as refused by the database, saying "<reason>"
@@ -43,7 +46,7 @@ Feature: The database describes every statement before any runs
       Examples:
         | what                                 | name               | reason                        |
         | A query whose fragment               | misspelledFragment | syntax error                  |
-        | A hand-written statement             | lateOrders         | column "totl" does not exist  |
+        | A hand-written statement             | lateOrders         | totl                          |
         | A bulk write                         | purgeQuoted        | syntax error                  |
 
     Scenario: What the database accepts is not reported, and none of it runs
@@ -71,6 +74,7 @@ Feature: The database describes every statement before any runs
       When a provider that cannot describe describes the statements of the module of refused ones
       Then it notes that 3 statements were not described, and reports none as refused
 
+    @postgres
     Scenario: A statement whose parameter the database cannot type alone is noted, not refused
       When the database describes the statements of the module whose parameter has no type of its own
       Then it notes that 1 statement was not described, and reports none as refused

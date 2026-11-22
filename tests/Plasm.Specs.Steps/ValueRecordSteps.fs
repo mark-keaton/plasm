@@ -344,8 +344,10 @@ type ValueRecordSteps(w: World) =
     member _.HasColumns(text: string) =
         let ddl = w.Get<string> "valueDdl"
 
+        // Without case, as SQL reads its types and keywords (SQLite's Ddl
+        // writes TEXT and INTEGER).
         for c in text.Replace(" and ", ", ").Split(", ") do
-            check (ddl.Contains c) $"'{c}' is not in:\n{ddl}"
+            check (ddl.ToLowerInvariant().Contains(c.ToLowerInvariant())) $"'{c}' is not in:\n{ddl}"
 
     [<StepDefinition("it has a check that the billing columns are all NULL or all present")>]
     member _.HasCheck() =

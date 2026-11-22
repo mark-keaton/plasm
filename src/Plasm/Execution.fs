@@ -921,7 +921,30 @@ let private columnsOf (select: Sql.Select) (shape: Translate.Shape) (label: stri
         let values = Array.zeroCreate<obj> select.Columns.Length
 
         for i, t, convert, l in leaves do
-            let raw = (columnReader t).Invoke(r, i)
+            // As the database returns it where that is already the provider
+            // type, or an array for an array (PGlite's readers give an
+            // object[], whose elements the leaf converts); else by the type's
+            // own reader (SQLite's decimal as text, its list as JSON text). A
+            // typed reader that cannot read the value refuses it as the
+            // value's error, as a conversion would.
+            let returned = if r.IsDBNull i then null else r.GetValue i
+
+            let raw =
+                if isNull returned || t = typeof<obj> || t.IsInstanceOfType returned || (t.IsArray && returned :? Array) then
+                    returned
+                else
+                try
+                    (columnReader t).Invoke(r, i)
+                with
+                | :? InvalidCastException
+                | :? FormatException as ex ->
+                    raise (
+                        MaterializationFailure
+                            { Model = label
+                              Property = l
+                              Value = (try describe (r.GetValue i) with _ -> string (r.GetFieldType i))
+                              Message = $"cannot be read as {t.Name}: {ex.Message}" }
+                    )
 
             match convert raw with
             | Ok v -> values.[i] <- v
@@ -1244,10 +1267,35 @@ let rawReader (model: Model) (t: Type) (label: string) : DbDataReader -> obj =
 
     let value (r: DbDataReader) (i: int) = if r.IsDBNull i then null else r.GetValue i
 
+    /// The value at `i` for provider type `t`: as the database returns it, or,
+    /// where that is another type and the database may keep `t` so (SQLite's
+    /// decimal as text), by `t`'s own reader; what that reader cannot read
+    /// stays the value the database returned.
+    let valueAs (t: Type) (r: DbDataReader) (i: int) =
+        let raw = value r i
+
+        if isNull raw || t.IsInstanceOfType raw || not (Reflection.keptAsAnother.Contains t) then
+            raw
+        else
+            try
+                (columnReader t).Invoke(r, i)
+            with
+            | :? InvalidCastException
+            | :? FormatException -> raw
+
     let convert (target: Type) property (raw: obj) =
         match model.ScalarFromDb(target, raw) with
         | Ok v -> v
         | Error m -> fail property (if isNull raw then "NULL" else string raw) m
+
+    /// The value at `i` for the F# type `target`: by its provider type's
+    /// reader where the database may keep it as another (valueAs).
+    let read (target: Type) (r: DbDataReader) (i: int) =
+        let scalar = if Reflection.isOption target then Reflection.elementType target else target
+
+        match model.ProviderTypeOf scalar with
+        | Some p -> valueAs p r i
+        | None -> value r i
 
     match model.TrySchema t with
     | Some schema ->
@@ -1264,7 +1312,7 @@ let rawReader (model: Model) (t: Type) (label: string) : DbDataReader -> obj =
                 let raws =
                     f.Parts
                     |> List.map (fun p ->
-                        let raw = value r ordinals.[j]
+                        let raw = valueAs p.ProviderType r ordinals.[j]
                         j <- j + 1
 
                         if isNull raw || p.ProviderType.IsInstanceOfType raw then
@@ -1297,7 +1345,7 @@ let rawReader (model: Model) (t: Type) (label: string) : DbDataReader -> obj =
                 ordinals <- fields |> Array.map (fun f -> ordinal r [ f.Name; snake f.Name ] f.Name)
 
             fields
-            |> Array.mapi (fun j (f: PropertyInfo) -> convert f.PropertyType f.Name (value r ordinals.[j]))
+            |> Array.mapi (fun j (f: PropertyInfo) -> convert f.PropertyType f.Name (read f.PropertyType r ordinals.[j]))
             |> ctor
     | None when Microsoft.FSharp.Reflection.FSharpType.IsTuple t ->
         let elements = Microsoft.FSharp.Reflection.FSharpType.GetTupleElements t
@@ -1307,13 +1355,13 @@ let rawReader (model: Model) (t: Type) (label: string) : DbDataReader -> obj =
             if r.FieldCount <> elements.Length then
                 fail "(tuple)" $"{r.FieldCount} columns" $"the SQL returns {r.FieldCount} columns for a {elements.Length}-element tuple"
 
-            elements |> Array.mapi (fun i et -> convert et $"Item{i + 1}" (value r i)) |> ctor
+            elements |> Array.mapi (fun i et -> convert et $"Item{i + 1}" (read et r i)) |> ctor
     | None ->
         fun r ->
             if r.FieldCount <> 1 then
                 fail "(value)" $"{r.FieldCount} columns" $"the SQL returns {r.FieldCount} columns for a single {Reflection.typeName t}"
 
-            convert t "(value)" (value r 0)
+            convert t "(value)" (read t r 0)
 
 /// The rows of hand-written SQL as 'R values: a record that owns or links
 /// lists is completed with them, as a query of it would be.
