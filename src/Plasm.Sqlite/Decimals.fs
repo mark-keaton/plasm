@@ -56,6 +56,10 @@ let divisionScale (dividend: decimal) (divisor: decimal) =
 /// numeric rounds, and written with exactly that many decimals (at most the
 /// 28 a decimal holds).
 let divide (dividend: decimal) (divisor: decimal) =
+    // In PostgreSQL's words, as numeric's division fails (division-by-zero.feature).
+    if divisor = 0m then
+        raise (DivideByZeroException "division by zero")
+
     let scale = min 28 (divisionScale dividend divisor)
     let q = Math.Round(dividend / divisor, scale, MidpointRounding.AwayFromZero)
     q.ToString("F" + string scale, invariant)
@@ -88,4 +92,10 @@ let register (c: SqliteConnection) =
     c.CreateFunction("plasm_decimal_subtract", binary (fun a b -> text (a - b)))
     c.CreateFunction("plasm_decimal_multiply", binary (fun a b -> text (a * b)))
     c.CreateFunction("plasm_decimal_divide", binary divide)
-    c.CreateFunction("plasm_decimal_remainder", binary (fun a b -> text (a % b)))
+    c.CreateFunction("plasm_decimal_remainder", binary (fun a b -> text (if b = 0m then raise (DivideByZeroException "division by zero") else a % b)))
+
+    // Reached only by a zero divisor (SqliteDialect.Division): SQLite
+    // evaluates a CASE's branch only when it is taken, a literal divisor's
+    // too (division-by-zero.feature). Not deterministic all the same, a
+    // precaution: no plan may evaluate it ahead of its CASE.
+    c.CreateFunction<obj, obj>("plasm_division_by_zero", (fun (_: obj) -> raise (DivideByZeroException "division by zero")), false)

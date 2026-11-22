@@ -332,6 +332,20 @@ type internal SqliteDialect(options: SqliteOptions) =
         // No CYCLE clause: each row carries the keys above it as a JSON array
         // of each key's parts, `[[1],[2]]`, and a step's row whose key is in
         // it is left out (recursive-queries.feature).
+        // SQLite answers a division or remainder by zero with NULL: a zero
+        // divisor reaches plasm_division_by_zero, which fails the statement
+        // as PostgreSQL's division does. The divisor is written twice.
+        member _.Division(w, op, dividend, divisor) =
+            w "CASE WHEN "
+            divisor ()
+            w " = 0 THEN plasm_division_by_zero("
+            divisor ()
+            w ") ELSE "
+            dividend ()
+            w $" {op} "
+            divisor ()
+            w " END"
+
         member _.Cycle =
             let parts (w: string -> unit) (key: (unit -> unit) list) =
                 w "json_array("

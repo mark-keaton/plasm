@@ -253,6 +253,11 @@ type internal PostgresDialect(options: PostgresOptions) =
 
         member _.UnboundedLimit = None
         member _.Cycle = CycleCheck.Clause(fun key flag path -> "CYCLE " + String.concat ", " key + " SET " + flag + " USING " + path)
+        // A division by zero fails as it is (SQLSTATE 22012).
+        member _.Division(w, op, dividend, divisor) =
+            dividend ()
+            w $" {op} "
+            divisor ()
 
         member _.NullSafeComparison negated =
             if negated then "IS DISTINCT FROM" else "IS NOT DISTINCT FROM"

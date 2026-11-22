@@ -261,7 +261,11 @@ type StreamSteps(w: World) =
     [<StepDefinition("the stream gives two values and then a database error")>]
     member _.ThenDatabase() =
         match List.ofSeq seen with
-        | [ Ok _; Ok _; Error(DbError.Database f) ] -> equal (Some "22012") f.SqlState "the failure's SQLSTATE"
+        // PostgreSQL's SQLSTATE 22012; SQLite's own words for it (division-by-zero.feature).
+        | [ Ok _; Ok _; Error(DbError.Database f) ] ->
+            match w.Db.Kind with
+            | Plasm.TestDomain.Database.PostgreSQL -> equal (Some "22012") f.SqlState "the failure's SQLSTATE"
+            | Plasm.TestDomain.Database.SQLite -> check (f.Message.Contains "division by zero") f.Message
         | other -> failwithf "expected two values and a database error, got %A" other
 
     [<StepDefinition("three order lines whose quantities are 1, 2 and 0")>]

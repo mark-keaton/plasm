@@ -78,6 +78,7 @@ type NoRowLocks(inner: IProvider, turns: bool) =
             member _.Ddl = inner.Dialect.Ddl
             member _.UnboundedLimit = inner.Dialect.UnboundedLimit
             member _.Cycle = inner.Dialect.Cycle
+            member _.Division(w, op, dividend, divisor) = inner.Dialect.Division(w, op, dividend, divisor)
             member _.NullSafeComparison negated = inner.Dialect.NullSafeComparison negated
             member _.TextMatch(w, kind, operand, pattern) = inner.Dialect.TextMatch(w, kind, operand, pattern)
             member _.FunctionName name = inner.Dialect.FunctionName name

@@ -256,6 +256,11 @@ type ISqlDialect =
     /// How a recursive query leaves out the rows that close a cycle
     /// (recursive-queries.feature).
     abstract Cycle: CycleCheck
+    /// A division or remainder (`op`, "/" or "%") of two numbers, so that a
+    /// divisor of zero fails the statement (division-by-zero.feature):
+    /// PostgreSQL's `dividend / divisor`, which fails so; SQLite's, which
+    /// answers NULL, made to fail.
+    abstract Division: write: (string -> unit) * op: string * dividend: (unit -> unit) * divisor: (unit -> unit) -> unit
     /// The null-safe comparison operator: equality treating NULLs as equal
     /// (`IS NOT DISTINCT FROM`), or its negation when `negated`.
     abstract NullSafeComparison: negated: bool -> string
@@ -717,6 +722,7 @@ module internal Sql =
                 r.Operand(a, true)
                 w $" {op} "
                 r.Operand(b, true)
+            | Binary(op, a, b) when op = "/" || op = "%" -> d.Division(w, op, (fun () -> r.Operand(a, false)), (fun () -> r.Operand(b, false)))
             | Binary(op, a, b) ->
                 r.Operand(a, false)
                 w $" {op} "

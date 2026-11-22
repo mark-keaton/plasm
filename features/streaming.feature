@@ -78,18 +78,9 @@ Feature: A query's rows can be read as a stream
 
   Rule: A failure ends the stream as a value
 
-    @postgres
     Scenario: A database failure in the middle of a stream is its last element
       When I stream 100 divided by each customer's place less five, in the order they were written, the third being zero
       Then the stream gives two values and then a database error
-      And no connection is open
-
-    # SQLite divides by zero to NULL: its database failure here is a decimal
-    # function's, over a total that is no decimal.
-    @sqlite
-    Scenario: A database failure in the middle of a stream is its last element on SQLite
-      When I stream each Order's total plus one, in the order they were written, the third's total being no decimal
-      Then the stream gives two values and then a database error naming the value
       And no connection is open
 
     Scenario: A stored value that cannot be read back is its last element

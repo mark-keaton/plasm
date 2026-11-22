@@ -58,3 +58,4 @@ features/ddl.feature	*PlasmPrintsTheDDLItsModelExpectsFeature*
 features/elegance.feature	*IdiomaticAndPrincipledFPersistenceFeature*
 features/pg-enums.feature	*FieldlessUnionsStoredAsPostgreSQLEnumTypesFeature*	postgres-only
 features/fsi.feature	*UsingPlasmFromFInteractiveFeature*
+features/division-by-zero.feature	*ADivisionByZeroFailsOnEveryDatabaseFeature*
