@@ -73,6 +73,12 @@ jobs:
           path: ${{ runner.temp }}/sqlite-run
           if-no-files-found: ignore
 
+      # Plasm.slnx leaves Plasm.PGlite out, and only the koans' deployment
+      # builds it: this compiles it alone, so a change to the provider
+      # interfaces cannot break it unseen.
+      - name: Compile Plasm.PGlite
+        run: bash tests/Plasm.Providers/build-pglite.sh
+
       - name: Upload test results
         if: failure()
         uses: actions/upload-artifact@v4
