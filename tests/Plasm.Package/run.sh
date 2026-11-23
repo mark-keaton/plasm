@@ -15,7 +15,9 @@
 # runtime and natively, and SQLite's native library arrives for each platform.
 # The Starter's tests also run on SQLite, and a project made with
 # `--database sqlite` is tested, published, and run against its database file
-# (template-sqlite/run.sh).
+# (template-sqlite/run.sh). Plasm.CSharp gives a C# host over an F# data
+# layer closed unions, refused by name when a switch misses a case, and
+# source-generated JSON, natively too (seam/run.sh).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
@@ -26,10 +28,10 @@ work="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/plasm-package.XXXXXX")" && pwd -P)"
 trap 'rm -rf "$work"' EXIT
 feed="$work/feed"; app="$work/app"; export NUGET_PACKAGES="$work/packages"
 
-packages="Plasm.Annotations Plasm Plasm.Postgres Plasm.Sqlite Plasm.HotChocolate"
+packages="Plasm.Annotations Plasm Plasm.Postgres Plasm.Sqlite Plasm.HotChocolate Plasm.CSharp"
 if [ -n "${PLASM_FEED:-}" ]; then
   # A release checks the packages it will push: PLASM_FEED is a folder holding
-  # the five and Plasm.Templates, packed already, and nothing is packed here.
+  # the six and Plasm.Templates, packed already, and nothing is packed here.
   feed="$(cd "$PLASM_FEED" && pwd -P)"
   echo "pack: none; the feed is PLASM_FEED, packed already"
 else
@@ -58,12 +60,12 @@ for p in $packages; do
   if [ -n "$leaked" ]; then echo "pack: $p carries build output:"; echo "$leaked"; exit 1; fi
 done
 echo "pack: version $version; no package carries obj/ or bin/"
-# The feed is exactly the six pushed: the five libraries and the template.
+# The feed is exactly the seven pushed: the six libraries and the template.
 pushed=$(cd "$feed" && ls *.nupkg | sed "s/\.$version\.nupkg$//" | sort | tr '\n' ' ')
 expected=$(printf '%s\n' $packages Plasm.Templates | sort | tr '\n' ' ')
 if [ "$pushed" != "$expected" ]; then echo "pack: the feed holds $pushed, not $expected"; exit 1; fi
-if [ "$(echo $expected | wc -w | tr -d ' ')" != 6 ]; then echo "pack: $expected is not six packages"; exit 1; fi
-echo "pack: the feed is exactly the six packages $expected"
+if [ "$(echo $expected | wc -w | tr -d ' ')" != 7 ]; then echo "pack: $expected is not seven packages"; exit 1; fi
+echo "pack: the feed is exactly the seven packages $expected"
 # Plasm.Sqlite: its assembly, its documentation and the readme, and nothing
 # else; it depends on Plasm at the version packed and on Microsoft.Data.Sqlite
 # at the repository's version, which brings SQLite's native library (checked
@@ -83,6 +85,15 @@ sqreadme=$(unzip -p "$sq" README.md)
 if [[ "$sqreadme" =~ [0-9]+\.[0-9]+\.[0-9]+ ]]; then echo "pack: Plasm.Sqlite's readme names a version: ${BASH_REMATCH[0]}"; exit 1; fi
 if [[ "$sqreadme" != *"Plasm is new"* ]]; then echo "pack: Plasm.Sqlite's readme does not say Plasm is new"; exit 1; fi
 echo "pack: Plasm.Sqlite carries $sqfiles; depends on $deps"
+# Plasm.CSharp: its assembly, its documentation and the readme; it depends
+# on Plasm alone (and FSharp.Core), so a host of either provider takes it.
+cs="$feed/Plasm.CSharp.$version.nupkg"
+csfiles=$(unzip -Z1 "$cs" | grep -v -E '^(_rels/|package/|\[Content_Types\]\.xml$|Plasm\.CSharp\.nuspec$)' | sort | tr '\n' ' ')
+if [ "$csfiles" != "README.md lib/net11.0/Plasm.CSharp.dll lib/net11.0/Plasm.CSharp.xml " ]; then echo "pack: Plasm.CSharp carries $csfiles"; exit 1; fi
+csdeps=$(unzip -p "$cs" Plasm.CSharp.nuspec | grep -o '<dependency id="[^"]*" version="[^"]*"' | sed 's/<dependency id="\([^"]*\)" version="\([^"]*\)"/\1 \2/' | sort | tr '\n' ';')
+want_csdeps=$(printf '%s\n' "FSharp.Core $floor0" "Plasm $version" | sort | tr '\n' ';')
+if [ "$csdeps" != "$want_csdeps" ]; then echo "pack: Plasm.CSharp depends on $csdeps, not $want_csdeps"; exit 1; fi
+echo "pack: Plasm.CSharp carries $csfiles; depends on $csdeps"
 # The template's projects reference Plasm at the template's version: its
 # template.json replaces the Starter's version with this one.
 tplconfig=$(unzip -p "$feed/Plasm.Templates.$version.nupkg" content/Starter/.template.config/template.json 2>/dev/null || true)
@@ -282,6 +293,11 @@ bash "$here/sqlite/run.sh" "$feed" "$version" || failed=1
 # (tests/Plasm.Package/template-sqlite/run.sh): its tests, its API natively,
 # and the database file as the API meets it, missing or there.
 bash "$here/template-sqlite/run.sh" "$feed" "$version" || failed=1
+
+# Plasm.CSharp, from the same feed (tests/Plasm.Package/seam/run.sh): a C#
+# switch over Found without its Missing arm is refused by name; the host's
+# cases, Stale's key parts among them, as JSON, the same natively.
+bash "$here/seam/run.sh" "$feed" "$version" || failed=1
 sqa="$work/sqlite-app"
 mkdir -p "$sqa"
 cp "$here/sqlite/SqliteConsumer.fsproj" "$here/sqlite/Program.fs" "$app/nuget.config" "$sqa/"

@@ -4,6 +4,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Kanban.Data;
+using Plasm.CSharp;
 using Npgsql;
 
 // Started by a scenario (KANBAN_EXIT_WITH_STDIN=1): exit when the test
@@ -71,7 +72,7 @@ app.MapPut("/cards/{id:guid}/title", async (Guid id, Rename input, KanbanData k,
 
 app.Run();
 
-static IResult Changed(ChangeOutcome outcome) => outcome switch
+static IResult Changed(Changed<CardView> outcome) => outcome switch
 {
     CardView card => Results.Ok(card),
     Missing missing => Results.NotFound(missing),

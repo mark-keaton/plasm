@@ -4,6 +4,7 @@
     <Project Path="src/Plasm.Annotations/Plasm.Annotations.fsproj" />
     <Project Path="src/Plasm.Postgres/Plasm.Postgres.fsproj" />
     <Project Path="src/Plasm.Sqlite/Plasm.Sqlite.fsproj" />
+    <Project Path="src/Plasm.CSharp/Plasm.CSharp.fsproj" />
     <Project Path="src/Plasm.HotChocolate/Plasm.HotChocolate.fsproj" />
     <Project Path="src/Plasm.FieldGetters/Plasm.FieldGetters.fsproj" />
   </Folder>

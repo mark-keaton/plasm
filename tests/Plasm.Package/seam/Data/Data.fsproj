@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A data layer on Plasm.Sqlite that gives C# Plasm.CSharp's outcomes, from
+       the packages alone (seam/run.sh copies it outside the repository). -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <IsAotCompatible>true</IsAotCompatible>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Data.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Plasm.Sqlite" Version="$(PlasmVersion)" />
+    <PackageReference Include="Plasm.CSharp" Version="$(PlasmVersion)" />
+  </ItemGroup>
+</Project>

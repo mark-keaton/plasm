@@ -245,11 +245,12 @@ Chocolate the case (`IUnion.Value`), so the case's fields resolve against it:
 
 A case's object type is referred to by its record's type, so a record that
 is a case of several unions, or the type of a field elsewhere, is one object
-type: Kanban's host registers `ChangeOutcome`, `AddCardOutcome` and
-`Found<CardView>`, and `CardView` is one type in all three and in `cards`.
-A generic type's own name (``Found`1``) is not one GraphQL allows, so
-`AddPlasmUnion<'U>()` refuses it, saying to name it:
-`AddPlasmUnion<Found<CardView>>("CardResult")`.
+type: Kanban's host registers Plasm.CSharp's `Changed<CardView>`,
+`Answered<CardView>` and `Found<CardView>`, and `CardView` is one type in all
+three and in `cards`. A generic type's own name (``Found`1``) is not one
+GraphQL allows, so `AddPlasmUnion<'U>()` refuses it, saying to name it:
+`AddPlasmUnion<Found<CardView>>("CardResult")`,
+`AddPlasmUnion<Changed<CardView>>("ChangeOutcome")`.
 
 ## Translation
 

@@ -232,7 +232,13 @@ public sealed class Steps : IAsyncDisposable
     public void StageIs(string title, string expected) => Equal(expected, StageIn(title).ToJsonString(), $"{title}'s stage");
 
     [Then("the answer names the card {string}")]
-    public void NamesCard(string title) => Equal(cards[title], (Guid)JsonNode.Parse(body)!["card"]!, "the card named");
+    public void NamesCard(string title)
+    {
+        // Plasm.CSharp's Stale: the record type, and its key's parts as text.
+        var stale = JsonNode.Parse(body)!;
+        Equal("Card", (string)stale["what"]!, "what is stale");
+        Equal(cards[title].ToString("D"), (string)stale["key"]![0]!, "the card named");
+    }
 
     [Then("the card {string} is in the backlog at version {int}")]
     public async Task InBacklog(string title, int version)

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A C# host over the data layer, switching over Plasm.CSharp's unions with
+       no default arm, its JSON source-generated, published natively. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- FSharp.Core's two summary warnings, which no F# library can quiet for its users. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104;IL3053</WarningsNotAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Data/Data.fsproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Plasm.CSharp" Version="$(PlasmVersion)" />
+  </ItemGroup>
+</Project>

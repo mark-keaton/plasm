@@ -5,6 +5,7 @@
 // clock; this job says when. The wait between runs is the host's one clock,
 // the TimeProvider in its services, which the facade was opened with.
 using Kanban.Data;
+using Plasm.CSharp;
 
 namespace Kanban.Host;
 
@@ -22,7 +23,7 @@ public sealed class StaleCards(KanbanData kanban, TimeProvider time, IConfigurat
                 var sent = await kanban.SendStaleBackAsync(stopping);
                 log.LogInformation("Stale cards sent back: {Cards}", sent.Cards);
             }
-            catch (KanbanUnavailableException unavailable)
+            catch (UnavailableException unavailable)
             {
                 // The database may come back; the next run tries again.
                 log.LogWarning(unavailable, "Sending stale cards back failed; trying again in {Every}", every);

@@ -59,7 +59,7 @@ Feature: Kanban's changes over GraphQL, each outcome a member of a union
 
     Scenario: A change from an old copy is Stale
       Given the cards "Guidance" on "apollo"
-      When I ask for 'mutation { renameCard(card: "<Guidance>", version: 0, title: "Navigation") { __typename ... on Stale { card } } }'
+      When I ask for 'mutation { renameCard(card: "<Guidance>", version: 0, title: "Navigation") { __typename ... on Stale { what key } } }'
       Then the answer is a "Stale"
       And the card "Guidance" keeps its title
 

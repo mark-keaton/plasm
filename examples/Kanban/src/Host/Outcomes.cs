@@ -2,6 +2,7 @@
 // endpoints all answer through here. Each union is switched without a default
 // arm, so a case the facade adds is a compile error here, not a 500.
 using Kanban.Data;
+using Plasm.CSharp;
 
 namespace Kanban.Host;
 
@@ -12,7 +13,7 @@ public static class Outcomes
     public static IResult Of(Stale stale) => Results.Conflict(stale);
     public static IResult Of(Invalid invalid) => Results.BadRequest(invalid);
 
-    public static IResult Of(ChangeOutcome outcome) => outcome switch
+    public static IResult Of(Changed<CardView> outcome) => outcome switch
     {
         CardView card => Results.Ok(card),
         Missing missing => Of(missing),
@@ -21,13 +22,13 @@ public static class Outcomes
         Invalid invalid => Of(invalid),
     };
 
-    public static IResult Of(CreateBoardOutcome outcome) => outcome switch
+    public static IResult Of(Added<BoardSummary> outcome) => outcome switch
     {
         BoardSummary board => Results.Created($"/boards/{board.Slug}", board),
         Invalid invalid => Of(invalid),
     };
 
-    public static IResult Of(AddCardOutcome outcome) => outcome switch
+    public static IResult Of(Answered<CardView> outcome) => outcome switch
     {
         CardView card => Results.Created($"/cards/{card.Id}", card),
         Missing missing => Of(missing),
@@ -40,13 +41,13 @@ public static class Outcomes
         Missing missing => Of(missing),
     };
 
-    public static IResult Of(SendAllBackOutcome outcome) => outcome switch
+    public static IResult Of(Found<SentBack> outcome) => outcome switch
     {
         SentBack sent => Results.Ok(sent),
         Missing missing => Of(missing),
     };
 
-    public static IResult Of(DonePageOutcome outcome) => outcome switch
+    public static IResult Of(Answered<DonePage> outcome) => outcome switch
     {
         DonePage page => Results.Ok(page),
         Missing missing => Of(missing),

@@ -345,7 +345,13 @@ public sealed class Steps(IReqnrollOutputHelper output)
     }
 
     [Then("the answer is stale, naming the card {string}")]
-    public void StaleNames(string title) => Equal(cards[title], (Guid)Case("stale")["card"]!, "the card named");
+    public void StaleNames(string title)
+    {
+        // Plasm.CSharp's Stale: the record type, and its key's parts as text.
+        var stale = Case("stale");
+        Equal("Card", (string)stale["what"]!, "what is stale");
+        Equal(cards[title].ToString("D"), (string)stale["key"]![0]!, "the card named");
+    }
 
     /// The emulator answers an invocation that threw with the exception's
     /// type and message.

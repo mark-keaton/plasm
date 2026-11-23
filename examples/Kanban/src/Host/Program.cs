@@ -5,6 +5,7 @@
 // turns each outcome into a response in one place (Outcomes.cs).
 using Kanban;
 using Kanban.Data;
+using Plasm.CSharp;
 using Kanban.Host;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Npgsql;
@@ -85,10 +86,10 @@ builder.Services
     // Each outcome a union of its cases, registered once.
     .AddPlasmUnion<StageView>()
     .AddPlasmUnion<Found<CardView>>("CardResult")
-    .AddPlasmUnion<ChangeOutcome>()
-    .AddPlasmUnion<AddCardOutcome>()
-    .AddPlasmUnion<CreateBoardOutcome>()
-    .AddPlasmUnion<SendAllBackOutcome>();
+    .AddPlasmUnion<Changed<CardView>>("ChangeOutcome")
+    .AddPlasmUnion<Answered<CardView>>("AddCardOutcome")
+    .AddPlasmUnion<Added<BoardSummary>>("CreateBoardOutcome")
+    .AddPlasmUnion<Found<SentBack>>("SendAllBackOutcome");
 
 var app = builder.Build();
 app.UseAuthentication();

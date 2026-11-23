@@ -11,6 +11,7 @@ using System.Text.Json.Serialization.Metadata;
 using Amazon.Lambda.Core;
 using Amazon.Lambda.RuntimeSupport;
 using Kanban.Data;
+using Plasm.CSharp;
 using Npgsql;
 
 Console.WriteLine($"to main {(DateTime.Now - Process.GetCurrentProcess().StartTime).TotalMilliseconds:F1} ms");
@@ -73,7 +74,7 @@ abstract record Call
         return answer;
     }
 
-    protected static Stream Changed(ChangeOutcome outcome) => outcome switch
+    protected static Stream Changed(Changed<CardView> outcome) => outcome switch
     {
         CardView card => Case("card", card, KanbanJson.Default.CardView),
         Missing missing => Case("missing", missing, KanbanJson.Default.Missing),

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>What a C# host is given by an F# data layer on Plasm: the cases it switches over (Missing, Refused, Stale, Invalid), the unions of them in C#'s union shape (Found, Added, Answered, Changed), the functions that read a result as one, and a base for a union's JSON classifier.</Description>
+    <PackageId>Plasm.CSharp</PackageId>
+    <!-- Either provider: the package names no database. -->
+    <PackageTags>fsharp;csharp;orm;ecto;database;persistence;aot</PackageTags>
+    <!-- Trim and AOT analysis at every build, as Plasm's (docs/aot.md). -->
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Cases.fs" />
+    <Compile Include="Outcome.fs" />
+    <Compile Include="ByKind.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Plasm/Plasm.fsproj" />
+  </ItemGroup>
+</Project>

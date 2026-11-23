@@ -18,5 +18,6 @@
     <ProjectReference Include="../Shared/Shared.fsproj" />
     <ProjectReference Include="../../../../src/Plasm/Plasm.fsproj" />
     <ProjectReference Include="../../../../src/Plasm.Postgres/Plasm.Postgres.fsproj" />
+    <ProjectReference Include="../../../../src/Plasm.CSharp/Plasm.CSharp.fsproj" />
   </ItemGroup>
 </Project>

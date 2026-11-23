@@ -75,6 +75,8 @@
   </Target>
   <ItemGroup>
     <InternalsVisibleTo Include="Plasm.Postgres" />
+    <!-- A stale key's parts as text, through Shape, natively too. -->
+    <InternalsVisibleTo Include="Plasm.CSharp" />
     <InternalsVisibleTo Include="Plasm.Tests" />
     <InternalsVisibleTo Include="Plasm.Aot" />
     <InternalsVisibleTo Include="Plasm.Specs.Steps" />

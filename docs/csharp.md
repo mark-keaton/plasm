@@ -60,17 +60,46 @@ go more than one way is a type of C#'s union shape, declared in F#: a struct
 with `[<Union>]`, one constructor per case and `IUnion.Value`, each case a
 record of its own.
 
-- **A read that can miss returns `Found<'T>`**: the value, or `Missing`
-  (`BoardAsync`). It is generic, since a read has two cases whatever it reads.
-- **A write that can be refused returns its own outcome**: `ChangeOutcome`
-  (`CardView`, `Missing`, `Refused`, `Stale`, `Invalid`), `AddCardOutcome`
-  and `CreateBoardOutcome`, each with only the cases its write can have.
+The shapes every project would write the same are in the package
+**Plasm.CSharp**, which depends on Plasm alone (either provider; an F# host
+need not take it):
+
+- the cases: `Missing { What }`, `Refused { Code; Message }`,
+  `Stale { What; Key }` (the record type, and its key's parts as text in key
+  order: one for a typed id, one per field of a key of several, so a part
+  holding a "/" is still one part), `FieldProblem { Field; Message }` and
+  `Invalid { Problems }`;
+- the unions of them, each with only the cases its kind of call can have:
+  - **a read that can miss returns `Found<'T>`**: the value, or `Missing`
+    (`BoardAsync`);
+  - **an add returns `Added<'T>`**: the value, or `Invalid` (`CreateBoardAsync`);
+  - **a request about something that must be there, with input to check,
+    returns `Answered<'T>`**: the value, `Missing` or `Invalid`
+    (`AddCardAsync`, `DonePageAsync`);
+  - **a change returns `Changed<'T>`**: the value, `Missing`, `Refused`,
+    `Stale` or `Invalid`. Every change can be `Invalid`: the database may
+    refuse what it writes field by field (a unique or a check constraint);
+- `Outcome.found`, `Outcome.added`, `Outcome.answered` and `Outcome.changed`,
+  which read a read's or a transaction's result as one of them. Each project
+  maps its own reason for stopping a transaction (`TxFailure.Rejected`) to
+  the case it means, a function to the union:
+  `function Refusal.Missing what -> Changed { What = what } | Domain e -> Changed(View.refused e)`.
+  Plasm's failures are read for it: a stale copy is `Stale`, the database's
+  refusal of fields `Invalid` (`Invalid.ofErrors`: camel-cased fields, a
+  duplicate "is already taken"), and a database that fails throws
+  `UnavailableException`;
+- `Invalid.field` and `Invalid.fields`, for input refused before the
+  database, and `ByKind`, the base of a union's JSON classifier (below).
+
+A project writes its views (`CardView`, `StageView`) and the fields that are
+unions of its own. A host that names a union (GraphQL) names each by its use:
+Kanban's host registers `Changed<CardView>` as `ChangeOutcome`.
 - **A field that holds a different fact in each case is a union-shaped
   type too.** A card's `Stage` is a `StageView`: `InBacklog`, `InProgress`
   (with its assignee and start), `WasShipped` (with its time) or
   `WasDropped` (with its reason and time). No view has a field that is null
   or `Nullable` because of which case its row is in.
-- **A database that cannot be reached throws** `KanbanUnavailableException`,
+- **A database that cannot be reached throws** Plasm.CSharp's `UnavailableException`,
   as ASP.NET Core expects of a failure the request cannot handle.
 
 ```csharp
@@ -84,8 +113,11 @@ var said = card.Stage switch
 ```
 
 C# switches over each with no default arm, and a case left out is CS8509
-naming its type (`the pattern 'Kanban.Data.Missing' is not covered`), a
-warning this repository makes an error.
+naming its type (`the pattern 'Plasm.CSharp.Missing' is not covered`), a
+warning this repository makes an error. It holds for the package's unions as
+for a project's own: the package check builds a host over Plasm.CSharp
+restored from a feed, and the same switch without its `Missing` arm is that
+error (tests/Plasm.Package/seam).
 
 Null was tried first and dropped. F# 9 nullness reaches C# through `Task<_>`
 (`Task<string | null>` gives CS8602 on a dereference), but an F# record
@@ -156,8 +188,12 @@ of `StageView` has a constant `Kind` property, written first. Its source
 generator accepts a union-shaped type only if it could read the JSON back,
 which the host never does: it refuses `StageView` (SYSLIB1227: every case is
 a JSON object) unless the type names a classifier. `StageByKind`, in
-Kanban.Data, is one: it reads ahead for `kind` and names the case, and
-`[<JsonUnion(TypeClassifier = typeof<StageByKind>)>]` puts it on the type.
+Kanban.Data, is one: it inherits Plasm.CSharp's `ByKind`, which reads ahead
+for `kind` and names the case,
+`inherit ByKind(typeof<StageView>, [ "backlog", typeof<InBacklog>; ... ])`,
+and `[<JsonUnion(TypeClassifier = typeof<StageByKind>)>]` puts it on the type.
+The source generator takes a classifier whose override is inherited from
+another assembly's base, natively too (tests/Plasm.Package/seam).
 The case records stay plain F# records, read through their constructors, so
 C# can neither make an empty one (`new InProgress()` is CS7036) nor change
 one (CS0200). It works natively, reading each case back as itself, with no
