@@ -67,8 +67,9 @@ const fsharpIndent = indentService.of((context, pos) => {
   return Math.max(above === null ? 0 : depth(above), below === null ? 0 : depth(below));
 });
 
-/// A type tip: what the compiler says a name is, its signature and its doc.
-const tipDom = (info) => {
+/// A type tip: what the compiler says a name is, its signature and its doc
+/// (the page shows the same for a name under Given).
+export const tipDom = (info) => {
   const dom = document.createElement('div');
   dom.className = 'type-tip';
   const sig = document.createElement('pre');

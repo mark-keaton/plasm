@@ -653,8 +653,8 @@ describe the one style; "Reworded" means only words changed.
 
 | Scenario | Classification | Step definitions | Related unit tests | Notes |
 |---|---|---|---|---|
-| A typed id references the schema whose key it is | Implemented and verified | `ConstraintSteps.fs` |  | `Model.References`; only typed ids (never built-in key types) are inferred. |
-| A key type shared by two schemas is refused | Implemented and verified | `ConstraintSteps.fs` |  | `Model.build` returns a ConfigError naming the key type and both schemas; before, no reference was inferred and nothing was said. |
+| A typed id references the stored record whose key it is | Implemented and verified | `ConstraintSteps.fs` |  | `Model.References`; only typed ids (never built-in key types) are inferred. |
+| A key type shared by two record types is refused | Implemented and verified | `ConstraintSteps.fs` |  | `Model.build` returns a ConfigError naming the key type and both record types; before, no reference was inferred and nothing was said. |
 
 ### constraints.feature: The schema check finds a missing or misnamed constraint
 

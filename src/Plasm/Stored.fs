@@ -92,7 +92,7 @@ module internal Derive =
                 let names = fields target |> Array.map (fun f -> f.Name) |> String.concat ", "
                 Error $"is ordered by {o.Field}, but {target.Name} has no field named {o.Field} (its fields are {names})"
 
-    /// The schema definition the type describes, or every problem with it.
+    /// The definition the record type describes, or every problem with it.
     let definition (t: Type) : Result<SchemaDef, ConfigError list> =
         let errors = ResizeArray<ConfigError>()
         let err (prop: string option) msg = errors.Add { Model = t.Name; Property = prop; Message = msg }

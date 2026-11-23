@@ -212,13 +212,14 @@ type ConstraintSteps(w: World) =
     member _.SharedKey() =
         w.Set("sharedKeyModel", Model.build [] [ typeof<Customer>; typeof<SharedKey.Supplier> ])
 
-    [<StepDefinition("^the model is refused, naming CustomerId and both schemas$")>]
+    [<StepDefinition("^the model is refused, naming CustomerId and both record types$")>]
     member _.SharedKeyRefused() =
         match w.Get<Result<Model, ConfigError list>> "sharedKeyModel" with
         | Error errors ->
             let text = errors |> List.map string |> String.concat "\n"
-            check (text.Contains "CustomerId" && text.Contains "Customer" && text.Contains "Supplier") text
-        | Ok _ -> failwith "the model was built; two schemas share the key type CustomerId"
+            // Saying so in the model's words: a record type, never a schema (the database's).
+            check (text.Contains "CustomerId" && text.Contains "Customer" && text.Contains "Supplier" && text.Contains "one record type" && not (text.Contains "schema")) text
+        | Ok _ -> failwith "the model was built; two record types share the key type CustomerId"
 
     [<StepDefinition("^the customers table has lost its unique constraint on email$")>]
     member _.DropUnique() =

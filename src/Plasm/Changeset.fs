@@ -168,7 +168,7 @@ module internal Cs =
 /// Functions for building changesets. All are pure.
 type internal Changeset =
 
-    /// A changeset that inserts `value`. Fields the schema marks as generated
+    /// A changeset that inserts `value`. Fields its record type marks as generated
     /// are ignored and returned from the database.
     static member insert(value: 'T) : Changeset<'T> =
         Changeset<'T>(Cs.emptyState typeof<'T> (Some(box value)) ChangeAction.Insert)

@@ -183,8 +183,8 @@ type ModelReference =
       Field: string
       Target: string }
 
-/// A validated set of schemas and scalar mappings. Construct with `Model.build`;
-/// all configuration errors are reported together, before any query runs.
+/// The model: every record type Plasm stores, checked together. Build it with
+/// `Model.build`, which reports every mistake in it at once, before any query runs.
 type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, registered: IReadOnlyDictionary<Type, ScalarMapping>) =
 
     // The registered mappings, then those found by convention (a type met
@@ -303,7 +303,7 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, registered:
             | true, m -> Some m.ProviderType
             | _ -> None
 
-    /// The references the model infers from typed ids, in schema order.
+    /// The references the model infers from typed ids, in the order of its record types.
     member _.References: ModelReference list =
         [ for s in schemas.Values do
               for f in s.Fields do
@@ -870,7 +870,7 @@ module Model =
 
                         match defs.TryGetValue target with
                         | false, _ ->
-                            err (Some prop.Name) $"relationship target {target.Name} has no schema in this model"
+                            err (Some prop.Name) $"relationship target {target.Name} is not a record type this model stores"
                         | true, targetDef ->
                             // Validate the foreign key's type against the referenced key.
                             let fkOwner, refDef =
@@ -1143,8 +1143,8 @@ module Model =
                       Shape = shape
                       FieldCount = shape.Fields.Length }
 
-    /// Validates schemas and scalar mappings together. Fails with every problem
-    /// found, each identifying the model and property.
+    /// Checks the record types and scalar mappings together. Fails with every
+    /// problem found, each naming the record type and field.
     let internal buildSchemas (scalars: ScalarMapping list) (schemas: ISchema list) : Result<Model, ConfigError list> =
         let errors = ResizeArray<ConfigError>()
         let scalarDict = Dictionary<Type, ScalarMapping>()
@@ -1172,7 +1172,7 @@ module Model =
                 errors.Add
                     { Model = d.Type.Name
                       Property = None
-                      Message = "schema registered more than once" }
+                      Message = "record type registered more than once" }
             else
                 defs.[d.Type] <- d
 
@@ -1183,9 +1183,9 @@ module Model =
             | Ok s -> resolved.[d.Type] <- s
             | Error es -> errors.AddRange es
 
-        // A typed id references the schema whose key it is. Built-in key types
-        // (int64, Guid, ...) are never inferred. A typed id that is the key of
-        // two schemas would make every field of that type ambiguous, so the
+        // A typed id references the stored record whose key it is. Built-in key
+        // types (int64, Guid, ...) are never inferred. A typed id that is the key
+        // of two record types would make every field of that type ambiguous, so the
         // model is refused rather than left without the reference.
         let keyOwners =
             resolved.Values
@@ -1202,7 +1202,7 @@ module Model =
                 errors.Add
                     { Model = t.Name
                       Property = None
-                      Message = $"is the key type of {names}; a typed id must be the key of one schema, so each field of type {t.Name} names one table. Give each schema its own key type" }
+                      Message = $"is the key type of {names}; a typed id must be the key of one record type, so each field of type {t.Name} names one table. Give each record type its own key type" }
             | _ -> ()
 
         let keysOf =

@@ -1,7 +1,7 @@
 // The koans page. The engine (PGlite and .NET with the F# compiler) runs in a
 // Web Worker, so the page stays responsive while a koan compiles and runs; a
 // koan that does not finish is stopped by replacing the worker.
-import { createEditor } from './editor.js';
+import { createEditor, tipDom } from './editor.js';
 import { colour, firstBlank } from './fsharp.js';
 
 const $ = (id) => document.getElementById(id);
@@ -236,8 +236,11 @@ function renderGiven(koan) {
   defs.replaceChildren();
   $('given-definitions-card').hidden = g.definitions.length === 0;
   g.definitions.forEach((d, i) => {
-    const pre = el('pre');
-    pre.innerHTML = d.code.split('\n').map((line, n) => (d.marked.includes(n) ? `<span class="marked">${colour(line)}</span>` : colour(line))).join('\n');
+    // Each name is the compiler's to explain: pointing at one, tapping it, or
+    // reaching it with the arrow keys once the code has the focus.
+    const pre = el('pre', { tabindex: '0', 'aria-label': `The definition of ${d.name}: the arrow keys say what each name is` });
+    pre.innerHTML = d.code.split('\n').map((line, n) => (d.marked.includes(n) ? `<span class="marked">${colour(line, n)}</span>` : colour(line, n))).join('\n');
+    pre.given = d;
     const panel = el('div', { class: 'definition', 'data-name': d.name }, el('div', { class: 'definition-head' }, el('span', { class: 'source' }, d.source === 'every koan' ? `${d.name}, given to every koan` : `${d.name}, from ${d.source}`),
       el('span', { class: 'kind', 'data-kind': d.kind }, d.kind)), pre);
     panel.hidden = i !== 0;
@@ -271,6 +274,97 @@ function setHint(open) {
   $('hint-toggle').textContent = open ? 'Hide the hint' : 'Show a hint';
 }
 $('hint-toggle').onclick = () => setHint($('hint-text').hidden);
+
+// What a name in the code under Given is: the compiler checks the file the
+// code is in (Shop.fs, Koans.fs, Starting.fs or the lesson's helpers) and
+// answers for the name where it is there, as the editor answers for its own.
+const lessonHead = 'module Koan\nopen Plasm\nopen Plasm.Koans\nopen Plasm.Koans.Shop\n';
+const givenAnswers = new Map();
+async function askGiven(d, line, to, lessonIndex = shown.lessonIndex) {
+  const lesson = course.lessons[lessonIndex];
+  const file = (name) => `${name}\n${course.sources[name]}`;
+  const [files, own, first] =
+    d.file === 'Shop.fs' ? [[file('Koans.fs'), file('Shop.fs')], true, 0]
+    : d.file === 'Koans.fs' ? [[file('Koans.fs')], true, 0]
+    : d.file === 'Starting.fs' ? [[file('Starting.fs')], false, 0]
+    : [[`Lesson.fs\n${lessonHead}${lesson.helpers}`], false, lessonHead.split('\n').length - 1];
+  // Answers are kept (the files never change); a question still out is asked
+  // again, since a stopped koan replaces the engine and drops it.
+  const key = `${d.file === 'this lesson' ? lessonIndex : ''}/${d.file}/${d.line + line}/${to}`;
+  if (givenAnswers.has(key)) return givenAnswers.get(key);
+  const current = await engine.ready;
+  const id = ++ids;
+  const info = await new Promise((resolve) => {
+    current.pending.set(id, resolve);
+    current.worker.postMessage({ type: 'hoverIn', id, files, own, line: first + d.line + line + 1, column: d.indent + to });
+  });
+  givenAnswers.set(key, info);
+  return info;
+}
+
+const givenTip = el('div', { class: 'given-tip', role: 'tooltip', hidden: '' });
+document.body.append(givenTip);
+let tipFor = null; // the name the tip is (or is about to be) for
+function hideGivenTip() { tipFor = null; givenTip.hidden = true; }
+async function showGivenTip(name) {
+  tipFor = name;
+  const pre = name.closest('pre');
+  const info = await askGiven(pre.given, Number(name.dataset.line), Number(name.dataset.to));
+  if (tipFor !== name) return;
+  if (!info?.signature) { givenTip.hidden = true; return; }
+  givenTip.replaceChildren(tipDom(info));
+  givenTip.hidden = false;
+  const r = name.getBoundingClientRect();
+  const top = r.top - givenTip.offsetHeight - 4;
+  givenTip.style.left = `${Math.max(8, Math.min(r.left, innerWidth - givenTip.offsetWidth - 8))}px`;
+  givenTip.style.top = `${top >= 8 ? top : r.bottom + 4}px`;
+}
+const givenDefinitions = $('given-definitions');
+let pointed = null;
+givenDefinitions.addEventListener('mouseover', (e) => {
+  const name = e.target.closest?.('.name');
+  if (name === pointed) return;
+  pointed = name;
+  if (!name) { hideGivenTip(); return; }
+  tipFor = name;
+  setTimeout(() => { if (pointed === name) showGivenTip(name); }, 350);
+});
+givenDefinitions.addEventListener('mouseleave', () => { pointed = null; hideGivenTip(); });
+// A tap (or a click) shows what a name is, and a second one hides it.
+givenDefinitions.addEventListener('click', (e) => {
+  const name = e.target.closest?.('.name');
+  if (!name) return;
+  if (tipFor === name && !givenTip.hidden) hideGivenTip(); else showGivenTip(name);
+});
+// The keyboard: with the code focused, the arrow keys go from name to name,
+// each saying what it is; Escape hides the tip.
+function moveTo(pre, name) {
+  pre.querySelector('.name.current')?.classList.remove('current');
+  if (!name) { hideGivenTip(); return; }
+  name.classList.add('current');
+  name.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  showGivenTip(name);
+}
+givenDefinitions.addEventListener('focusin', (e) => {
+  const pre = e.target.closest?.('pre');
+  if (pre && !pre.querySelector('.name.current')) moveTo(pre, pre.querySelector('.name'));
+});
+givenDefinitions.addEventListener('focusout', (e) => {
+  const pre = e.target.closest?.('pre');
+  pre?.querySelector('.name.current')?.classList.remove('current');
+  hideGivenTip();
+});
+givenDefinitions.addEventListener('keydown', (e) => {
+  const pre = e.target.closest?.('pre');
+  if (!pre) return;
+  const names = [...pre.querySelectorAll('.name')];
+  const at = names.indexOf(pre.querySelector('.name.current'));
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') moveTo(pre, names[Math.min(names.length - 1, at + 1)]);
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') moveTo(pre, names[Math.max(0, at - 1)]);
+  else if (e.key === 'Escape') moveTo(pre, null);
+  else return;
+  e.preventDefault();
+});
 
 let shown = null;
 function show(lessonIndex, koanIndex) {
@@ -448,8 +542,32 @@ async function askEngine(type, lessonIndex, koanIndex, body, offset) {
 const complete = (lessonIndex, koanIndex, body, offset) => askEngine('complete', lessonIndex, koanIndex, body, offset);
 const hover = (lessonIndex, koanIndex, body, offset) => askEngine('hover', lessonIndex, koanIndex, body, offset);
 
+/// For tests: what the compiler says of every name in the code under Given,
+/// in every definition of every koan (each asked once): [{definition, word, line, answered}].
+async function givenNames() {
+  const seen = new Set();
+  const out = [];
+  for (const [l, lesson] of course.lessons.entries())
+    for (const koan of lesson.koans)
+      for (const d of koan.given?.definitions ?? []) {
+        const key = `${d.file === 'this lesson' ? l : ''}/${d.file}/${d.line}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const lines = d.code.split('\n');
+        for (const [n, line] of lines.entries()) {
+          const box = el('pre');
+          box.innerHTML = colour(line, n);
+          for (const name of box.querySelectorAll('.name')) {
+            const info = await askGiven(d, n, Number(name.dataset.to), l);
+            out.push({ definition: `${d.name} (${d.source})`, word: name.textContent, line, answered: !!info?.signature });
+          }
+        }
+      }
+  return out;
+}
+
 // For tests: the course and a way to reach any koan.
-window.koans = { course, runKoan, show, stop, evaluate, addressOf, complete, hover, editor };
+window.koans = { course, runKoan, show, stop, evaluate, addressOf, complete, hover, editor, givenNames };
 updateProgress();
 go(addressed(), 'replace');
 window.addEventListener('popstate', () => go(addressed(), 'none'));

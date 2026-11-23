@@ -20,7 +20,7 @@ type TranslationError =
     /// An expression that cannot be translated to SQL. The library never falls
     /// back to evaluating it in application memory.
     | UnsupportedExpression of expression: string * reason: string
-    /// A type used as a query source or relationship target has no schema.
+    /// A type used as a query source or relationship target is not a record type the model stores.
     | UnmappedType of typeName: string
     /// The query is well-typed but its meaning is ambiguous or unsound,
     /// e.g. pagination without an ordering.
@@ -35,7 +35,7 @@ type TranslationError =
     override this.ToString() =
         match this with
         | UnsupportedExpression(e, r) -> $"Unsupported expression: {r}\n  in: {e}"
-        | UnmappedType t -> $"Type {t} has no schema in this model"
+        | UnmappedType t -> $"Type {t} is not a record type this model stores"
         | InvalidQuery m -> $"Invalid query: {m}"
         | UnsupportedByProvider(op, p) -> $"Provider {p} does not support {op}"
         | RedefinedType(_, d) -> d

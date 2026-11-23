@@ -375,6 +375,38 @@ Feature: Walking the path in the browser
       And under Given the definition of ok is labelled "test helper"
       And under Given the definition of ok includes "let ok (r: Result<'T, 'E>) : 'T ="
 
+    Scenario: Pointing at a name in a Given definition shows what it is
+      When the learner opens the koan "The shop has three customers"
+      And the learner points at "model" in "Db.model" in the Given definition of repo
+      Then a tip shows "model: Model"
+      And the tip says "every record type Plasm stores"
+
+    Scenario: Pointing at a record's field in a Given definition shows its type
+      When the learner opens the koan "Absent values are options"
+      And the learner points at "CustomerId" in "CustomerId: CustomerId option" in the Given definition of Order
+      Then a tip shows "CustomerId: CustomerId option"
+
+    Scenario: A word in a Given definition that names nothing shows no tip
+      When the learner opens the koan "The shop has three customers"
+      And the learner points at "sandbox" in "inside a sandbox" in the Given definition of repo
+      Then no tip shows
+
+    Scenario: The compiler says what every name in every Given definition is
+      When the learner asks what each name in the definitions under Given is, in every koan
+      Then the compiler answers for every one
+
+    Scenario: The keyboard reaches what a name in a Given definition is
+      When the learner opens the koan "The shop has three customers"
+      And the learner moves with the keyboard to "model" in "Db.model" in the Given definition of repo
+      Then a tip shows "model: Model"
+
+    Scenario: sqlSent, which most lessons use, has its card, and says what it returns
+      When the learner opens the koan "sqlSent () is the SQL a koan has sent"
+      Then under Given the definition of sqlSent is labelled "test helper"
+      And under Given the definition of sqlSent includes "let sqlSent () ="
+      And the learner points at "sqlSent" in "let sqlSent ()" in the Given definition of sqlSent
+      And a tip shows "unit -> string list"
+
     Scenario: A koan that needs nothing has no Given
       When the learner opens the first koan
       Then no Given is shown

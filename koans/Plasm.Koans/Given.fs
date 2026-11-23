@@ -22,7 +22,14 @@ type Definition =
       Table: string option
       /// For a record, the record each list or option field holds (what an
       /// aggregate owns or links to, read with it).
-      Holds: (string * string) list }
+      Holds: (string * string) list
+      /// The file the code is in ("Shop.fs", "Koans.fs", "Starting.fs" or
+      /// "this lesson", its helpers), the 0-based line its first line is, and
+      /// the indent taken off its lines: where the compiler is asked what a
+      /// name in it is.
+      File: string
+      Line: int
+      Indent: int }
 
 type KoanGiven =
     { Tables: string list
@@ -90,6 +97,9 @@ let parse (source: string) (lines: string[]) : Definition list =
 
             { Name = name
               Source = source
+              File = source
+              Line = firstLine i
+              Indent = indent
               Code = code
               Fields = if isRecord then body |> List.collect fieldsOf else []
               Cases = if isRecord || not (typeStart.IsMatch body.Head) then [] else body |> List.tail |> List.choose (fun l -> let m = caseLine.Match l in if m.Success then Some m.Groups.[1].Value else None)
@@ -197,23 +207,29 @@ let fromKoans (koans: Definition list) (body: string) =
     koans |> List.filter (fun d -> mentions body d.Name) |> List.map (fun d -> d, marks body d)
 
 /// `repo`, which every koan is given: not defined in any file the learner sees
-/// (it is the koan's parameter), so its Given says what it is and how an app
-/// makes one.
-let repo: Definition =
+/// (it is the koan's parameter), so its Given shows how an app makes one: the
+/// lines of Starting.fs, which is compiled with the koans, from the comment
+/// above its `let! repo` to that line.
+let repo (startingFile: string) : Definition =
+    let lines = File.ReadAllLines startingFile
+    let at = lines |> Array.findIndex (fun l -> l.TrimStart().StartsWith "let! repo =")
+    let mutable first = at
+    while first > 0 && lines.[first - 1].TrimStart().StartsWith "//" do
+        first <- first - 1
+    let indent = lines.[at].Length - lines.[at].TrimStart().Length
+
     { Name = "repo"
       Source = "every koan"
-      Code =
-        [ "/// Every koan is given repo: a Plasm Repo over the koans database,"
-          "/// inside a sandbox, so whatever the koan changes is undone when it ends."
-          "/// In your app you start one yourself, from your model and a provider;"
-          "/// it checks every query in the assembly and the database as it starts:"
-          "let! repo = Repo.Start(Db.model, Postgres.connect connectionString, queriesIn = typeof<Order>.Assembly)" ]
+      File = "Starting.fs"
+      Line = first
+      Indent = indent
+      Code = [ for l in lines.[first..at] -> if l.Length >= indent then l.Substring indent else l.TrimStart() ]
       Fields = []
       Cases = []
       Table = None
       Holds = [] }
 
 /// The Given entry for repo, when a koan uses it.
-let forRepo (body: string) =
-    if mentions body "repo" then [ repo, [] ] else []
+let forRepo (startingFile: string) (body: string) =
+    if mentions body "repo" then [ repo startingFile, [] ] else []
 

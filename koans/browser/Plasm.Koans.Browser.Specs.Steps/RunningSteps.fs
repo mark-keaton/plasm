@@ -20,6 +20,8 @@ type BrowserWorld() =
     member val Koan: KoanInfo option = None with get, set
     member val RunMs = 0L with get, set
     member val Ticks = 0 with get, set
+    /// What the compiler said of every name under Given (JSON), once asked.
+    member val GivenNames = "" with get, set
 
 [<AutoOpen>]
 module Driving =

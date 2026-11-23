@@ -6,9 +6,9 @@ Feature: Database constraints are stated once, in the model
   I want uniqueness and references stated once in the model
   So that a violation comes back as the field's error and the schema check finds a missing constraint
 
-  A schema states which fields are unique. A field whose type is the key type
-  of another schema (a typed id such as CustomerId) references that schema; the
-  model infers it. Constraints have PostgreSQL's default names:
+  A record type states which fields are unique. A field whose type is the key
+  type of another record type (a typed id such as CustomerId) references that
+  record type's stored records; the model infers it. Constraints have PostgreSQL's default names:
   <table>_<column>_key for uniqueness, <table>_<column>_fkey for a reference
   and <table>_<column>_check for a column check. A violation of a constraint so
   named comes back as the field's error, with nothing declared on the
@@ -70,15 +70,15 @@ Feature: Database constraints are stated once, in the model
 
   Rule: The model knows the constraints
 
-    Scenario: A typed id references the schema whose key it is
+    Scenario: A typed id references the stored record whose key it is
       When I list the references the model infers
       Then Order.CustomerId references Customer
       And OrderLine.ProductId references Product
       And no record's own key references itself
 
-    Scenario: A key type shared by two schemas is refused
+    Scenario: A key type shared by two record types is refused
       When I build a model in which Customers and Suppliers both have a CustomerId key
-      Then the model is refused, naming CustomerId and both schemas
+      Then the model is refused, naming CustomerId and both record types
 
   Rule: The schema check finds a missing or misnamed constraint
 

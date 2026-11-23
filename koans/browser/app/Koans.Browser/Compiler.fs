@@ -16,6 +16,11 @@ type CompileError =
       Message: string }
 
 let checker = lazy (FSharpChecker.Create(keepAssemblyContents = false))
+
+/// The reference assemblies a koan compiles against: those in `refsDir`, but
+/// not the ones only the code shown under Given needs (given.<name>.dll).
+let references (refsDir: string) =
+    Directory.GetFiles(refsDir, "*.dll") |> Array.filter (fun r -> not (Path.GetFileName(r).StartsWith "given."))
 let mutable private counter = 0
 
 /// Compiles `source` (an F# module) against the reference assemblies in `refsDir`.
@@ -31,7 +36,7 @@ let compile (refsDir: string) (source: string) : Task<Result<Assembly, CompileEr
         let input = Path.Combine(dir, $"koan{counter}.fs")
         let output = Path.Combine(dir, $"koan{counter}.dll")
         File.WriteAllText(input, source)
-        let refs = Directory.GetFiles(refsDir, "*.dll") |> Array.map (fun r -> "-r:" + r)
+        let refs = references refsDir |> Array.map (fun r -> "-r:" + r)
 
         let argv =
             Array.concat

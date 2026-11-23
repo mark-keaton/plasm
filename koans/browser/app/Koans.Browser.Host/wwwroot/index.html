@@ -191,6 +191,11 @@
   .definition[hidden] { display: none; }
   .definition .source { display: block; padding: 8px 16px 0; font-size: 12.5px; color: var(--ink-3); }
   .definition pre { margin: 0; padding: 8px 16px 12px; font: 13px/1.65 var(--mono); white-space: pre; overflow-x: auto; }
+  .definition pre .name { cursor: help; border-radius: 3px; }
+  .definition pre .name:hover, .definition pre .name.current { background: var(--accent-soft); }
+  .definition pre:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .given-tip { position: fixed; z-index: 30; background: var(--surface); color: var(--ink); border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; box-shadow: 0 4px 16px rgb(0 0 0 / 0.12); }
+  .given-tip[hidden] { display: none; }
   .definition .marked { display: inline-block; min-width: 100%; background: var(--accent-soft); border-radius: 3px; }
 
   @media (max-width: 720px) {

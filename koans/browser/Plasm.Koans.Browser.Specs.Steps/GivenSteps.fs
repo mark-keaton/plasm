@@ -178,3 +178,91 @@ type GivenSteps(w: BrowserWorld) =
             check (not visible) "a Given is shown for a koan that needs nothing"
         }
         |> unit
+
+    /// The definition's panel shown (its chip pressed), and the offset of
+    /// `name` within `within` in its code.
+    member private _.Definition(definition: string, name: string, within: string) =
+        task {
+            let panel = $"#given .definition[data-name=\"{definition}\"]"
+            let! hidden = w.Page.EvalOnSelectorAsync<bool>(panel, "p => p.hidden")
+            if hidden then
+                do! w.Page.ClickAsync($"#given-chips .chip >> text=\"{definition}\"")
+            let! code = w.Page.TextContentAsync($"{panel} pre")
+            let at = code.IndexOf within
+            check (at >= 0) $"the definition of {definition} does not include {within}:\n{code}"
+            return panel, at + within.IndexOf name
+        }
+
+    [<StepDefinition("the learner points at \"(\\w+)\" in \"(.*)\" in the Given definition of (\\w+)")>]
+    member this.PointAtGiven(name: string, within: string, definition: string) =
+        task {
+            let! panel, at = this.Definition(definition, name, within)
+            // The middle of the name's first letter, found through the text the page shows.
+            let! xy =
+                w.Page.EvalOnSelectorAsync<float[]>(
+                    $"{panel} pre",
+                    """(pre, at) => {
+                      const walk = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+                      let n, left = at;
+                      while ((n = walk.nextNode()) && left >= n.length) left -= n.length;
+                      const r = document.createRange(); r.setStart(n, left); r.setEnd(n, left + 1);
+                      n.parentElement.scrollIntoView({ block: 'center' });
+                      const b = r.getBoundingClientRect();
+                      return [b.x + b.width / 2, b.y + b.height / 2];
+                    }""",
+                    at
+                )
+            do! w.Page.Mouse.MoveAsync(0.f, 0.f)
+            do! w.Page.Mouse.MoveAsync(float32 xy.[0], float32 xy.[1])
+        }
+        |> unit
+
+    [<StepDefinition("the learner moves with the keyboard to \"(\\w+)\" in \"(.*)\" in the Given definition of (\\w+)")>]
+    member this.KeyboardToGiven(name: string, within: string, definition: string) =
+        task {
+            let! panel, at = this.Definition(definition, name, within)
+            // Tab reaches the definition's code; the arrow keys move from name to name.
+            do! w.Page.FocusAsync($"{panel} pre")
+            let current () =
+                w.Page.EvalOnSelectorAsync<int>($"{panel} pre", "pre => { const c = pre.querySelector('.name.current'); if (!c) return -1; const r = document.createRange(); r.setStart(pre, 0); r.setEndBefore(c); return r.toString().length; }")
+            let mutable presses = 0
+            let! now = current ()
+            let mutable here = now
+            while here <> at && presses < 200 do
+                do! w.Page.Keyboard.PressAsync "ArrowRight"
+                presses <- presses + 1
+                let! now = current ()
+                here <- now
+            check (here = at) $"the arrow keys never reached {name} in {within} (last at {here})"
+        }
+        |> unit
+
+    [<StepDefinition("no tip shows")>]
+    member _.NoTip() =
+        task {
+            // Longer than the pause before a tip, and the compiler's answer.
+            do! w.Page.WaitForTimeoutAsync 3000.f
+            let! tips = w.Page.EvalOnSelectorAllAsync<int>(".type-tip", "ts => ts.filter(t => t.offsetParent !== null).length")
+            check (tips = 0) "a tip shows"
+        }
+        |> unit
+
+    [<StepDefinition("the learner asks what each name in the definitions under Given is, in every koan")>]
+    member _.AskEveryGivenName() =
+        task {
+            let! json = w.Page.EvaluateAsync<string>("async () => JSON.stringify(await window.koans.givenNames())")
+            w.GivenNames <- json
+        }
+        |> unit
+
+    [<StepDefinition("the compiler answers for every one")>]
+    member _.EveryGivenNameAnswered() =
+        let names = System.Text.Json.JsonDocument.Parse(w.GivenNames).RootElement
+        let all = [ for n in names.EnumerateArray() -> n ]
+        let unanswered =
+            all
+            |> List.filter (fun n -> not (n.GetProperty("answered").GetBoolean()))
+            |> List.map (fun n -> $"""{n.GetProperty("definition").GetString()}: {n.GetProperty("word").GetString()} in {n.GetProperty("line").GetString().Trim()}""")
+        printfn $"Given names: {all.Length}, unanswered: {unanswered.Length}"
+        check (all.Length > 100) $"only {all.Length} names were asked about"
+        check unanswered.IsEmpty (sprintf "the compiler says nothing of %d of %d names:\n%s" unanswered.Length all.Length (String.concat "\n" unanswered))

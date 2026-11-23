@@ -25,6 +25,12 @@ for dll in FSharp.Core Plasm.Annotations Plasm Plasm.Koans.Core; do
 done
 # Their doc comments, for the editor's hover (the compiler reads <name>.xml).
 cp "$root/src/Plasm/bin/Release/net11.0/Plasm.xml" "$root/src/Plasm.Annotations/bin/Release/net11.0/Plasm.Annotations.xml" "$root/koans/Plasm.Koans.Core/bin/Release/net11.0/Plasm.Koans.Core.xml" "$site/refs/"
+# What only the code shown under Given needs, for the compiler to say what a
+# name in it is: Plasm.Postgres, which Starting.fs starts the repo with. Named
+# given.<name>, so a koan does not compile against it.
+dotnet build "$root/src/Plasm.Postgres" -c Release -v q > /dev/null
+cp "$root/src/Plasm.Postgres/bin/Release/net11.0/Plasm.Postgres.dll" "$site/refs/given.Plasm.Postgres.dll"
+cp "$root/src/Plasm.Postgres/bin/Release/net11.0/Plasm.Postgres.xml" "$site/refs/given.Plasm.Postgres.xml"
 dotnet run --project "$root/koans/Plasm.Koans" -- --course "$site/course.json" > /dev/null
 # Plasm's acceptance specification, which each koan links to.
 mkdir -p "$site/spec" && cp "$root"/features/*.feature "$site/spec/"

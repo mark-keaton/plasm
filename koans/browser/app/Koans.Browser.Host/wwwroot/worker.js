@@ -153,6 +153,14 @@ self.onmessage = async (e) => {
     }
     return;
   }
+  if (m.type === 'hoverIn') {
+    try {
+      post({ type: 'result', id: m.id, result: JSON.parse(await exports.HoverIn(m.files, m.own, m.line, m.column)) });
+    } catch (err) {
+      post({ type: 'result', id: m.id, result: {} });
+    }
+    return;
+  }
   if (m.type === 'diagnose') {
     try {
       post({ type: 'result', id: m.id, result: JSON.parse(await exports.Diagnose(m.helpers, m.isTask, m.framed, m.body)) });

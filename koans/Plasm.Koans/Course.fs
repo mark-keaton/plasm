@@ -86,22 +86,29 @@ let parseLesson (file: string) : string list * KoanSource list =
 let course () : string =
     let byTitle = guidance.Value |> List.map (fun g -> g.Title, g) |> Map.ofList
 
-    // The shop's source, next to the lessons' sources (koans/Plasm.Koans.Core/Shop.fs).
-    let shop =
-        let lessonsDir = IO.Path.GetDirectoryName Path.lessons.Head.Koans.Head.File
-        let file = IO.Path.Combine(lessonsDir, "..", "..", "Plasm.Koans.Core", "Shop.fs")
-        Given.parse "Shop.fs" (IO.File.ReadAllLines file)
+    // The files Given shows code from, next to the lessons' sources: the
+    // shop (koans/Plasm.Koans.Core/Shop.fs), the test helpers (Koans.fs) and
+    // how an app starts a repo (koans/Plasm.Koans/Starting.fs).
+    let lessonsDir = IO.Path.GetDirectoryName Path.lessons.Head.Koans.Head.File
+    let shopFile = IO.Path.Combine(lessonsDir, "..", "..", "Plasm.Koans.Core", "Shop.fs")
+    let koansFile = IO.Path.Combine(lessonsDir, "..", "..", "Plasm.Koans.Core", "Koans.fs")
+    let startingFile = IO.Path.Combine(lessonsDir, "..", "Starting.fs")
 
-    // The test helpers a koan may use from Koans.fs.
+    let shop = Given.parse "Shop.fs" (IO.File.ReadAllLines shopFile)
+
+    // The test helpers a koan may use from Koans.fs, each of which must be
+    // there (a helper renamed there and not here would lose its card).
     let koans =
-        let lessonsDir = IO.Path.GetDirectoryName Path.lessons.Head.Koans.Head.File
-        let file = IO.Path.Combine(lessonsDir, "..", "..", "Plasm.Koans.Core", "Koans.fs")
-        Given.parse "Koans.fs" (IO.File.ReadAllLines file)
-        |> List.filter (fun d -> List.contains d.Name [ "ok"; "err"; "commands" ])
+        let helpers = [ "ok"; "err"; "sqlSent" ]
+        let found = Given.parse "Koans.fs" (IO.File.ReadAllLines koansFile) |> List.filter (fun d -> List.contains d.Name helpers)
+
+        match helpers |> List.filter (fun h -> not (found |> List.exists (fun d -> d.Name = h))) with
+        | [] -> found
+        | missing -> failwithf "Koans.fs defines no %s, which Given shows as a test helper" (String.concat ", " missing)
 
     let given (helpers: Given.Definition list) (body: string) =
         let g = Given.forKoan shop helpers body
-        let g = { g with Definitions = Given.forRepo body @ g.Definitions @ Given.fromKoans koans body }
+        let g = { g with Definitions = Given.forRepo startingFile body @ g.Definitions @ Given.fromKoans koans body }
 
         dict
             [ "tables", box (Array.ofList g.Tables)
@@ -123,7 +130,11 @@ let course () : string =
                                 | _ -> "this lesson"
                             )
                             "code", box (String.concat "\n" d.Code)
-                            "marked", box (Array.ofList marked) ])
+                            "marked", box (Array.ofList marked)
+                            // Where its code is, for the compiler to say what a name in it is.
+                            "file", box d.File
+                            "line", box d.Line
+                            "indent", box d.Indent ])
                   |> Array.ofList
               ) ]
 
@@ -171,4 +182,9 @@ let course () : string =
                   ) ])
         |> Array.ofList
 
-    JsonSerializer.Serialize(dict [ "tables", box (Array.ofList Given.tables); "lessons", box lessons ], JsonSerializerOptions(WriteIndented = true)) + "\n"
+    // The files Given's code is from, whole, which the compiler checks to say
+    // what a name in it is (a lesson's own are its helpers).
+    let sources =
+        dict [ for name, file in [ "Shop.fs", shopFile; "Koans.fs", koansFile; "Starting.fs", startingFile ] -> name, box (IO.File.ReadAllText file) ]
+
+    JsonSerializer.Serialize(dict [ "tables", box (Array.ofList Given.tables); "sources", box sources; "lessons", box lessons ], JsonSerializerOptions(WriteIndented = true)) + "\n"

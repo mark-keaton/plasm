@@ -114,7 +114,7 @@ type SchemaIssueKind =
     /// An enum type's labels differ from the union's cases (missing, extra or
     /// in a different order).
     | EnumLabels
-    /// A field the schema states is unique has no unique constraint or index
+    /// A field its record type states is unique has no unique constraint or index
     /// on its column alone.
     | MissingUnique
     /// A field that references another record (a typed id) has no foreign key

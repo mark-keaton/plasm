@@ -71,9 +71,9 @@ type internal AssocDef =
       /// For an owned or linked list: the order its items are read in (default: by key).
       Order: Expr option }
 
-/// Schema definition state (opaque).
-type SchemaDef =
-    internal
+/// What a record type says about how it is stored, worked out from the type
+/// (Stored.fs): its table, key, columns and relationships.
+type internal SchemaDef =
         { Type: Type
           Table: string
           Key: (PropertyInfo * bool) option
@@ -348,13 +348,13 @@ type internal FieldMap =
       ScalarType: Type
       IsOption: bool
       Generated: bool
-      /// Its values are unique in the table (`unique` in the schema).
+      /// Its values are unique in the table ([<Unique>] on the record type's field).
       Unique: bool
       /// The columns its uniqueness also spans, before its own: unique within
       /// them (unique-within.feature); empty for a field unique on its own.
       Within: string list
       /// The record type whose key this field holds: a typed id that is the
-      /// key type of exactly one other schema (inferred by Model.build).
+      /// key type of exactly one other record type (inferred by Model.build).
       References: Type option
       Mapping: ScalarMapping option
       ProviderType: Type

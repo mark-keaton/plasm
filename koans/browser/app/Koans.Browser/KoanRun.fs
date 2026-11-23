@@ -202,7 +202,7 @@ let private checkAt (refsDir: string) (helpers: string) (isTask: bool) (framed: 
 
         let file = IO.Path.Combine(IO.Path.GetTempPath(), "koan", "editor.fs")
         IO.Directory.CreateDirectory(IO.Path.GetDirectoryName file) |> ignore
-        let refs = IO.Directory.GetFiles(refsDir, "*.dll") |> Array.map (fun r -> "-r:" + r)
+        let refs = Compiler.references refsDir |> Array.map (fun r -> "-r:" + r)
         let checker = Compiler.checker.Value
 
         let options =
@@ -279,42 +279,85 @@ let complete (refsDir: string) (helpers: string) (isTask: bool) (framed: bool) (
         | None -> return "[]"
     }
 
+/// What the name ending at `column` (0-based) on `line` (1-based) is, from a
+/// checked file: JSON {name, signature, doc}, or {} when there is nothing there.
+let private answerAt (refsDir: string) (check: FSharpCheckFileResults) (line: int) (lineText: string) (column: int) =
+    match QuickParse.GetCompleteIdentifierIsland true lineText column with
+    | Some(ident, endColumn, _) ->
+        let names = ident.Split('.') |> List.ofArray
+        let (ToolTipText elements) = check.GetToolTip(line, endColumn, lineText, names, FSharp.Compiler.Tokenization.FSharpTokenTag.Identifier)
+
+        // A value with no doc of its own (such as repo) is explained by its type's doc.
+        let typeDoc () =
+            match check.GetSymbolUseAtLocation(line, endColumn, lineText, names) with
+            | Some u ->
+                match u.Symbol with
+                | :? FSharp.Compiler.Symbols.FSharpMemberOrFunctionOrValue as v when v.FullType.HasTypeDefinition ->
+                    let t = v.FullType.TypeDefinition
+
+                    match docOf refsDir t.XmlDoc with
+                    | "" -> docIn refsDir t.Assembly.SimpleName t.XmlDocSig
+                    | d -> d
+                | _ -> ""
+            | None -> ""
+
+        match elements |> List.tryPick (function ToolTipElement.Group(first :: _) -> Some first | _ -> None) with
+        | Some item ->
+            let doc = match docOf refsDir item.XmlDoc with "" -> typeDoc () | d -> d
+            JsonSerializer.Serialize(dict [ "name", box (List.last names); "signature", box item.MainDescription.Text; "doc", box doc ])
+        | None -> "{}"
+    | None -> "{}"
+
 /// What the name at `offset` in a koan's code is: JSON {name, signature, doc},
 /// or {} when there is nothing there.
 let hover (refsDir: string) (helpers: string) (isTask: bool) (framed: bool) (body: string) (offset: int) : Task<string> =
     task {
         match! checkAt refsDir helpers isTask framed body offset with
-        | Some(_, check, line, lineText, column, _, _) ->
-            match QuickParse.GetCompleteIdentifierIsland true lineText column with
-            | Some(ident, endColumn, _) ->
-                let names = ident.Split('.') |> List.ofArray
-                let (ToolTipText elements) = check.GetToolTip(line, endColumn, lineText, names, FSharp.Compiler.Tokenization.FSharpTokenTag.Identifier)
-
-                // A value with no doc of its own (such as repo) is explained by its type's doc.
-                let typeDoc () =
-                    match check.GetSymbolUseAtLocation(line, endColumn, lineText, names) with
-                    | Some u ->
-                        match u.Symbol with
-                        | :? FSharp.Compiler.Symbols.FSharpMemberOrFunctionOrValue as v when v.FullType.HasTypeDefinition ->
-                            let t = v.FullType.TypeDefinition
-
-                            match docOf refsDir t.XmlDoc with
-                            | "" -> docIn refsDir t.Assembly.SimpleName t.XmlDocSig
-                            | d -> d
-                        | _ -> ""
-                    | None -> ""
-
-                match elements |> List.tryPick (function ToolTipElement.Group(first :: _) -> Some first | _ -> None) with
-                | Some item ->
-                    let doc = match docOf refsDir item.XmlDoc with "" -> typeDoc () | d -> d
-
-                    return
-                        JsonSerializer.Serialize(
-                            dict [ "name", box (List.last names); "signature", box item.MainDescription.Text; "doc", box doc ]
-                        )
-                | None -> return "{}"
-            | None -> return "{}"
+        | Some(_, check, line, lineText, column, _, _) -> return answerAt refsDir check line lineText column
         | None -> return "{}"
+    }
+
+/// What the name ending at `column` (0-based) on `line` (1-based) of the last of
+/// `files` is, the compiler checking the files in order as one project: how a
+/// name in the code shown under Given is answered, where that code is. The
+/// files are names and texts, each name separated from its text by a newline.
+/// `own` is set when the files are the koans' own (Shop.fs, Koans.fs): their
+/// assembly, Plasm.Koans.Core, is then left out of the references, which would
+/// otherwise define every name in them twice. The references only Given's code
+/// needs (Plasm.Postgres, for Starting.fs), named given.<name>.dll, are added.
+let hoverIn (refsDir: string) (files: string[]) (own: bool) (line: int) (column: int) : Task<string> =
+    task {
+        let dir = IO.Path.Combine(IO.Path.GetTempPath(), "koan", "given")
+        IO.Directory.CreateDirectory dir |> ignore
+
+        let paths =
+            files
+            |> Array.map (fun f ->
+                let cut = f.IndexOf '\n'
+                let path = IO.Path.Combine(dir, f.Substring(0, cut))
+                IO.File.WriteAllText(path, f.Substring(cut + 1))
+                path)
+
+        let target = Array.last paths
+        let text = IO.File.ReadAllText target
+        let refs =
+            IO.Directory.GetFiles(refsDir, "*.dll")
+            |> Array.filter (fun r -> not (own && IO.Path.GetFileNameWithoutExtension r = "Plasm.Koans.Core"))
+            |> Array.map (fun r -> "-r:" + r)
+
+        let checker = Compiler.checker.Value
+
+        let options =
+            { checker.GetProjectOptionsFromCommandLineArgs("given.fsproj", Array.append [| "--noframework"; "--target:library" |] refs) with
+                SourceFiles = paths }
+
+        let! _, answer = checker.ParseAndCheckFileInProject(target, 0, FSharp.Compiler.Text.SourceText.ofString text, options) |> Async.StartAsTask
+        let lines = text.Split('\n')
+
+        return
+            match answer with
+            | FSharpCheckFileAnswer.Succeeded check when line >= 1 && line <= lines.Length -> answerAt refsDir check line (lines.[line - 1].TrimEnd('\r')) column
+            | _ -> "{}"
     }
 
 /// The compiler's errors and warnings in a koan's code, as offsets in that
