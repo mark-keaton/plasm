@@ -5,6 +5,48 @@ the one before, the newest first and, within a version, the most serious
 first. [`docs/status.md`](../status.md) has every entry in full, under
 "Changed".
 
+## From 0.3.0 to the next version
+
+An application has one thing to look at, and only if it reads the text of an
+error. One thing more changes in the template, and in `examples/Starter`,
+which the template is made from.
+
+### Four error messages say "record type" where they said "schema"
+
+"Schema" now means only the database's tables. Code that matches on the old
+text must match on the new:
+
+- `TranslationError.UnmappedType`: "Type T is not a record type this model
+  stores". It was "Type T has no schema in this model".
+- `Model.build`: "relationship target T is not a record type this model
+  stores". It was "relationship target T has no schema in this model".
+- `Model.build`: "record type registered more than once". It was "schema
+  registered more than once".
+- `Model.build`, for a key type that two record types share: "a typed id must
+  be the key of one record type" and "Give each record type its own key
+  type". It said "the key of one schema" and "Give each schema its own key
+  type".
+
+The type `SchemaDef` is no longer public. No public member took or returned
+it, so code that compiled still compiles.
+
+### The template: BookingData opens from the connection string
+
+`BookingData.OpenAsync` takes the connection string where it took an
+`NpgsqlDataSource`: `BookingData.OpenAsync(dataSource, time, ct)` is now
+`BookingData.OpenAsync(connectionString, time, ct)`, and the overload that
+takes a function for the SQL changed the same way. The data source is built
+in a new file, `src/Starter.Data/Store.fs`, in `dataSource`, on
+`NpgsqlDataSourceBuilder`. That is the place to configure the connection: a
+password provider, SSL, a pooler's settings, logging.
+
+A project made from 0.3.0's template keeps working as it is, since its code
+is its own. To follow the template, add `Store.fs` to `Starter.Data` before
+`BookingData.fs`, have `BookingData` start its repository from
+`Store.provider connectionString`, pass the connection string in
+`Program.cs`, and remove the line there that built the `NpgsqlDataSource`.
+Nothing else in a project on PostgreSQL changes.
+
 ## From 0.2.0 to 0.3.0
 
 0.3.0 adds a second provider, SQLite, as the package `Plasm.Sqlite`:

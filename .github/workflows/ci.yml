@@ -119,6 +119,12 @@ jobs:
         working-directory: examples/Starter
         run: dotnet test
 
+      # The same tests with the Starter built for SQLite: a database file,
+      # no server.
+      - name: Test on SQLite
+        working-directory: examples/Starter
+        run: dotnet test --project tests/Starter.Tests -p:StarterDatabase=sqlite
+
   website-sql:
     name: Website SQL is up to date
     runs-on: ubuntu-latest
