@@ -139,6 +139,11 @@ let lesson =
               "The model can be checked against the database",
               fun repo ->
                   task {
+                      // CheckSchema compares the model with the database's tables and
+                      // answers with a Result holding a list: one SchemaIssue for each
+                      // difference. Lesson 02 counted them for this database. Here the
+                      // whole Result is compared, and a list with nothing in it is
+                      // written [].
                       let! issues = repo.CheckSchema()
                       issues |> shouldBe __
                   }

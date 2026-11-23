@@ -207,8 +207,10 @@ let email s =
     | Ok e -> e
     | Error e -> failwith e
 
-/// The model: the records that are not owned. An order's lines and an
-/// account's profile come with their owner.
+/// The model: every record type the shop stores, checked together. The list
+/// names each record stored on its own; an order's lines and an account's
+/// profile are stored with the Order and the Account that own them, and the
+/// model takes them in with those.
 module Db =
 
     let model =

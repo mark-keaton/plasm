@@ -3,8 +3,8 @@
 # ok opens a Result
 4L
 # A repo pairs a model with a database
-12
-[]
+true
+0
 # In your app, you start the repo
 3L
 # sqlSent () is the SQL a koan has sent

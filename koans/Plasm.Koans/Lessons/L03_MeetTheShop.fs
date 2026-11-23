@@ -14,6 +14,9 @@ let lesson =
                   task {
                       // All reads every row a query matches, each as a record: here
                       // every customer as a Customer (under Given).
+                      // (fun c -> c.Name) is a function written in place: given c, it
+                      // answers c.Name. List.map runs it on every item of a list and
+                      // answers with the list of results.
                       let! customers = repo.All(Query.from (tableOf<Customer>))
                       let names = ok customers |> List.map (fun c -> c.Name) |> List.sort
                       names |> shouldBe __

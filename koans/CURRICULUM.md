@@ -49,7 +49,7 @@ the reference application in the same style.
 | # | Lesson | What it is for |
 |---|---|---|
 | 01 | Getting started | How a koan works, and the F# the course uses: values, records and `with`, options, results, tasks. No database. |
-| 02 | What a repo is | What every koan is given: `repo`, a Plasm `Repo` whose changes are undone when the koan ends; `ok` to open a `Result`; and how an app makes its own repo, `Repo(Db.model, provider)`. A repo runs queries and writes against one database with one model. A query is a description; the repo turns it into SQL and runs it; every call returns a `Result`. |
+| 02 | What a repo is | What every koan is given: `repo`, a Plasm `Repo` whose changes are undone when the koan ends; `ok` to open a `Result`; and how an app starts its own repo, `Repo.Start(Db.model, provider, queriesIn = ...)`. There is one repo for the whole database: it runs queries and writes against one database with one model, the whole set of record types Plasm stores. A query is a description; the repo turns it into SQL and runs it; every call returns a `Result`. |
 | 03 | Meet the shop | The koans database: customers, orders holding their lines, products. Reading it in the simplest way, and seeing that each koan's changes vanish when it ends. |
 | 04 | Plasm's promises | The invariants Plasm keeps, one koan each: records stay plain F#; nothing runs until you ask; no hidden queries; nothing is evaluated in memory behind your back; failures are values; only what you change is written; the model is checked before any query; queries mean what F# means; what an aggregate owns loads in one batch; tests roll back. Each points to the lesson that goes deeper. |
 

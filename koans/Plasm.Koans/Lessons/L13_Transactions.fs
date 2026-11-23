@@ -240,6 +240,9 @@ let lesson =
                       // connection (ctx) and runs its own commands on it, inside the
                       // transaction. Tx.fail is a step too; a step of no record type
                       // has its verb alone as its Action.
+                      // `use cmd = ...` names a value that is closed when its block
+                      // ends, and `cmd.CommandText <- "..."` sets a property of it:
+                      // this is ADO.NET, .NET's own way to send a command.
                       let audit =
                           transaction {
                               let! _ =

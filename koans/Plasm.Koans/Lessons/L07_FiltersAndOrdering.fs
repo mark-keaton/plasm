@@ -148,6 +148,9 @@ let lesson =
               "Captured arrays are read each run",
               fun repo ->
                   task {
+                      // [| ... |] is an array: like a list, but an item of it can be
+                      // replaced. statuses.[0] <- Draft puts Draft in its first place
+                      // (places count from 0). The query was built before that change.
                       let statuses = [| Published |]
                       let matching = plasm { for o in tableOf<Order> do where (Array.contains o.Status statuses) }
                       let! before = count repo matching

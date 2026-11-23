@@ -100,6 +100,9 @@ let lesson =
                       // (Tx.executeSql is a step running SQL, in a transaction that
                       // repo.Transact runs; lesson 19 goes deeper. The change is made
                       // in this koan's sandbox and vanishes when it ends.)
+                      // A string written $"..." is an interpolated string, one that can
+                      // hold values in {braces}; this one holds none. Tx.executeSql
+                      // takes its SQL written that way (lesson 19).
                       let cancel: Tx<int, unit> = Tx.executeSql $"update orders set status = 'cancelled', cancellation_reason = 'test' where id = 2"
                       let! _ = repo.Transact cancel
                       let! order = repo.One(plasm { for o in tableOf<Order> do where (o.Id = OrderId 2L) })

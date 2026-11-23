@@ -22,6 +22,8 @@ let lesson =
               fun _ ->
                   // let names a value. The name keeps that value: working out a
                   // new value gives a new name, and the old one is unchanged.
+                  // 10m is the number 10 as a decimal, the type for money: the m
+                  // after a number marks a decimal.
                   let price = 10m
                   let discounted = price - 2m
                   discounted |> shouldBe __
@@ -73,6 +75,8 @@ let lesson =
               fun _ ->
                   // An option is either Some value or None (nothing there).
                   // Option.defaultValue gives the value, or the default for None.
+                  // `let reason: string option` names a value and says its type,
+                  // after the colon.
                   let reason: string option = Some "duplicate"
                   let noReason: string option = None
                   reason |> Option.defaultValue "no reason" |> shouldBe __

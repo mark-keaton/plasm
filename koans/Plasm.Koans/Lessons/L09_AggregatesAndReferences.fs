@@ -120,6 +120,9 @@ let lesson =
                       // A whole Order is always read with its lines. Selected from a join,
                       // the joined rows come from one command, and the lines of every
                       // Order in them from one more.
+                      // select (o, c.Name) makes each row a pair. `let first, _ = ...`
+                      // takes a pair apart: first names its Order, and _ stands for the
+                      // part the koan does not read.
                       let! rows =
                           repo.All(
                               plasm {
