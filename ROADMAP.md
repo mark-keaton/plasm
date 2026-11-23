@@ -6,6 +6,7 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 ## Now: after 0.3.0
 
 - A SQLite choice in the template and the Starter, for a new project that needs no database server
+- A package, Plasm.CSharp, for what an F# data layer hands a C# host: the outcome unions and their standard cases
 
 ## Next: in the library
 

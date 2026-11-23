@@ -62,7 +62,8 @@ record of its own.
 
 The shapes every project would write the same are in the package
 **Plasm.CSharp**, which depends on Plasm alone (either provider; an F# host
-need not take it):
+need not take it). The package ships with the next release and is not on
+nuget.org yet. It holds:
 
 - the cases: `Missing { What }`, `Refused { Code; Message }`,
   `Stale { What; Key }` (the record type, and its key's parts as text in key
