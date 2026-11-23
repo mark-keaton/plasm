@@ -355,7 +355,7 @@ type CompositeKeySteps(w: World) =
         let issues = w.Get<SchemaIssue list> "keyedIssues"
 
         check
-            (issues |> List.exists (fun i -> i.Model = "Issue" && i.Message.Contains "repo" && i.Message.Contains "number" && i.Message.Contains "primary key"))
+            (issues |> List.exists (fun i -> i.Record = "Issue" && i.Message.Contains "repo" && i.Message.Contains "number" && i.Message.Contains "primary key"))
             $"issues: %A{issues}"
 
     [<StepDefinition("I build a keyed model of (.*)")>]

@@ -151,7 +151,7 @@ type UniqueWithinSteps(w: World) =
             (issues
              |> List.exists (fun i ->
                  i.Kind = SchemaIssueKind.MissingUnique
-                 && i.Model = "Tag"
+                 && i.Record = "Tag"
                  && i.Field = Some "Name"
                  && i.Message.Contains "unique (tenant, name)"))
             $"the issues are %A{issues}"

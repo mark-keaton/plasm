@@ -237,7 +237,7 @@ module internal SchemaCheck =
             let add kind modelName field table column message =
                 issues.Add
                     { Kind = kind
-                      Model = modelName
+                      Record = modelName
                       Field = field
                       Table = table
                       Column = column

@@ -830,7 +830,7 @@ and private writeChildWrite model sess (schema: SchemaInfo) (s: CsState) (wi: in
                     let kind = if isNull raw then "null" else raw.GetType().Name
                     raise (
                         Execution.MaterializationFailure
-                            { Model = target.Name
+                            { Record = target.Name
                               Property = target.Key.Name
                               Value = $"{raw} ({kind})"
                               Message = m }

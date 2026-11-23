@@ -72,7 +72,7 @@ type UnionReferenceSteps(w: World) =
         let refs = w.Get<ModelReference list> "references"
 
         let found =
-            refs |> List.filter (fun r -> r.Model = "Shelf" && r.Field = "Status.borrower" && r.Target = "Member")
+            refs |> List.filter (fun r -> r.Record = "Shelf" && r.Field = "Status.borrower" && r.Target = "Member")
 
         equal 1 found.Length $"references of Shelf.Status.borrower in %A{refs}"
 
@@ -127,7 +127,7 @@ type UnionReferenceSteps(w: World) =
             (issues
              |> List.exists (fun i ->
                  i.Kind = SchemaIssueKind.MissingReference
-                 && i.Model = "Shelf"
+                 && i.Record = "Shelf"
                  && i.Field = Some "Status.borrower"
                  && i.Column = Some "status_borrower"
                  && i.Message.Contains "members"))
@@ -146,7 +146,7 @@ type UnionReferenceSteps(w: World) =
         let refs = w.Get<ModelReference list> "references"
 
         for field in [ "Home.City"; "Home.Near"; "Work.City"; "Work.Near" ] do
-            let found = refs |> List.filter (fun r -> r.Model = "Person" && r.Field = field && r.Target = "City")
+            let found = refs |> List.filter (fun r -> r.Record = "Person" && r.Field = field && r.Target = "City")
             equal 1 found.Length $"references of Person.{field} in %A{refs}"
 
     [<StepDefinition("^the people tables as Plasm's DDL creates them, with a city$")>]
@@ -218,7 +218,7 @@ type UnionReferenceSteps(w: World) =
             (issues
              |> List.exists (fun i ->
                  i.Kind = SchemaIssueKind.MissingReference
-                 && i.Model = "Person"
+                 && i.Record = "Person"
                  && i.Field = Some "Home.City"
                  && i.Column = Some "home_city"
                  && i.Message.Contains "cities"))

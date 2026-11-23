@@ -393,7 +393,7 @@ type PgEnumSteps(w: World) =
 
         check
             (issues
-             |> List.exists (fun i -> string i.Kind = kind && i.Model = "Shipment" && i.Field = Some field && i.Message = message))
+             |> List.exists (fun i -> string i.Kind = kind && i.Record = "Shipment" && i.Field = Some field && i.Message = message))
             $"""no {kind} issue for Shipment.{field} saying "{message}"; found: {issues |> List.map string}"""
 
     // Rule: Mistakes are reported where they are made

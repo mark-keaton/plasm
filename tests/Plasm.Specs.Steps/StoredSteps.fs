@@ -612,7 +612,7 @@ type StoredSteps(w: World) =
     [<StepDefinition("^(\\w+)\\.(\\w+) refers to nothing$")>]
     member _.NoReference(model: string, field: string) =
         let refs = w.Get<ModelReference list> "references"
-        check (refs |> List.forall (fun r -> not (r.Model = model && r.Field = field))) $"the references are %A{refs}"
+        check (refs |> List.forall (fun r -> not (r.Record = model && r.Field = field))) $"the references are %A{refs}"
 
     [<StepDefinition("^Cards with the titles \"(.*)\" and \"(.*)\"$")>]
     member _.Titled(a: string, b: string) =
@@ -649,4 +649,4 @@ type StoredSteps(w: World) =
         match w.Get<Result<Model, ConfigError list>> "storedBuild" with
         | Ok _ -> failwith "the model was built"
         | Error errors ->
-            check (errors |> List.exists (fun e -> e.Model = model && e.Message.Contains message)) $"the errors are %A{errors}"
+            check (errors |> List.exists (fun e -> e.Record = model && e.Message.Contains message)) $"the errors are %A{errors}"

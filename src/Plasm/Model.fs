@@ -176,10 +176,10 @@ module internal Conventions =
             else
                 None
 
-/// A reference the model infers (constraints.feature): `Model.Field` holds the
+/// A reference the model infers (constraints.feature): `Record.Field` holds the
 /// key of `Target`, because its type is `Target`'s key type (a typed id).
 type ModelReference =
-    { Model: string
+    { Record: string
       Field: string
       Target: string }
 
@@ -308,12 +308,12 @@ type Model internal (schemas: IReadOnlyDictionary<Type, SchemaInfo>, registered:
         [ for s in schemas.Values do
               for f in s.Fields do
                   match f.References with
-                  | Some target -> yield { Model = s.Type.Name; Field = f.Name; Target = target.Name }
+                  | Some target -> yield { Record = s.Type.Name; Field = f.Name; Target = target.Name }
                   | None -> ()
 
                   if f.Name <> s.Key.Name then
                       for path, leaf in f.NestedReferences do
-                          yield { Model = s.Type.Name; Field = path; Target = leaf.References.Value.Name } ]
+                          yield { Record = s.Type.Name; Field = path; Target = leaf.References.Value.Name } ]
 
     /// The record types this model can persist.
     member _.Types = schemas.Keys |> Seq.toList
@@ -803,7 +803,7 @@ module Model =
         : Result<SchemaInfo, ConfigError list> =
         let errors = ResizeArray<ConfigError>()
         let model = def.Type.Name
-        let err prop msg = errors.Add { Model = model; Property = prop; Message = msg }
+        let err prop msg = errors.Add { Record = model; Property = prop; Message = msg }
 
         if not (Shape.isRecord def.Type) then
             err None "only F# record types can be mapped"
@@ -1152,12 +1152,12 @@ module Model =
         for s in scalars do
             if scalarDict.ContainsKey s.DomainType then
                 errors.Add
-                    { Model = s.DomainType.Name
+                    { Record = s.DomainType.Name
                       Property = None
                       Message = "scalar mapping registered more than once" }
             elif Scalar.isBuiltIn s.DomainType then
                 errors.Add
-                    { Model = s.DomainType.Name
+                    { Record = s.DomainType.Name
                       Property = None
                       Message = "built-in types cannot be remapped" }
             else
@@ -1170,7 +1170,7 @@ module Model =
 
             if defs.ContainsKey d.Type then
                 errors.Add
-                    { Model = d.Type.Name
+                    { Record = d.Type.Name
                       Property = None
                       Message = "record type registered more than once" }
             else
@@ -1200,7 +1200,7 @@ module Model =
                 let names = owners |> List.map (fun o -> o.Name) |> String.concat " and "
 
                 errors.Add
-                    { Model = t.Name
+                    { Record = t.Name
                       Property = None
                       Message = $"is the key type of {names}; a typed id must be the key of one record type, so each field of type {t.Name} names one table. Give each record type its own key type" }
             | _ -> ()
@@ -1219,7 +1219,7 @@ module Model =
                     let article = if "AEIOUaeiou".Contains name.[0] then "an" else "a"
 
                     errors.Add
-                        { Model = t.Name
+                        { Record = t.Name
                           Property = Some f.Name
                           Message = $"is marked NotReference, but {article} {name} refers to nothing already: only a field of a record's key type (a typed id) is a reference" }
 

@@ -201,7 +201,7 @@ type ConstraintSteps(w: World) =
     [<StepDefinition("^(\\w+)\\.(\\w+) references (\\w+)$")>]
     member _.Reference(model: string, field: string, target: string) =
         let refs = w.Get<ModelReference list> "references"
-        check (List.contains { Model = model; Field = field; Target = target } refs) $"the references are %A{refs}"
+        check (List.contains { Record = model; Field = field; Target = target } refs) $"the references are %A{refs}"
 
     [<StepDefinition("^no record's own key references itself$")>]
     member _.NoSelfKey() =
@@ -232,7 +232,7 @@ type ConstraintSteps(w: World) =
     [<StepDefinition("^the missing uniqueness of (\\w+)\\.(\\w+) is reported$")>]
     member _.MissingUnique(model: string, field: string) =
         let issues = w.Get<SchemaIssue list> "issues"
-        check (issues |> List.exists (fun i -> i.Kind = SchemaIssueKind.MissingUnique && i.Model = model && i.Field = Some field)) $"the issues are %A{issues}"
+        check (issues |> List.exists (fun i -> i.Kind = SchemaIssueKind.MissingUnique && i.Record = model && i.Field = Some field)) $"the issues are %A{issues}"
 
     [<StepDefinition("^the missing reference from (\\w+)\\.(\\w+) to (\\w+) is reported$")>]
     member _.MissingReference(model: string, field: string, table: string) =
@@ -240,7 +240,7 @@ type ConstraintSteps(w: World) =
 
         check
             (issues
-             |> List.exists (fun i -> i.Kind = SchemaIssueKind.MissingReference && i.Model = model && i.Field = Some field && i.Message.Contains table))
+             |> List.exists (fun i -> i.Kind = SchemaIssueKind.MissingReference && i.Record = model && i.Field = Some field && i.Message.Contains table))
             $"the issues are %A{issues}"
 
     [<StepDefinition("^the unique constraint on customers.email is renamed to (\\w+)$")>]
@@ -272,7 +272,7 @@ type ConstraintSteps(w: World) =
             (issues
              |> List.exists (fun i ->
                  i.Kind = SchemaIssueKind.MisnamedConstraint
-                 && i.Model = model
+                 && i.Record = model
                  && i.Field = Some field
                  && i.Message.Contains $"rename {actual} to {expected}"))
             $"the issues are %A{issues}"
@@ -280,5 +280,5 @@ type ConstraintSteps(w: World) =
     [<StepDefinition("^no issue is reported for (\\w+)\\.(\\w+)$")>]
     member _.NoIssueFor(model: string, field: string) =
         let issues = w.Get<SchemaIssue list> "issues"
-        check (issues |> List.forall (fun i -> not (i.Model = model && i.Field = Some field))) $"the issues are %A{issues}"
+        check (issues |> List.forall (fun i -> not (i.Record = model && i.Field = Some field))) $"the issues are %A{issues}"
 

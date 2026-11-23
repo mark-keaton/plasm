@@ -293,7 +293,7 @@ type CompositeReferenceSteps(w: World) =
         let issues = w.Get<SchemaIssue list> "trackerIssues"
 
         check
-            (issues |> List.exists (fun i -> i.Kind = SchemaIssueKind.MissingReference && i.Model = "Note" && i.Field = Some "Ticket"))
+            (issues |> List.exists (fun i -> i.Kind = SchemaIssueKind.MissingReference && i.Record = "Note" && i.Field = Some "Ticket"))
             $"issues: %A{issues}"
 
     [<StepDefinition("^the ticket (\\w+#\\d+) \"([^\"]+)\" with the notes? (.*)$")>]

@@ -123,7 +123,7 @@ type EleganceSteps(w: World) =
     member _.MaterializationError() =
         match w.Get<Result<OrderLine list, DbError>> "result" with
         | Error(DbError.Materialization m) ->
-            equal ("OrderLine", "Quantity") (m.Model, m.Property) "location"
+            equal ("OrderLine", "Quantity") (m.Record, m.Property) "location"
             check (m.Message.Contains "quantity must be positive") m.Message
             check (m.Value.StartsWith "0") m.Value
         | other -> failwithf "expected a materialization error, got %A" other

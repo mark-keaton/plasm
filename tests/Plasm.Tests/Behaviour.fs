@@ -67,7 +67,7 @@ let ``a persisted value rejected by its domain constructor is a materialization 
 
         match r with
         | Error(DbError.Materialization m) ->
-            Assert.Equal("OrderLine", m.Model)
+            Assert.Equal("OrderLine", m.Record)
             Assert.Equal("Quantity", m.Property)
             Assert.Contains("positive", m.Message)
         | other -> failwithf "expected Materialization, got %A" other

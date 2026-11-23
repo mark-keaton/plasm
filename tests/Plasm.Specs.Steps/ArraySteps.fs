@@ -445,7 +445,7 @@ type ArraySteps(w: World) =
         let issues = w.Get<SchemaIssue list> "arraySchemaIssues"
 
         check
-            (issues |> List.exists (fun i -> i.Kind = SchemaIssueKind.NullableColumn && i.Model = "Issue" && i.Field = Some "Labels"))
+            (issues |> List.exists (fun i -> i.Kind = SchemaIssueKind.NullableColumn && i.Record = "Issue" && i.Field = Some "Labels"))
             $"issues: %A{issues}"
 
     [<StepDefinition("I check the issues model against the database")>]
@@ -463,7 +463,7 @@ type ArraySteps(w: World) =
         check
             (issues
              |> List.exists (fun i ->
-                 i.Kind = SchemaIssueKind.IncompatibleType && i.Model = "Issue" && i.Field = Some field && i.Message.Contains needed))
+                 i.Kind = SchemaIssueKind.IncompatibleType && i.Record = "Issue" && i.Field = Some field && i.Message.Contains needed))
             $"issues: %A{issues}"
 
     [<StepDefinition("no schema issue is reported")>]

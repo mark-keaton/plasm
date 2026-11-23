@@ -155,12 +155,12 @@ let lesson =
                   task {
                       // DDL is transactional in PostgreSQL, so the sandbox undoes this too.
                       // A SchemaIssue has a Kind, a SchemaIssueKind (MissingTable,
-                      // MissingColumn, IncompatibleType, ...), the Model's name as text,
+                      // MissingColumn, IncompatibleType, ...), the Record (a record type's name, as text),
                       // and the Field when one is at fault, as an option.
                       let drop: Tx<int, unit> = Tx.executeSql $"alter table orders drop column cancellation_reason"
                       let! _ = repo.Transact drop
                       let! issues = repo.CheckSchema()
                       let issue = (ok issues).Head
-                      (issue.Kind, issue.Model, issue.Field) |> shouldBe __
+                      (issue.Kind, issue.Record, issue.Field) |> shouldBe __
                   }
           ) ]

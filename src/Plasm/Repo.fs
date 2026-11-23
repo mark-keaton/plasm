@@ -673,7 +673,7 @@ type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
                         | Ok issues ->
                             return
                                 issues
-                                |> List.sortBy (fun i -> i.Table, defaultArg i.Column "", i.Model, defaultArg i.Field "", string i.Kind)
+                                |> List.sortBy (fun i -> i.Table, defaultArg i.Column "", i.Record, defaultArg i.Field "", string i.Kind)
                                 |> List.map StartupProblem.Schema
                         | Error e -> return [ StartupProblem.Unchecked e ]
                     }

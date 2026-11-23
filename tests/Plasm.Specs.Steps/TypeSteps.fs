@@ -132,7 +132,7 @@ type TypeSteps(w: World) =
         let errors = w.Get<Result<Model, ConfigError list>> "config" |> err
         let destination = errors |> List.tryFind (fun e -> e.Property = Some "Destination")
         check destination.IsSome $"expected an error for Shipment.Destination, got %A{errors}"
-        equal "Shipment" destination.Value.Model "model"
+        equal "Shipment" destination.Value.Record "record"
         check (destination.Value.Message.Contains "Address") "message names the type"
 
     [<StepDefinition("no implicit lossy conversion is selected")>]

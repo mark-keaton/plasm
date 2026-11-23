@@ -95,7 +95,7 @@ module internal Derive =
     /// The definition the record type describes, or every problem with it.
     let definition (t: Type) : Result<SchemaDef, ConfigError list> =
         let errors = ResizeArray<ConfigError>()
-        let err (prop: string option) msg = errors.Add { Model = t.Name; Property = prop; Message = msg }
+        let err (prop: string option) msg = errors.Add { Record = t.Name; Property = prop; Message = msg }
 
         if not (Shape.isRecord t) then
             err None "is not a record, and only records are stored"
@@ -277,7 +277,7 @@ module internal Derive =
                             match ownerOf.TryGetValue target with
                             | true, other when other <> t ->
                                 errors.Add
-                                    { Model = target.Name
+                                    { Record = target.Name
                                       Property = None
                                       Message = $"is owned by both {other.Name} and {t.Name}; a record has one owner (refer to it by id from the other)" }
                             | _ ->
@@ -285,14 +285,14 @@ module internal Derive =
 
                                 if rootSet.Contains target then
                                     errors.Add
-                                        { Model = target.Name
+                                        { Record = target.Name
                                           Property = None
                                           Message = $"is owned by {t.Name}, so it comes with {t.Name}: leave it out of Model.build" }
 
                                 visit target
                         elif a.Linked && not (rootSet.Contains target) then
                             errors.Add
-                                { Model = t.Name
+                                { Record = t.Name
                                   Property = Some a.Property.Name
                                   Message = $"links to {target.Name}s, which are not in the model: list {target.Name} in Model.build, or give {target.Name} a field of type {(keyField t).Value.PropertyType.Name} to make it owned" }
 

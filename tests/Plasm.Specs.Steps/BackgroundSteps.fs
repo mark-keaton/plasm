@@ -11,7 +11,7 @@ type BackgroundSteps(w: World) =
 
     let reference (model: string) (field: string) (target: Type) =
         check
-            (w.Db.Model.References |> List.exists (fun r -> r.Model = model && r.Field = field && r.Target = target.Name))
+            (w.Db.Model.References |> List.exists (fun r -> r.Record = model && r.Field = field && r.Target = target.Name))
             $"{model}.{field} references {target.Name}: %A{w.Db.Model.References}"
 
     /// A scenario tagged for one database never runs on the other: if a run

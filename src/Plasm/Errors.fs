@@ -4,14 +4,14 @@ open System
 
 /// A problem found while validating persistence configuration.
 type ConfigError =
-    { Model: string
+    { Record: string
       Property: string option
       Message: string }
 
     override this.ToString() =
         match this.Property with
-        | Some p -> $"{this.Model}.{p}: {this.Message}"
-        | None -> $"{this.Model}: {this.Message}"
+        | Some p -> $"{this.Record}.{p}: {this.Message}"
+        | None -> $"{this.Record}: {this.Message}"
 
 /// A query, load or write description that cannot be executed as stated.
 /// These are detected before any database command is sent.
@@ -81,7 +81,7 @@ type DbFailure =
 
 /// A stored value that could not be reconstructed into the domain model.
 type MaterializationError =
-    { Model: string
+    { Record: string
       Property: string
       Value: string
       Message: string }
@@ -100,7 +100,7 @@ type DbError =
         match this with
         | Translation t -> string t
         | Database d -> string d
-        | Materialization m -> $"Cannot materialize {m.Model}.{m.Property} from {m.Value}: {m.Message}"
+        | Materialization m -> $"Cannot materialize {m.Record}.{m.Property} from {m.Value}: {m.Message}"
         | MoreThanOneRow -> "Expected at most one row, but more than one matched"
 
 /// What kind of rule a field error represents.

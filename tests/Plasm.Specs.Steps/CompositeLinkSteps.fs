@@ -239,7 +239,7 @@ type CompositeLinkSteps(w: World) =
             (issues
              |> List.exists (fun i ->
                  i.Kind = SchemaIssueKind.MissingColumn
-                 && i.Model = "Thread"
+                 && i.Record = "Thread"
                  && i.Field = Some "Labels"
                  && i.Table = "thread_labels"
                  && i.Column = Some "label_name"))

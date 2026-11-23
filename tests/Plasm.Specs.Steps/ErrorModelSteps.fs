@@ -105,7 +105,7 @@ type ErrorModelSteps(w: World) =
     member _.MaterialisationError() =
         match w.Get<Choice<Result<OrderLine, TransactionError<unit>>, exn>> "unreadable" with
         | Choice1Of2(Error { Failure = TxFailure.Failed(DbError.Materialization m) }) ->
-            equal "OrderLine" m.Model "model"
+            equal "OrderLine" m.Record "record"
             equal "Quantity" m.Property "property"
         | other -> failwithf "expected a materialisation error, got %A" other
 

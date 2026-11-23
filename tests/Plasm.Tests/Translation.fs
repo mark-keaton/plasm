@@ -271,14 +271,14 @@ let configErrors scalars types =
 [<Fact>]
 let ``unmapped scalar type identifies model and property`` () =
     let e = configErrors [] [ typeof<WithAddress> ] |> List.exactlyOne
-    Assert.Equal("WithAddress", e.Model)
+    Assert.Equal("WithAddress", e.Record)
     Assert.Equal(Some "Home", e.Property)
     Assert.Contains("Address", e.Message)
 
 [<Fact>]
 let ``a list of records that are not stored is a configuration error`` () =
     let es = configErrors [] [ typeof<Parent> ]
-    Assert.Contains(es, fun e -> e.Model = "Parent" && e.Property = Some "Kids" && e.Message.Contains "names no table")
+    Assert.Contains(es, fun e -> e.Record = "Parent" && e.Property = Some "Kids" && e.Message.Contains "names no table")
 
 [<Fact>]
 let ``a list of stored records without the owner's key needs a join table`` () =
@@ -290,7 +290,7 @@ let ``duplicate scalar registration is a configuration error`` () =
     let es =
         configErrors [ Scalar.wrap OrderId (fun (OrderId v) -> v); Scalar.wrap OrderId (fun (OrderId v) -> v) ] []
 
-    Assert.Contains(es, fun e -> e.Model = "OrderId")
+    Assert.Contains(es, fun e -> e.Record = "OrderId")
 
 [<Fact>]
 let ``Scalar.enum with a missing case is rejected`` () =

@@ -528,7 +528,7 @@ let readEntity (schema: SchemaInfo) : DbDataReader -> obj[] =
                 with :? InvalidCastException as ex ->
                     raise (
                         MaterializationFailure
-                            { Model = schema.Name
+                            { Record = schema.Name
                               Property = f.Name
                               Value = string (r.GetFieldType at)
                               Message = $"column {f.Column} does not match {f.ProviderType.Name}: {ex.Message}" }
@@ -539,7 +539,7 @@ let readEntity (schema: SchemaInfo) : DbDataReader -> obj[] =
             | Error msg ->
                 raise (
                     MaterializationFailure
-                        { Model = schema.Name
+                        { Record = schema.Name
                           Property = f.Name
                           Value = describe raw
                           Message = msg }
@@ -557,7 +557,7 @@ let readEntity (schema: SchemaInfo) : DbDataReader -> obj[] =
                     with :? InvalidCastException as ex ->
                         raise (
                             MaterializationFailure
-                                { Model = schema.Name
+                                { Record = schema.Name
                                   Property = f.Name
                                   Value = string (r.GetFieldType at)
                                   Message = $"column {p.Name} does not match {p.ProviderType.Name}: {ex.Message}" }
@@ -570,7 +570,7 @@ let readEntity (schema: SchemaInfo) : DbDataReader -> obj[] =
             | Error msg ->
                 raise (
                     MaterializationFailure
-                        { Model = schema.Name
+                        { Record = schema.Name
                           Property = f.Name
                           Value = describe raw
                           Message = msg }
@@ -666,7 +666,7 @@ and private load (s: Session) (rows: IReadOnlyList<obj[]>) (node: Planner.LoadNo
                         | Error m ->
                             raise (
                                 MaterializationFailure
-                                    { Model = node.Parent.Name
+                                    { Record = node.Parent.Name
                                       Property = node.Assoc.Name
                                       Value = "owner key"
                                       Message = m }
@@ -743,7 +743,7 @@ and private attach (rows: IReadOnlyList<obj[]>) (node: Planner.LoadNode) (childR
                 if found.Count > 1 then
                     raise (
                         MaterializationFailure
-                            { Model = node.Parent.Name
+                            { Record = node.Parent.Name
                               Property = a.Name
                               Value = $"{found.Count} rows"
                               Message = $"the {node.Parent.Name} with key {key.Value} owns at most one {node.Target.Name}, and the database holds {found.Count} (is a unique constraint missing?)" }
@@ -757,7 +757,7 @@ and private attach (rows: IReadOnlyList<obj[]>) (node: Planner.LoadNode) (childR
                 if found.Count <> 1 then
                     raise (
                         MaterializationFailure
-                            { Model = node.Parent.Name
+                            { Record = node.Parent.Name
                               Property = a.Name
                               Value = string key
                               Message =
@@ -839,7 +839,7 @@ let private entityValues (start: int) (schema: SchemaInfo) (optional: bool) (row
             | Error m ->
                 raise (
                     MaterializationFailure
-                        { Model = schema.Name
+                        { Record = schema.Name
                           Property = f.Name
                           Value = String.Join(", ", raws |> List.map describe)
                           Message = m }
@@ -866,7 +866,7 @@ let rec private build (shape: Translate.Shape) (row: obj[]) (entity: unit -> obj
         | Error msg ->
             raise (
                 MaterializationFailure
-                    { Model = model
+                    { Record = model
                       Property = field
                       Value = String.Join(", ", raws |> List.map describe)
                       Message = msg }
@@ -940,7 +940,7 @@ let private columnsOf (select: Sql.Select) (shape: Translate.Shape) (label: stri
                 | :? FormatException as ex ->
                     raise (
                         MaterializationFailure
-                            { Model = label
+                            { Record = label
                               Property = l
                               Value = (try describe (r.GetValue i) with _ -> string (r.GetFieldType i))
                               Message = $"cannot be read as {t.Name}: {ex.Message}" }
@@ -951,7 +951,7 @@ let private columnsOf (select: Sql.Select) (shape: Translate.Shape) (label: stri
             | Error msg ->
                 raise (
                     MaterializationFailure
-                        { Model = label
+                        { Record = label
                           Property = l
                           Value = describe raw
                           Message = msg }
@@ -1102,7 +1102,7 @@ let rec private level (s: Session) (model: Model) (batchSize: int) (parents: IRe
             if items.Count > 1 then
                 raise (
                     MaterializationFailure
-                        { Model = outer
+                        { Record = outer
                           Property = parts.OuterField.Name
                           Value = $"{items.Count} rows"
                           Message =
@@ -1246,7 +1246,7 @@ let rawReader (model: Model) (t: Type) (label: string) : DbDataReader -> obj =
     let fail property value message =
         raise (
             MaterializationFailure
-                { Model = label
+                { Record = label
                   Property = property
                   Value = value
                   Message = message }

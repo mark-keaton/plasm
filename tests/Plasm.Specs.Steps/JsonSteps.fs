@@ -359,7 +359,7 @@ type JsonSteps(w: World) =
         let issues = w.Get<SchemaIssue list> "jsonIssues"
 
         check
-            (issues |> List.exists (fun i -> i.Kind = SchemaIssueKind.IncompatibleType && i.Model = "Card" && i.Field = Some "Estimate"))
+            (issues |> List.exists (fun i -> i.Kind = SchemaIssueKind.IncompatibleType && i.Record = "Card" && i.Field = Some "Estimate"))
             $"issues: %A{issues}"
 
     [<StepDefinition("I make a repository of the documented cards model over a provider without JSON")>]

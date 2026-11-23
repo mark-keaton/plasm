@@ -130,7 +130,7 @@ type SchemaIssueKind =
 /// read or write fail.
 type SchemaIssue =
     { Kind: SchemaIssueKind
-      Model: string
+      Record: string
       /// The field or relationship, when the issue concerns one.
       Field: string option
       Table: string
@@ -140,7 +140,7 @@ type SchemaIssue =
     override i.ToString() =
         let field = i.Field |> Option.map (fun f -> "." + f) |> Option.defaultValue ""
         let column = i.Column |> Option.map (fun c -> "." + c) |> Option.defaultValue ""
-        $"{i.Kind} {i.Model}{field} ({i.Table}{column}): {i.Message}"
+        $"{i.Kind} {i.Record}{field} ({i.Table}{column}): {i.Message}"
 
 /// A query an application defines that Plasm cannot translate: its name, as
 /// Module.value, and why.

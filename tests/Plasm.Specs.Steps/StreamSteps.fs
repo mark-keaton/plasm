@@ -336,7 +336,7 @@ type StreamSteps(w: World) =
     [<StepDefinition("the stream gives two values and then a materialization error naming OrderLine.Quantity")>]
     member _.ThenMaterialization() =
         match List.ofSeq seen with
-        | [ Ok _; Ok _; Error(DbError.Materialization m) ] -> equal "OrderLine.Quantity" $"{m.Model}.{m.Property}" "the field"
+        | [ Ok _; Ok _; Error(DbError.Materialization m) ] -> equal "OrderLine.Quantity" $"{m.Record}.{m.Property}" "the field"
         | other -> failwithf "expected two values and a materialization error, got %A" other
 
     [<StepDefinition("a sandbox adds a customer named Fay and streams the customers ordered by name")>]

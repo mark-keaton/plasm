@@ -382,7 +382,7 @@ type ValueRecordSteps(w: World) =
 
         check
             (issues
-             |> List.exists (fun i -> i.Kind = SchemaIssueKind.MissingColumn && i.Model = "Customer" && i.Field = Some "Address" && i.Column = Some "address_city"))
+             |> List.exists (fun i -> i.Kind = SchemaIssueKind.MissingColumn && i.Record = "Customer" && i.Field = Some "Address" && i.Column = Some "address_city"))
             $"issues: %A{issues}"
 
     [<StepDefinition("^I build a model of (a field of a stored record that holds no owner's key|a value with an Id but no table|an optional value whose fields are all optional|a value holding a stored record|a value with a unique field)$")>]

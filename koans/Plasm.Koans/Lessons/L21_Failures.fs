@@ -122,13 +122,13 @@ let lesson =
               fun repo ->
                   task {
                       // A row the model cannot read is a materialisation error, naming the
-                      // Model by its type's short name and the Property it could not read.
+                      // Record (its record type's short name) and the Property it could not read.
                       let lose: Tx<int, unit> = Tx.executeSql $"update orders set status = 'lost' where id = 1"
                       let! _ = repo.Transact lose
                       let! r = repo.All(Query.from (tableOf<Order>))
 
                       match r with
-                      | Error(DbError.Materialization m) -> (m.Model, m.Property) |> shouldBe __
+                      | Error(DbError.Materialization m) -> (m.Record, m.Property) |> shouldBe __
                       | other -> failwithf "expected a materialisation error, got %A" other
                   }
           )

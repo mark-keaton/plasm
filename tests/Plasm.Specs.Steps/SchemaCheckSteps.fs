@@ -63,7 +63,7 @@ type SchemaCheckSteps(w: World) =
     let issues () = w.Get<SchemaIssue list> "issues"
 
     let find kind (model: string) =
-        match issues () |> List.tryFind (fun i -> i.Kind = kind && i.Model = model) with
+        match issues () |> List.tryFind (fun i -> i.Kind = kind && i.Record = model) with
         | Some i -> i
         | None -> failwithf "expected %A for %s, got %A" kind model (issues () |> List.map string)
 
