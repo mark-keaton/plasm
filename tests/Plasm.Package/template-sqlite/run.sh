@@ -13,8 +13,8 @@
 #   path, and the API serves equipment added over HTTP.
 # Run by tests/Plasm.Package/run.sh on the machine, and by
 # tests/Plasm.Providers/run-linux.sh in a Linux container; with --pack in place
-# of a feed, it packs Plasm.Annotations, Plasm, Plasm.Sqlite and
-# Plasm.Templates from the repository first.
+# of a feed, it packs Plasm.Annotations, Plasm, Plasm.Sqlite, Plasm.CSharp
+# and Plasm.Templates from the repository first.
 #   tests/Plasm.Package/template-sqlite/run.sh <feed> <version>
 #   tests/Plasm.Package/template-sqlite/run.sh --pack
 set -euo pipefail
@@ -26,12 +26,12 @@ trap '[ -n "$api" ] && kill "$api" 2>/dev/null; rm -rf "$work"' EXIT
 export NUGET_PACKAGES="$work/packages"
 if [ "${1:-}" = "--pack" ]; then
   feed="$work/feed"; version="0.0.1-packagecheck"
-  for p in Plasm.Annotations Plasm Plasm.Sqlite; do
+  for p in Plasm.Annotations Plasm Plasm.Sqlite Plasm.CSharp; do
     dotnet build "$repo/src/$p" -c Release -p:Version="$version" -p:ProduceReferenceAssembly=false -v q -m:1 -nodeReuse:false > "$work/build-$p.log" 2>&1 || { cat "$work/build-$p.log"; exit 1; }
     dotnet pack "$repo/src/$p" -c Release --no-build -p:Version="$version" -p:ProduceReferenceAssembly=false -o "$feed" -v q > "$work/pack-$p.log" 2>&1 || { cat "$work/pack-$p.log"; exit 1; }
   done
   dotnet pack "$repo/src/Plasm.Templates" -c Release -p:Version="$version" -o "$feed" -v q -m:1 -nodeReuse:false > "$work/pack-Plasm.Templates.log" 2>&1 || { cat "$work/pack-Plasm.Templates.log"; exit 1; }
-  echo "template-sqlite: packed Plasm.Annotations, Plasm, Plasm.Sqlite and Plasm.Templates at $version"
+  echo "template-sqlite: packed Plasm.Annotations, Plasm, Plasm.Sqlite, Plasm.CSharp and Plasm.Templates at $version"
 else
   feed="$(cd "$1" && pwd -P)"; version="$2"
 fi
@@ -45,6 +45,7 @@ left=$(grep -r -l -i -E 'starter|postgres|npgsql|testcontainers' "$gen" || true;
 if [ -n "$left" ]; then echo "template-sqlite: Starter or PostgreSQL is left in:"; echo "$left"; failed=1; fi
 switch=$(grep -r -n -E 'LendingDatabase|STARTER_|LENDING_|#if|#else|#endif|<!--#' "$gen" || true)
 if [ -n "$switch" ]; then echo "template-sqlite: the Starter's switch is left in:"; echo "$switch"; failed=1; fi
+if ! grep -q "Include=\"Plasm.CSharp\" Version=\"$version\"" "$gen/Directory.Packages.props"; then echo "template-sqlite: the project does not reference Plasm.CSharp $version"; failed=1; fi
 if ! grep -q "Include=\"Plasm.Sqlite\" Version=\"$version\"" "$gen/Directory.Packages.props"; then echo "template-sqlite: the project does not reference Plasm.Sqlite $version"; cat "$gen/Directory.Packages.props"; failed=1; fi
 [ "$failed" = 0 ] && echo "template-sqlite: Lending, from plasm-api --database sqlite: no Starter, no PostgreSQL, no switch, Plasm.Sqlite $version"
 cat > "$gen/nuget.config" <<XML

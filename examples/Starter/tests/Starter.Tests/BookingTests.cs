@@ -2,6 +2,7 @@ using Xunit;
 #if (!STARTER_SQLITE)
 using Npgsql;
 #endif
+using Plasm.CSharp;
 using Starter.Data;
 #if (!STARTER_SQLITE)
 using Testcontainers.PostgreSql;
@@ -76,7 +77,7 @@ public class BookingTests(Database db)
             var other => throw new Exception($"not added: {other.Value}"),
         };
 
-    static EquipmentView Stored(ChangeOutcome outcome) => outcome switch
+    static EquipmentView Stored(Changed<EquipmentView> outcome) => outcome switch
     {
         EquipmentView e => e,
         var other => throw new Exception($"not changed: {other.Value}"),
@@ -119,7 +120,9 @@ public class BookingTests(Database db)
         var projector = await Add(data, "Projector");
         Stored(await data.BookAsync(projector.Id, projector.Version, "Ada", Nine, Nine.AddHours(2), CancellationToken.None));
         var stale = await data.BookAsync(projector.Id, projector.Version, "Grace", Nine.AddDays(1), Nine.AddDays(1).AddHours(1), CancellationToken.None);
-        Assert.Equal(projector.Id, Assert.IsType<Stale>(stale.Value).Equipment);
+        var copy = Assert.IsType<Stale>(stale.Value);
+        Assert.Equal("Equipment", copy.What);
+        Assert.Equal([projector.Id.ToString("D")], copy.Key);
     });
 
     [Fact]

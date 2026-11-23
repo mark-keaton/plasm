@@ -2,6 +2,7 @@
 // into a response. C# writes no query and composes no transaction.
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Plasm.CSharp;
 using Starter.Data;
 
 // `ddl`: print the SQL that creates the tables, and stop.
@@ -96,12 +97,13 @@ app.MapPost("/equipment/{id:guid}/in-service", async (Guid id, InService input, 
 
 app.Run();
 
-static IResult Changed(ChangeOutcome outcome) => outcome switch
+static IResult Changed(Changed<EquipmentView> outcome) => outcome switch
 {
     EquipmentView e => Results.Ok(e),
     Missing missing => Results.NotFound(missing),
     Refused refused => Results.UnprocessableEntity(refused),
     Stale stale => Results.Conflict(stale),
+    Invalid invalid => Results.BadRequest(invalid),
 };
 
 sealed class StartingAt(DateTimeOffset start) : TimeProvider

@@ -1,11 +1,12 @@
 <Project>
   <ItemGroup>
     <!--#if (STARTER_SWITCH || !STARTER_SQLITE) -->
-    <PackageVersion Include="Plasm.Postgres" Version="0.3.0" />
+    <PackageVersion Include="Plasm.Postgres" Version="0.4.0" />
     <!--#endif -->
     <!--#if (STARTER_SWITCH || STARTER_SQLITE) -->
-    <PackageVersion Include="Plasm.Sqlite" Version="0.3.0" />
+    <PackageVersion Include="Plasm.Sqlite" Version="0.4.0" />
     <!--#endif -->
+    <PackageVersion Include="Plasm.CSharp" Version="0.4.0" />
     <PackageVersion Include="FSharp.Core" Version="11.0.101" />
     <PackageVersion Include="xunit.v3.aot" Version="4.0.3" />
     <!--#if (STARTER_SWITCH || !STARTER_SQLITE) -->

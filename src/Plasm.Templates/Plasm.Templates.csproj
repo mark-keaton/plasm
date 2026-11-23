@@ -39,6 +39,11 @@
     </XmlPeek>
     <!-- One version replaces both: the Starter names Plasm.Sqlite at Plasm.Postgres's. -->
     <Error Condition="'$(StarterSqliteVersion)' != '$(StarterPlasmVersion)'" Text="examples/Starter/Directory.Packages.props names Plasm.Sqlite at '$(StarterSqliteVersion)', not at Plasm.Postgres's $(StarterPlasmVersion)." />
+    <XmlPeek XmlInputPath="$(Starter)Directory.Packages.props" Query="/Project/ItemGroup/PackageVersion[@Include='Plasm.CSharp']/@Version">
+      <Output TaskParameter="Result" PropertyName="StarterCSharpVersion" />
+    </XmlPeek>
+    <!-- And Plasm.CSharp, which either database's project takes, at the same one. -->
+    <Error Condition="'$(StarterCSharpVersion)' != '$(StarterPlasmVersion)'" Text="examples/Starter/Directory.Packages.props names Plasm.CSharp at '$(StarterCSharpVersion)', not at Plasm.Postgres's $(StarterPlasmVersion)." />
     <!-- MSBuild writes a backslash as a slash: template.json must have none. -->
     <Error Condition="$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)template.json').Contains('\'))" Text="src/Plasm.Templates/template.json has a backslash, which the copy packed would turn into a slash." />
     <Error Condition="!$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)template.json').Contains('@VERSION@'))" Text="src/Plasm.Templates/template.json has lost its @VERSION@ placeholder." />

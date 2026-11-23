@@ -191,9 +191,9 @@ cat > "$st/nuget.config" <<XML
   </packageSourceMapping>
 </configuration>
 XML
-sed -i.orig -E 's#(Include="Plasm\.(Postgres|Sqlite)" Version=")[^"]*"#\1'"$version"'"#' "$st/Directory.Packages.props"
+sed -i.orig -E 's#(Include="Plasm\.(Postgres|Sqlite|CSharp)" Version=")[^"]*"#\1'"$version"'"#' "$st/Directory.Packages.props"
 rm "$st/Directory.Packages.props.orig"
-for p in Postgres Sqlite; do
+for p in Postgres Sqlite CSharp; do
   if ! grep -q "Include=\"Plasm.$p\" Version=\"$version\"" "$st/Directory.Packages.props"; then echo "Starter's Directory.Packages.props names no Plasm.$p version to replace"; exit 1; fi
 done
 cd "$st"
@@ -249,6 +249,7 @@ dotnet new install "$tpl" --debug:custom-hive "$hive" > "$work/tpl-install.log" 
 dotnet new plasm-api -n Lending -o "$gen" --debug:custom-hive "$hive" > "$work/tpl-new.log" 2>&1 || { cat "$work/tpl-new.log"; exit 1; }
 left=$(grep -r -l -i starter "$gen" || true; find "$gen" -iname '*starter*')
 if [ -n "$left" ]; then echo "template: Starter is left in:"; echo "$left"; exit 1; fi
+if ! grep -q "Include=\"Plasm.CSharp\" Version=\"$version\"" "$gen/Directory.Packages.props"; then echo "template: the project does not reference Plasm.CSharp $version"; exit 1; fi
 if ! grep -q "Include=\"Plasm.Postgres\" Version=\"$version\"" "$gen/Directory.Packages.props"; then echo "template: the project does not reference Plasm.Postgres $version"; cat "$gen/Directory.Packages.props"; exit 1; fi
 if [ "$(grep -c '<add key=' "$gen/nuget.config")" != 1 ] || ! grep -q 'api.nuget.org' "$gen/nuget.config"; then echo "template: the project's nuget.config is not nuget.org alone"; cat "$gen/nuget.config"; exit 1; fi
 # Made for PostgreSQL, the default: no SQLite, and nothing of the Starter's

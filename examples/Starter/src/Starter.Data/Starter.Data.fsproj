@@ -11,6 +11,8 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />
+    <!-- What C# is given: Found, Added and Changed, and their cases. -->
+    <PackageReference Include="Plasm.CSharp" />
     <!--#if (STARTER_SQLITE) -->
     <PackageReference Include="Plasm.Sqlite" Condition='$(StarterSqlite)' />
     <!--#else -->
