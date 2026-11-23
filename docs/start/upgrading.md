@@ -9,7 +9,7 @@ first. [`docs/status.md`](../status.md) has every entry in full, under
 
 An application has two things to look at: a field's name, where it reads or
 builds one of four error types, and the text of four messages, where it
-matches on it. One thing more changes in the template, and in
+matches on it. Two things more change in the template, and in
 `examples/Starter`, which the template is made from.
 
 ### The field naming a problem's record type is Record
@@ -38,6 +38,28 @@ text must match on the new:
 
 The type `SchemaDef` is no longer public. No public member took or returned
 it, so code that compiled still compiles.
+
+### The template: the outcomes come from Plasm.CSharp
+
+This version adds a package, `Plasm.CSharp`, that holds what an F# data layer
+hands a C# host: the cases `Missing`, `Refused`, `Stale` and `Invalid`, the
+unions `Found<'T>`, `Added<'T>`, `Answered<'T>` and `Changed<'T>`, and
+`UnavailableException`. [From C#](../csharp.md) describes them.
+The template's `Starter.Data` references it, at the version of
+`Plasm.Postgres`, and `BookingData` no longer declares its own.
+
+A project made from 0.3.0's template keeps working as it is, since its
+outcome types are its own. One that follows the template changes in three
+places that its clients or its C# can see:
+
+- A stale change's JSON is `{"what":"Equipment","key":["<id>"]}`, where it
+  was `{"equipment":"<id>"}`. Any client that reads the body of a 409 reads
+  the new shape.
+- A change can be `Invalid`, so the switch over a change in `Program.cs`
+  gains an arm, `Invalid invalid => Results.BadRequest(invalid)`. A change
+  the database refuses field by field is then a 400 with its fields, where
+  it was a 500.
+- `BookingUnavailableException` is `UnavailableException`, the package's.
 
 ### The template: BookingData opens from the connection string
 
