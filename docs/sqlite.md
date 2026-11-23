@@ -117,9 +117,10 @@ So is a column without its check, where PostgreSQL's type would hold the value.
 Nowhere a query could tell. A division or remainder by zero, which SQLite
 answers with NULL, fails on SQLite as on PostgreSQL: its dialect writes each
 division and remainder so that a zero divisor fails the statement, in the
-same words, "division by zero". It costs some 40% over SQLite's own division,
-over 1,000,000 rows, measured on a busy machine; the idle-machine figure is to
-come.
+same words, "division by zero". Over 1,000,000 rows it costs some 20% over
+SQLite's own division: 25.8, 26.4 and 26.6 ms against 20.9, 22.2 and 21.5 ms
+in three runs, on a loaded machine (a one-minute load average of 16 to 22).
+The idle-machine figure is to come.
 
 ## What the statement check cannot tell
 
