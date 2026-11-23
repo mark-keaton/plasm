@@ -6,14 +6,15 @@
 namespace Starter.Data
 
 open System
+#if STARTER_SQLITE
+open System.IO
+#endif
 open System.Runtime.CompilerServices
 open System.Text.Json
 open System.Text.Json.Serialization
 open System.Threading
 open System.Threading.Tasks
-open Npgsql
 open Plasm
-open Plasm.Postgres
 open Starter
 
 /// Available equipment: a class, since a record needs a field.
@@ -153,7 +154,7 @@ module private Db =
 
     /// The tables, as Plasm would create them: the model alone, no database.
     let ddl =
-        lazy (Repo.Start(model, Postgres.connect "Host=localhost", typeof<Stop>.Assembly, RepoOptions.Unchecked).Result.Ddl())
+        lazy (Repo.Start(model, Store.printing (), typeof<Stop>.Assembly, RepoOptions.Unchecked).Result.Ddl())
 
 module private View =
     let condition (condition: Condition) =
@@ -210,31 +211,54 @@ type BookingData private (repo: Repo, time: TimeProvider) =
             | Error other -> return raise (BookingUnavailableException(string other, null))
         }
 
-    static member private Open(dataSource: NpgsqlDataSource, onSql: Action<string> option, time: TimeProvider, cancellationToken: CancellationToken) =
+    static member private Open(connectionString: string, onSql: Action<string> option, time: TimeProvider, cancellationToken: CancellationToken) =
         task {
             let options =
                 match onSql with
                 | None -> RepoOptions.Default
                 | Some onSql -> { RepoOptions.Default with OnCommand = Some(fun e -> onSql.Invoke e.Sql) }
 
-            let! repo = Repo.Start(Db.model, PostgresProvider dataSource, typeof<BookingData>.Assembly, options, cancellationToken)
+            let! repo = Repo.Start(Db.model, Store.provider connectionString, typeof<BookingData>.Assembly, options, cancellationToken)
             return BookingData(repo, time)
         }
 
-    /// Starts Plasm's repository over `dataSource`. It checks every query and
-    /// the tables first, so one that would fail throws here, before anything
-    /// is served. Every change takes its time from `time`, the application's
-    /// one clock: TimeProvider.System, or a test's own.
-    static member OpenAsync(dataSource: NpgsqlDataSource, time: TimeProvider, cancellationToken: CancellationToken) : Task<BookingData> =
-        BookingData.Open(dataSource, None, time, cancellationToken)
+    /// Starts Plasm's repository over the database `connectionString` names,
+    /// opened as Store.fs says (where its connections are configured). It
+    /// checks every query and the tables first, so one that would fail throws
+    /// here, before anything is served. Every change takes its time from
+    /// `time`, the application's one clock: TimeProvider.System, or a test's own.
+    static member OpenAsync(connectionString: string, time: TimeProvider, cancellationToken: CancellationToken) : Task<BookingData> =
+        BookingData.Open(connectionString, None, time, cancellationToken)
 
     /// As OpenAsync, `onSql` given the SQL of each command sent, BEGIN and
     /// COMMIT included (a log).
-    static member OpenAsync(dataSource: NpgsqlDataSource, onSql: Action<string>, time: TimeProvider, cancellationToken: CancellationToken) : Task<BookingData> =
-        BookingData.Open(dataSource, Some onSql, time, cancellationToken)
+    static member OpenAsync(connectionString: string, onSql: Action<string>, time: TimeProvider, cancellationToken: CancellationToken) : Task<BookingData> =
+        BookingData.Open(connectionString, Some onSql, time, cancellationToken)
 
     /// The SQL that creates the tables.
     static member Ddl: string = Db.ddl.Value
+#if STARTER_SQLITE
+
+    /// The file `connectionString` names, its full path.
+    static member DatabaseFile(connectionString: string) : string = Store.file connectionString
+
+    /// Makes the database: the file `connectionString` names, with the tables
+    /// Ddl creates. A file already there is never changed: IOException.
+    static member CreateDatabaseAsync(connectionString: string, cancellationToken: CancellationToken) : Task =
+        task {
+            let file = Store.file connectionString
+
+            if File.Exists file then
+                raise (IOException $"{file} exists: a database is made only where there is none")
+
+            use! connection = (Store.provider connectionString).OpenConnection cancellationToken
+            use command = connection.CreateCommand()
+            command.CommandText <- BookingData.Ddl
+            let! _ = command.ExecuteNonQueryAsync cancellationToken
+            ()
+        }
+        :> Task
+#endif
 
     /// `body` over a BookingData whose every change is rolled back when it
     /// ends: one connection, one transaction, never committed. For tests.

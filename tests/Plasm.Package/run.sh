@@ -13,6 +13,9 @@
 # `dotnet new` template; a project made from it is tested and published too.
 # An application on Plasm.Sqlite writes and reads a SQLite file under the
 # runtime and natively, and SQLite's native library arrives for each platform.
+# The Starter's tests also run on SQLite, and a project made with
+# `--database sqlite` is tested, published, and run against its database file
+# (template-sqlite/run.sh).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
@@ -177,9 +180,11 @@ cat > "$st/nuget.config" <<XML
   </packageSourceMapping>
 </configuration>
 XML
-sed -i.orig -E 's|(Include="Plasm.Postgres" Version=")[^"]*"|\1'"$version"'"|' "$st/Directory.Packages.props"
+sed -i.orig -E 's#(Include="Plasm\.(Postgres|Sqlite)" Version=")[^"]*"#\1'"$version"'"#' "$st/Directory.Packages.props"
 rm "$st/Directory.Packages.props.orig"
-if ! grep -q "Include=\"Plasm.Postgres\" Version=\"$version\"" "$st/Directory.Packages.props"; then echo "Starter's Directory.Packages.props names no Plasm.Postgres version to replace"; exit 1; fi
+for p in Postgres Sqlite; do
+  if ! grep -q "Include=\"Plasm.$p\" Version=\"$version\"" "$st/Directory.Packages.props"; then echo "Starter's Directory.Packages.props names no Plasm.$p version to replace"; exit 1; fi
+done
 cd "$st"
 dotnet build src/Starter.Api -c Release -o "$work/st-jit" -v q > "$work/st-build.log" 2>&1 || { cat "$work/st-build.log"; exit 1; }
 dotnet "$work/st-jit/Starter.Api.dll" ddl > "$work/st-jit.txt" 2>&1 || true
@@ -200,6 +205,10 @@ echo "Starter's tests, runtime: $(grep -E '^\s+(total|failed):' "$work/st-test.l
 dotnet publish tests/Starter.Tests -c Release -r "$rid" -o "$work/st-tests-native" -v m > "$work/st-tests-native.log" 2>&1 || { tail -30 "$work/st-tests-native.log"; exit 1; }
 "$work/st-tests-native/Starter.Tests" > "$work/st-tests-native.txt" 2>&1 || { echo "Starter's native tests failed"; tail -30 "$work/st-tests-native.txt"; failed=1; }
 echo "Starter's tests, native: $(grep -o 'Total: [0-9]*, Errors: [0-9]*, Failed: [0-9]*' "$work/st-tests-native.txt")"
+# The same copy built for SQLite (README: -p:StarterDatabase=sqlite), as CI's
+# Starter job also tests it: a file, no Docker.
+dotnet test --project tests/Starter.Tests -p:StarterDatabase=sqlite > "$work/st-sqlite-test.log" 2>&1 || { echo "Starter's tests on SQLite failed"; tail -30 "$work/st-sqlite-test.log"; failed=1; }
+echo "Starter's tests on SQLite, runtime: $(grep -E '^\s+(total|failed):' "$work/st-sqlite-test.log" | tr -s ' ' | tr '\n' ' ')"
 cd "$repo"
 
 # Plasm.Templates (`dotnet new plasm-api`): its content is examples/Starter's
@@ -231,7 +240,13 @@ left=$(grep -r -l -i starter "$gen" || true; find "$gen" -iname '*starter*')
 if [ -n "$left" ]; then echo "template: Starter is left in:"; echo "$left"; exit 1; fi
 if ! grep -q "Include=\"Plasm.Postgres\" Version=\"$version\"" "$gen/Directory.Packages.props"; then echo "template: the project does not reference Plasm.Postgres $version"; cat "$gen/Directory.Packages.props"; exit 1; fi
 if [ "$(grep -c '<add key=' "$gen/nuget.config")" != 1 ] || ! grep -q 'api.nuget.org' "$gen/nuget.config"; then echo "template: the project's nuget.config is not nuget.org alone"; cat "$gen/nuget.config"; exit 1; fi
-echo "template: Lending, from plasm-api: no Starter left, Plasm.Postgres $version, nuget.org alone"
+# Made for PostgreSQL, the default: no SQLite, and nothing of the Starter's
+# switch between the two.
+other=$(grep -r -l -i -E 'sqlite' "$gen" || true)
+if [ -n "$other" ]; then echo "template: SQLite is left in the PostgreSQL project:"; echo "$other"; exit 1; fi
+switch=$(grep -r -n -E 'LendingDatabase|STARTER_|LENDING_|#if|#else|#endif|<!--#' "$gen" || true)
+if [ -n "$switch" ]; then echo "template: the Starter's switch is left in:"; echo "$switch"; exit 1; fi
+echo "template: Lending, from plasm-api: no Starter left, no SQLite and no switch, Plasm.Postgres $version, nuget.org alone"
 cp "$app/nuget.config" "$gen/nuget.config"
 cd "$gen"
 dotnet test --project tests/Lending.Tests > "$work/tpl-test.log" 2>&1 || { echo "the made project's tests failed"; tail -30 "$work/tpl-test.log"; failed=1; }
@@ -262,6 +277,11 @@ if [ "$(cat "$work/gql.txt")" = "$expected" ]; then echo "the GraphQL consumer's
 # there; here the library is also checked to arrive in a publish for each
 # other platform Plasm is checked on.
 bash "$here/sqlite/run.sh" "$feed" "$version" || failed=1
+
+# `dotnet new plasm-api --database sqlite`, from the same feed
+# (tests/Plasm.Package/template-sqlite/run.sh): its tests, its API natively,
+# and the database file as the API meets it, missing or there.
+bash "$here/template-sqlite/run.sh" "$feed" "$version" || failed=1
 sqa="$work/sqlite-app"
 mkdir -p "$sqa"
 cp "$here/sqlite/SqliteConsumer.fsproj" "$here/sqlite/Program.fs" "$app/nuget.config" "$sqa/"

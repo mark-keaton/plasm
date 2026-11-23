@@ -6,10 +6,15 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Domain.fs" />
+    <Compile Include="Store.fs" />
     <Compile Include="BookingData.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />
-    <PackageReference Include="Plasm.Postgres" />
+    <!--#if (STARTER_SQLITE) -->
+    <PackageReference Include="Plasm.Sqlite" Condition='$(StarterSqlite)' />
+    <!--#else -->
+    <PackageReference Include="Plasm.Postgres" Condition='!$(StarterSqlite)' />
+    <!--#endif -->
   </ItemGroup>
 </Project>

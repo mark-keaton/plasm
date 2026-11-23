@@ -1,29 +1,59 @@
 using Xunit;
+#if (!STARTER_SQLITE)
 using Npgsql;
+#endif
 using Starter.Data;
+#if (!STARTER_SQLITE)
 using Testcontainers.PostgreSql;
+#endif
 
 [assembly: AssemblyFixture(typeof(Database))]
 
+#if STARTER_SQLITE
+/// One SQLite file for the run, in a folder of its own, made by
+/// BookingData.CreateDatabaseAsync; the folder is deleted when the run ends.
+public sealed class Database : IAsyncLifetime
+{
+    readonly DirectoryInfo folder = Directory.CreateTempSubdirectory("starter-tests-");
+
+    public string ConnectionString { get; private set; } = null!;
+    public BookingData Data { get; private set; } = null!;
+
+    public async ValueTask InitializeAsync()
+    {
+        ConnectionString = $"Data Source={Path.Combine(folder.FullName, "starter.db")}";
+        await BookingData.CreateDatabaseAsync(ConnectionString, CancellationToken.None);
+        Data = await BookingData.OpenAsync(ConnectionString, TimeProvider.System, CancellationToken.None);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        folder.Delete(recursive: true);
+        return ValueTask.CompletedTask;
+    }
+}
+#else
 /// One PostgreSQL for the run, with the tables BookingData.Ddl creates.
 public sealed class Database : IAsyncLifetime
 {
     readonly PostgreSqlContainer container = new PostgreSqlBuilder("postgres:18").Build();
 
-    public NpgsqlDataSource DataSource { get; private set; } = null!;
+    public string ConnectionString { get; private set; } = null!;
     public BookingData Data { get; private set; } = null!;
 
     public async ValueTask InitializeAsync()
     {
         await container.StartAsync();
-        DataSource = NpgsqlDataSource.Create(container.GetConnectionString());
-        await using (var create = DataSource.CreateCommand(BookingData.Ddl))
+        ConnectionString = container.GetConnectionString();
+        await using (var dataSource = NpgsqlDataSource.Create(ConnectionString))
+        await using (var create = dataSource.CreateCommand(BookingData.Ddl))
             await create.ExecuteNonQueryAsync();
-        Data = await BookingData.OpenAsync(DataSource, TimeProvider.System, CancellationToken.None);
+        Data = await BookingData.OpenAsync(ConnectionString, TimeProvider.System, CancellationToken.None);
     }
 
     public ValueTask DisposeAsync() => container.DisposeAsync();
 }
+#endif
 
 /// A clock that says what the test chose.
 sealed class FixedTime(DateTimeOffset now) : TimeProvider
@@ -105,7 +135,7 @@ public class BookingTests(Database db)
     [Fact]
     public async Task Out_of_service_since_the_time_the_clock_says()
     {
-        var data = await BookingData.OpenAsync(db.DataSource, new FixedTime(Nine), CancellationToken.None);
+        var data = await BookingData.OpenAsync(db.ConnectionString, new FixedTime(Nine), CancellationToken.None);
         await data.SandboxAsync(async data =>
         {
             var projector = await Add(data, "Projector");
@@ -149,7 +179,7 @@ public class BookingTests(Database db)
     [Fact]
     public async Task Out_of_service_since_a_clock_that_answers_with_an_offset_is_that_instant_in_UTC()
     {
-        var data = await BookingData.OpenAsync(db.DataSource, new FixedTime(Nine.ToOffset(Paris)), CancellationToken.None);
+        var data = await BookingData.OpenAsync(db.ConnectionString, new FixedTime(Nine.ToOffset(Paris)), CancellationToken.None);
         await data.SandboxAsync(async data =>
         {
             var projector = await Add(data, "Projector");

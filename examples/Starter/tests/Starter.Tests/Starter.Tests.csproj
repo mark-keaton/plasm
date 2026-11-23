@@ -1,6 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!--#if (STARTER_SQLITE) -->
+  <!-- BookingData's tests, each in a sandbox over one SQLite file made for
+       the run. PublishAot: they also run as a native binary. -->
+  <!--#else -->
   <!-- BookingData's tests, each in a sandbox over one PostgreSQL started for
        the run (Docker). PublishAot: they also run as a native binary. -->
+  <!--#endif -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -10,7 +15,9 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3.aot" />
-    <PackageReference Include="Testcontainers.PostgreSql" />
+    <!--#if (!STARTER_SQLITE) -->
+    <PackageReference Include="Testcontainers.PostgreSql" Condition='!$(StarterSqlite)' />
+    <!--#endif -->
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Starter.Data/Starter.Data.fsproj" />

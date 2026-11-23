@@ -4,7 +4,7 @@
   "classifications": [ "Web", "API", "Plasm", "Native AOT" ],
   "identity": "Plasm.Templates.Api",
   "name": "Plasm API (F# domain, C# minimal API and tests)",
-  "description": "An F# domain and its data access on Plasm.Postgres, called by a C# minimal API through one type, with C# tests in a sandbox. Native AOT.",
+  "description": "An F# domain and its data access on Plasm.Postgres or Plasm.Sqlite, called by a C# minimal API through one type, with C# tests in a sandbox. Native AOT.",
   "shortName": "plasm-api",
   "sourceName": "Starter",
   "preferNameDirectory": true,
@@ -15,6 +15,30 @@
       "generator": "constant",
       "parameters": { "value": "@VERSION@" },
       "replaces": "@STARTER_VERSION@"
+    },
+    "database": {
+      "type": "parameter",
+      "datatype": "choice",
+      "description": "The database: PostgreSQL, or SQLite, a file with no server.",
+      "defaultValue": "postgres",
+      "choices": [
+        { "choice": "postgres", "description": "PostgreSQL, on Plasm.Postgres" },
+        { "choice": "sqlite", "description": "SQLite, a file, on Plasm.Sqlite" }
+      ]
+    },
+    "STARTER_SQLITE": { "type": "computed", "value": "(database == 'sqlite')" },
+    "STARTER_SWITCH": { "type": "computed", "value": "false" },
+    "sqliteCondition": {
+      "type": "generated",
+      "generator": "constant",
+      "parameters": { "value": "" },
+      "replaces": " Condition='$(StarterSqlite)'"
+    },
+    "postgresCondition": {
+      "type": "generated",
+      "generator": "constant",
+      "parameters": { "value": "" },
+      "replaces": " Condition='!$(StarterSqlite)'"
     }
   }
 }

@@ -4,5 +4,14 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!--#if (STARTER_SWITCH) -->
+    <!-- The database this copy builds for: postgres, or sqlite with
+         -p:StarterDatabase=sqlite. A project made by `dotnet new plasm-api`
+         keeps the database it was made for, and not this switch. -->
+    <StarterDatabase Condition="'$(StarterDatabase)' == ''">postgres</StarterDatabase>
+    <StarterSqlite>false</StarterSqlite>
+    <StarterSqlite Condition="'$(StarterDatabase)' == 'sqlite'">true</StarterSqlite>
+    <DefineConstants Condition="$(StarterSqlite)">$(DefineConstants);STARTER_SQLITE</DefineConstants>
+    <!--#endif -->
   </PropertyGroup>
 </Project>
