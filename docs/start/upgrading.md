@@ -7,9 +7,18 @@ first. [`docs/status.md`](../status.md) has every entry in full, under
 
 ## From 0.3.0 to the next version
 
-An application has one thing to look at, and only if it reads the text of an
-error. One thing more changes in the template, and in `examples/Starter`,
-which the template is made from.
+An application has two things to look at: a field's name, where it reads or
+builds one of four error types, and the text of four messages, where it
+matches on it. One thing more changes in the template, and in
+`examples/Starter`, which the template is made from.
+
+### The field naming a problem's record type is Record
+
+On `ConfigError`, `MaterializationError`, `SchemaIssue` and `ModelReference`
+the field that names the record type a problem is in is `Record`, where it
+was `Model`. Code that reads the field or builds one of the four no longer
+compiles, and the compiler names each place: write `Record` for `Model`. The
+types keep their names, `ModelReference` among them, and no message changes.
 
 ### Four error messages say "record type" where they said "schema"
 
