@@ -16,10 +16,12 @@ name: Release
 # There is no stored API key: the publish job exchanges GitHub's OIDC token
 # for a key that lasts an hour.
 #
-# Jobs, in order: version (reads the tag) -> check (the whole of CI, at the
-# tagged commit) and pack (read-only) -> package-check (the packed files,
-# restored into applications outside the repository, natively too) -> publish
-# (the only job that can publish; it builds nothing).
+# Jobs, in order: version (reads the tag, and the versions examples/Starter
+# pins) -> check (the whole of CI, at the tagged commit) and pack (read-only)
+# -> package-check (the packed files, restored into applications outside the
+# repository, natively too) -> publish (the only job that can publish; it
+# builds nothing) -> starter (examples/Starter from nuget.org, as published;
+# it reports, and cannot stop a release that is already out).
 on:
   release:
     types: [published]
@@ -42,7 +44,7 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   # The libraries published, in dependency order. Plasm.PGlite is a spike and
   # is not packed; Plasm.FieldGetters travels inside Plasm's package.
-  PACKAGES: Plasm.Annotations Plasm Plasm.Postgres Plasm.Sqlite Plasm.HotChocolate
+  PACKAGES: Plasm.Annotations Plasm Plasm.Postgres Plasm.Sqlite Plasm.HotChocolate Plasm.CSharp
   # The dotnet new template: examples/Starter as a package, with no assembly.
   TEMPLATES: Plasm.Templates
 
@@ -55,6 +57,7 @@ jobs:
       contents: read
     outputs:
       version: ${{ steps.read.outputs.version }}
+      starter: ${{ steps.pins.outputs.after }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -89,6 +92,14 @@ jobs:
             echo "::error::The tagged commit $GITHUB_SHA is not on main."
             exit 1
           fi
+      # examples/Starter may pin this release's version before it exists. A
+      # pin that is neither this version nor on nuget.org stops a stable
+      # release here; a pre-release goes on, without the starter job.
+      - name: The Starter pins this version, or published ones
+        id: pins
+        env:
+          PKG_VERSION: ${{ steps.read.outputs.version }}
+        run: python3 .github/scripts/starter-pins.py release "$PKG_VERSION"
 
   # The whole of CI, at the commit being released, with no credentials.
   check:
@@ -276,3 +287,33 @@ jobs:
         env:
           NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: dotnet nuget push "nupkg/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+  # examples/Starter as a reader copies it, once the release is out: its
+  # packages restored from nuget.org alone, its tests on PostgreSQL and on
+  # SQLite. It holds no credentials. The packages are published by now, so a
+  # failure here calls for a fix release; what can stop a release is the
+  # package check, which builds the Starter from the packed files.
+  starter:
+    name: The Starter, from nuget.org as published
+    needs: [version, publish]
+    if: github.event_name == 'release' && needs.version.outputs.starter == 'check'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
+        with:
+          global-json-file: examples/Starter/global.json
+      # nuget.org lists a package some minutes after it accepts it.
+      - name: Wait for nuget.org to list the packages
+        run: python3 .github/scripts/starter-pins.py wait 45
+      - name: Test
+        working-directory: examples/Starter
+        run: dotnet test
+      - name: Test on SQLite
+        working-directory: examples/Starter
+        run: dotnet test --project tests/Starter.Tests -p:StarterDatabase=sqlite

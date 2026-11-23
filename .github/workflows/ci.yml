@@ -100,7 +100,14 @@ jobs:
 
   # examples/Starter as a reader copies it: its packages come from nuget.org,
   # not from this repository's sources. Not run for a release, whose packages
-  # are not published yet when its check runs.
+  # are not published yet when its check runs; release.yml tests the Starter
+  # from nuget.org itself once it has published.
+  #
+  # Before a release the Starter may pin the coming version, which no feed
+  # has. Then, and only then, the repository is packed at that version and
+  # the Starter takes Plasm from those files (.github/scripts/starter-pins.py
+  # decides, and refuses a pin that is neither listed nor coming). The job's
+  # summary says which of the two it did.
   starter:
     name: The Starter, from nuget.org
     if: github.event_name != 'release'
@@ -113,6 +120,51 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: examples/Starter/global.json
+
+      - name: Where the Starter's Plasm packages come from
+        id: pins
+        run: python3 .github/scripts/starter-pins.py ci
+
+      - uses: actions/setup-dotnet@v4
+        if: steps.pins.outputs.source == 'repository'
+        with:
+          global-json-file: global.json
+
+      # The packages release.yml publishes, at the version the Starter pins.
+      # Plasm's packages then come from these files alone, and every other
+      # package from nuget.org as before.
+      - name: Pack the repository at the pinned version
+        if: steps.pins.outputs.source == 'repository'
+        env:
+          PINNED: ${{ steps.pins.outputs.version }}
+        run: |
+          packages=$(sed -n 's/^  PACKAGES: *//p' .github/workflows/release.yml)
+          [ -n "$packages" ] || { echo "::error::release.yml names no PACKAGES."; exit 1; }
+          feed="$RUNNER_TEMP/plasm-feed"
+          for p in $packages; do
+            echo "::group::$p"
+            dotnet pack "src/$p" -c Release -o "$feed" -p:Version="$PINNED" -p:ProduceReferenceAssembly=false
+            echo "::endgroup::"
+          done
+          cat > examples/Starter/nuget.config <<EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="repository" value="$feed" />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+            </packageSources>
+            <packageSourceMapping>
+              <packageSource key="repository">
+                <package pattern="Plasm" />
+                <package pattern="Plasm.*" />
+              </packageSource>
+              <packageSource key="nuget.org">
+                <package pattern="*" />
+              </packageSource>
+            </packageSourceMapping>
+          </configuration>
+          EOF
 
       # Its tests run against PostgreSQL in Docker, in a sandbox.
       - name: Test
