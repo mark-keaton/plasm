@@ -27,7 +27,7 @@
       <a class="btn quiet" href="{{repo}}">GitHub</a>
     </div>
 <pre class="install">$ dotnet new install Plasm.Templates   <span>a new application: an F# domain, a C# API and tests</span>
-$ dotnet new plasm-api -n MyApp
+$ dotnet new plasm-api -n MyApp   <span>add --database sqlite for a file, no server</span>
 $ dotnet add package Plasm.Postgres   <span>or into an existing one</span></pre>
     <div class="code-card">
       <div class="code-title">Queries.fs</div>
@@ -203,7 +203,7 @@ after |&gt; shouldBe __</pre>
   <div class="wrap section split top">
     <div>
       <h2>Honest status</h2>
-      <p class="muted">Plasm is new: this is version 0.3, and its API may change before 1.0. It runs on PostgreSQL and on SQLite. No migrations: Plasm prints the tables the model expects and checks the database against them.</p>
+      <p class="muted">Plasm is new: this is version 0.4, and its API may change before 1.0. It runs on PostgreSQL and on SQLite. No migrations: Plasm prints the tables the model expects and checks the database against them.</p>
       <p class="muted">Every behaviour is an executable Gherkin scenario, run against PostgreSQL, and every commit is also compiled natively.</p>
       <a class="more" href="docs/status.html">What is verified and what is missing</a>
     </div>

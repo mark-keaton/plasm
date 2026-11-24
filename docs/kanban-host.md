@@ -33,8 +33,7 @@ take and return. The rules for that surface:
   an F# option or an F# `Result`: a read that can miss returns `Found<T>`,
   either the value or `Missing`, and a change returns `Changed<CardView>`:
   the card, or `Missing`, `Refused`, `Stale` or `Invalid` (Plasm.CSharp's,
-  docs/csharp.md; the package ships with the next release and is not on
-  nuget.org yet).
+  docs/csharp.md).
   Nothing the host passes in is null either. The host's JSON options respect
   C#'s nullable annotations and required constructor parameters, so a body
   that leaves out a field, or gives it as null, is answered 400 before any

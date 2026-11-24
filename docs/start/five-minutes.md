@@ -6,7 +6,7 @@ stays C#. It stores the domain's own immutable records, reads them with
 queries the compiler checks, and writes them in typed transactions. It
 compiles ahead of time (native AOT), and every commit is checked natively.
 
-Plasm is new: this is version 0.3, and its API may change before 1.0.
+Plasm is new: this is version 0.4, and its API may change before 1.0.
 [Status](../status.md) says what is verified and what is missing.
 
 A new application starts from the template: an F# library on the packages,
@@ -18,6 +18,13 @@ dotnet new install Plasm.Templates
 dotnet new plasm-api -n MyApp
 ```
 
+With `--database sqlite` the project is on SQLite, a file with no server,
+and its tests need no Docker:
+
+```sh
+dotnet new plasm-api -n MyApp --database sqlite
+```
+
 The packages are on NuGet, for an application that exists already:
 
 ```sh
@@ -26,8 +33,8 @@ dotnet add package Plasm.Postgres
 
 For SQLite the package is `Plasm.Sqlite`. The model, the queries and the
 transactions are written the same way; [SQLite](../sqlite.md) says how to
-connect and where SQLite differs from PostgreSQL. The template and the pages
-here use PostgreSQL.
+connect and where SQLite differs from PostgreSQL. The pages here use
+PostgreSQL.
 
 The code on this page is from
 [`examples/Plasm.Examples`](../../examples/Plasm.Examples), a runnable tour.

@@ -5,7 +5,11 @@ the one before, the newest first and, within a version, the most serious
 first. [`docs/status.md`](../status.md) has every entry in full, under
 "Changed".
 
-## From 0.3.0 to the next version
+## From 0.3.0 to 0.4.0
+
+0.4.0 adds a package, `Plasm.CSharp`, and a SQLite choice in the template:
+`dotnet new plasm-api -n MyApp --database sqlite` makes the project on
+`Plasm.Sqlite`, a file with no server. Neither breaks anything by being there.
 
 An application has two things to look at: a field's name, where it reads or
 builds one of four error types, and the text of four messages, where it

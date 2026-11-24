@@ -7,7 +7,7 @@ transaction. It is native AOT first: every commit is compiled ahead of time
 and checked natively. It also serves a long-running API through Hot Chocolate,
 on the runtime. Its design comes from [Ecto](https://github.com/elixir-ecto/ecto).
 
-> **Status:** Plasm is new: this is version 0.3, and its API may change before 1.0.
+> **Status:** Plasm is new: this is version 0.4, and its API may change before 1.0.
 > It runs on PostgreSQL and on SQLite; [`docs/sqlite.md`](docs/sqlite.md) says where SQLite differs.
 > [`docs/status.md`](docs/status.md) says what is verified and what is missing.
 
@@ -208,6 +208,8 @@ and C# tests in a sandbox.
 dotnet new install Plasm.Templates
 dotnet new plasm-api -n MyApp
 ```
+
+Add `--database sqlite` for a project on SQLite, a file with no server.
 
 `Plasm.Postgres`, with `Plasm` and `Plasm.Annotations` under it, and
 `Plasm.HotChocolate` are on NuGet, for an application that exists already:
