@@ -211,6 +211,24 @@ create table outbox (
 
 let private template = "plasm_template"
 
+/// This machine, short: a test database's name says which machine's run made
+/// it, so a run drops only the orphans of its own machine.
+let private machine =
+    Convert.ToHexStringLower(Security.Cryptography.SHA256.HashData(Text.Encoding.UTF8.GetBytes(Environment.MachineName.ToLowerInvariant()))).[..7]
+
+/// A test database's name: plasm_t<machine>_<process>_<n>.
+let private ours = Text.RegularExpressions.Regex @"^plasm_t([0-9a-f]{8})_(\d+)_\d+$"
+
+/// The name a run before machines were named gave one: plasm_t<process>_<n>.
+let private older = Text.RegularExpressions.Regex @"^plasm_t(\d+)_\d+$"
+
+let private running (pid: int) =
+    try
+        use p = Diagnostics.Process.GetProcessById pid
+        not p.HasExited
+    with :? ArgumentException ->
+        false
+
 type private Server =
     { Admin: string
       Container: IAsyncDisposable option }
@@ -242,6 +260,38 @@ let private server: Lazy<Task<Server>> =
 
             use conn = new NpgsqlConnection(admin)
             do! conn.OpenAsync()
+
+            // On a server runs share (PLASM_TEST_PG), the databases of this
+            // machine's runs whose process is gone: a run killed, or one that
+            // never dropped a database. Alive means kept, so a reused process
+            // id is never a wrong drop. Names from before the machine was
+            // named have no machine to tell: their process gone is enough.
+            if container.IsNone then
+                let names = Collections.Generic.List<string>()
+
+                do!
+                    task {
+                        use read = conn.CreateCommand()
+                        read.CommandText <- "select datname from pg_database where datname like 'plasm\\_t%'"
+                        use! rows = read.ExecuteReaderAsync()
+
+                        while rows.Read() do
+                            names.Add(rows.GetString 0)
+                    }
+
+                for name in names do
+                    let m = ours.Match name
+                    let o = older.Match name
+
+                    let orphan =
+                        (m.Success && m.Groups[1].Value = machine && not (running (int m.Groups[2].Value)))
+                        || (o.Success && not (running (int o.Groups[1].Value)))
+
+                    if orphan then
+                        use drop = conn.CreateCommand()
+                        drop.CommandText <- $"drop database if exists {name} with (force)"
+                        let! _ = drop.ExecuteNonQueryAsync()
+                        ()
 
             let exec (sql: string) =
                 task {
@@ -653,7 +703,7 @@ let private freshPostgres (model: Model) : Task<TestDb> =
     task {
         let! s = server.Force()
         let n = Interlocked.Increment(&counter)
-        let name = $"plasm_t{Environment.ProcessId}_{n}"
+        let name = $"plasm_t{machine}_{Environment.ProcessId}_{n}"
         use conn = new NpgsqlConnection(s.Admin)
         do! conn.OpenAsync()
         use cmd = conn.CreateCommand()

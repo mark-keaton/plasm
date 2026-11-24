@@ -25,7 +25,8 @@ let qty n = Quantity.create n |> ok
 let migration = "alter table orders add constraint orders_total_check check (total >= 0);"
 
 /// A throwaway database with the tables the model expects, created from the
-/// DDL Plasm prints for it (`repo.Ddl()`) and the migration above.
+/// DDL Plasm prints for it (`repo.Ddl()`) and the migration above. The caller
+/// disposes it, which drops it.
 let provision () =
     task {
         let! db = Plasm.TestDomain.Database.freshDefault ()
@@ -41,7 +42,7 @@ let provision () =
 
         let ddl = printer.Ddl()
         let! _ = db.Exec(ddl + "\n" + migration)
-        return db.ConnectionString, ddl
+        return db, ddl
     }
 
 let tour (connectionString: string) (ddl: string) =
@@ -234,7 +235,10 @@ let main argv =
     else
 
     task {
-        let! connectionString, ddl = provision ()
+        let! db, ddl = provision ()
+        // Dropped when the program ends, whatever it did.
+        use _ = db
+        let connectionString = db.ConnectionString
 
         if argv = [| "sql" |] then
             let output = IO.Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "website", "sql.js")
