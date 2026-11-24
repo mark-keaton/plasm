@@ -88,6 +88,12 @@ need not take it). It holds:
   refusal of fields `Invalid` (`Invalid.ofErrors`: camel-cased fields, a
   duplicate "is already taken"), and a database that fails throws
   `UnavailableException`;
+- `Outcome.all`, for a read of many (`repo.All`): an array of views, in the
+  query's order, and an empty array for none. An array has no case to switch
+  over, so it is no union. The Starter's `AllEquipmentAsync` returns
+  `EquipmentView[]` with it. A read the database fails throws
+  `UnavailableException`, as `Outcome.found` does. It ships with the next
+  release and is not in 0.4.0;
 - `Invalid.field` and `Invalid.fields`, for input refused before the
   database, and `ByKind`, the base of a union's JSON classifier (below).
 
@@ -211,6 +217,12 @@ both modes write the same and a native binary needs no reflection for. A
 minimal API never writes an outcome itself; C# switches over it first.
 Reading JSON into an F# record leaves a field the JSON lacks at null, even
 one F# says cannot be, which is why the requests are C# records.
+
+A read of many is an array of views, and a source-generated context declares
+the array type as well as the view:
+`[JsonSerializable(typeof(EquipmentView[]))]`, in the Starter's host. Without
+that line the native API throws `NotSupportedException` when it writes the
+list: no `JsonTypeInfo` metadata was provided for the array type.
 
 Nothing null crosses to F#. A minimal API binds requests with the host's own
 `SerializerOptions`, not the source-generated context's options, so the host

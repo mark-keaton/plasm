@@ -4,6 +4,7 @@ Start from the template; do not start from nothing:
 - Run dotnet new install Plasm.Templates, then dotnet new plasm-api -n Lending, in a folder reached by its real path: on macOS /tmp and /var are symlinks, and NuGet drops packages through one.
 - Run dotnet test before you change anything. It needs Docker, and it must be green first.
 - PostgreSQL for the running host can come from Docker too: postgres:18.
+- If I ask for SQLite instead, add --database sqlite to dotnet new plasm-api: the database is a file with no server, dotnet test needs no Docker, and in Development the host makes the file at start.
 - Read https://mark-keaton.github.io/plasm/llms-full.txt, every docs page in one file. Read the start pages, the guide and "A C# host over an F# domain"; the rest can wait. Where the site and the packages you installed differ, the packages are right: the site can describe a newer version.
 
 Then replace its booking domain with this one:
