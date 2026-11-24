@@ -292,6 +292,54 @@ if ! grep -q '^create table equipment' "$work/tpl-native.txt"; then echo "the ma
 others=$(grep 'warning IL' "$work/tpl-native.log" | grep -v -E 'IL2104|IL3053' || true)
 echo "--- the made project's API, native ($(grep -c 'warning IL' "$work/tpl-native.log" || true) IL warning lines, $(printf '%s' "$others" | grep -c . || true) other than the summary lines)"
 if [ -n "$others" ]; then echo "the made project's publish warns beyond the summary lines"; grep 'warning IL' "$work/tpl-native.log" | sort -u; failed=1; else echo "the made project's API publishes natively, warning only FSharp.Core's two summary lines"; fi
+# The made project's native API over HTTP, on a PostgreSQL of its own
+# (Docker), its tables from its own `ddl`: each outcome as its status and body.
+if docker info > /dev/null 2>&1; then
+  pg=$(docker run -d --rm -e POSTGRES_PASSWORD=lending -e POSTGRES_DB=lending -p 127.0.0.1::5432 postgres:18)
+  for _ in $(seq 1 120); do docker exec "$pg" pg_isready -U postgres -d lending > /dev/null 2>&1 && break; sleep 0.5; done
+  sleep 1
+  pgport=$(docker port "$pg" 5432/tcp | sed -n 's/.*:\([0-9]*\)$/\1/p' | head -1)
+  "$work/tpl-native/Lending.Api" ddl | docker exec -i "$pg" psql -q -U postgres -d lending > "$work/tpl-pg-ddl.log" 2>&1
+  ConnectionStrings__Lending="Host=127.0.0.1;Port=$pgport;Database=lending;Username=postgres;Password=lending" "$work/tpl-native/Lending.Api" --urls "http://127.0.0.1:0" > "$work/tpl-pg-api.txt" 2>&1 &
+  pgapi=$!
+  up=0; port=""
+  for _ in $(seq 1 120); do
+    port=$(sed -n 's|.*Now listening on: http://127\.0\.0\.1:\([0-9]*\).*|\1|p' "$work/tpl-pg-api.txt" | head -1)
+    if [ -n "$port" ] && curl -s -o /dev/null "http://127.0.0.1:$port/equipment"; then up=1; break; fi
+    kill -0 "$pgapi" 2>/dev/null || break
+    sleep 0.5
+  done
+  call() { # method, path, body: "status body"
+    if [ -n "${3:-}" ]; then curl -s -X "$1" -H 'Content-Type: application/json' -d "$3" -w ' %{http_code}' "http://127.0.0.1:$port$2"; else curl -s -X "$1" -w ' %{http_code}' "http://127.0.0.1:$port$2"; fi
+  }
+  scenario() { # condition, what it shows
+    if eval "$1"; then echo "template, PostgreSQL over HTTP: $2"; else echo "template, PostgreSQL over HTTP FAILED: $2"; failed=1; fi
+  }
+  if [ "$up" = 1 ]; then
+    added=$(call POST /equipment '{"name":"Projector"}'); id=$(printf '%s' "$added" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+    read=$(call GET "/equipment/$id"); list=$(call GET /equipment)
+    booked=$(call POST "/equipment/$id/bookings" '{"version":1,"who":"Ada","from":"2030-01-02T09:00:00Z","until":"2030-01-02T11:00:00Z"}')
+    taken=$(call POST "/equipment/$id/bookings" '{"version":2,"who":"Grace","from":"2030-01-02T10:00:00Z","until":"2030-01-02T12:00:00Z"}')
+    stale=$(call POST "/equipment/$id/bookings" '{"version":1,"who":"Grace","from":"2030-01-03T10:00:00Z","until":"2030-01-03T12:00:00Z"}')
+    missing=$(call GET /equipment/00000000-0000-0000-0000-000000000000)
+    unnamed=$(call POST /equipment '{"name":null}')
+    for r in added read list booked taken stale missing unnamed; do echo "$r: ${!r}"; done
+    scenario '[[ "$added" == "{\"id\":\"$id\",\"name\":\"Projector\",\"condition\":{\"kind\":\"bookable\"},\"bookings\":[],\"version\":1} 201" ]]' "an add answers 201 with the equipment's view"
+    scenario '[[ "$read" == "${added% 201} 200" ]]' "a read answers 200 with the same view"
+    scenario '[[ "$list" == "[${added% 201}] 200" ]]' "the list answers 200 with an array of views"
+    scenario '[[ "$booked" == *"\"bookings\":[{\"who\":\"Ada\",\"from\":\"2030-01-02T09:00:00+00:00\",\"until\":\"2030-01-02T11:00:00+00:00\"}],\"version\":2} 200" ]]' "a booking answers 200, the booking in the view and the version on"
+    scenario '[[ "$taken" == "{\"code\":\"AlreadyBooked\",\"message\":\"Ada has it booked for some of that time.\"} 422" ]]' "time someone has answers 422, Refused with the case's name and the rules' words"
+    scenario '[[ "$stale" == "{\"what\":\"Equipment\",\"key\":[\"$id\"]} 409" ]]' "a stale copy answers 409, Stale naming the record and its key"
+    scenario '[[ "$missing" == "{\"what\":\"equipment\"} 404" ]]' "equipment that is not there answers 404, Missing"
+    scenario '[[ "$unnamed" == *" 400" ]]' "a request whose name is null answers 400, before BookingData is called"
+  else
+    echo "template, PostgreSQL over HTTP FAILED: the native API did not serve"; cat "$work/tpl-pg-api.txt"; failed=1
+  fi
+  kill "$pgapi" 2>/dev/null || true; sleep 1; kill -9 "$pgapi" 2>/dev/null || true; wait "$pgapi" 2>/dev/null || true
+  docker stop "$pg" > /dev/null 2>&1 || true
+else
+  echo "template, PostgreSQL over HTTP: no Docker here, so not checked"
+fi
 cd "$repo"
 
 # A GraphQL application on Plasm.HotChocolate, from the same feed.
