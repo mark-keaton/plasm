@@ -117,7 +117,7 @@ type StatementSteps(w: World) =
     [<StepDefinition("the database describes the statements of the module of refused ones")>]
     member _.DescribeRefused() =
         task {
-            let! problems = w.Repo.Describe(assembly, refused)
+            let! problems = w.Repo.Describe(assembly, inNamespace = refused)
             w.Set("described", problems)
         }
         :> Task
@@ -129,7 +129,7 @@ type StatementSteps(w: World) =
     [<StepDefinition("it describes the statements of the module of accepted ones")>]
     member _.OwnDescribes() =
         task {
-            let! problems = w.Get<Repo>("ownRepo").Describe(assembly, accepted)
+            let! problems = w.Get<Repo>("ownRepo").Describe(assembly, inNamespace = accepted)
             w.Set("described", problems)
         }
         :> Task
@@ -145,7 +145,7 @@ type StatementSteps(w: World) =
         task {
             let! before = customers ()
             w.Set("customersBefore", before)
-            let! problems = w.Repo.Describe(assembly, accepted)
+            let! problems = w.Repo.Describe(assembly, inNamespace = accepted)
             w.Set("described", problems)
         }
         :> Task
@@ -167,7 +167,7 @@ type StatementSteps(w: World) =
     [<StepDefinition("the database describes the statements of the module whose parameter has no type of its own")>]
     member _.DescribeUntyped() =
         task {
-            let! problems = w.Repo.Describe(assembly, "Plasm.Specs.Statements.Untyped")
+            let! problems = w.Repo.Describe(assembly, inNamespace = "Plasm.Specs.Statements.Untyped")
             w.Set("described", problems)
         }
         :> Task
@@ -225,7 +225,7 @@ type StatementSteps(w: World) =
     member _.NoDescribe() =
         task {
             let repo = Repo(w.Db.Model, NoDescribe(w.Db.Provider), RepoOptions.Default)
-            let! problems = repo.Describe(assembly, refused)
+            let! problems = repo.Describe(assembly, inNamespace = refused)
             w.Set("described", problems)
         }
         :> Task

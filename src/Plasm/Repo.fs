@@ -54,6 +54,14 @@ module internal QueryDisplay =
 /// Count) and transactions (Transact), each returning a Result. It is
 /// the explicit boundary where descriptions are executed: every member performs
 /// database work; nothing else in the library does.
+///
+/// On a method called per request the cancellation token is the first
+/// optional, since every call passes it: `repo.All(query, ct)`,
+/// `repo.Transact(tx, ct)`. Settings a call rarely changes (consistency,
+/// isolation, retry) follow it and are best named (`consistency = ...`). This
+/// departs from .NET's habit of the token last, because `(query, ct)` and
+/// `(tx, ct)` are what callers write. Start, called once, takes its
+/// configuration before the token, as .NET methods do.
 type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
     let options = defaultArg options RepoOptions.Default
 
@@ -264,7 +272,7 @@ type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
 
     /// Reads a query's records, each with what it owns or links, in batched
     /// commands.
-    member _.All(query: Query<'T>, ?consistency: ReadConsistency, ?cancellationToken: CancellationToken) =
+    member _.All(query: Query<'T>, ?cancellationToken: CancellationToken, ?consistency: ReadConsistency) =
         let ct = defaultArg cancellationToken CancellationToken.None
         let consistency = defaultArg consistency ReadConsistency.Independent
 
@@ -504,7 +512,7 @@ type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
     /// Bulk writes that cannot be translated come back as query problems; the
     /// rest are described, and a refusal is a Refused problem. A provider that
     /// cannot describe notes how many statements it did not.
-    member internal this.Describe(assembly: Reflection.Assembly, ?inNamespace: string, ?cancellationToken: CancellationToken) : Task<StartupProblem list> =
+    member internal this.Describe(assembly: Reflection.Assembly, ?cancellationToken: CancellationToken, ?inNamespace: string) : Task<StartupProblem list> =
         let ct = defaultArg cancellationToken CancellationToken.None
         let dialect = provider.Dialect
 
@@ -904,7 +912,7 @@ type Repo internal (model: Model, given: IProvider, ?options: RepoOptions) =
 
     /// Runs a transaction description atomically. An empty description
     /// succeeds without opening a connection.
-    member _.Transact(tx: Tx<'T, 'E>, ?isolation: IsolationLevel, ?retry: RetryPolicy, ?cancellationToken: CancellationToken) =
+    member _.Transact(tx: Tx<'T, 'E>, ?cancellationToken: CancellationToken, ?isolation: IsolationLevel, ?retry: RetryPolicy) =
         let ct = defaultArg cancellationToken CancellationToken.None
         let isolation = defaultArg isolation IsolationLevel.ReadCommitted
         let retry = defaultArg retry RetryPolicy.None

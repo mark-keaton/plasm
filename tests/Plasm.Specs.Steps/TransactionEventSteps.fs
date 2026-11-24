@@ -28,7 +28,7 @@ type TransactionEventSteps(w: World) =
     let transact (tx: Tx<'T, string>) (isolation: IsolationLevel) =
         task {
             mark ()
-            let! _ = w.Repo.Transact(tx, isolation)
+            let! _ = w.Repo.Transact(tx, isolation = isolation)
             return ()
         }
         :> Task
@@ -77,7 +77,7 @@ type TransactionEventSteps(w: World) =
     member _.Snapshot() =
         task {
             mark ()
-            let! r = w.Repo.All(Query.from (tableOf<Order>), ReadConsistency.Snapshot)
+            let! r = w.Repo.All(Query.from (tableOf<Order>), consistency = ReadConsistency.Snapshot)
             ok r |> ignore
         }
         :> Task

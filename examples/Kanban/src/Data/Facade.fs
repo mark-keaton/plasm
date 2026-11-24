@@ -265,7 +265,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
     /// Runs a workflow as the F# server does: serializable, run again on a
     /// serialization failure. Plasm.CSharp's Outcome reads what it returns.
     let transact (tx: Tx<'T, Refusal>) (ct: CancellationToken) : Task<Result<'T, TransactionError<Refusal>>> =
-        repo.Transact(tx, IsolationLevel.Serializable, RetryPolicy.OnSerializationFailure 5, ct)
+        repo.Transact(tx, ct, isolation = IsolationLevel.Serializable, retry = RetryPolicy.OnSerializationFailure 5)
 
     let field (name: string) (parse: 'a -> Result<'b, string>) (value: 'a) =
         parse value |> Result.mapError (fun message -> [ name, message ])

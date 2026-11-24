@@ -159,7 +159,7 @@ let run (bridge: IPGliteBridge) (report: Action<string, bool, string>) : Task =
         do!
             check "Snapshot read (REPEATABLE READ READ ONLY)" (fun () ->
                 task {
-                    let! orders = repo.All(plasm { for o in Db.orders do preload o.Lines }, ReadConsistency.Snapshot)
+                    let! orders = repo.All(plasm { for o in Db.orders do preload o.Lines }, consistency = ReadConsistency.Snapshot)
                     (ok orders).Length |> expect "orders" 4
                     return $"{commands.Count} commands in one snapshot"
                 })

@@ -321,7 +321,7 @@ type ProviderSteps(w: World) =
             let isolation = System.Enum.Parse<System.Data.IsolationLevel> level
             w.MarkCommands()
             let tx: Tx<unit, unit> = Tx.insert (New.customer "Ada" "ada@example.com") |> Tx.map ignore
-            let! x = w.Repo.Transact(tx, isolation)
+            let! x = w.Repo.Transact(tx, isolation = isolation)
 
             match x with
             | Error { Failure = TxFailure.Failed(DbError.Translation(TranslationError.UnsupportedByProvider(op, _))) } -> w.Set("refused", op)

@@ -53,7 +53,7 @@ type RetryWaitSteps(w: World) =
                 return! Tx.update (o, { o with Status = Cancelled })
             }
 
-        w.Repo.Transact(tx, IsolationLevel.Serializable, policy, ct)
+        w.Repo.Transact(tx, ct, isolation = IsolationLevel.Serializable, retry = policy)
 
     let waiting (attempts: int) (ms: float) =
         { RetryPolicy.OnSerializationFailure attempts with Wait = fun _ -> TimeSpan.FromMilliseconds ms }

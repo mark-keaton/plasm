@@ -695,7 +695,7 @@ type EleganceSteps(w: World) =
     [<StepDefinition("no retry policy is configured")>]
     member _.NoRetryPolicy() =
         task {
-            let! r = w.Repo.Transact(w.Get<Tx<Order, string>> "tx", Data.IsolationLevel.RepeatableRead)
+            let! r = w.Repo.Transact(w.Get<Tx<Order, string>> "tx", isolation = Data.IsolationLevel.RepeatableRead)
             w.Set("result", r)
         }
         |> unit
@@ -715,7 +715,7 @@ type EleganceSteps(w: World) =
     member _.Retried() =
         task {
             do! (EleganceSteps(w)).RetryableFailure()
-            let! r = w.Repo.Transact(w.Get<Tx<Order, string>> "tx", Data.IsolationLevel.RepeatableRead, w.Get<RetryPolicy> "retry")
+            let! r = w.Repo.Transact(w.Get<Tx<Order, string>> "tx", isolation = Data.IsolationLevel.RepeatableRead, retry = w.Get<RetryPolicy> "retry")
             w.Set("result", r)
         }
         |> unit

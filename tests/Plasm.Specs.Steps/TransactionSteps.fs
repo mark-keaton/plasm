@@ -284,8 +284,8 @@ type TransactionSteps(w: World) =
                 )
 
             let q = Query.from (tableOf<Order>)
-            let! snapshot = repoInterleaved().All(q, ReadConsistency.Snapshot)
-            let! independent = repoInterleaved().All(q, ReadConsistency.Independent)
+            let! snapshot = repoInterleaved().All(q, consistency = ReadConsistency.Snapshot)
+            let! independent = repoInterleaved().All(q, consistency = ReadConsistency.Independent)
             w.Set("snapshot", ok snapshot)
             w.Set("independent", ok independent)
         }
@@ -306,7 +306,7 @@ type TransactionSteps(w: World) =
                 Repo(w.Db.Model, LimitedProvider(w.Db.Provider), { RepoOptions.Default with OnCommand = Some w.Db.Recorder.Record })
 
             w.MarkCommands()
-            let! r = repo.All(Query.from (tableOf<Order>), ReadConsistency.Snapshot)
+            let! r = repo.All(Query.from (tableOf<Order>), consistency = ReadConsistency.Snapshot)
 
             match r with
             | Error(DbError.Translation(TranslationError.UnsupportedByProvider(op, _))) -> equal "snapshot reads" op "operation"
@@ -327,7 +327,7 @@ type TransactionSteps(w: World) =
             b.UseLoggerFactory(sent) |> ignore
             use ds = b.Build()
             let repo = Repo(w.Db.Model, Plasm.Postgres.PostgresProvider(ds), RepoOptions.Default)
-            let! r = repo.All(Query.from (tableOf<Order>), ReadConsistency.Snapshot)
+            let! r = repo.All(Query.from (tableOf<Order>), consistency = ReadConsistency.Snapshot)
             ok r |> ignore
             w.Set("sent", sent)
         }
