@@ -141,6 +141,13 @@ type SeamSteps(p: SeamProject) =
         if not ((squeeze source).Contains(squeeze want)) then
             fail $"{name} does not declare\n  {want}\nIt reads:\n{source}"
 
+    [<StepDefinition("^(\\w+\\.g\\.cs) does not declare \"(.*)\"$")>]
+    member _.DoesNotDeclare(name: string, text: string) =
+        let source = file name
+
+        if (squeeze source).Contains(squeeze (unquote text)) then
+            fail $"{name} declares\n  {unquote text}\nIt reads:\n{source}"
+
     [<StepDefinition("^seam\\.lock holds$")>]
     member _.LockHolds(text: string) =
         // Read whether the seam wrote its files or stopped: a stopped build leaves it as it was.

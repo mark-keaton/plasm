@@ -515,7 +515,7 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
                     if (match t.BaseType with null -> false | b -> b.FullName = "System.MulticastDelegate") then
                         delegateOf node use' where
                     elif Meta.isRecord t then
-                        record t where
+                        record t where (use' = AsParameter)
                     elif Meta.isUnion t then
                         union t where
                     elif Meta.full t = "Plasm.CSharp.ChangeResult`2" then
@@ -650,7 +650,11 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
         else
             go node AsParameter where
 
-    and record (t: Type) (where: string) : Cross =
+    /// A record crosses as one C# record both ways: answered as its view, and,
+    /// when C# can give every field, taken as a parameter. One met first as a
+    /// parameter keeps its F# name (NewBooking); one met first as an answer
+    /// is called a view (EquipmentView).
+    and record (t: Type) (where: string) (asInput: bool) : Cross =
         if not (Meta.visible t) then
             raise (cannot where t "the record is not public, so C# cannot read it")
 
@@ -669,7 +673,11 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
                 Some v
             | _ -> None
 
-        let name = view |> Option.bind _.Name |> Option.defaultValue (t.Name + "View")
+        let name =
+            view
+            |> Option.bind _.Name
+            |> Option.defaultValue (if asInput then t.Name else t.Name + "View")
+
         claim name (Meta.display t) (view |> Option.map _.At)
         let fields = List<Field>()
 
@@ -687,11 +695,14 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
 
         known[t] <- cross
 
-        seam.Records.Add
+        let recordView =
             { Name = name
               Domain = Meta.csName t
               Display = Meta.display t
-              Fields = fields }
+              Fields = fields
+              Into = None }
+
+        seam.Records.Add recordView
 
         json.Add name |> ignore
 
@@ -778,7 +789,40 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
         if fields.Count = 0 then
             Seam.failAt "SEAM003" (view |> Option.bind _.At.Origin) $"{Meta.display t}'s view {name} would have no field left"
 
-        cross
+        // Made from C#: every field of the record, in its order, from the view.
+        let recordNames = recordFields |> Array.map (fun (_, p) -> p.Name)
+        let byMember = fields |> Seq.map (fun f -> f.Member, f) |> dict
+
+        let lacking =
+            [ for n in recordNames do
+                  match byMember.TryGetValue n with
+                  | true, f when f.Cross.In.IsSome -> ()
+                  | true, f -> yield $"{n} cannot come from C# ({f.Cross.NoIn |> Option.defaultValue String.Empty})"
+                  | _ -> yield $"SeamView leaves out {n}"
+              for f in fields do
+                  if not (Array.contains f.Member recordNames) then
+                      yield $"{f.Member} is computed" ]
+
+        // Written once a parameter takes it, so that a record only answered
+        // gets no mapping back; taking it takes each record inside it too.
+        let take () =
+            if recordView.Into.IsNone then
+                recordView.Into <- Some [ for n in recordNames -> byMember[n].Cross.In.Value $"value.{byMember[n].Name}" ]
+
+        let crossed =
+            if lacking.IsEmpty then
+                { cross with
+                    In =
+                        Some(fun e ->
+                            take ()
+                            $"SeamMap.Domain({e})")
+                    NoIn = None }
+            else
+                { cross with
+                    NoIn = Some $"""{name} cannot be made from C#, so it cannot be a parameter: {String.concat "; " lacking}""" }
+
+        known[t] <- crossed
+        crossed
 
     and union (t: Type) (where: string) : Cross =
         if not (Meta.visible t) then

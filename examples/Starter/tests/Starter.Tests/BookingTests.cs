@@ -71,7 +71,7 @@ public class BookingTests(Database db)
         db.Data.SandboxAsync(async data => { await test(data); return true; }, TestContext.Current.CancellationToken);
 
     static async Task<EquipmentView> Add(BookingData data, string name) =>
-        await data.AddEquipmentAsync(name, CancellationToken.None) switch
+        await data.AddEquipmentAsync(new NewEquipment(name), CancellationToken.None) switch
         {
             EquipmentView e => e,
             var other => throw new Exception($"not added: {other.Value}"),
@@ -105,7 +105,7 @@ public class BookingTests(Database db)
     public Task A_booking_is_stored_with_the_equipment() => Sandboxed(async data =>
     {
         var projector = await Add(data, "Projector");
-        Stored(await data.BookAsync(projector.Id, projector.Version, "Ada", Nine, Nine.AddHours(2), CancellationToken.None));
+        Stored(await data.BookAsync(projector.Id, new NewBooking(projector.Version, "Ada", Nine, Nine.AddHours(2)), CancellationToken.None));
         var read = await data.EquipmentAsync(projector.Id, CancellationToken.None) switch
         {
             EquipmentView e => e,
@@ -119,8 +119,8 @@ public class BookingTests(Database db)
     public Task Time_someone_else_has_is_refused() => Sandboxed(async data =>
     {
         var projector = await Add(data, "Projector");
-        var booked = Stored(await data.BookAsync(projector.Id, projector.Version, "Ada", Nine, Nine.AddHours(2), CancellationToken.None));
-        var refused = Assert.IsType<Refused>((await data.BookAsync(booked.Id, booked.Version, "Grace", Nine.AddHours(1), Nine.AddHours(3), CancellationToken.None)).Value);
+        var booked = Stored(await data.BookAsync(projector.Id, new NewBooking(projector.Version, "Ada", Nine, Nine.AddHours(2)), CancellationToken.None));
+        var refused = Assert.IsType<Refused>((await data.BookAsync(booked.Id, new NewBooking(booked.Version, "Grace", Nine.AddHours(1), Nine.AddHours(3)), CancellationToken.None)).Value);
         Assert.Equal("AlreadyBooked", refused.Code);
     });
 
@@ -130,20 +130,20 @@ public class BookingTests(Database db)
         async Task<string> Code(Task<ChangeResult<EquipmentView>> change) =>
             Assert.IsType<Refused>((await change).Value).Code;
         var projector = await Add(data, "Projector");
-        Assert.Equal("WhoRequired", await Code(data.BookAsync(projector.Id, projector.Version, "  ", Nine, Nine.AddHours(1), CancellationToken.None)));
-        Assert.Equal("EndsBeforeItStarts", await Code(data.BookAsync(projector.Id, projector.Version, "Ada", Nine, Nine, CancellationToken.None)));
-        Assert.Equal("ReasonRequired", await Code(data.TakeOutOfServiceAsync(projector.Id, projector.Version, " ", CancellationToken.None)));
-        Assert.Equal("AlreadyAvailable", await Code(data.ReturnToServiceAsync(projector.Id, projector.Version, CancellationToken.None)));
-        var withdrawn = Stored(await data.TakeOutOfServiceAsync(projector.Id, projector.Version, "lamp broken", CancellationToken.None));
-        Assert.Equal("AlreadyOutOfService", await Code(data.TakeOutOfServiceAsync(withdrawn.Id, withdrawn.Version, "again", CancellationToken.None)));
+        Assert.Equal("WhoRequired", await Code(data.BookAsync(projector.Id, new NewBooking(projector.Version, "  ", Nine, Nine.AddHours(1)), CancellationToken.None)));
+        Assert.Equal("EndsBeforeItStarts", await Code(data.BookAsync(projector.Id, new NewBooking(projector.Version, "Ada", Nine, Nine), CancellationToken.None)));
+        Assert.Equal("ReasonRequired", await Code(data.TakeOutOfServiceAsync(projector.Id, new OutOfService(projector.Version, " "), CancellationToken.None)));
+        Assert.Equal("AlreadyAvailable", await Code(data.ReturnToServiceAsync(projector.Id, new InService(projector.Version), CancellationToken.None)));
+        var withdrawn = Stored(await data.TakeOutOfServiceAsync(projector.Id, new OutOfService(projector.Version, "lamp broken"), CancellationToken.None));
+        Assert.Equal("AlreadyOutOfService", await Code(data.TakeOutOfServiceAsync(withdrawn.Id, new OutOfService(withdrawn.Version, "again"), CancellationToken.None)));
     });
 
     [Fact]
     public Task A_change_from_a_stale_copy_is_stale() => Sandboxed(async data =>
     {
         var projector = await Add(data, "Projector");
-        Stored(await data.BookAsync(projector.Id, projector.Version, "Ada", Nine, Nine.AddHours(2), CancellationToken.None));
-        var stale = await data.BookAsync(projector.Id, projector.Version, "Grace", Nine.AddDays(1), Nine.AddDays(1).AddHours(1), CancellationToken.None);
+        Stored(await data.BookAsync(projector.Id, new NewBooking(projector.Version, "Ada", Nine, Nine.AddHours(2)), CancellationToken.None));
+        var stale = await data.BookAsync(projector.Id, new NewBooking(projector.Version, "Grace", Nine.AddDays(1), Nine.AddDays(1).AddHours(1)), CancellationToken.None);
         var copy = Assert.IsType<Stale>(stale.Value);
         Assert.Equal("Equipment", copy.What);
         Assert.Equal([projector.Id.ToString("D")], copy.Key);
@@ -153,9 +153,9 @@ public class BookingTests(Database db)
     public Task Equipment_out_of_service_says_why_and_cannot_be_booked() => Sandboxed(async data =>
     {
         var projector = await Add(data, "Projector");
-        var withdrawn = Stored(await data.TakeOutOfServiceAsync(projector.Id, projector.Version, "lamp broken", CancellationToken.None));
+        var withdrawn = Stored(await data.TakeOutOfServiceAsync(projector.Id, new OutOfService(projector.Version, "lamp broken"), CancellationToken.None));
         Assert.Equal("lamp broken", Assert.IsType<Withdrawn>(withdrawn.Condition.Value).Reason);
-        var refused = Assert.IsType<Refused>((await data.BookAsync(withdrawn.Id, withdrawn.Version, "Ada", Nine, Nine.AddHours(1), CancellationToken.None)).Value);
+        var refused = Assert.IsType<Refused>((await data.BookAsync(withdrawn.Id, new NewBooking(withdrawn.Version, "Ada", Nine, Nine.AddHours(1)), CancellationToken.None)).Value);
         Assert.Equal("NotAvailable", refused.Code);
     });
 
@@ -166,7 +166,7 @@ public class BookingTests(Database db)
         await data.SandboxAsync(async data =>
         {
             var projector = await Add(data, "Projector");
-            var withdrawn = Stored(await data.TakeOutOfServiceAsync(projector.Id, projector.Version, "lamp broken", CancellationToken.None));
+            var withdrawn = Stored(await data.TakeOutOfServiceAsync(projector.Id, new OutOfService(projector.Version, "lamp broken"), CancellationToken.None));
             Assert.Equal(Nine, Assert.IsType<Withdrawn>(withdrawn.Condition.Value).Since);
             return true;
         }, TestContext.Current.CancellationToken);
@@ -180,7 +180,7 @@ public class BookingTests(Database db)
     public Task A_booking_given_with_an_offset_is_stored_as_the_same_instants_in_UTC() => Sandboxed(async data =>
     {
         var projector = await Add(data, "Projector");
-        Stored(await data.BookAsync(projector.Id, projector.Version, "Ada", Nine.ToOffset(Paris), Nine.AddHours(2).ToOffset(Paris), CancellationToken.None));
+        Stored(await data.BookAsync(projector.Id, new NewBooking(projector.Version, "Ada", Nine.ToOffset(Paris), Nine.AddHours(2).ToOffset(Paris)), CancellationToken.None));
         var read = await data.EquipmentAsync(projector.Id, CancellationToken.None) switch
         {
             EquipmentView e => e,
@@ -197,9 +197,9 @@ public class BookingTests(Database db)
         var projector = await Add(data, "Projector");
         // 09:00 to 10:00 UTC, and 10:30 to 11:30 at +01:00, which is 09:30 to
         // 10:30 UTC: they overlap as instants, not by the clock's reading.
-        var booked = Stored(await data.BookAsync(projector.Id, projector.Version, "Ada", Nine, Nine.AddHours(1), CancellationToken.None));
+        var booked = Stored(await data.BookAsync(projector.Id, new NewBooking(projector.Version, "Ada", Nine, Nine.AddHours(1)), CancellationToken.None));
         var grace = new DateTimeOffset(2026, 11, 20, 10, 30, 0, Paris);
-        var refused = Assert.IsType<Refused>((await data.BookAsync(booked.Id, booked.Version, "Grace", grace, grace.AddHours(1), CancellationToken.None)).Value);
+        var refused = Assert.IsType<Refused>((await data.BookAsync(booked.Id, new NewBooking(booked.Version, "Grace", grace, grace.AddHours(1)), CancellationToken.None)).Value);
         Assert.Equal("AlreadyBooked", refused.Code);
     });
 
@@ -210,7 +210,7 @@ public class BookingTests(Database db)
         await data.SandboxAsync(async data =>
         {
             var projector = await Add(data, "Projector");
-            var withdrawn = Stored(await data.TakeOutOfServiceAsync(projector.Id, projector.Version, "lamp broken", CancellationToken.None));
+            var withdrawn = Stored(await data.TakeOutOfServiceAsync(projector.Id, new OutOfService(projector.Version, "lamp broken"), CancellationToken.None));
             var since = Assert.IsType<Withdrawn>(withdrawn.Condition.Value).Since;
             Assert.Equal((Nine, TimeSpan.Zero), (since, since.Offset));
             return true;
@@ -222,7 +222,7 @@ public class BookingTests(Database db)
     [InlineData("A name far longer than sixty characters, which no label would hold", "must be at most 60 characters")]
     public Task A_name_that_is_not_one_is_invalid_with_its_field(string name, string message) => Sandboxed(async data =>
     {
-        var invalid = Assert.IsType<Invalid>((await data.AddEquipmentAsync(name, CancellationToken.None)).Value);
+        var invalid = Assert.IsType<Invalid>((await data.AddEquipmentAsync(new NewEquipment(name), CancellationToken.None)).Value);
         var problem = Assert.Single(invalid.Problems);
         Assert.Equal(("name", message), (problem.Field, problem.Message));
     });
@@ -239,7 +239,7 @@ public class BookingTests(Database db)
     public Task Two_pieces_of_equipment_cannot_share_a_name() => Sandboxed(async data =>
     {
         await Add(data, "Projector");
-        var invalid = Assert.IsType<Invalid>((await data.AddEquipmentAsync("Projector", CancellationToken.None)).Value);
+        var invalid = Assert.IsType<Invalid>((await data.AddEquipmentAsync(new NewEquipment("Projector"), CancellationToken.None)).Value);
         Assert.Equal("name", Assert.Single(invalid.Problems).Field);
     });
 

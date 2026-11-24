@@ -163,6 +163,13 @@ public static class SeamMap
             + ");"
         )
 
+        match r.Into with
+        | Some fields ->
+            line ""
+            line $"    public static {r.Domain} Domain(this {r.Name} value) => new("
+            line ((fields |> List.map (fun f -> "        " + f) |> String.concat ",\n") + ");")
+        | None -> ()
+
     for u in seam.Unions do
         line ""
 
@@ -373,10 +380,13 @@ public static class SeamHttp
 
 /// Every file the seam writes, by name.
 let files (seam: SeamModel) (http: bool) : (string * string) list =
+    // The data classes first: writing a parameter marks the records it takes,
+    // whose mapping back SeamMap then writes.
+    let data = [ for d in seam.Data -> d.Name + ".g.cs", dataFile seam d ]
+
     [ "Views.g.cs", viewsFile seam
       "SeamMap.g.cs", mapFile seam
       "SeamJson.g.cs", jsonFile seam
-      for d in seam.Data do
-          d.Name + ".g.cs", dataFile seam d
+      yield! data
       if http && seam.Shapes.Count > 0 then
           "SeamHttp.g.cs", httpFile seam ]

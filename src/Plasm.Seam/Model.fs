@@ -41,7 +41,10 @@ type RecordView =
     { Name: string
       Domain: string
       Display: string
-      Fields: List<Field> }
+      Fields: List<Field>
+      /// The F# record made from its view, each of its fields in order, once
+      /// a parameter takes it (and C# can give every field).
+      mutable Into: string list option }
 
 type CaseView =
     { Name: string

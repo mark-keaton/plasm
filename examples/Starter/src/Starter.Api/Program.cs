@@ -74,7 +74,7 @@ var app = builder.Build();
 // ToHttp: the value 200 (an add 201, at its Location), Missing 404, Invalid
 // 400, Refused 422, Stale 409, each with the case as its body.
 app.MapPost("/equipment", (NewEquipment input, BookingData d, CancellationToken ct) =>
-    d.AddEquipmentAsync(input.Name, ct).ToHttp(e => $"/equipment/{e.Id}"));
+    d.AddEquipmentAsync(input, ct).ToHttp(e => $"/equipment/{e.Id}"));
 
 app.MapGet("/equipment", async (BookingData d, CancellationToken ct) =>
     Results.Ok(await d.AllEquipmentAsync(ct)));
@@ -83,13 +83,13 @@ app.MapGet("/equipment/{id:guid}", (Guid id, BookingData d, CancellationToken ct
     d.EquipmentAsync(id, ct).ToHttp());
 
 app.MapPost("/equipment/{id:guid}/bookings", (Guid id, NewBooking input, BookingData d, CancellationToken ct) =>
-    d.BookAsync(id, input.Version, input.Who, input.From, input.Until, ct).ToHttp());
+    d.BookAsync(id, input, ct).ToHttp());
 
 app.MapPost("/equipment/{id:guid}/out-of-service", (Guid id, OutOfService input, BookingData d, CancellationToken ct) =>
-    d.TakeOutOfServiceAsync(id, input.Version, input.Reason, ct).ToHttp());
+    d.TakeOutOfServiceAsync(id, input, ct).ToHttp());
 
 app.MapPost("/equipment/{id:guid}/in-service", (Guid id, InService input, BookingData d, CancellationToken ct) =>
-    d.ReturnToServiceAsync(id, input.Version, ct).ToHttp());
+    d.ReturnToServiceAsync(id, input, ct).ToHttp());
 
 app.Run();
 
@@ -101,8 +101,3 @@ sealed class StartingAt(DateTimeOffset start) : TimeProvider
     public override DateTimeOffset GetUtcNow() => start.ToUniversalTime() + System.GetElapsedTime(started);
 }
 
-// The request bodies: Seam.cs lists them for the seam's JSON context.
-record NewEquipment(string Name);
-record NewBooking(int Version, string Who, DateTimeOffset From, DateTimeOffset Until);
-record OutOfService(int Version, string Reason);
-record InService(int Version);
