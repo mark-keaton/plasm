@@ -76,6 +76,24 @@ type Changed<'T when 'T: not null> =
     interface IUnion with
         member this.Value = this.value
 
+/// A change whose rules refuse in the domain's own words, as an F# data
+/// layer answers it: the record as stored, Missing, the domain's refusal
+/// (`'R`, a union), Stale, or Invalid. The seam gives C# a Changed of the
+/// record's view, the refusal a Refused whose Code is its case's name and
+/// whose Message is the refusal's own `Message`.
+[<Struct; Union>]
+type Changed<'T, 'R when 'T: not null and 'R: not null> =
+    val private value: obj
+    new(changed: 'T) = { value = changed :> obj }
+    new(missing: Missing) = { value = missing :> obj }
+    new(refused: 'R) = { value = refused :> obj }
+    new(stale: Stale) = { value = stale :> obj }
+    new(invalid: Invalid) = { value = invalid :> obj }
+    member this.Value = this.value
+
+    interface IUnion with
+        member this.Value = this.value
+
 /// The database could not be reached or failed: what was being done, and the
 /// provider's exception, when there is one. ASP.NET Core answers it with a 500.
 /// Outcome's functions throw it; a data layer need not make one.

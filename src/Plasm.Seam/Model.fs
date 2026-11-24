@@ -89,6 +89,15 @@ type DataClass =
       Display: string
       Members: Member list }
 
+/// A domain refusal (the `'R` of a Changed<'T, 'R>), as C# is given it: a
+/// Refused whose Code is its case's name, known at build, and whose Message
+/// is its own.
+type RefusalView =
+    { Domain: string
+      Display: string
+      /// Each case's name, by tag.
+      Codes: string list }
+
 type SeamModel =
     { Namespace: string
       Records: List<RecordView>
@@ -96,6 +105,7 @@ type SeamModel =
       Outcomes: List<OutcomeView>
       Shapes: List<OutcomeShape>
       Data: List<DataClass>
+      Refusals: List<RefusalView>
       /// Every type the JSON context lists, as C# spells it.
       Json: List<string>
       /// The host's own types it lists too, as Seam.cs writes them.

@@ -135,6 +135,24 @@ public static class SeamMap
             line $"        _ => throw new InvalidOperationException($\"{{value}} is no case of {u.Display} the seam was written for: build again.\"),"
             line "    };"
 
+    for r in seam.Refusals do
+        line ""
+        line $"    /// {r.Display} as Refused: its case's name, and its own Message."
+
+        match r.Codes with
+        | [ only ] -> line $"    public static Refused Refusal(this {r.Domain} refusal) => new(\"{only}\", refusal.Message);"
+        | codes ->
+            line $"    public static Refused Refusal(this {r.Domain} refusal) => new("
+            line "        refusal.Tag switch"
+            line "        {"
+
+            for code in codes do
+                line $"            {r.Domain}.Tags.{code} => \"{code}\","
+
+            line $"            _ => throw new InvalidOperationException($\"{{refusal}} is no case of {r.Display} the seam was written for: build again.\"),"
+            line "        },"
+            line "        refusal.Message);"
+
     for o in seam.Outcomes do
         line ""
         line $"    public static {o.Cs} View(this {o.Domain} outcome) => outcome switch"

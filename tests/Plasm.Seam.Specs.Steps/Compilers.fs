@@ -150,3 +150,34 @@ let private compileWith (sources: (string * string) list) (data: string) : Compi
 /// What C#'s compiler says of `sources` (name, text) over the data assembly:
 /// each diagnostic of warning or error, as the compiler prints it.
 let csharp (sources: (string * string) list) (data: string) : Diagnostic list = snd (compileWith sources data)
+
+/// What `Host.Run()` answers, `sources` compiled and run over the data
+/// assembly, each in a load context of its own (each scenario's data project
+/// has the same name).
+let run (sources: (string * string) list) (data: string) : string =
+    let output, diagnostics = compileWith sources data
+
+    match diagnostics |> List.filter (fun d -> d.Severity = DiagnosticSeverity.Error) with
+    | [] -> ()
+    | errors -> failwith ("the C# does not compile:\n" + (errors |> List.map string |> String.concat "\n"))
+
+    use image = new MemoryStream()
+    let emitted = output.Emit image
+
+    if not emitted.Success then
+        failwith ("the C# was not emitted:\n" + (emitted.Diagnostics |> Seq.map string |> String.concat "\n"))
+
+    let dataName = Reflection.AssemblyName.GetAssemblyName(data).Name
+    let context = Runtime.Loader.AssemblyLoadContext($"host-{Guid.NewGuid()}", isCollectible = true)
+
+    context.add_Resolving(fun ctx name ->
+        if name.Name = dataName then ctx.LoadFromAssemblyPath data else null)
+
+    try
+        image.Position <- 0L
+        let host = context.LoadFromStream image
+        let t = nonNull (host.GetType "Shop.Api.Host")
+        let m = nonNull (t.GetMethod "Run")
+        string (m.Invoke(null, [||]))
+    finally
+        context.Unload()

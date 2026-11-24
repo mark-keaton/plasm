@@ -29,6 +29,12 @@ let describe (seam: SeamModel) (http: bool) : string =
             let with' = if c.Fields.Count > 0 then " with " + fields c.Fields else ""
             add $"  {c.Name} kind \"{c.Kind}\"{with'}"
 
+    for r in seam.Refusals do
+        add $"refusal {r.Display}"
+
+        for code in r.Codes do
+            add $"  {code}"
+
     for d in seam.Data do
         add $"class {d.Name} = {d.Display}"
 

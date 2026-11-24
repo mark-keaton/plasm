@@ -156,6 +156,24 @@ type SeamSteps(p: SeamProject) =
         | Some(Ok _) -> fail "the seam wrote its files, and did not stop"
         | None -> fail "the seam was not written"
 
+    [<StepDefinition("^the seam stops with (SEAM\\d+): \"(.*)\"$")>]
+    member _.StopsAnywhere(code: string, text: string) =
+        match p.Ran with
+        | Some(Error(c, t, _)) ->
+            if c <> code || not (t.StartsWith(unquote text)) then
+                fail $"the seam stopped with {c}: {t}"
+        | Some(Ok _) -> fail "the seam wrote its files, and did not stop"
+        | None -> fail "the seam was not written"
+
+    [<StepDefinition("^the host, run, prints \"(.*)\"$")>]
+    member _.Prints(text: string, host: string) =
+        let r = ran ()
+        let sources = ("Seam.cs", File.ReadAllText p.Config) :: r.Files @ [ "Host.cs", host ]
+        let printed = Compilers.run sources (data ())
+
+        if printed <> unquote text then
+            fail $"the host printed\n  {printed}\nnot\n  {unquote text}"
+
     [<StepDefinition("^no file in Seam is rewritten, nor seam\\.lock$")>]
     member _.NothingRewritten() =
         ran () |> ignore
