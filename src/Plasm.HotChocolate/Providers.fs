@@ -168,7 +168,7 @@ type PlasmRequestExecutorBuilderExtensions =
         builder.AddPlasmUnion<'U>(typeof<'U>.Name)
 
     /// As AddPlasmUnion<'U>(), the union named `name`: for a generic type
-    /// such as Found<CardView>, whose own name GraphQL does not allow.
+    /// such as FindResult<CardView>, whose own name GraphQL does not allow.
     [<Extension>]
     static member AddPlasmUnion<'U when 'U :> IUnion>(builder: IRequestExecutorBuilder, name: string) : IRequestExecutorBuilder =
         let builder =

@@ -36,7 +36,7 @@ public sealed class SandboxSteps
         kanban = await KanbanData.OpenAsync(dataSource, CancellationToken.None);
     }
 
-    static string Cards(Found<BoardView> found) => found switch
+    static string Cards(FindResult<BoardView> found) => found switch
     {
         BoardView board => string.Join(", ", board.Cards.Select(c => c.Title)),
         Missing missing => "missing: " + missing.What,

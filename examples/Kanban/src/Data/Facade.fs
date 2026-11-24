@@ -3,8 +3,8 @@
 /// CancellationToken and return a Task of plain types, so C# writes no query,
 /// composes no transaction and matches no F# union:
 ///
-/// - a read that can miss returns a Found: the value, or Missing;
-/// - a write that can be refused returns Added, Answered or Changed;
+/// - a read that can miss returns a FindResult: the value, or Missing;
+/// - a write that can be refused returns AddResult, RequestResult or ChangeResult;
 ///
 /// each Plasm.CSharp's, a struct of C#'s union shape whose cases are records
 /// of their own, so C# switches over it and the compiler names a case it does
@@ -270,15 +270,15 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
     let field (name: string) (parse: 'a -> Result<'b, string>) (value: 'a) =
         parse value |> Result.mapError (fun message -> [ name, message ])
 
-    /// A workflow that changes one card, run, and told as a Changed: the
+    /// A workflow that changes one card, run, and told as a ChangeResult: the
     /// card's view, and the domain's refusal as Refused (View.refused).
-    let changed (tx: Tx<Card, Refusal>) ct : Task<Changed<CardView>> =
+    let changed (tx: Tx<Card, Refusal>) ct : Task<ChangeResult<CardView>> =
         task {
             let! result = transact tx ct
-            return Outcome.changed result |> Changed.map View.card |> Changed.refused View.refused
+            return Outcome.changed result |> ChangeResult.map View.card |> ChangeResult.refused View.refused
         }
 
-    let change (card: Guid) (version: int) (decide: Board -> int -> Card -> Result<Card, DomainError>) ct : Task<Changed<CardView>> =
+    let change (card: Guid) (version: int) (decide: Board -> int -> Card -> Result<Card, DomainError>) ct : Task<ChangeResult<CardView>> =
         changed (changeCard (CardId card) version decide) ct
 
     static member private Open(dataSource: NpgsqlDataSource, onSql: Action<string> option, time: TimeProvider, checks: StartupChecks, cancellationToken: CancellationToken) : Task<KanbanData> =
@@ -422,9 +422,9 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
 
     /// A board and its cards, oldest first, each with its comments and
     /// labels; Missing when no board has the slug.
-    member _.BoardAsync(slug: string, cancellationToken: CancellationToken) : Task<Found<BoardView>> =
+    member _.BoardAsync(slug: string, cancellationToken: CancellationToken) : Task<FindResult<BoardView>> =
         task {
-            let missing = Found<BoardView> { What = $"board {slug}" }
+            let missing = FindResult<BoardView> { What = $"board {slug}" }
 
             match Slug.create slug with
             | Error _ -> return missing
@@ -437,7 +437,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
                     let! cards = repo.All(Queries.cardsOn board.Id, cancellationToken = cancellationToken)
 
                     return
-                        Found
+                        FindResult
                             { Slug = board.Slug.Value
                               Name = board.Name.Value
                               WipLimit = board.WipLimit.Value
@@ -445,16 +445,16 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
         }
 
     /// A card with its comments and labels; Missing when no card has the id.
-    member _.CardAsync(card: Guid, cancellationToken: CancellationToken) : Task<Found<CardView>> =
+    member _.CardAsync(card: Guid, cancellationToken: CancellationToken) : Task<FindResult<CardView>> =
         task {
             let! found = repo.One(Queries.cardById (CardId card), cancellationToken = cancellationToken)
 
             match read "Reading a card failed" found with
-            | None -> return Found<CardView> { What = "card" }
-            | Some card -> return Found(View.card card)
+            | None -> return FindResult<CardView> { What = "card" }
+            | Some card -> return FindResult(View.card card)
         }
 
-    member _.CreateBoardAsync(slug: string, name: string, wipLimit: int, cancellationToken: CancellationToken) : Task<Added<BoardSummary>> =
+    member _.CreateBoardAsync(slug: string, name: string, wipLimit: int, cancellationToken: CancellationToken) : Task<AddResult<BoardSummary>> =
         task {
             let parsed =
                 match field "slug" Slug.create slug, field "name" Title.create name, field "wipLimit" WipLimit.create wipLimit with
@@ -464,36 +464,36 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
                     Error(problems s @ problems n @ problems l)
 
             match parsed with
-            | Error problems -> return Added(Invalid.fields problems)
+            | Error problems -> return AddResult(Invalid.fields problems)
             | Ok(slug, name, limit) ->
                 let board: Board = { Id = BoardId(newId ()); Slug = slug; Name = name; WipLimit = limit }
                 let! result = transact (createBoard board []) cancellationToken
-                return Outcome.added result |> Added.map (fun stored -> View.summary [] { Board = stored; Newest = []; Blocked = [] })
+                return Outcome.added result |> AddResult.map (fun stored -> View.summary [] { Board = stored; Newest = []; Blocked = [] })
         }
 
-    member _.AddCardAsync(board: string, title: string, cancellationToken: CancellationToken) : Task<Answered<CardView>> =
+    member _.AddCardAsync(board: string, title: string, cancellationToken: CancellationToken) : Task<RequestResult<CardView>> =
         task {
             match Slug.create board, field "title" Title.create title with
-            | Error _, _ -> return Answered { What = $"board {board}" }
-            | Ok _, Error problems -> return Answered(Invalid.fields problems)
+            | Error _, _ -> return RequestResult { What = $"board {board}" }
+            | Ok _, Error problems -> return RequestResult(Invalid.fields problems)
             | Ok slug, Ok title ->
                 let id = CardId(newId ())
                 let now = clock ()
                 // Adding a card stops only when the board is not there.
                 let! result = transact (addCard slug (fun b -> Card.create id b title now)) cancellationToken
-                return Outcome.answered result |> Answered.map View.card
+                return Outcome.answered result |> RequestResult.map View.card
         }
 
     /// `assignee` starts work on the card, if the board's limit allows it.
-    member _.StartAsync(card: Guid, version: int, assignee: string, cancellationToken: CancellationToken) : Task<Changed<CardView>> =
+    member _.StartAsync(card: Guid, version: int, assignee: string, cancellationToken: CancellationToken) : Task<ChangeResult<CardView>> =
         match field "assignee" Person.create assignee with
-        | Error problems -> Task.FromResult(Changed<CardView>(Invalid.fields problems))
+        | Error problems -> Task.FromResult(ChangeResult<CardView>(Invalid.fields problems))
         | Ok who -> change card version (Card.start who (clock ())) cancellationToken
 
     /// Registers `name` with `password`, if the domain accepts both (Person,
     /// Password) and no account has the name; `hash` is the host's, given the
     /// password, and only what it returns is stored.
-    member _.RegisterAsync(name: string, password: string, hash: Func<string, string>, cancellationToken: CancellationToken) : Task<Added<AccountView>> =
+    member _.RegisterAsync(name: string, password: string, hash: Func<string, string>, cancellationToken: CancellationToken) : Task<AddResult<AccountView>> =
         task {
             match field "name" Person.create name, field "password" Password.create password with
             | Ok name, Ok password ->
@@ -503,17 +503,17 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
                       PasswordHash = hash.Invoke password.Value }
 
                 let! result = transact (Tx.insert account) cancellationToken
-                return Outcome.added result |> Added.map (fun (stored: Account) -> { Name = stored.Name.Value; PasswordHash = stored.PasswordHash })
+                return Outcome.added result |> AddResult.map (fun (stored: Account) -> { Name = stored.Name.Value; PasswordHash = stored.PasswordHash })
             | n, p ->
                 let problems (r: Result<_, (string * string) list>) = match r with Error e -> e | Ok _ -> []
-                return Added(Invalid.fields (problems n @ problems p))
+                return AddResult(Invalid.fields (problems n @ problems p))
         }
 
     /// The account named `name`; Missing when there is none, or when no
     /// account could have the name.
-    member _.AccountAsync(name: string, cancellationToken: CancellationToken) : Task<Found<AccountView>> =
+    member _.AccountAsync(name: string, cancellationToken: CancellationToken) : Task<FindResult<AccountView>> =
         task {
-            let missing = Found<AccountView> { What = "account" }
+            let missing = FindResult<AccountView> { What = "account" }
 
             match Person.create name with
             | Error _ -> return missing
@@ -522,62 +522,62 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
 
                 match read "Reading an account failed" found with
                 | None -> return missing
-                | Some account -> return Found { Name = account.Name.Value; PasswordHash = account.PasswordHash }
+                | Some account -> return FindResult { Name = account.Name.Value; PasswordHash = account.PasswordHash }
         }
 
-    member _.ShipAsync(card: Guid, version: int, cancellationToken: CancellationToken) : Task<Changed<CardView>> =
+    member _.ShipAsync(card: Guid, version: int, cancellationToken: CancellationToken) : Task<ChangeResult<CardView>> =
         change card version (fun _ _ c -> Card.finish Shipped (clock ()) c) cancellationToken
 
     /// Drops the card; the domain refuses a drop without a reason.
-    member _.DropAsync(card: Guid, version: int, reason: string, cancellationToken: CancellationToken) : Task<Changed<CardView>> =
+    member _.DropAsync(card: Guid, version: int, reason: string, cancellationToken: CancellationToken) : Task<ChangeResult<CardView>> =
         change card version (fun _ _ c -> Card.finish (Dropped reason) (clock ()) c) cancellationToken
 
-    member _.SendBackAsync(card: Guid, version: int, cancellationToken: CancellationToken) : Task<Changed<CardView>> =
+    member _.SendBackAsync(card: Guid, version: int, cancellationToken: CancellationToken) : Task<ChangeResult<CardView>> =
         change card version (fun _ _ c -> Card.sendBack c) cancellationToken
 
-    member _.ReopenAsync(card: Guid, version: int, cancellationToken: CancellationToken) : Task<Changed<CardView>> =
+    member _.ReopenAsync(card: Guid, version: int, cancellationToken: CancellationToken) : Task<ChangeResult<CardView>> =
         change card version (fun _ _ c -> Card.reopen c) cancellationToken
 
-    member _.BlockAsync(card: Guid, version: int, reason: string, cancellationToken: CancellationToken) : Task<Changed<CardView>> =
+    member _.BlockAsync(card: Guid, version: int, reason: string, cancellationToken: CancellationToken) : Task<ChangeResult<CardView>> =
         change card version (fun _ _ c -> Card.block reason (clock ()) c) cancellationToken
 
-    member _.UnblockAsync(card: Guid, version: int, cancellationToken: CancellationToken) : Task<Changed<CardView>> =
+    member _.UnblockAsync(card: Guid, version: int, cancellationToken: CancellationToken) : Task<ChangeResult<CardView>> =
         change card version (fun _ _ c -> Card.unblock c) cancellationToken
 
-    member _.AddItemAsync(card: Guid, version: int, text: string, cancellationToken: CancellationToken) : Task<Changed<CardView>> =
+    member _.AddItemAsync(card: Guid, version: int, text: string, cancellationToken: CancellationToken) : Task<ChangeResult<CardView>> =
         change card version (fun _ _ c -> Card.addItem text c) cancellationToken
 
-    member _.TickAsync(card: Guid, version: int, text: string, cancellationToken: CancellationToken) : Task<Changed<CardView>> =
+    member _.TickAsync(card: Guid, version: int, text: string, cancellationToken: CancellationToken) : Task<ChangeResult<CardView>> =
         change card version (fun _ _ c -> Card.tick text c) cancellationToken
 
     /// `author` comments on the card. A comment needs no version: it is added
     /// to the card as it is stored.
-    member _.CommentAsync(card: Guid, author: string, body: string, cancellationToken: CancellationToken) : Task<Changed<CardView>> =
+    member _.CommentAsync(card: Guid, author: string, body: string, cancellationToken: CancellationToken) : Task<ChangeResult<CardView>> =
         match field "author" Person.create author with
-        | Error problems -> Task.FromResult(Changed<CardView>(Invalid.fields problems))
+        | Error problems -> Task.FromResult(ChangeResult<CardView>(Invalid.fields problems))
         | Ok who -> changed (addComment (CardId card) (Card.comment (CommentId(newId ())) who body (clock ()))) cancellationToken
 
     /// Makes `labels` the card's whole set of labels; each must be a label,
     /// and a problem is named by its place (labels[1]).
-    member _.RelabelAsync(card: Guid, version: int, labels: string seq, cancellationToken: CancellationToken) : Task<Changed<CardView>> =
+    member _.RelabelAsync(card: Guid, version: int, labels: string seq, cancellationToken: CancellationToken) : Task<ChangeResult<CardView>> =
         let parsed = labels |> Seq.mapi (fun i text -> field $"labels[{i}]" Label.create text) |> List.ofSeq
 
         match parsed |> List.collect (function Error e -> e | Ok _ -> []) with
         | [] ->
             let labels = parsed |> List.choose Result.toOption
             changed (relabel (CardId card) version (newId >> LabelId) (Card.relabel labels)) cancellationToken
-        | problems -> Task.FromResult(Changed<CardView>(Invalid.fields problems))
+        | problems -> Task.FromResult(ChangeResult<CardView>(Invalid.fields problems))
 
     /// Every card in progress on the board back to the backlog, in one
     /// bulk update (Workflows.sendAllBack).
-    member _.SendAllBackAsync(board: string, cancellationToken: CancellationToken) : Task<Found<SentBack>> =
+    member _.SendAllBackAsync(board: string, cancellationToken: CancellationToken) : Task<FindResult<SentBack>> =
         task {
             match Slug.create board with
-            | Error _ -> return Found { What = $"board {board}" }
+            | Error _ -> return FindResult { What = $"board {board}" }
             | Ok slug ->
                 match! transact (sendAllBack slug) cancellationToken with
-                | Ok n -> return Found { SentBack.Cards = n }
-                | Error { Failure = TxFailure.Rejected(Stop.Missing what) } -> return Found { What = what }
+                | Ok n -> return FindResult { SentBack.Cards = n }
+                | Error { Failure = TxFailure.Rejected(Stop.Missing what) } -> return FindResult { What = what }
                 | Error error -> return unavailable "Sending cards back stopped" error.Step null
         }
 
@@ -611,34 +611,34 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
         }
 
     /// Page `page` of the board's finished cards, `size` to a page (1 to 50).
-    member _.DonePageAsync(board: string, page: int, size: int, cancellationToken: CancellationToken) : Task<Answered<DonePage>> =
+    member _.DonePageAsync(board: string, page: int, size: int, cancellationToken: CancellationToken) : Task<RequestResult<DonePage>> =
         task {
             let problems =
                 [ if page < 1 then "page", "must be at least 1"
                   if size < 1 || size > 50 then "size", "must be between 1 and 50" ]
 
             match problems, Slug.create board with
-            | _ :: _, _ -> return Answered(Invalid.fields problems)
-            | [], Error _ -> return Answered { What = $"board {board}" }
+            | _ :: _, _ -> return RequestResult(Invalid.fields problems)
+            | [], Error _ -> return RequestResult { What = $"board {board}" }
             | [], Ok slug ->
                 let! found = repo.One(Queries.boardBySlug slug, cancellationToken = cancellationToken)
 
                 match read "Reading a board failed" found with
-                | None -> return Answered { What = $"board {slug.Value}" }
+                | None -> return RequestResult { What = $"board {slug.Value}" }
                 | Some b ->
                     let! total = repo.Count(Queries.doneOn b.Id, cancellationToken = cancellationToken)
                     let! rows = repo.All(Queries.finishedOn b.Id ((page - 1) * size) size, cancellationToken = cancellationToken)
                     let total = read "Counting done cards failed" total
 
                     return
-                        Answered
+                        RequestResult
                             { Cards = read "Reading done cards failed" rows |> List.map View.card |> Array.ofList
                               Page = page
                               Total = int total
                               Pages = int ((total + int64 size - 1L) / int64 size) }
         }
 
-    member _.RenameAsync(card: Guid, version: int, title: string, cancellationToken: CancellationToken) : Task<Changed<CardView>> =
+    member _.RenameAsync(card: Guid, version: int, title: string, cancellationToken: CancellationToken) : Task<ChangeResult<CardView>> =
         match field "title" Title.create title with
-        | Error problems -> Task.FromResult(Changed<CardView>(Invalid.fields problems))
+        | Error problems -> Task.FromResult(ChangeResult<CardView>(Invalid.fields problems))
         | Ok title -> change card version (fun _ _ c -> Card.rename title c) cancellationToken

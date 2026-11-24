@@ -65,14 +65,14 @@ app.MapPost("/boards/{slug}/cards", async (string slug, NewCard input, KanbanDat
     });
 
 app.MapPost("/cards/{id:guid}/start", async (Guid id, Start input, KanbanData k, CancellationToken ct) =>
-    Changed(await k.StartAsync(id, input.Version, input.Assignee, ct)));
+    ChangeResult(await k.StartAsync(id, input.Version, input.Assignee, ct)));
 
 app.MapPut("/cards/{id:guid}/title", async (Guid id, Rename input, KanbanData k, CancellationToken ct) =>
-    Changed(await k.RenameAsync(id, input.Version, input.Title, ct)));
+    ChangeResult(await k.RenameAsync(id, input.Version, input.Title, ct)));
 
 app.Run();
 
-static IResult Changed(Changed<CardView> outcome) => outcome switch
+static IResult ChangeResult(ChangeResult<CardView> outcome) => outcome switch
 {
     CardView card => Results.Ok(card),
     Missing missing => Results.NotFound(missing),

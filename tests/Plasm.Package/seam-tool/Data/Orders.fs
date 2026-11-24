@@ -41,19 +41,19 @@ type Orders() =
             Status = Cancelled "out of stock"
             Version = 1 } ]
 
-    member _.OrderAsync(id: OrderId, cancellationToken: CancellationToken) : Task<Found<Order>> =
+    member _.OrderAsync(id: OrderId, cancellationToken: CancellationToken) : Task<FindResult<Order>> =
         match orders |> List.tryFind (fun o -> o.Id = id) with
-        | Some o -> Task.FromResult(Found<Order>(o))
-        | None -> Task.FromResult(Found<Order>({ What = "order" }: Missing))
+        | Some o -> Task.FromResult(FindResult<Order>(o))
+        | None -> Task.FromResult(FindResult<Order>({ What = "order" }: Missing))
 
     member _.OrdersAsync(cancellationToken: CancellationToken) : Task<Order list> = Task.FromResult orders
 
-    member _.AddOrderAsync(customer: string, note: string option, cancellationToken: CancellationToken) : Task<Added<Order>> =
+    member _.AddOrderAsync(customer: string, note: string option, cancellationToken: CancellationToken) : Task<AddResult<Order>> =
         if String.IsNullOrWhiteSpace customer then
-            Task.FromResult(Added<Order>(Invalid.field "customer" "is required"))
+            Task.FromResult(AddResult<Order>(Invalid.field "customer" "is required"))
         else
             Task.FromResult(
-                Added<Order>(
+                AddResult<Order>(
                     { Id = OrderId(Guid.Parse "01900000-0000-7000-8000-000000000003")
                       Customer = customer
                       Note = note

@@ -77,7 +77,7 @@ public class BookingTests(Database db)
             var other => throw new Exception($"not added: {other.Value}"),
         };
 
-    static EquipmentView Stored(Changed<EquipmentView> outcome) => outcome switch
+    static EquipmentView Stored(ChangeResult<EquipmentView> outcome) => outcome switch
     {
         EquipmentView e => e,
         var other => throw new Exception($"not changed: {other.Value}"),

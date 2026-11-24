@@ -34,7 +34,7 @@ public class Query
     }
 
     /// A card by its id: the card, or Missing (the union CardResult).
-    public Task<Found<CardView>> Card(Guid id, [Service] KanbanData kanban, CancellationToken ct) => kanban.CardAsync(id, ct);
+    public Task<FindResult<CardView>> Card(Guid id, [Service] KanbanData kanban, CancellationToken ct) => kanban.CardAsync(id, ct);
 }
 
 /// Every change, each the facade method its REST endpoint calls, answering
@@ -43,49 +43,49 @@ public class Query
 [Authorize]
 public class Mutation
 {
-    public Task<Added<BoardSummary>> CreateBoard(string slug, string name, int wipLimit, [Service] KanbanData kanban, CancellationToken ct) =>
+    public Task<AddResult<BoardSummary>> CreateBoard(string slug, string name, int wipLimit, [Service] KanbanData kanban, CancellationToken ct) =>
         kanban.CreateBoardAsync(slug, name, wipLimit, ct);
 
-    public Task<Answered<CardView>> AddCard(string board, string title, [Service] KanbanData kanban, CancellationToken ct) =>
+    public Task<RequestResult<CardView>> AddCard(string board, string title, [Service] KanbanData kanban, CancellationToken ct) =>
         kanban.AddCardAsync(board, title, ct);
 
-    public Task<Found<SentBack>> SendAllBack(string board, [Service] KanbanData kanban, CancellationToken ct) =>
+    public Task<FindResult<SentBack>> SendAllBack(string board, [Service] KanbanData kanban, CancellationToken ct) =>
         kanban.SendAllBackAsync(board, ct);
 
-    public Task<Changed<CardView>> StartCard(Guid card, int version, ClaimsPrincipal user, [Service] KanbanData kanban, CancellationToken ct) =>
+    public Task<ChangeResult<CardView>> StartCard(Guid card, int version, ClaimsPrincipal user, [Service] KanbanData kanban, CancellationToken ct) =>
         kanban.StartAsync(card, version, user.Actor(), ct);
 
-    public Task<Changed<CardView>> ShipCard(Guid card, int version, [Service] KanbanData kanban, CancellationToken ct) =>
+    public Task<ChangeResult<CardView>> ShipCard(Guid card, int version, [Service] KanbanData kanban, CancellationToken ct) =>
         kanban.ShipAsync(card, version, ct);
 
-    public Task<Changed<CardView>> DropCard(Guid card, int version, string reason, [Service] KanbanData kanban, CancellationToken ct) =>
+    public Task<ChangeResult<CardView>> DropCard(Guid card, int version, string reason, [Service] KanbanData kanban, CancellationToken ct) =>
         kanban.DropAsync(card, version, reason, ct);
 
-    public Task<Changed<CardView>> SendCardBack(Guid card, int version, [Service] KanbanData kanban, CancellationToken ct) =>
+    public Task<ChangeResult<CardView>> SendCardBack(Guid card, int version, [Service] KanbanData kanban, CancellationToken ct) =>
         kanban.SendBackAsync(card, version, ct);
 
-    public Task<Changed<CardView>> ReopenCard(Guid card, int version, [Service] KanbanData kanban, CancellationToken ct) =>
+    public Task<ChangeResult<CardView>> ReopenCard(Guid card, int version, [Service] KanbanData kanban, CancellationToken ct) =>
         kanban.ReopenAsync(card, version, ct);
 
-    public Task<Changed<CardView>> BlockCard(Guid card, int version, string reason, [Service] KanbanData kanban, CancellationToken ct) =>
+    public Task<ChangeResult<CardView>> BlockCard(Guid card, int version, string reason, [Service] KanbanData kanban, CancellationToken ct) =>
         kanban.BlockAsync(card, version, reason, ct);
 
-    public Task<Changed<CardView>> UnblockCard(Guid card, int version, [Service] KanbanData kanban, CancellationToken ct) =>
+    public Task<ChangeResult<CardView>> UnblockCard(Guid card, int version, [Service] KanbanData kanban, CancellationToken ct) =>
         kanban.UnblockAsync(card, version, ct);
 
-    public Task<Changed<CardView>> RenameCard(Guid card, int version, string title, [Service] KanbanData kanban, CancellationToken ct) =>
+    public Task<ChangeResult<CardView>> RenameCard(Guid card, int version, string title, [Service] KanbanData kanban, CancellationToken ct) =>
         kanban.RenameAsync(card, version, title, ct);
 
-    public Task<Changed<CardView>> RelabelCard(Guid card, int version, string[] labels, [Service] KanbanData kanban, CancellationToken ct) =>
+    public Task<ChangeResult<CardView>> RelabelCard(Guid card, int version, string[] labels, [Service] KanbanData kanban, CancellationToken ct) =>
         kanban.RelabelAsync(card, version, labels, ct);
 
-    public Task<Changed<CardView>> AddItem(Guid card, int version, string text, [Service] KanbanData kanban, CancellationToken ct) =>
+    public Task<ChangeResult<CardView>> AddItem(Guid card, int version, string text, [Service] KanbanData kanban, CancellationToken ct) =>
         kanban.AddItemAsync(card, version, text, ct);
 
-    public Task<Changed<CardView>> TickItem(Guid card, int version, string text, [Service] KanbanData kanban, CancellationToken ct) =>
+    public Task<ChangeResult<CardView>> TickItem(Guid card, int version, string text, [Service] KanbanData kanban, CancellationToken ct) =>
         kanban.TickAsync(card, version, text, ct);
 
-    public Task<Changed<CardView>> Comment(Guid card, string body, ClaimsPrincipal user, [Service] KanbanData kanban, CancellationToken ct) =>
+    public Task<ChangeResult<CardView>> Comment(Guid card, string body, ClaimsPrincipal user, [Service] KanbanData kanban, CancellationToken ct) =>
         kanban.CommentAsync(card, user.Actor(), body, ct);
 }
 

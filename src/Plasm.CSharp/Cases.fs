@@ -27,8 +27,10 @@ type Invalid = { Problems: FieldProblem[] }
 type Missing = { What: string }
 
 /// A read that can miss: the value, or what is missing.
+/// The union C# switches over, one arm a case; it is not F#'s Result, and
+/// nothing in it has been parsed: it is what the operation came to.
 [<Struct; Union>]
-type Found<'T when 'T: not null> =
+type FindResult<'T when 'T: not null> =
     val private value: obj
     new(found: 'T) = { value = found :> obj }
     new(missing: Missing) = { value = missing :> obj }
@@ -38,8 +40,10 @@ type Found<'T when 'T: not null> =
         member this.Value = this.value
 
 /// An add: the record as stored, or the input that was not valid.
+/// The union C# switches over, one arm a case; it is not F#'s Result, and
+/// nothing in it has been parsed: it is what the operation came to.
 [<Struct; Union>]
-type Added<'T when 'T: not null> =
+type AddResult<'T when 'T: not null> =
     val private value: obj
     new(added: 'T) = { value = added :> obj }
     new(invalid: Invalid) = { value = invalid :> obj }
@@ -50,8 +54,10 @@ type Added<'T when 'T: not null> =
 
 /// A request about something that must be there, with input to check (a card
 /// added to a board, a page of a board): the answer, Missing, or Invalid.
+/// The union C# switches over, one arm a case; it is not F#'s Result, and
+/// nothing in it has been parsed: it is what the operation came to.
 [<Struct; Union>]
-type Answered<'T when 'T: not null> =
+type RequestResult<'T when 'T: not null> =
     val private value: obj
     new(answer: 'T) = { value = answer :> obj }
     new(missing: Missing) = { value = missing :> obj }
@@ -63,8 +69,10 @@ type Answered<'T when 'T: not null> =
 
 /// A change: the record as stored, or why not. Every change can be Invalid,
 /// since the database may refuse what it writes field by field.
+/// The union C# switches over, one arm a case; it is not F#'s Result, and
+/// nothing in it has been parsed: it is what the operation came to.
 [<Struct; Union>]
-type Changed<'T when 'T: not null> =
+type ChangeResult<'T when 'T: not null> =
     val private value: obj
     new(changed: 'T) = { value = changed :> obj }
     new(missing: Missing) = { value = missing :> obj }
@@ -78,11 +86,13 @@ type Changed<'T when 'T: not null> =
 
 /// A change whose rules refuse in the domain's own words, as an F# data
 /// layer answers it: the record as stored, Missing, the domain's refusal
-/// (`'R`, a union), Stale, or Invalid. The seam gives C# a Changed of the
+/// (`'R`, a union), Stale, or Invalid. The seam gives C# a ChangeResult of the
 /// record's view, the refusal a Refused whose Code is its case's name and
 /// whose Message is the refusal's own `Message`.
+/// The union C# switches over, one arm a case; it is not F#'s Result, and
+/// nothing in it has been parsed: it is what the operation came to.
 [<Struct; Union>]
-type Changed<'T, 'R when 'T: not null and 'R: not null> =
+type ChangeResult<'T, 'R when 'T: not null and 'R: not null> =
     val private value: obj
     new(changed: 'T) = { value = changed :> obj }
     new(missing: Missing) = { value = missing :> obj }

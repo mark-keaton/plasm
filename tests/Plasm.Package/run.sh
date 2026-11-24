@@ -319,7 +319,7 @@ bash "$here/sqlite/run.sh" "$feed" "$version" || failed=1
 bash "$here/template-sqlite/run.sh" "$feed" "$version" || failed=1
 
 # Plasm.CSharp, from the same feed (tests/Plasm.Package/seam/run.sh): a C#
-# switch over Found without its Missing arm is refused by name; the host's
+# switch over FindResult without its Missing arm is refused by name; the host's
 # cases, Stale's key parts among them, as JSON, the same natively.
 bash "$here/seam/run.sh" "$feed" "$version" || failed=1
 

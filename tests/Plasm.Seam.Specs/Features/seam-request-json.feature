@@ -19,8 +19,8 @@ Feature: A request body no JSON context lists stops the build
 
       [<Sealed>]
       type Orders() =
-          member _.AddOrderAsync(customer: string, cancellationToken: CancellationToken) : Task<Added<Order>> =
-              Task.FromResult(Added<Order>({ Customer = customer; Version = 1 }))
+          member _.AddOrderAsync(customer: string, cancellationToken: CancellationToken) : Task<AddResult<Order>> =
+              Task.FromResult(AddResult<Order>({ Customer = customer; Version = 1 }))
       """
     And Seam.cs:
       """

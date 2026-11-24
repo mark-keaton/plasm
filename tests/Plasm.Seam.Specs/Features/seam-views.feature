@@ -41,13 +41,13 @@ Feature: The seam writes the C# a host calls from its F# data project
           let order =
               { Id = OrderId(Guid.Empty); Customer = "Ada"; Note = None; Lines = []; Status = Open; Version = 1 }
 
-          member _.OrderAsync(id: OrderId, cancellationToken: CancellationToken) : Task<Found<Order>> =
-              Task.FromResult(Found<Order>(order))
+          member _.OrderAsync(id: OrderId, cancellationToken: CancellationToken) : Task<FindResult<Order>> =
+              Task.FromResult(FindResult<Order>(order))
 
           member _.OrdersAsync(cancellationToken: CancellationToken) : Task<Order list> = Task.FromResult [ order ]
 
-          member _.AddOrderAsync(customer: string, note: string option, cancellationToken: CancellationToken) : Task<Added<Order>> =
-              Task.FromResult(Added<Order>(order))
+          member _.AddOrderAsync(customer: string, note: string option, cancellationToken: CancellationToken) : Task<AddResult<Order>> =
+              Task.FromResult(AddResult<Order>(order))
       """
     And Seam.cs:
       """
@@ -80,9 +80,9 @@ Feature: The seam writes the C# a host calls from its F# data project
       Then seam.lock holds
         """
         class Orders = Shop.Orders
-          Task<Found<OrderView>> OrderAsync(Guid id, CancellationToken cancellationToken)
+          Task<FindResult<OrderView>> OrderAsync(Guid id, CancellationToken cancellationToken)
           Task<OrderView[]> OrdersAsync(CancellationToken cancellationToken)
-          Task<Added<OrderView>> AddOrderAsync(string customer, string? note, CancellationToken cancellationToken)
+          Task<AddResult<OrderView>> AddOrderAsync(string customer, string? note, CancellationToken cancellationToken)
         """
       And the C# compiles with the host:
         """

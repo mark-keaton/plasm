@@ -7,14 +7,14 @@ Feature: A C# host is given one of the cases an outcome can have
   So that no project retypes the cases, nor maps its records and refusals to them
 
   Plasm.CSharp holds the cases C# switches over: Missing, Refused, Stale,
-  Invalid; the unions over them, each a struct of C#'s union shape: Found<'T>
-  (the value or Missing), Added<'T> (the value or Invalid), Answered<'T> (the
-  value, Missing or Invalid), Changed<'T> (the value, Missing, Refused, Stale
-  or Invalid) and Changed<'T, 'R> (the value, Missing, the domain's refusal
+  Invalid; the unions over them, each a struct of C#'s union shape: FindResult<'T>
+  (the value or Missing), AddResult<'T> (the value or Invalid), RequestResult<'T> (the
+  value, Missing or Invalid), ChangeResult<'T> (the value, Missing, Refused, Stale
+  or Invalid) and ChangeResult<'T, 'R> (the value, Missing, the domain's refusal
   'R, Stale or Invalid); and the functions that read a read's or a
   transaction's result as one of them, the records as they are, and a read
-  of many as an array. The seam gives C# their views; Found.map, Added.map,
-  Answered.map and Changed.map make a view in F#. A transaction stops in the
+  of many as an array. The seam gives C# their views; FindResult.map, AddResult.map,
+  RequestResult.map and ChangeResult.map make a view in F#. A transaction stops in the
   domain's terms with Stop: Stop.Missing, naming what is not there, or
   Stop.Refused, with the domain's refusal. A database that fails throws
   UnavailableException. It depends on Plasm alone, so a host of either
@@ -143,27 +143,27 @@ Feature: A C# host is given one of the cases an outcome can have
 
   Rule: An outcome's record is made a view in F# with its map
 
-    Scenario: Found.map makes the record its view
+    Scenario: FindResult.map makes the record its view
       Given the note "Groceries"
-      When C# reads the note "Groceries", made a view with Found.map
+      When C# reads the note "Groceries", made a view with FindResult.map
       Then it is given the NoteView of "Groceries"
 
-    Scenario: Found.map keeps Missing
-      When C# reads a note that is not there, made a view with Found.map
+    Scenario: FindResult.map keeps Missing
+      When C# reads a note that is not there, made a view with FindResult.map
       Then it is given Missing, saying "note"
 
-    Scenario: Changed.map makes the record its view, and keeps the refusal
+    Scenario: ChangeResult.map makes the record its view, and keeps the refusal
       Given the note "Groceries"
-      When C# renames "Groceries" to "Shopping", made a view with Changed.map
+      When C# renames "Groceries" to "Shopping", made a view with ChangeResult.map
       Then it is given the NoteView of "Shopping", at version 2
 
-    Scenario: Changed.refused makes the refusal Refused, as a host without the seam takes it
+    Scenario: ChangeResult.refused makes the refusal Refused, as a host without the seam takes it
       Given the note "Groceries"
-      When C# renames "Groceries" to "Groceries", its refusal made Refused with Changed.refused
+      When C# renames "Groceries" to "Groceries", its refusal made Refused with ChangeResult.refused
       Then it is given Refused, with the code "TitleTaken" and the rules' words
 
-    Scenario: Added.map makes the stored record its view
-      When C# adds the note "Groceries", made a view with Added.map
+    Scenario: AddResult.map makes the stored record its view
+      When C# adds the note "Groceries", made a view with AddResult.map
       Then it is given the NoteView of "Groceries", at version 1
 
   Rule: A database that fails throws

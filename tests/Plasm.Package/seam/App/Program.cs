@@ -8,13 +8,13 @@ using Seam.Data;
 var notes = Notes.Open(args[0]);
 var json = SeamJson.Default;
 
-string Found(Found<NoteView> found) => found switch
+string Read(FindResult<NoteView> found) => found switch
 {
     NoteView v => "found " + JsonSerializer.Serialize(v, json.NoteView),
     Missing m => "missing " + JsonSerializer.Serialize(m, json.Missing),
 };
 
-string Changed(Changed<NoteView> changed) => changed switch
+string Change(ChangeResult<NoteView> changed) => changed switch
 {
     NoteView v => "changed " + JsonSerializer.Serialize(v, json.NoteView),
     Missing m => "missing " + JsonSerializer.Serialize(m, json.Missing),
@@ -23,18 +23,18 @@ string Changed(Changed<NoteView> changed) => changed switch
     Invalid i => "invalid " + JsonSerializer.Serialize(i, json.Invalid),
 };
 
-string Added(Added<NoteView> added) => added switch
+string Add(AddResult<NoteView> added) => added switch
 {
     NoteView v => "added " + JsonSerializer.Serialize(v, json.NoteView),
     Invalid i => "invalid " + JsonSerializer.Serialize(i, json.Invalid),
 };
 
-Console.WriteLine(Added(notes.Add("Groceries")));
-Console.WriteLine(Added(notes.Add("Groceries")));
-Console.WriteLine(Found(notes.Read(Guid.Parse("01900000-0000-7000-8000-000000000001"))));
-Console.WriteLine(Found(notes.Read(Guid.Empty)));
-Console.WriteLine(Changed(notes.RenameStale()));
-Console.WriteLine(Changed(notes.RetitleFiledStale()));
+Console.WriteLine(Add(notes.Add("Groceries")));
+Console.WriteLine(Add(notes.Add("Groceries")));
+Console.WriteLine(Read(notes.Read(Guid.Parse("01900000-0000-7000-8000-000000000001"))));
+Console.WriteLine(Read(notes.Read(Guid.Empty)));
+Console.WriteLine(Change(notes.RenameStale()));
+Console.WriteLine(Change(notes.RetitleFiledStale()));
 var back = JsonSerializer.Deserialize("{\"kind\":\"withdrawn\",\"reason\":\"lamp\"}", json.ConditionView);
 Console.WriteLine("read back: " + (back.Value is Withdrawn w ? "Withdrawn " + w.Reason : "not Withdrawn"));
 

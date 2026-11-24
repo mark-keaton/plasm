@@ -74,7 +74,7 @@ abstract record Call
         return answer;
     }
 
-    protected static Stream Changed(Changed<CardView> outcome) => outcome switch
+    protected static Stream ChangeResult(ChangeResult<CardView> outcome) => outcome switch
     {
         CardView card => Case("card", card, KanbanJson.Default.CardView),
         Missing missing => Case("missing", missing, KanbanJson.Default.Missing),
@@ -118,13 +118,13 @@ sealed record AddCard(string Board, string Title) : Call
 sealed record StartCard(Guid Card, int Version, string Assignee) : Call
 {
     public override async Task<Stream> Answer(KanbanData k, CancellationToken ct) =>
-        Changed(await k.StartAsync(Card, Version, Assignee, ct));
+        ChangeResult(await k.StartAsync(Card, Version, Assignee, ct));
 }
 
 sealed record RenameCard(Guid Card, int Version, string Title) : Call
 {
     public override async Task<Stream> Answer(KanbanData k, CancellationToken ct) =>
-        Changed(await k.RenameAsync(Card, Version, Title, ct));
+        ChangeResult(await k.RenameAsync(Card, Version, Title, ct));
 }
 
 /// Every type read or written, by generated code: no reflection. An argument

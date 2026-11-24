@@ -85,11 +85,11 @@ builder.Services
     .AddPlasmReadType<Card, CardView>(CardRead.all)
     // Each outcome a union of its cases, registered once.
     .AddPlasmUnion<StageView>()
-    .AddPlasmUnion<Found<CardView>>("CardResult")
-    .AddPlasmUnion<Changed<CardView>>("ChangeOutcome")
-    .AddPlasmUnion<Answered<CardView>>("AddCardOutcome")
-    .AddPlasmUnion<Added<BoardSummary>>("CreateBoardOutcome")
-    .AddPlasmUnion<Found<SentBack>>("SendAllBackOutcome");
+    .AddPlasmUnion<FindResult<CardView>>("CardResult")
+    .AddPlasmUnion<ChangeResult<CardView>>("ChangeOutcome")
+    .AddPlasmUnion<RequestResult<CardView>>("AddCardOutcome")
+    .AddPlasmUnion<AddResult<BoardSummary>>("CreateBoardOutcome")
+    .AddPlasmUnion<FindResult<SentBack>>("SendAllBackOutcome");
 
 var app = builder.Build();
 app.UseAuthentication();

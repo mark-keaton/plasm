@@ -113,7 +113,7 @@ type CSharpOutcomeSteps(w: World) =
     let given' () = w.Get<obj> "given"
 
     /// The note renamed, and what C# is given of it, as `given` makes it.
-    let renamedAs (given: Changed<Note, NoteRefusal> -> obj) (n: Note) (title: string) =
+    let renamedAs (given: ChangeResult<Note, NoteRefusal> -> obj) (n: Note) (title: string) =
         task {
             let! r = repo().Transact(Notes.rename n.Id n.Version title)
 
@@ -188,20 +188,20 @@ type CSharpOutcomeSteps(w: World) =
                 return (Outcome.found "note" r).Value
             })
 
-    [<StepDefinition("^C# reads the note \"(.*)\", made a view with Found\\.map$")>]
+    [<StepDefinition("^C# reads the note \"(.*)\", made a view with FindResult\\.map$")>]
     member _.ReadView(title: string) =
         given (fun () ->
             task {
                 let! r = repo().One(Notes.byId (note title).Id)
-                return (Outcome.found "note" r |> Found.map Notes.view).Value
+                return (Outcome.found "note" r |> FindResult.map Notes.view).Value
             })
 
-    [<StepDefinition("^C# reads a note that is not there, made a view with Found\\.map$")>]
+    [<StepDefinition("^C# reads a note that is not there, made a view with FindResult\\.map$")>]
     member _.ReadNoneView() =
         given (fun () ->
             task {
                 let! r = repo().One(Notes.byId (NoteId(Guid.CreateVersion7())))
-                return (Outcome.found "note" r |> Found.map Notes.view).Value
+                return (Outcome.found "note" r |> FindResult.map Notes.view).Value
             })
 
     [<StepDefinition("^C# reads a note that is not there$")>]
@@ -246,17 +246,17 @@ type CSharpOutcomeSteps(w: World) =
         }
         |> unit
 
-    [<StepDefinition("^C# renames \"(.*)\" to \"(.*)\", made a view with Changed\\.map$")>]
+    [<StepDefinition("^C# renames \"(.*)\" to \"(.*)\", made a view with ChangeResult\\.map$")>]
     member _.RenameView(from: string, title: string) =
-        given (fun () -> renamedAs (fun c -> (c |> Changed.map Notes.view).Value) (note from) title)
+        given (fun () -> renamedAs (fun c -> (c |> ChangeResult.map Notes.view).Value) (note from) title)
 
-    [<StepDefinition("^C# renames \"(.*)\" to \"(.*)\", its refusal made Refused with Changed\\.refused$")>]
+    [<StepDefinition("^C# renames \"(.*)\" to \"(.*)\", its refusal made Refused with ChangeResult\\.refused$")>]
     member _.RenameRefusedAs(from: string, title: string) =
         let refused (r: NoteRefusal) : Refused =
             match r with
             | TitleTaken _ -> { Code = "TitleTaken"; Message = r.Message }
 
-        given (fun () -> renamedAs (fun c -> (c |> Changed.refused refused).Value) (note from) title)
+        given (fun () -> renamedAs (fun c -> (c |> ChangeResult.refused refused).Value) (note from) title)
 
     [<StepDefinition("^C# renames \"(.*)\" to \"([^\"]*)\"$")>]
     member _.Rename(from: string, title: string) = given (fun () -> renamed (note from) title)
@@ -290,18 +290,18 @@ type CSharpOutcomeSteps(w: World) =
                 return (Outcome.added r).Value
             })
 
-    [<StepDefinition("^C# adds the note \"(.*)\", made a view with Added\\.map$")>]
+    [<StepDefinition("^C# adds the note \"(.*)\", made a view with AddResult\\.map$")>]
     member _.AddView(title: string) =
         given (fun () ->
             task {
                 let! r = repo().Transact(Tx.insert { Id = NoteId(Guid.CreateVersion7()); Title = title; Version = 1 }: Tx<_, unit>)
-                return (Outcome.added r |> Added.map Notes.view).Value
+                return (Outcome.added r |> AddResult.map Notes.view).Value
             })
 
     [<StepDefinition("^C# adds a note whose title the domain refuses$")>]
     member _.AddRefused() =
         // The domain's check, before the database: an empty title is no title.
-        given (fun () -> task { return (Added<Note>(Invalid.field "title" "is empty")).Value })
+        given (fun () -> task { return (AddResult<Note>(Invalid.field "title" "is empty")).Value })
 
     [<StepDefinition("^the keyed Issue (.*)#(\\d+) \"(.*)\", changed since it was read$")>]
     member _.KeyedIssue(repoName: string, number: int, title: string) =
@@ -329,7 +329,7 @@ type CSharpOutcomeSteps(w: World) =
             task {
                 let first = w.Get<CompositeKeys.Issue> "firstIssue"
                 let! r = w.Get<Repo>("keyedRepo").Transact(Tx.update (first, { first with Title = "Retitled" }): Tx<_, Stop<NoteRefusal>>)
-                return (Outcome.changed r |> Changed.map (fun (i: CompositeKeys.Issue) -> i.Title)).Value
+                return (Outcome.changed r |> ChangeResult.map (fun (i: CompositeKeys.Issue) -> i.Title)).Value
             })
 
     [<StepDefinition("^it is given the NoteView of \"(.*)\"$")>]

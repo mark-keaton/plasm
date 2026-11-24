@@ -170,7 +170,7 @@ expect() { # what the host must print, under the runtime
   if grep -qxF "$1" "$work/jit.txt"; then echo "seam-tool: $2"; else echo "seam-tool FAILED: $2"; failed=1; fi
 }
 expect 'found {"id":"01900000-0000-7000-8000-000000000001","customer":"Ada","note":"by the door","lines":[{"part":"bolt","quantity":4}],"status":{"kind":"shipped","at":"2026-11-24T09:00:00+00:00"},"version":2}' \
-  "a read is Found of the view: the typed id its Guid, the option its value, the list an array, the union by kind"
+  "a read is FindResult of the view: the typed id its Guid, the option its value, the list an array, the union by kind"
 expect 'missing {"what":"order"}' "a read of none is Missing"
 expect 'all [{"id":"01900000-0000-7000-8000-000000000001","customer":"Ada","note":"by the door","lines":[{"part":"bolt","quantity":4}],"status":{"kind":"shipped","at":"2026-11-24T09:00:00+00:00"},"version":2},{"id":"01900000-0000-7000-8000-000000000002","customer":"Grace","note":null,"lines":[],"status":{"kind":"cancelled","reason":"out of stock"},"version":1}]' \
   "an F# list of records is an array of views, an option of none null"

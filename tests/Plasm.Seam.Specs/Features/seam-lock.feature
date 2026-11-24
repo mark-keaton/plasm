@@ -20,8 +20,8 @@ Feature: seam.lock holds the contract, and a CI build does not change it
 
       [<Sealed>]
       type Orders() =
-          member _.OrderAsync(cancellationToken: CancellationToken) : Task<Found<Order>> =
-              Task.FromResult(Found<Order>({ Customer = "Ada"; Version = 1 }))
+          member _.OrderAsync(cancellationToken: CancellationToken) : Task<FindResult<Order>> =
+              Task.FromResult(FindResult<Order>({ Customer = "Ada"; Version = 1 }))
       """
     And Seam.cs:
       """
@@ -54,8 +54,8 @@ Feature: seam.lock holds the contract, and a CI build does not change it
 
       [<Sealed>]
       type Orders() =
-          member _.OrderAsync(cancellationToken: CancellationToken) : Task<Found<Order>> =
-              Task.FromResult(Found<Order>({ Customer = "Ada"; Note = None; Version = 1 }))
+          member _.OrderAsync(cancellationToken: CancellationToken) : Task<FindResult<Order>> =
+              Task.FromResult(FindResult<Order>({ Customer = "Ada"; Note = None; Version = 1 }))
       """
     When the seam is written into the namespace Shop.Api
     Then the seam rewrote seam.lock, saying "added to record OrderView = Shop.Order: Note: string?"
@@ -81,8 +81,8 @@ Feature: seam.lock holds the contract, and a CI build does not change it
 
       [<Sealed>]
       type Orders() =
-          member _.OrderAsync(cancellationToken: CancellationToken) : Task<Found<Order>> =
-              Task.FromResult(Found<Order>({ Customer = "Ada" }))
+          member _.OrderAsync(cancellationToken: CancellationToken) : Task<FindResult<Order>> =
+              Task.FromResult(FindResult<Order>({ Customer = "Ada" }))
       """
     When the seam is written into the namespace Shop.Api, as a CI build writes it
     Then the seam stops with SEAM020 at seam.lock: "the generated C# no longer matches seam.lock (1 change, below)"

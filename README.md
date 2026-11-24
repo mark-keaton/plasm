@@ -39,7 +39,7 @@ card.MapPost("/start", async (Guid id, Versioned input, ClaimsPrincipal user, Ka
 
 <!-- from: examples/Kanban/src/Host/Outcomes.cs -->
 ```csharp
-public static IResult Of(Changed<CardView> outcome) => outcome switch
+public static IResult Of(ChangeResult<CardView> outcome) => outcome switch
 {
     CardView card => Results.Ok(card),
     Missing missing => Of(missing),
@@ -52,9 +52,9 @@ public static IResult Of(Changed<CardView> outcome) => outcome switch
 <!-- from: examples/Kanban/src/Data/Facade.fs -->
 ```fsharp
 /// `assignee` starts work on the card, if the board's limit allows it.
-member _.StartAsync(card: Guid, version: int, assignee: string, cancellationToken: CancellationToken) : Task<Changed<CardView>> =
+member _.StartAsync(card: Guid, version: int, assignee: string, cancellationToken: CancellationToken) : Task<ChangeResult<CardView>> =
     match field "assignee" Person.create assignee with
-    | Error problems -> Task.FromResult(Changed<CardView>(Invalid.fields problems))
+    | Error problems -> Task.FromResult(ChangeResult<CardView>(Invalid.fields problems))
     | Ok who -> change card version (Card.start who (clock ())) cancellationToken
 ```
 

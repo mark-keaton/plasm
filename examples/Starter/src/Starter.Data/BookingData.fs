@@ -1,6 +1,6 @@
 /// What C# calls: one type, BookingData. Its members take and return the
 /// domain's own types; an outcome that can go more than one way is one of
-/// Plasm.CSharp's (Found, Added, Changed of the equipment and the rules'
+/// Plasm.CSharp's (FindResult, AddResult, ChangeResult of the equipment and the rules'
 /// Refusal), and a read of many is an array. The seam (Starter.Api's
 /// Seam.cs) writes the C# the API and the tests call: a view of each record
 /// and union, and a C# BookingData over this one, whose outcomes are of those
@@ -91,17 +91,17 @@ type BookingData private (repo: Repo, time: TimeProvider) =
 
     /// Adds equipment called `name`: Invalid, with the field, when the name
     /// is not one (EquipmentName.create) or is taken.
-    member _.AddEquipmentAsync(name: string, cancellationToken: CancellationToken) : Task<Added<Equipment>> =
+    member _.AddEquipmentAsync(name: string, cancellationToken: CancellationToken) : Task<AddResult<Equipment>> =
         task {
             match EquipmentName.create name with
-            | Error message -> return Added(Invalid.field "name" message)
+            | Error message -> return AddResult(Invalid.field "name" message)
             | Ok name ->
                 let equipment = Equipment.create (EquipmentId(Guid.CreateVersion7())) name
                 let! result = repo.Transact((Tx.insert equipment: Tx<Equipment, unit>), cancellationToken = cancellationToken)
                 return Outcome.added result
         }
 
-    member _.EquipmentAsync(id: EquipmentId, cancellationToken: CancellationToken) : Task<Found<Equipment>> =
+    member _.EquipmentAsync(id: EquipmentId, cancellationToken: CancellationToken) : Task<FindResult<Equipment>> =
         task {
             let! result = repo.One(Db.byId id, cancellationToken)
             return Outcome.found "equipment" result

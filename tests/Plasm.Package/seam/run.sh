@@ -2,9 +2,9 @@
 # Plasm.CSharp from its package (docs/csharp.md): a C# host over an F# data
 # layer on Plasm.Sqlite, both restoring Plasm only from the feed $1 (at version
 # $2). The C# compiler must treat the package's unions as closed: with the
-# Missing arm removed from a switch over Found, the build fails naming
+# Missing arm removed from a switch over FindResult, the build fails naming
 # Plasm.CSharp.Missing. Built whole, the host prints each case it is given
-# (Added, Invalid, Found, Missing, and Stale for a typed id and for a key of
+# (AddResult's record and Invalid, FindResult's record and Missing, and ChangeResult's Stale for a typed id and for a key of
 # two parts, one holding a "/") as source-generated JSON, and reads a union
 # back through a classifier that inherits ByKind. It does so under the runtime
 # and as a native binary, which must print the same, warning only
@@ -50,25 +50,25 @@ cat > "$app/nuget.config" <<XML
 XML
 case "$app" in "$repo"/*) echo "seam: the application is inside the repository"; exit 1;; esac
 failed=0
-# Red: a switch over Found without its Missing arm is refused, by name.
+# Red: a switch over FindResult without its Missing arm is refused, by name.
 cp -R "$app" "$work/red"
 python3 - "$work/red/App/Program.cs" <<'PY'
 import sys
 p = sys.argv[1]; s = open(p).read()
-arm = '    Missing m => "missing " + JsonSerializer.Serialize(m, json.Missing),\n};\n\nstring Changed'
-assert s.count(arm) == 1, "the Missing arm of Found's switch is not where the check expects it"
-open(p, 'w').write(s.replace(arm, '};\n\nstring Changed'))
+arm = '    Missing m => "missing " + JsonSerializer.Serialize(m, json.Missing),\n};\n\nstring Change'
+assert s.count(arm) == 1, "the Missing arm of FindResult's switch is not where the check expects it"
+open(p, 'w').write(s.replace(arm, '};\n\nstring Change'))
 PY
 if dotnet build "$work/red/App" -c Release -p:PlasmVersion="$version" -v q -m:1 -nodeReuse:false > "$work/red.log" 2>&1; then
-  echo "seam: a switch over Found without its Missing arm built"; failed=1
+  echo "seam: a switch over FindResult without its Missing arm built"; failed=1
 elif grep -q "error CS8509.*'Plasm.CSharp.Missing' is not covered" "$work/red.log"; then
-  echo "seam: a switch over Found without its Missing arm is refused: CS8509, naming Plasm.CSharp.Missing"
+  echo "seam: a switch over FindResult without its Missing arm is refused: CS8509, naming Plasm.CSharp.Missing"
 else
-  echo "seam: a switch over Found without its Missing arm failed otherwise:"; grep -E ' error ' "$work/red.log" | sed 's/\[.*//' | sort -u | head -5; failed=1
+  echo "seam: a switch over FindResult without its Missing arm failed otherwise:"; grep -E ' error ' "$work/red.log" | sed 's/\[.*//' | sort -u | head -5; failed=1
 fi
 rid=$(dotnet --info | sed -n 's/^ *RID: *//p' | head -1)
 dotnet build "$app/App" -c Release -p:PlasmVersion="$version" -o "$work/jit" -v q -m:1 -nodeReuse:false > "$work/build.log" 2>&1 || { echo "seam: the host did not build"; grep -E ' error ' "$work/build.log" | sed 's/\[.*//' | sort -u | head -10; exit 1; }
-echo "seam: the host builds, switching over Found, Added and Changed with no default arm"
+echo "seam: the host builds, switching over FindResult, AddResult and ChangeResult with no default arm"
 dotnet "$work/jit/App.dll" "$work/jit.db" > "$work/jit.txt" 2>&1 || true
 dotnet publish "$app/App" -c Release -r "$rid" -p:PlasmVersion="$version" -o "$work/native" -v m -m:1 -nodeReuse:false > "$work/native.log" 2>&1 || { tail -30 "$work/native.log"; exit 1; }
 "$work/native/App" "$work/native.db" > "$work/native.txt" 2>&1 || true

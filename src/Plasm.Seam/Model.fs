@@ -60,13 +60,13 @@ type UnionView =
       Display: string
       Cases: List<CaseView> }
 
-/// One closed outcome, such as Changed<RepairJob>, and its view Changed<JobView>.
+/// One closed outcome, such as ChangeResult<RepairJob>, and its view ChangeResult<JobView>.
 type OutcomeView =
     { Cs: string
       Domain: string
       Arms: (string * Cross) list }
 
-/// An outcome type as declared, such as Changed<T>: each case's C# type, None for T.
+/// An outcome type as declared, such as ChangeResult<T>: each case's C# type, None for T.
 type OutcomeShape =
     { Name: string
       Cs: string
@@ -95,7 +95,7 @@ type DataClass =
       Display: string
       Members: Member list }
 
-/// A domain refusal (the `'R` of a Changed<'T, 'R>), as C# is given it: a
+/// A domain refusal (the `'R` of a ChangeResult<'T, 'R>), as C# is given it: a
 /// Refused whose Code is its case's name, known at build, and whose Message
 /// is its own.
 type RefusalView =

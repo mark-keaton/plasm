@@ -70,7 +70,7 @@ let orderPage page size (q: Query&lt;Order&gt;) =
         <div class="code-title">Your C# host · Rest.cs, Outcomes.cs</div>
 <pre class="code csharp" data-from="examples/Kanban/src/Host/Rest.cs">card.MapPost("/start", async (Guid id, Versioned input, ClaimsPrincipal user, KanbanData kanban, CancellationToken ct) =&gt;
     Outcomes.Of(await kanban.StartAsync(id, input.Version, user.Actor(), ct)));</pre>
-<pre class="code csharp" data-from="examples/Kanban/src/Host/Outcomes.cs">public static IResult Of(Changed&lt;CardView&gt; outcome) =&gt; outcome switch
+<pre class="code csharp" data-from="examples/Kanban/src/Host/Outcomes.cs">public static IResult Of(ChangeResult&lt;CardView&gt; outcome) =&gt; outcome switch
 {
     CardView card =&gt; Results.Ok(card),
     Missing missing =&gt; Of(missing),
@@ -82,9 +82,9 @@ let orderPage page size (q: Query&lt;Order&gt;) =
       <div class="code-card">
         <div class="code-title">Your F# domain · Facade.fs</div>
 <pre class="code fsharp" data-from="examples/Kanban/src/Data/Facade.fs">/// `assignee` starts work on the card, if the board's limit allows it.
-member _.StartAsync(card: Guid, version: int, assignee: string, cancellationToken: CancellationToken) : Task&lt;Changed&lt;CardView&gt;&gt; =
+member _.StartAsync(card: Guid, version: int, assignee: string, cancellationToken: CancellationToken) : Task&lt;ChangeResult&lt;CardView&gt;&gt; =
     match field "assignee" Person.create assignee with
-    | Error problems -&gt; Task.FromResult(Changed&lt;CardView&gt;(Invalid.fields problems))
+    | Error problems -&gt; Task.FromResult(ChangeResult&lt;CardView&gt;(Invalid.fields problems))
     | Ok who -&gt; change card version (Card.start who (clock ())) cancellationToken</pre>
       </div>
     </div>

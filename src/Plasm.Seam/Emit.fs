@@ -318,7 +318,7 @@ let private jsonFile (seam: SeamModel) =
 
 let status (shape: OutcomeShape) (case: string option * string) : (string * int) option =
     match case with
-    | None, _ when shape.Name = "Added" -> Some("Results.Created(location(x), x)", 201)
+    | None, _ when shape.Name = "AddResult" -> Some("Results.Created(location(x), x)", 201)
     | None, _ -> Some("Results.Ok(x)", 200)
     | Some _, "Missing" -> Some("Results.NotFound(x)", 404)
     | Some _, "Invalid" -> Some("Results.BadRequest(x)", 400)
@@ -346,7 +346,7 @@ public static class SeamHttp
     for shape in seam.Shapes |> Seq.filter hasHttp do
         if not first then line ""
         first <- false
-        let created = shape.Name = "Added"
+        let created = shape.Name = "AddResult"
         let extra = if created then ", Func<T, string> location" else ""
         let pass = if created then "location" else ""
 

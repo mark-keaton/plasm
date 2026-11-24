@@ -93,23 +93,23 @@ type Notes private (repo: Repo) =
         cmd.ExecuteNonQueryAsync().Result |> ignore
         Notes(repo)
 
-    member _.Add(title: string) : Added<NoteView> =
+    member _.Add(title: string) : AddResult<NoteView> =
         let id = if title = "Groceries" then Db.first else Guid.Parse "01900000-0000-7000-8000-000000000002"
-        Outcome.added (run (Tx.insert ({ Id = NoteId id; Title = title; Version = 1 }: Note))) |> Added.map Db.view
+        Outcome.added (run (Tx.insert ({ Id = NoteId id; Title = title; Version = 1 }: Note))) |> AddResult.map Db.view
 
-    member _.Read(id: Guid) : Found<NoteView> =
-        Outcome.found "note" (repo.One(Db.byId (NoteId id)).Result) |> Found.map Db.view
+    member _.Read(id: Guid) : FindResult<NoteView> =
+        Outcome.found "note" (repo.One(Db.byId (NoteId id)).Result) |> FindResult.map Db.view
 
     /// A note renamed from a copy older than the stored one: Stale.
-    member _.RenameStale() : Changed<NoteView> =
+    member _.RenameStale() : ChangeResult<NoteView> =
         let note = (repo.One(Db.byId (NoteId Db.first)).Result |> Result.toOption |> Option.flatten).Value
         run (Tx.update (note, { note with Title = "Shopping" })) |> ignore
-        Outcome.changed (run (Tx.update (note, { note with Title = "Errands" }))) |> Changed.map Db.view |> Changed.refused noRefusal
+        Outcome.changed (run (Tx.update (note, { note with Title = "Errands" }))) |> ChangeResult.map Db.view |> ChangeResult.refused noRefusal
 
     /// A filed note, keyed by a shelf holding "/", retitled from an old copy: Stale, by its parts.
-    member _.RetitleFiledStale() : Changed<NoteView> =
+    member _.RetitleFiledStale() : ChangeResult<NoteView> =
         let filed: Filed = { Id = { Shelf = "a/b"; Number = 7 }; Title = "Crash"; Version = 1 }
         let stored = match run (Tx.insert filed) with Ok f -> f | Error e -> failwith e.Display
         run (Tx.update (stored, { stored with Title = "Crash (again)" })) |> ignore
         let view (f: Filed) : NoteView = { Id = Guid.Empty; Title = f.Title; Condition = ConditionView(Bookable()) }
-        Outcome.changed (run (Tx.update (stored, { stored with Title = "Retitled" }))) |> Changed.map view |> Changed.refused noRefusal
+        Outcome.changed (run (Tx.update (stored, { stored with Title = "Retitled" }))) |> ChangeResult.map view |> ChangeResult.refused noRefusal

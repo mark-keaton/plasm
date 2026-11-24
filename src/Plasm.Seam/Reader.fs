@@ -56,7 +56,7 @@ module private Meta =
     /// Names the seam uses itself, which no generated type may take.
     let reserved =
         set
-            [ "Found"; "Added"; "Changed"; "Answered"; "Missing"; "Invalid"; "Refused"; "Stale"; "FieldProblem"
+            [ "FindResult"; "AddResult"; "ChangeResult"; "RequestResult"; "Missing"; "Invalid"; "Refused"; "Stale"; "FieldProblem"
               "SeamMap"; "SeamJson"; "SeamHttp"; "Task"; "Guid" ]
 
     let declared =
@@ -484,7 +484,7 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
             many node node.Arguments[0] use' where (if t.Name.StartsWith "List" then "List" else "seq")
         elif full.StartsWith(Meta.core + "FSharpResult`") then
             raise (
-                cannot where t "a Result has no C# shape; return one of Plasm.CSharp's outcomes (Found, Added, Changed, Answered), which Outcome.found, added, changed and answered make from a Result"
+                cannot where t "a Result has no C# shape; return one of Plasm.CSharp's outcomes (FindResult, AddResult, ChangeResult, RequestResult), which Outcome.found, added, changed and answered make from a Result"
             )
         elif full.StartsWith(Meta.collections + "FSharpMap`") then
             raise (cannot where t "a Map has no view; use a list of records")
@@ -518,7 +518,7 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
                         record t where
                     elif Meta.isUnion t then
                         union t where
-                    elif Meta.full t = "Plasm.CSharp.Changed`2" then
+                    elif Meta.full t = "Plasm.CSharp.ChangeResult`2" then
                         refusable node use' where
                     elif t.GetCustomAttributesData() |> Seq.exists (fun a -> a.AttributeType.FullName = "System.Runtime.CompilerServices.UnionAttribute") then
                         outcome node use' where
@@ -914,8 +914,8 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
 
             cross
 
-    /// A change whose refusal is the domain's own (Changed<'T, 'R>): C# is
-    /// given Changed of the view, the refusal a Refused (SeamMap.Refusal).
+    /// A change whose refusal is the domain's own (ChangeResult<'T, 'R>): C# is
+    /// given ChangeResult of the view, the refusal a Refused (SeamMap.Refusal).
     and refusable (node: Node) (use': Use) (where: string) : Cross =
         let t = node.Type
 
@@ -929,13 +929,13 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
             raise (cannot where t "a case of an outcome cannot be null")
 
         let refusal = refusalOf arguments[1] where
-        let one = nonNull (t.Assembly.GetType "Plasm.CSharp.Changed`1")
-        let cs = $"global::Plasm.CSharp.Changed<{value.CsFull}>"
+        let one = nonNull (t.Assembly.GetType "Plasm.CSharp.ChangeResult`1")
+        let cs = $"global::Plasm.CSharp.ChangeResult<{value.CsFull}>"
 
-        if seam.Shapes |> Seq.forall (fun s -> s.Cs <> "global::Plasm.CSharp.Changed") then
+        if seam.Shapes |> Seq.forall (fun s -> s.Cs <> "global::Plasm.CSharp.ChangeResult") then
             seam.Shapes.Add
-                { Name = "Changed"
-                  Cs = "global::Plasm.CSharp.Changed"
+                { Name = "ChangeResult"
+                  Cs = "global::Plasm.CSharp.ChangeResult"
                   Cases =
                     [ for c in one.GetConstructors() do
                           match c.GetParameters() with
@@ -985,7 +985,7 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
             if not (Meta.isUnion t) || not (Meta.visible t) then
                 Seam.fail
                     "SEAM013"
-                    $"{where}: {Meta.display t} is the refusal of a Changed, and a refusal is a public F# union, whose cases' names are the codes C# is given"
+                    $"{where}: {Meta.display t} is the refusal of a ChangeResult, and a refusal is a public F# union, whose cases' names are the codes C# is given"
 
             let message =
                 match t.GetProperty("Message", BindingFlags.Public ||| BindingFlags.Instance) with
@@ -996,7 +996,7 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
             if message.IsNone then
                 Seam.fail
                     "SEAM013"
-                    $"{where}: {Meta.display t} is the refusal of a Changed, and has no Message: write `member r.Message = ...` on it, the words C# is given with each refusal's code"
+                    $"{where}: {Meta.display t} is the refusal of a ChangeResult, and has no Message: write `member r.Message = ...` on it, the words C# is given with each refusal's code"
 
             seam.Refusals.Add
                 { Domain = Meta.csName t

@@ -28,7 +28,7 @@ Feature: What a type becomes in C#, what cannot cross, and what is carried with 
 
         [<Sealed>]
         type Parcels() =
-            member _.ParcelAsync() : Task<Found<Parcel>> = Task.FromResult(Found<Parcel>({ Weight = 2.5m<kg>; Postage = 4m }))
+            member _.ParcelAsync() : Task<FindResult<Parcel>> = Task.FromResult(FindResult<Parcel>({ Weight = 2.5m<kg>; Postage = 4m }))
         """
       And Seam.cs:
         """
@@ -60,7 +60,7 @@ Feature: What a type becomes in C#, what cannot cross, and what is carried with 
 
         [<Sealed>]
         type Orders() =
-            member _.OrderAsync() : Task<Found<Order>> = Task.FromResult(Found<Order>({ What = "order" }: Missing))
+            member _.OrderAsync() : Task<FindResult<Order>> = Task.FromResult(FindResult<Order>({ What = "order" }: Missing))
         """
       And Seam.cs:
         """
@@ -110,8 +110,8 @@ Feature: What a type becomes in C#, what cannot cross, and what is carried with 
         [<Sealed>]
         type Orders() =
             /// The order, or Missing when there is none.
-            member _.OrderAsync(number: int, cancellationToken: CancellationToken) : Task<Found<Order>> =
-                Task.FromResult(Found<Order>({ Customer = "Ada"; Status = Open }))
+            member _.OrderAsync(number: int, cancellationToken: CancellationToken) : Task<FindResult<Order>> =
+                Task.FromResult(FindResult<Order>({ Customer = "Ada"; Status = Open }))
         """
       And Seam.cs:
         """
@@ -124,7 +124,7 @@ Feature: What a type becomes in C#, what cannot cross, and what is carried with 
       And Views.g.cs declares "/// <summary>Not yet sent.</summary> public sealed record Open"
       And Views.g.cs declares "/// <summary>Where an order is.</summary> [JsonUnion(TypeClassifier = typeof(StatusViewByKind))] public union StatusView(Open, Shipped);"
       And Orders.g.cs declares "/// <summary>The orders, as the host reads them.</summary> public sealed class Orders("
-      And Orders.g.cs declares "/// <summary>The order, or Missing when there is none.</summary> public async Task<Found<OrderView>> OrderAsync(int number, CancellationToken cancellationToken) =>"
+      And Orders.g.cs declares "/// <summary>The order, or Missing when there is none.</summary> public async Task<FindResult<OrderView>> OrderAsync(int number, CancellationToken cancellationToken) =>"
       And the C# compiles with the host
 
   Rule: Seam.cs places a field in the view, a computed one among them
@@ -149,8 +149,8 @@ Feature: What a type becomes in C#, what cannot cross, and what is carried with 
 
         [<Sealed>]
         type Orders() =
-            member _.OrderAsync() : Task<Found<Order>> =
-                Task.FromResult(Found<Order>({ Customer = "Ada"; Lines = [ { Part = "bolt"; Quantity = 4; Price = 0.5m } ]; Version = 1 }))
+            member _.OrderAsync() : Task<FindResult<Order>> =
+                Task.FromResult(FindResult<Order>({ Customer = "Ada"; Lines = [ { Part = "bolt"; Quantity = 4; Price = 0.5m } ]; Version = 1 }))
         """
 
     Scenario: A computed field is last, unless Seam.cs places it

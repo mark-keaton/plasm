@@ -29,20 +29,20 @@ class BookingData = Starter.Data.BookingData
   static string DatabaseFile(string connectionString)
   static Task CreateDatabaseAsync(string connectionString, CancellationToken cancellationToken)
   Task<T> SandboxAsync<T>(Func<BookingData, Task<T>> body, CancellationToken cancellationToken)
-  Task<Added<EquipmentView>> AddEquipmentAsync(string name, CancellationToken cancellationToken)
-  Task<Found<EquipmentView>> EquipmentAsync(Guid id, CancellationToken cancellationToken)
+  Task<AddResult<EquipmentView>> AddEquipmentAsync(string name, CancellationToken cancellationToken)
+  Task<FindResult<EquipmentView>> EquipmentAsync(Guid id, CancellationToken cancellationToken)
   Task<EquipmentView[]> AllEquipmentAsync(CancellationToken cancellationToken)
-  Task<Changed<EquipmentView>> BookAsync(Guid id, int version, string who, DateTimeOffset from, DateTimeOffset until, CancellationToken cancellationToken)
-  Task<Changed<EquipmentView>> TakeOutOfServiceAsync(Guid id, int version, string reason, CancellationToken cancellationToken)
-  Task<Changed<EquipmentView>> ReturnToServiceAsync(Guid id, int version, CancellationToken cancellationToken)
+  Task<ChangeResult<EquipmentView>> BookAsync(Guid id, int version, string who, DateTimeOffset from, DateTimeOffset until, CancellationToken cancellationToken)
+  Task<ChangeResult<EquipmentView>> TakeOutOfServiceAsync(Guid id, int version, string reason, CancellationToken cancellationToken)
+  Task<ChangeResult<EquipmentView>> ReturnToServiceAsync(Guid id, int version, CancellationToken cancellationToken)
   static string Ddl
-http Added
+http AddResult
   value 201
   Invalid 400
-http Found
+http FindResult
   value 200
   Missing 404
-http Changed
+http ChangeResult
   value 200
   Missing 404
   Refused 422
