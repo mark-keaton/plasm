@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- An F# data project the seam reads (seam-tool/run.sh copies it outside
+       the repository): records, a union, a typed id and Plasm.CSharp's
+       outcomes, from the packages alone. It needs no database: the seam
+       reads its metadata, and the host calls it. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <IsAotCompatible>true</IsAotCompatible>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Orders.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Plasm.CSharp" Version="$(PlasmVersion)" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,102 @@
+/// What the seam is made of: how each F# type crosses to C#, and the C# the
+/// tool writes from it.
+namespace Plasm.Seam
+
+open System.Collections.Generic
+
+/// A mistake the developer can fix: printed as an MSBuild error with its code
+/// (SEAMnnn) and, when known, the place it was written; the build stops.
+exception SeamError of Code: string * Text: string * Origin: string option
+
+module Seam =
+    let fail code text = raise (SeamError(code, text, None))
+    let failAt code origin text = raise (SeamError(code, text, origin))
+
+/// How one type crosses the seam.
+type Cross =
+    { /// The C# type the host sees, without a nullable mark.
+      Cs: string
+      /// The domain type, as C# spells it.
+      Domain: string
+      Nullable: bool
+      ValueType: bool
+      /// The host sees the domain type itself.
+      Identity: bool
+      /// A domain expression as a view expression.
+      Out: string -> string
+      /// A view expression as a domain expression; None when the type is only ever returned.
+      In: (string -> string) option
+      /// Why In is None.
+      NoIn: string option }
+
+    member c.CsFull = if c.Nullable then c.Cs + "?" else c.Cs
+
+type Field = { Name: string; Member: string; Cross: Cross }
+
+type RecordView =
+    { Name: string
+      Domain: string
+      Display: string
+      Fields: List<Field> }
+
+type CaseView =
+    { Name: string
+      Kind: string
+      /// The domain's tag for the case, empty for a union of one case.
+      DomainCase: string
+      /// The nested class a case with fields is, to cast to.
+      Cast: string option
+      Fields: List<Field> }
+
+type UnionView =
+    { Name: string
+      Domain: string
+      Display: string
+      Cases: List<CaseView> }
+
+/// One closed outcome, such as Changed<RepairJob>, and its view Changed<JobView>.
+type OutcomeView =
+    { Cs: string
+      Domain: string
+      Arms: (string * Cross) list }
+
+/// An outcome type as declared, such as Changed<T>: each case's C# type, None for T.
+type OutcomeShape =
+    { Name: string
+      Cs: string
+      Cases: (string option * string) list }
+
+type Returns =
+    | Nothing
+    | Value
+    | Task
+    | TaskOf
+    | ValueTaskOf
+
+type Member =
+    { Static: bool
+      Property: bool
+      Name: string
+      TypeParameters: string list
+      Constraints: string
+      Parameters: (string * Cross) list
+      Returns: Returns
+      Result: Cross option }
+
+type DataClass =
+    { Name: string
+      Domain: string
+      Display: string
+      Members: Member list }
+
+type SeamModel =
+    { Namespace: string
+      Records: List<RecordView>
+      Unions: List<UnionView>
+      Outcomes: List<OutcomeView>
+      Shapes: List<OutcomeShape>
+      Data: List<DataClass>
+      /// Every type the JSON context lists, as C# spells it.
+      Json: List<string>
+      /// The host's own types it lists too, as Seam.cs writes them.
+      HostJson: List<string> }

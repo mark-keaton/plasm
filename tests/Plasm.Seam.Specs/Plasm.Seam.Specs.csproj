@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The seam's features (Features/), apart from features/ because they run
+       on no database: Reqnroll generates C# test classes from them, and every
+       step is in F#, in Plasm.Seam.Specs.Steps. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Update="reqnroll.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Reqnroll.xunit.v3" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Plasm.Seam.Specs.Steps/Plasm.Seam.Specs.Steps.fsproj" />
+  </ItemGroup>
+</Project>

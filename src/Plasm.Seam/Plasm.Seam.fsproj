@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The seam tool: reads a built F# data assembly's metadata (it loads and
+       runs none of it) and writes the C# a host calls. Not a package of its
+       own: Plasm.CSharp carries it, built, in tools/seam/, and its build
+       targets run it before a host's C# is compiled. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Run by whatever .NET builds the host. -->
+    <RollForward>LatestMajor</RollForward>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Model.fs" />
+    <Compile Include="Config.fs" />
+    <Compile Include="Reader.fs" />
+    <Compile Include="Emit.fs" />
+    <Compile Include="Lock.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Reflection.MetadataLoadContext" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <!-- An application, which carries its own FSharp.Core: the SDK's, not the
+         floor the libraries are built against. -->
+    <PackageReference Update="FSharp.Core" VersionOverride="$(ApplicationFSharpCoreVersion)" />
+  </ItemGroup>
+</Project>

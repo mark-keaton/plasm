@@ -29,6 +29,10 @@
     <PackageVersion Include="FSharp.Compiler.Service" Version="43.13.101" />
     <PackageVersion Include="Microsoft.Playwright" Version="1.64.1" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
+    <!-- The seam tool (src/Plasm.Seam), which Plasm.CSharp carries: it reads a
+         data assembly's metadata without loading it, and Seam.cs as C# syntax. -->
+    <PackageVersion Include="System.Reflection.MetadataLoadContext" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="11.0.0" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="11.0.0-rc.3" />
   </ItemGroup>

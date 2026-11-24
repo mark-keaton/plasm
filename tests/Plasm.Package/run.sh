@@ -17,7 +17,8 @@
 # `--database sqlite` is tested, published, and run against its database file
 # (template-sqlite/run.sh). Plasm.CSharp gives a C# host over an F# data
 # layer closed unions, refused by name when a switch misses a case, and
-# source-generated JSON, natively too (seam/run.sh).
+# source-generated JSON, natively too (seam/run.sh), and the seam, which
+# writes a host's C# side of its data layer at build (seam-tool/run.sh).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
@@ -85,11 +86,14 @@ sqreadme=$(unzip -p "$sq" README.md)
 if [[ "$sqreadme" =~ [0-9]+\.[0-9]+\.[0-9]+ ]]; then echo "pack: Plasm.Sqlite's readme names a version: ${BASH_REMATCH[0]}"; exit 1; fi
 if [[ "$sqreadme" != *"Plasm is new"* ]]; then echo "pack: Plasm.Sqlite's readme does not say Plasm is new"; exit 1; fi
 echo "pack: Plasm.Sqlite carries $sqfiles; depends on $deps"
-# Plasm.CSharp: its assembly, its documentation and the readme; it depends
-# on Plasm alone (and FSharp.Core), so a host of either provider takes it.
+# Plasm.CSharp: its assembly, its documentation and the readme, and the seam:
+# its build targets (build/, buildTransitive/) and the tool they run, built
+# with what it needs to run (tools/seam/); it depends on Plasm alone (and
+# FSharp.Core), so a host of either provider takes it.
 cs="$feed/Plasm.CSharp.$version.nupkg"
 csfiles=$(unzip -Z1 "$cs" | grep -v -E '^(_rels/|package/|\[Content_Types\]\.xml$|Plasm\.CSharp\.nuspec$)' | sort | tr '\n' ' ')
-if [ "$csfiles" != "README.md lib/net11.0/Plasm.CSharp.dll lib/net11.0/Plasm.CSharp.xml " ]; then echo "pack: Plasm.CSharp carries $csfiles"; exit 1; fi
+want_csfiles="README.md build/Plasm.CSharp.targets buildTransitive/Plasm.CSharp.targets lib/net11.0/Plasm.CSharp.dll lib/net11.0/Plasm.CSharp.xml tools/seam/FSharp.Core.dll tools/seam/Microsoft.CodeAnalysis.CSharp.dll tools/seam/Microsoft.CodeAnalysis.dll tools/seam/Plasm.Seam.deps.json tools/seam/Plasm.Seam.dll tools/seam/Plasm.Seam.runtimeconfig.json tools/seam/System.Reflection.MetadataLoadContext.dll "
+if [ "$csfiles" != "$want_csfiles" ]; then echo "pack: Plasm.CSharp carries $csfiles"; exit 1; fi
 csdeps=$(unzip -p "$cs" Plasm.CSharp.nuspec | grep -o '<dependency id="[^"]*" version="[^"]*"' | sed 's/<dependency id="\([^"]*\)" version="\([^"]*\)"/\1 \2/' | sort | tr '\n' ';')
 want_csdeps=$(printf '%s\n' "FSharp.Core $floor0" "Plasm $version" | sort | tr '\n' ';')
 if [ "$csdeps" != "$want_csdeps" ]; then echo "pack: Plasm.CSharp depends on $csdeps, not $want_csdeps"; exit 1; fi
@@ -309,6 +313,12 @@ bash "$here/template-sqlite/run.sh" "$feed" "$version" || failed=1
 # switch over Found without its Missing arm is refused by name; the host's
 # cases, Stale's key parts among them, as JSON, the same natively.
 bash "$here/seam/run.sh" "$feed" "$version" || failed=1
+
+# The seam, from the same feed (tests/Plasm.Package/seam-tool/run.sh): a C#
+# host's build writes its side of the data layer and seam.lock, skips the
+# seam when nothing changed, says what changed when the F# did, and prints
+# the same as JSON under the runtime and natively.
+bash "$here/seam-tool/run.sh" "$feed" "$version" || failed=1
 sqa="$work/sqlite-app"
 mkdir -p "$sqa"
 cp "$here/sqlite/SqliteConsumer.fsproj" "$here/sqlite/Program.fs" "$app/nuget.config" "$sqa/"

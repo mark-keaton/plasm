@@ -1,0 +1,5 @@
+<Project>
+  <!-- A project that references Plasm.CSharp itself gets what one that has it
+       through a data project gets: the seam (buildTransitive/). -->
+  <Import Project="$(MSBuildThisFileDirectory)../buildTransitive/Plasm.CSharp.targets" />
+</Project>

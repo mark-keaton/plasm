@@ -11,8 +11,35 @@
     <Compile Include="Cases.fs" />
     <Compile Include="Outcome.fs" />
     <Compile Include="ByKind.fs" />
+    <Compile Include="Seam.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Plasm/Plasm.fsproj" />
+    <!-- The seam tool, built first and carried in tools/seam/: neither a
+         reference of Plasm.CSharp nor a dependency of its package. -->
+    <ProjectReference Include="../Plasm.Seam/Plasm.Seam.fsproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
   </ItemGroup>
+  <!-- The seam's build targets, for a C# host (buildTransitive/Plasm.CSharp.targets). -->
+  <ItemGroup>
+    <None Include="build/Plasm.CSharp.targets" Pack="true" PackagePath="build/" />
+    <None Include="buildTransitive/Plasm.CSharp.targets" Pack="true" PackagePath="buildTransitive/" />
+  </ItemGroup>
+  <PropertyGroup>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PlasmSeamToolInPackage</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+  <!-- The tool as built, beside its dependencies, runtimeconfig and deps.json:
+       a build runs it with the dotnet that builds the host. -->
+  <Target Name="PlasmSeamToolInPackage">
+    <MSBuild Projects="../Plasm.Seam/Plasm.Seam.fsproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_PlasmSeamToolPath" />
+    </MSBuild>
+    <PropertyGroup>
+      <_PlasmSeamToolDir>@(_PlasmSeamToolPath->'%(RootDir)%(Directory)')</_PlasmSeamToolDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <_PlasmSeamToolFile Include="$(_PlasmSeamToolDir)*.dll;$(_PlasmSeamToolDir)Plasm.Seam.runtimeconfig.json;$(_PlasmSeamToolDir)Plasm.Seam.deps.json" />
+      <TfmSpecificPackageFile Include="@(_PlasmSeamToolFile)" PackagePath="tools/seam/%(Filename)%(Extension)" />
+    </ItemGroup>
+    <Error Condition="!Exists('$(_PlasmSeamToolDir)Plasm.Seam.dll')" Text="the seam tool is not built at $(_PlasmSeamToolDir): build Plasm.CSharp first" />
+  </Target>
 </Project>

@@ -1,0 +1,73 @@
+<Project>
+  <!-- The seam: in a C# project that has a Seam.cs and references an F# data
+       project, the seam tool (tools/seam/ in this package) reads the data
+       assembly's metadata before the C# is compiled and writes C# files into
+       the project's Seam folder, which are compiled with it. A project
+       without a Seam.cs is left as it is. Transitive, so a host that has
+       Plasm.CSharp through its data project gets it too.
+
+       PlasmSeamConfig     the configuration, default Seam.cs beside the project
+       PlasmSeamOut        where the C# is written, default Seam/ beside the project
+       PlasmSeamLock       the committed contract, default seam.lock beside the project
+       PlasmSeamNamespace  the namespace of the written C#, default $(RootNamespace)
+       PlasmSeamDrift      write (rewrite seam.lock, say what changed) or fail (stop);
+                           default fail when ContinuousIntegrationBuild=true
+       PlasmSeamHttp       false to leave out the ASP.NET helper; default: true in a web project -->
+  <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
+    <PlasmSeamConfig Condition="'$(PlasmSeamConfig)' == ''">$(MSBuildProjectDirectory)/Seam.cs</PlasmSeamConfig>
+    <PlasmSeam Condition="'$(PlasmSeam)' == '' and Exists('$(PlasmSeamConfig)')">true</PlasmSeam>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(PlasmSeam)' == 'true'">
+    <PlasmSeamOut Condition="'$(PlasmSeamOut)' == ''">$(MSBuildProjectDirectory)/Seam/</PlasmSeamOut>
+    <PlasmSeamLock Condition="'$(PlasmSeamLock)' == ''">$(MSBuildProjectDirectory)/seam.lock</PlasmSeamLock>
+    <PlasmSeamNamespace Condition="'$(PlasmSeamNamespace)' == ''">$(RootNamespace)</PlasmSeamNamespace>
+    <PlasmSeamDrift Condition="'$(PlasmSeamDrift)' == '' and '$(ContinuousIntegrationBuild)' == 'true'">fail</PlasmSeamDrift>
+    <PlasmSeamDrift Condition="'$(PlasmSeamDrift)' == ''">write</PlasmSeamDrift>
+    <PlasmSeamHttp Condition="'$(PlasmSeamHttp)' == '' and '$(UsingMicrosoftNETSdkWeb)' == 'true'">true</PlasmSeamHttp>
+    <PlasmSeamHttp Condition="'$(PlasmSeamHttp)' == ''">false</PlasmSeamHttp>
+    <PlasmSeamTool Condition="'$(PlasmSeamTool)' == ''">$(MSBuildThisFileDirectory)../tools/seam/Plasm.Seam.dll</PlasmSeamTool>
+    <_PlasmSeamDotnet>$(DOTNET_HOST_PATH)</_PlasmSeamDotnet>
+    <_PlasmSeamDotnet Condition="'$(_PlasmSeamDotnet)' == ''">dotnet</_PlasmSeamDotnet>
+    <_PlasmSeamStamp>$(MSBuildProjectDirectory)/$(IntermediateOutputPath)seam.stamp</_PlasmSeamStamp>
+    <_PlasmSeamRefs>$(MSBuildProjectDirectory)/$(IntermediateOutputPath)seam.refs</_PlasmSeamRefs>
+    <_PlasmSeamData>$(MSBuildProjectDirectory)/$(IntermediateOutputPath)seam.data</_PlasmSeamData>
+  </PropertyGroup>
+
+  <!-- The written files are compiled once: PlasmSeamCompile adds them, whether
+       they were there when the build began or not. -->
+  <ItemGroup Condition="'$(PlasmSeam)' == 'true'">
+    <Compile Remove="$(PlasmSeamOut)*.g.cs" />
+  </ItemGroup>
+
+  <Target Name="_PlasmSeamInputs" DependsOnTargets="ResolveAssemblyReferences" Condition="'$(PlasmSeam)' == 'true'">
+    <!-- Written files that are gone are written again. -->
+    <Delete Files="$(_PlasmSeamStamp)" Condition="!Exists('$(PlasmSeamOut)SeamMap.g.cs') or !Exists('$(PlasmSeamLock)')" />
+    <ItemGroup>
+      <_PlasmSeamDataAssembly Include="@(ReferencePath)" Condition="'%(ReferencePath.ReferenceSourceTarget)' == 'ProjectReference'" />
+      <_PlasmSeamInput Include="@(_PlasmSeamDataAssembly);$(PlasmSeamConfig);$(PlasmSeamTool);$(MSBuildThisFileFullPath);$(MSBuildProjectFullPath)" />
+      <_PlasmSeamInput Include="$(PlasmSeamLock)" Condition="Exists('$(PlasmSeamLock)')" />
+    </ItemGroup>
+    <Error Condition="'@(_PlasmSeamDataAssembly)' == ''" Code="SEAM000" File="$(PlasmSeamConfig)"
+           Text="$(MSBuildProjectName) has a Seam.cs but references no project, so there is no F# data assembly for the seam to read: add a ProjectReference to the F# data project" />
+    <Error Condition="!Exists('$(PlasmSeamTool)')" Code="SEAM000" Text="the seam tool is not at $(PlasmSeamTool): Plasm.CSharp's package is incomplete; restore it again" />
+  </Target>
+
+  <!-- Skipped when nothing it reads is newer than its last run. -->
+  <Target Name="PlasmSeamGenerate" DependsOnTargets="_PlasmSeamInputs" Condition="'$(PlasmSeam)' == 'true' and '$(DesignTimeBuild)' != 'true'"
+          Inputs="@(_PlasmSeamInput)" Outputs="$(_PlasmSeamStamp)">
+    <WriteLinesToFile File="$(_PlasmSeamRefs)" Lines="@(ReferencePath)" Overwrite="true" />
+    <WriteLinesToFile File="$(_PlasmSeamData)" Lines="@(_PlasmSeamDataAssembly)" Overwrite="true" />
+    <Exec Command="&quot;$(_PlasmSeamDotnet)&quot; &quot;$(PlasmSeamTool)&quot; --config &quot;$(PlasmSeamConfig)&quot; --out &quot;$(PlasmSeamOut.TrimEnd('/'))&quot; --lock &quot;$(PlasmSeamLock)&quot; --namespace &quot;$(PlasmSeamNamespace)&quot; --refs &quot;$(_PlasmSeamRefs)&quot; --data &quot;$(_PlasmSeamData)&quot; --drift $(PlasmSeamDrift) --http $(PlasmSeamHttp)"
+          StandardOutputImportance="high" />
+    <Touch Files="$(_PlasmSeamStamp)" AlwaysCreate="true" />
+  </Target>
+
+  <Target Name="PlasmSeamCompile" BeforeTargets="BeforeCompile;CoreCompile" DependsOnTargets="PlasmSeamGenerate" Condition="'$(PlasmSeam)' == 'true'">
+    <ItemGroup>
+      <_PlasmSeamWritten Include="$(PlasmSeamOut)*.g.cs" />
+      <Compile Include="@(_PlasmSeamWritten)" />
+      <FileWrites Include="$(_PlasmSeamStamp);$(_PlasmSeamRefs);$(_PlasmSeamData)" />
+    </ItemGroup>
+  </Target>
+</Project>

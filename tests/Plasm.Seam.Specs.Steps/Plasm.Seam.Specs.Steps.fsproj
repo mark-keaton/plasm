@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The seam's steps (tests/Plasm.Seam.Specs): each scenario's F# data
+       project is compiled in process by F#'s compiler, the seam is run on it
+       as a build runs it, and what it wrote is compiled by C#'s compiler with
+       System.Text.Json's source generator. -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Compilers.fs" />
+    <Compile Include="SeamSteps.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Plasm.Seam/Plasm.Seam.fsproj" />
+    <ProjectReference Include="../../src/Plasm.CSharp/Plasm.CSharp.fsproj" />
+    <PackageReference Include="FSharp.Compiler.Service" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Reqnroll" />
+  </ItemGroup>
+</Project>
