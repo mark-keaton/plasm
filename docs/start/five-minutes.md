@@ -1,8 +1,8 @@
 # Plasm in five minutes
 
-Plasm is a data layer for a C# application, over PostgreSQL or SQLite: you
-write the domain and its data code in one small F# project, and the host
-around it stays C#. It stores the domain's own immutable records, reads them with
+Plasm is a stricter data layer for a C# application, over PostgreSQL or
+SQLite. You write the domain in one small F# project. Everything else stays
+C#. It stores the domain's own immutable records, reads them with
 queries the compiler checks, and writes them in typed transactions. It
 compiles ahead of time (native AOT), and every commit is checked natively.
 

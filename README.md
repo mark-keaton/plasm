@@ -1,8 +1,10 @@
 # Plasm
 
-A stricter data layer for a C# application, over PostgreSQL or SQLite. You
-write the domain and its data code in one small F# project and call it from
-C#; ASP.NET, the host and your team's C# stay as they are. In that project
+A stricter data layer for your C# application, over PostgreSQL or SQLite.
+
+**You write the domain in one small F# project. Everything else stays C#.**
+
+ASP.NET, the host and your team's C# stay as they are. In the F# project
 Plasm stores immutable records, checks every query and makes every write a
 typed transaction, and C# gets each outcome as a union the compiler makes it
 handle case by case. It is native AOT first: every commit is compiled ahead of time
