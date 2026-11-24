@@ -28,28 +28,12 @@ module private Db =
     /// Every piece of equipment, ordered by name.
     let byName = plasm { for e in tableOf<Equipment> do orderBy e.Name }
 
-    /// The equipment as the caller saw it (`seen`), changed as `decide` says:
-    /// Stop.Missing when it is not there, Stop.Refused when the rules refuse.
-    let change (id: EquipmentId) (seen: int) (decide: Equipment -> Result<Equipment, Refusal>) : Tx<Equipment, Stop<Refusal>> =
-        transaction {
-            let! equipment = Tx.oneAsSeen (byId id, seen) |> Tx.orReject (Stop.Missing "equipment")
-            let! changed = decide equipment |> Tx.ofResult Stop.Refused
-            return! Tx.update (equipment, changed)
-        }
-
     /// The tables, as Plasm would create them: the model alone, no database.
     let ddl =
         lazy (Repo.Start(model, Store.printing (), typeof<Equipment>.Assembly, RepoOptions.Unchecked).Result.Ddl())
 
 [<Sealed>]
 type BookingData private (repo: Repo, time: TimeProvider) =
-
-    /// The equipment as stored when `tx` commits, or why not.
-    let changed (tx: Tx<Equipment, Stop<Refusal>>) (ct: CancellationToken) : Task<Changed<Equipment, Refusal>> =
-        task {
-            let! result = repo.Transact(tx, cancellationToken = ct)
-            return Outcome.changed result
-        }
 
     static member private Open(connectionString: string, onSql: Action<string> option, time: TimeProvider, cancellationToken: CancellationToken) =
         task {
@@ -134,12 +118,16 @@ type BookingData private (repo: Repo, time: TimeProvider) =
     /// `until` may come with any offset (a request's, a user's): they are the
     /// instants they say, kept in UTC, as Plasm stores times.
     member _.BookAsync(id: EquipmentId, version: int, who: string, from: DateTimeOffset, until: DateTimeOffset, cancellationToken: CancellationToken) =
-        changed (Db.change id version (Equipment.book (BookingId(Guid.CreateVersion7())) who (from.ToUniversalTime()) (until.ToUniversalTime()))) cancellationToken
+        let booking = BookingId(Guid.CreateVersion7())
+        let rule = Equipment.book booking who (from.ToUniversalTime()) (until.ToUniversalTime())
+        repo.Change("equipment", Db.byId id, version, rule, cancellationToken)
 
     /// Out of service from now, as the clock says it in UTC, whatever offset
     /// the clock answers with.
     member _.TakeOutOfServiceAsync(id: EquipmentId, version: int, reason: string, cancellationToken: CancellationToken) =
-        changed (Db.change id version (Equipment.takeOutOfService reason (time.GetUtcNow().ToUniversalTime()))) cancellationToken
+        let now = time.GetUtcNow().ToUniversalTime()
+        let rule = Equipment.takeOutOfService reason now
+        repo.Change("equipment", Db.byId id, version, rule, cancellationToken)
 
     member _.ReturnToServiceAsync(id: EquipmentId, version: int, cancellationToken: CancellationToken) =
-        changed (Db.change id version Equipment.returnToService) cancellationToken
+        repo.Change("equipment", Db.byId id, version, Equipment.returnToService, cancellationToken)

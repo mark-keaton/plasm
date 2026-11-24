@@ -87,6 +87,29 @@ Feature: A C# host is given one of the cases an outcome can have
       When C# renames "Errands" to "Groceries"
       Then it is given Invalid, with the field "title" and "is already taken"
 
+  Rule: A change is one call: the record as the caller saw it, the rule's decision, the write
+
+    Scenario: repo.Change stores what the rule decides, and answers the record as stored
+      Given the note "Groceries"
+      When C# renames "Groceries" to "Shopping" with repo.Change
+      Then it is given the Note "Shopping", at version 2
+
+    Scenario: repo.Change of a record that is not there is Missing, saying what
+      When C# renames a note that is not there with repo.Change
+      Then it is given Missing, saying "note"
+
+    Scenario: repo.Change from a copy older than the stored one is Stale
+      Given the note "Groceries"
+      And someone else renamed "Groceries" to "Shopping"
+      When C# renames "Groceries" to "Errands" with repo.Change, from the copy it read first
+      Then it is given Stale, naming Note and the note's id
+
+    Scenario: repo.Change that the rule refuses is the domain's refusal, and nothing is written
+      Given the note "Groceries"
+      When C# renames "Groceries" to "Groceries" with repo.Change, which the rule refuses
+      Then it is given the refusal TitleTaken "Groceries"
+      And the note "Groceries" is still at version 1
+
   Rule: An add is the record as stored, or the input that was not valid
 
     Scenario: An add is the note as stored

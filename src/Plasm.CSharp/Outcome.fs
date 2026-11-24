@@ -2,6 +2,8 @@ namespace Plasm.CSharp
 
 open System
 open System.Globalization
+open System.Threading
+open System.Threading.Tasks
 open Plasm
 
 [<RequireQualifiedAccess; CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
@@ -179,3 +181,29 @@ module Changed =
         | :? Invalid as i -> Changed<'T>(i)
         | :? 'R as r -> Changed<'T>(refused r)
         | t -> Changed<'T>(t :?> 'T)
+
+/// A change, the shape every change has: the record a query finds, as the
+/// caller saw it (its version), changed as the rule decides, and written.
+[<AutoOpen>]
+module Change =
+    /// The record `query` finds as the caller saw it (`seen`, its version),
+    /// changed as `decide` says, and updated: Stop.Missing `what` when it is
+    /// not there, Stop.Refused when the rule refuses, a conflict when the copy
+    /// seen is older than the stored one.
+    let asSeen (what: string) (query: Query<'T>) (seen: int) (decide: 'T -> Result<'T, 'R>) : Tx<'T, Stop<'R>> =
+        transaction {
+            let! record = Tx.oneAsSeen (query, seen) |> Tx.orReject (Stop.Missing what)
+            let! changed = decide record |> Tx.ofResult Stop.Refused
+            return! Tx.update (record, changed)
+        }
+
+    type Repo with
+        /// A change in one call: the record `query` finds as the caller saw
+        /// it (`seen`), changed as `decide` says, and written, as a
+        /// Changed<'T, 'R>: the record as stored, Missing `what`, the rule's
+        /// refusal, Stale, or Invalid (Change.asSeen, Outcome.changed).
+        member repo.Change(what: string, query: Query<'T>, seen: int, decide: 'T -> Result<'T, 'R>, ?cancellationToken: CancellationToken) : Task<Changed<'T, 'R>> =
+            task {
+                let! result = repo.Transact(asSeen what query seen decide, cancellationToken = defaultArg cancellationToken CancellationToken.None)
+                return Outcome.changed result
+            }

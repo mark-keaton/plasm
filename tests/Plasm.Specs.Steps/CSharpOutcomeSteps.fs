@@ -50,6 +50,10 @@ module Notes =
                 return! Tx.update (note, { note with Title = title })
         }
 
+    /// The rule a rename keeps: the note with its new title, unless it has it already.
+    let retitle (title: string) (note: Note) : Result<Note, NoteRefusal> =
+        if note.Title = title then Error(TitleTaken title) else Ok { note with Title = title }
+
     /// As rename, a request whose input is refused as Invalid.
     let renameAsked (id: NoteId) (seen: int) (title: string) : Tx<Note, Stop<Invalid>> =
         transaction {
@@ -121,6 +125,18 @@ type CSharpOutcomeSteps(w: World) =
         }
 
     let renamed = renamedAs (fun c -> c.Value)
+
+    /// The note renamed with repo.Change: one call, the query, the version seen, the rule.
+    let changedWith (n: Note) (title: string) =
+        task {
+            let! changed = repo().Change("note", Notes.byId n.Id, n.Version, Notes.retitle title)
+
+            match changed.Value with
+            | :? Note as stored -> remember stored
+            | _ -> ()
+
+            return changed.Value
+        }
 
     member private _.Case<'T>() : 'T =
         match given' () with
@@ -209,6 +225,26 @@ type CSharpOutcomeSteps(w: World) =
 
     [<StepDefinition("^C# renames \"(.*)\" to \"(.*)\" from the copy it read first$")>]
     member _.RenameStale(_from: string, title: string) = given (fun () -> renamed (w.Get<Note> "firstCopy") title)
+
+    [<StepDefinition("^C# renames \"(.*)\" to \"(.*)\" with repo\\.Change$")>]
+    member _.ChangeWith(from: string, title: string) = given (fun () -> changedWith (note from) title)
+
+    [<StepDefinition("^C# renames \"(.*)\" to \"(.*)\" with repo\\.Change, which the rule refuses$")>]
+    member _.ChangeRefused(from: string, title: string) = given (fun () -> changedWith (note from) title)
+
+    [<StepDefinition("^C# renames \"(.*)\" to \"(.*)\" with repo\\.Change, from the copy it read first$")>]
+    member _.ChangeStale(_from: string, title: string) = given (fun () -> changedWith (w.Get<Note> "firstCopy") title)
+
+    [<StepDefinition("^C# renames a note that is not there with repo\\.Change$")>]
+    member _.ChangeNone() = given (fun () -> changedWith (note "not there") "anything")
+
+    [<StepDefinition("^the note \"(.*)\" is still at version (\\d+)$")>]
+    member _.StillAt(title: string, version: int) =
+        task {
+            let! r = repo().One(Notes.byId (note title).Id)
+            equal (Some version) (ok r |> Option.map _.Version) "the stored version"
+        }
+        |> unit
 
     [<StepDefinition("^C# renames \"(.*)\" to \"(.*)\", made a view with Changed\\.map$")>]
     member _.RenameView(from: string, title: string) =
