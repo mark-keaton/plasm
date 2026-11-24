@@ -28,6 +28,9 @@ type SeamViewAttribute(viewOf: Type) =
     member val Name: string | null = null with get, set
     /// Record fields the view leaves out.
     member val Omit: string[] = [||] with get, set
+    /// The word Missing and Stale say for the record ({"what":"equipment"});
+    /// the record type's name when not given.
+    member val What: string | null = null with get, set
 
 /// A field of an F# record's view: a member of the record that is not one
 /// of its fields (a computed field, `member o.Total = ...`), which the view

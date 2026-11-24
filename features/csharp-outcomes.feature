@@ -37,7 +37,7 @@ Feature: A C# host is given one of the cases an outcome can have
 
     Scenario: A note that is not there is Missing, saying what is missing
       When C# reads a note that is not there
-      Then it is given Missing, saying "note"
+      Then it is given Missing, saying "Note"
 
   Rule: A read of many is an array
 
@@ -53,7 +53,7 @@ Feature: A C# host is given one of the cases an outcome can have
     Scenario: A read of many the database fails throws UnavailableException, carrying the provider's exception
       Given the notes table is gone
       When C# reads every note, ordered by title
-      Then UnavailableException is thrown, naming the read of "notes", with the provider's exception inside
+      Then UnavailableException is thrown, naming the read of "Note", with the provider's exception inside
 
   Rule: A change is the record as stored, or why not
 
@@ -69,7 +69,7 @@ Feature: A C# host is given one of the cases an outcome can have
 
     Scenario: A transaction stopped with Stop.Missing is Missing, saying what the transaction named
       When C# renames a note that is not there
-      Then it is given Missing, saying "note"
+      Then it is given Missing, saying "Note"
 
     Scenario: A stale copy is Stale, naming the record type and its key
       Given the note "Groceries"
@@ -96,7 +96,7 @@ Feature: A C# host is given one of the cases an outcome can have
 
     Scenario: repo.Change of a record that is not there is Missing, saying what
       When C# renames a note that is not there with repo.Change
-      Then it is given Missing, saying "note"
+      Then it is given Missing, saying "Note"
 
     Scenario: repo.Change from a copy older than the stored one is Stale
       Given the note "Groceries"
@@ -134,7 +134,7 @@ Feature: A C# host is given one of the cases an outcome can have
 
     Scenario: A request whose record is gone is answered Missing
       When C# renames a note that is not there, as a request answered
-      Then it is given Missing, saying "note"
+      Then it is given Missing, saying "Note"
 
     Scenario: A request whose input the database refuses is answered Invalid
       Given the notes "Groceries" and "Errands"
@@ -150,7 +150,7 @@ Feature: A C# host is given one of the cases an outcome can have
 
     Scenario: FindResult.map keeps Missing
       When C# reads a note that is not there, made a view with FindResult.map
-      Then it is given Missing, saying "note"
+      Then it is given Missing, saying "Note"
 
     Scenario: ChangeResult.map makes the record its view, and keeps the refusal
       Given the note "Groceries"

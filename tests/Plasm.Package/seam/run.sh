@@ -78,7 +78,7 @@ expect() { # what the host must print, under the runtime
 }
 expect 'added {"id":"01900000-0000-7000-8000-000000000001","title":"Groceries","condition":{"kind":"withdrawn","reason":"kept"}}' "an add is Added, the note as stored, its union written by kind"
 expect 'invalid {"problems":[{"field":"title","message":"is already taken"}]}' "an add the database refuses is Invalid, the field camel-cased"
-expect 'missing {"what":"note"}' "a read of no note is Missing"
+expect 'missing {"what":"Note"}' "a read of no note is Missing"
 expect 'stale {"what":"Note","key":["01900000-0000-7000-8000-000000000001"]}' "a stale copy is Stale, its typed id unwrapped"
 expect 'stale {"what":"Filed","key":["a/b","7"]}' "a stale key of two parts is each part, the \"/\" kept in its part"
 expect 'read back: Withdrawn lamp' "a union is read back through a classifier that inherits ByKind"

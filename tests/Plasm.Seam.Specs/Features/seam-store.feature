@@ -49,7 +49,7 @@ Feature: A data project names its Store, and the seam writes the rest
           member _.OrdersAsync() : Task<Order[]> =
               task {
                   let! r = repo.All Db.byCustomer
-                  return Outcome.all "orders" r
+                  return Outcome.all r
               }
 
       /// Where the orders live: a SQLite file.

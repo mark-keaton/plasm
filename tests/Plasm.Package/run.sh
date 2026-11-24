@@ -330,7 +330,7 @@ if docker info > /dev/null 2>&1; then
     scenario '[[ "$booked" == *"\"bookings\":[{\"who\":\"Ada\",\"from\":\"2030-01-02T09:00:00+00:00\",\"until\":\"2030-01-02T11:00:00+00:00\"}],\"version\":2} 200" ]]' "a booking answers 200, the booking in the view and the version on"
     scenario '[[ "$taken" == "{\"code\":\"AlreadyBooked\",\"message\":\"Ada has it booked for some of that time.\"} 422" ]]' "time someone has answers 422, Refused with the case's name and the rules' words"
     scenario '[[ "$stale" == "{\"what\":\"Equipment\",\"key\":[\"$id\"]} 409" ]]' "a stale copy answers 409, Stale naming the record and its key"
-    scenario '[[ "$missing" == "{\"what\":\"equipment\"} 404" ]]' "equipment that is not there answers 404, Missing"
+    scenario '[[ "$missing" == "{\"what\":\"Equipment\"} 404" ]]' "equipment that is not there answers 404, Missing"
     scenario '[[ "$unnamed" == *" 400" ]]' "a request whose name is null answers 400, before BookingData is called"
   else
     echo "template, PostgreSQL over HTTP FAILED: the native API did not serve"; cat "$work/tpl-pg-api.txt"; failed=1

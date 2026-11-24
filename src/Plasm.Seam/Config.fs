@@ -32,6 +32,7 @@ type ViewConfig =
     { Type: string
       At: At
       mutable Name: string option
+      mutable What: string option
       Omit: List<string>
       mutable Used: bool
       OmitUsed: HashSet<string> }
@@ -160,13 +161,15 @@ let read (file: string) : Config =
                     { Type = typeOf positional[0].Expression
                       At = at
                       Name = None
+                      What = None
                       Omit = List()
                       Used = false
                       OmitUsed = HashSet() }
 
                 setNamed
                     [ "Name", (fun x -> view.Name <- Some(identifier x))
-                      "Omit", (fun x -> view.Omit.AddRange(texts x.Expression)) ]
+                      "Omit", (fun x -> view.Omit.AddRange(texts x.Expression))
+                      "What", (fun x -> view.What <- Some(text x.Expression)) ]
 
                 if config.Views |> Seq.exists (fun v -> v.Type = view.Type) then
                     bad a $"SeamView is written twice for {view.Type}"

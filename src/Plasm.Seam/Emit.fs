@@ -208,13 +208,37 @@ public static class SeamMap
             line "        },"
             line "        refusal.Message);"
 
+    if seam.Whats.Count > 0 then
+        let arms (make: string -> string) =
+            [ for KeyValue(record, word) in seam.Whats -> $"            \"{record}\" => {make word}," ]
+            |> String.concat "\n"
+
+        line ""
+        line "    /// Missing and Stale with the word Seam.cs gives the record (SeamView What)."
+        line "    static Missing Named(Missing missing) => missing.What switch"
+        line "    {"
+        line (arms (fun word -> $"new Missing(\"{word}\")"))
+        line "            _ => missing,"
+        line "    };"
+        line ""
+        line "    static Stale Named(Stale stale) => stale.What switch"
+        line "    {"
+        line (arms (fun word -> $"new Stale(\"{word}\", stale.Key)"))
+        line "            _ => stale,"
+        line "    };"
+
     for o in seam.Outcomes do
         line ""
         line $"    public static {o.Cs} View(this {o.Domain} outcome) => outcome switch"
         line "    {"
 
         for domainCase, cross in o.Arms do
-            line $"""        {domainCase} x => new {o.Cs}({cross.Out "x"}),"""
+            let named =
+                seam.Whats.Count > 0
+                && (domainCase = "global::Plasm.CSharp.Missing" || domainCase = "global::Plasm.CSharp.Stale")
+
+            let value = if named then "Named(x)" else cross.Out "x"
+            line $"""        {domainCase} x => new {o.Cs}({value}),"""
 
         line "    };"
 

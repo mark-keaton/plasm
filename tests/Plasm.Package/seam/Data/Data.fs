@@ -98,7 +98,7 @@ type Notes private (repo: Repo) =
         Outcome.added (run (Tx.insert ({ Id = NoteId id; Title = title; Version = 1 }: Note))) |> AddResult.map Db.view
 
     member _.Read(id: Guid) : FindResult<NoteView> =
-        Outcome.found "note" (repo.One(Db.byId (NoteId id)).Result) |> FindResult.map Db.view
+        Outcome.found (repo.One(Db.byId (NoteId id)).Result) |> FindResult.map Db.view
 
     /// A note renamed from a copy older than the stored one: Stale.
     member _.RenameStale() : ChangeResult<NoteView> =

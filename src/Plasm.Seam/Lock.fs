@@ -17,7 +17,12 @@ let describe (seam: SeamModel) (http: bool) : string =
     let fields (fs: Field seq) = fs |> Seq.map (fun f -> $"{f.Name}: {Emit.short f.Cross.CsFull}") |> String.concat ", "
 
     for r in seam.Records do
-        add $"""record {r.Name} = {r.Display}{(if r.Into.IsSome then ", and from C#" else "")}"""
+        let what =
+            match seam.Whats.TryGetValue(r.Display.Substring(r.Display.LastIndexOf '.' + 1)) with
+            | true, word -> $", Missing and Stale say \"{word}\""
+            | _ -> ""
+
+        add $"""record {r.Name} = {r.Display}{(if r.Into.IsSome then ", and from C#" else "")}{what}"""
 
         for f in r.Fields do
             add $"  {f.Name}: {Emit.short f.Cross.CsFull}"

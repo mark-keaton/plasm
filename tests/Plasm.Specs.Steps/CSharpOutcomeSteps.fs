@@ -42,7 +42,7 @@ module Notes =
     /// The note as the caller saw it (`seen`), renamed, unless it has the title already.
     let rename (id: NoteId) (seen: int) (title: string) : Tx<Note, Stop<NoteRefusal>> =
         transaction {
-            let! note = Tx.oneAsSeen (byId id, seen) |> Tx.orReject (Stop.Missing "note")
+            let! note = Tx.oneAsSeen (byId id, seen) |> Tx.orReject (Stop.Missing "Note")
 
             if note.Title = title then
                 return! Tx.fail (Stop.Refused(TitleTaken title))
@@ -57,7 +57,7 @@ module Notes =
     /// As rename, a request whose input is refused as Invalid.
     let renameAsked (id: NoteId) (seen: int) (title: string) : Tx<Note, Stop<Invalid>> =
         transaction {
-            let! note = Tx.oneAsSeen (byId id, seen) |> Tx.orReject (Stop.Missing "note")
+            let! note = Tx.oneAsSeen (byId id, seen) |> Tx.orReject (Stop.Missing "Note")
 
             if note.Title = title then
                 return! Tx.fail (Stop.Refused(Invalid.field "title" $"is already {title}"))
@@ -129,7 +129,7 @@ type CSharpOutcomeSteps(w: World) =
     /// The note renamed with repo.Change: one call, the query, the version seen, the rule.
     let changedWith (n: Note) (title: string) =
         task {
-            let! changed = repo().Change("note", Notes.byId n.Id, n.Version, Notes.retitle title)
+            let! changed = repo().Change(Notes.byId n.Id, n.Version, Notes.retitle title)
 
             match changed.Value with
             | :? Note as stored -> remember stored
@@ -185,7 +185,7 @@ type CSharpOutcomeSteps(w: World) =
         given (fun () ->
             task {
                 let! r = repo().One(Notes.byId (note title).Id)
-                return (Outcome.found "note" r).Value
+                return (Outcome.found r).Value
             })
 
     [<StepDefinition("^C# reads the note \"(.*)\", made a view with FindResult\\.map$")>]
@@ -193,7 +193,7 @@ type CSharpOutcomeSteps(w: World) =
         given (fun () ->
             task {
                 let! r = repo().One(Notes.byId (note title).Id)
-                return (Outcome.found "note" r |> FindResult.map Notes.view).Value
+                return (Outcome.found r |> FindResult.map Notes.view).Value
             })
 
     [<StepDefinition("^C# reads a note that is not there, made a view with FindResult\\.map$")>]
@@ -201,7 +201,7 @@ type CSharpOutcomeSteps(w: World) =
         given (fun () ->
             task {
                 let! r = repo().One(Notes.byId (NoteId(Guid.CreateVersion7())))
-                return (Outcome.found "note" r |> FindResult.map Notes.view).Value
+                return (Outcome.found r |> FindResult.map Notes.view).Value
             })
 
     [<StepDefinition("^C# reads a note that is not there$")>]
@@ -209,7 +209,7 @@ type CSharpOutcomeSteps(w: World) =
         given (fun () ->
             task {
                 let! r = repo().One(Notes.byId (NoteId(Guid.CreateVersion7())))
-                return (Outcome.found "note" r).Value
+                return (Outcome.found r).Value
             })
 
     [<StepDefinition("^C# reads every note, ordered by title$")>]
@@ -217,7 +217,7 @@ type CSharpOutcomeSteps(w: World) =
         given (fun () ->
             task {
                 let! r = repo().All Notes.byTitle
-                return box (Outcome.all "notes" r)
+                return box (Outcome.all r)
             })
 
     [<StepDefinition("^C# renames \"(.*)\" to \"(.*)\", which the rules refuse$")>]
@@ -393,7 +393,7 @@ type CSharpOutcomeSteps(w: World) =
     [<StepDefinition("^UnavailableException is thrown, naming the read, with the provider's exception inside$")>]
     member this.UnavailableRead() =
         let e = this.Case<UnavailableException>()
-        check (e.Message.StartsWith "reading note: ") e.Message
+        check (e.Message.StartsWith "reading Note: ") e.Message
         check (not (isNull e.InnerException)) "no provider exception inside"
 
     [<StepDefinition("^UnavailableException is thrown, naming the read of \"(.*)\", with the provider's exception inside$")>]

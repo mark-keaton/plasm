@@ -81,20 +81,28 @@ module Outcome =
 
     let private stale (entity: string) (key: obj) : Stale = { What = entity; Key = Keys.text key }
 
-    /// A read of at most one record (repo.One): the record, or Missing, saying `what`.
-    let found (what: string) (result: Result<'S option, DbError>) : FindResult<'S> =
+    /// What a read of 'S misses, and fails to read: the record type's name, as
+    /// Stale names it ("Equipment"). Over a projection, its own record's name;
+    /// over a scalar or a tuple, the type's (Int32). With the seam, Seam.cs can
+    /// give a view another word (SeamView What), for Missing and Stale alike.
+    let private named<'S> = typeof<'S>.Name
+
+    /// A read of at most one record (repo.One): the record, or Missing, naming
+    /// the record type.
+    let found (result: Result<'S option, DbError>) : FindResult<'S> =
         match result with
         | Ok(Some s) -> FindResult s
-        | Ok None -> FindResult { What = what }
-        | Error e -> unavailable $"reading {what}" e
+        | Ok None -> FindResult { What = named<'S> }
+        | Error e -> unavailable $"reading {named<'S>}" e
 
     /// A read of many (repo.All): the records, in the query's order, an empty
     /// array when there are none. A read the database fails throws
-    /// UnavailableException, "reading `what`", carrying the provider's exception.
-    let all (what: string) (result: Result<'S list, DbError>) : 'S[] =
+    /// UnavailableException, "reading <the record type>", carrying the
+    /// provider's exception.
+    let all (result: Result<'S list, DbError>) : 'S[] =
         match result with
         | Ok records -> Array.ofList records
-        | Error e -> unavailable $"reading {what}" e
+        | Error e -> unavailable $"reading {named<'S>}" e
 
     /// An add (repo.Transact): the record as stored, or Invalid when the
     /// database refuses its fields. An add stopped by the rules, or stale,
@@ -187,12 +195,12 @@ module ChangeResult =
 [<AutoOpen>]
 module Change =
     /// The record `query` finds as the caller saw it (`seen`, its version),
-    /// changed as `decide` says, and updated: Stop.Missing `what` when it is
-    /// not there, Stop.Refused when the rule refuses, a conflict when the copy
-    /// seen is older than the stored one.
-    let asSeen (what: string) (query: Query<'T>) (seen: int) (decide: 'T -> Result<'T, 'R>) : Tx<'T, Stop<'R>> =
+    /// changed as `decide` says, and updated: Stop.Missing, naming the record
+    /// type, when it is not there; Stop.Refused when the rule refuses; a
+    /// conflict when the copy seen is older than the stored one.
+    let asSeen (query: Query<'T>) (seen: int) (decide: 'T -> Result<'T, 'R>) : Tx<'T, Stop<'R>> =
         transaction {
-            let! record = Tx.oneAsSeen (query, seen) |> Tx.orReject (Stop.Missing what)
+            let! record = Tx.oneAsSeen (query, seen) |> Tx.orReject (Stop.Missing typeof<'T>.Name)
             let! changed = decide record |> Tx.ofResult Stop.Refused
             return! Tx.update (record, changed)
         }
@@ -200,10 +208,11 @@ module Change =
     type Repo with
         /// A change in one call: the record `query` finds as the caller saw
         /// it (`seen`), changed as `decide` says, and written, as a
-        /// ChangeResult<'T, 'R>: the record as stored, Missing `what`, the rule's
-        /// refusal, Stale, or Invalid (Change.asSeen, Outcome.changed).
-        member repo.Change(what: string, query: Query<'T>, seen: int, decide: 'T -> Result<'T, 'R>, ?cancellationToken: CancellationToken) : Task<ChangeResult<'T, 'R>> =
+        /// ChangeResult<'T, 'R>: the record as stored, Missing (the record
+        /// type), the rule's refusal, Stale, or Invalid (Change.asSeen,
+        /// Outcome.changed).
+        member repo.Change(query: Query<'T>, seen: int, decide: 'T -> Result<'T, 'R>, ?cancellationToken: CancellationToken) : Task<ChangeResult<'T, 'R>> =
             task {
-                let! result = repo.Transact(asSeen what query seen decide, cancellationToken = defaultArg cancellationToken CancellationToken.None)
+                let! result = repo.Transact(asSeen query seen decide, cancellationToken = defaultArg cancellationToken CancellationToken.None)
                 return Outcome.changed result
             }

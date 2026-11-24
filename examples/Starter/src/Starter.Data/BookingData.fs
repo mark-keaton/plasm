@@ -61,14 +61,14 @@ type BookingData(repo: Repo, time: TimeProvider) =
     member _.EquipmentAsync(id: EquipmentId, cancellationToken: CancellationToken) : Task<FindResult<Equipment>> =
         task {
             let! result = repo.One(Db.byId id, cancellationToken)
-            return Outcome.found "equipment" result
+            return Outcome.found result
         }
 
     /// Every piece of equipment, ordered by name: none is an empty array.
     member _.AllEquipmentAsync(cancellationToken: CancellationToken) : Task<Equipment[]> =
         task {
             let! result = repo.All(Db.byName, cancellationToken = cancellationToken)
-            return Outcome.all "equipment" result
+            return Outcome.all result
         }
 
     /// Books the equipment, if `version` is the one stored. `from` and
@@ -79,17 +79,17 @@ type BookingData(repo: Repo, time: TimeProvider) =
         let from = request.From.ToUniversalTime()
         let until = request.Until.ToUniversalTime()
         let rule = Equipment.book booking request.Who from until
-        repo.Change("equipment", Db.byId id, request.Version, rule, cancellationToken)
+        repo.Change(Db.byId id, request.Version, rule, cancellationToken)
 
     /// Out of service from now, as the clock says it in UTC, whatever offset
     /// the clock answers with.
     member _.TakeOutOfServiceAsync(id: EquipmentId, request: OutOfService, cancellationToken: CancellationToken) =
         let now = time.GetUtcNow().ToUniversalTime()
         let rule = Equipment.takeOutOfService request.Reason now
-        repo.Change("equipment", Db.byId id, request.Version, rule, cancellationToken)
+        repo.Change(Db.byId id, request.Version, rule, cancellationToken)
 
     member _.ReturnToServiceAsync(id: EquipmentId, request: InService, cancellationToken: CancellationToken) =
-        repo.Change("equipment", Db.byId id, request.Version, Equipment.returnToService, cancellationToken)
+        repo.Change(Db.byId id, request.Version, Equipment.returnToService, cancellationToken)
 
 /// Where BookingData's data is, from Store.fs. The seam gives C# all the
 /// rest from it: BookingData opened (Plasm checking every query and the

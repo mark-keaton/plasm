@@ -120,6 +120,9 @@ type SeamModel =
       Shapes: List<OutcomeShape>
       Data: List<DataClass>
       Refusals: List<RefusalView>
+      /// The word Missing and Stale say for a record, by the record type's
+      /// name, where Seam.cs gives one (SeamView What).
+      Whats: Dictionary<string, string>
       /// Each F# doc comment's summary, by its documentation id (T:Shop.Order).
       Docs: Dictionary<string, string>
       /// Every type the JSON context lists, as C# spells it.

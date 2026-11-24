@@ -290,6 +290,7 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
           Shapes = List()
           Data = List()
           Refusals = List()
+          Whats = Dictionary()
           Docs = Dictionary()
           Json = List()
           HostJson = List() }
@@ -683,6 +684,10 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
             view
             |> Option.bind _.Name
             |> Option.defaultValue (if asInput then t.Name else t.Name + "View")
+
+        match view |> Option.bind _.What with
+        | Some word -> seam.Whats[t.Name] <- word
+        | None -> ()
 
         claim name (Meta.display t) (view |> Option.map _.At)
         let fields = List<Field>()
