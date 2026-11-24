@@ -1,9 +1,11 @@
 # Plasm
 
-The F# domain core of a C# application, over PostgreSQL or SQLite. Keep ASP.NET, your
-host and your team's C#; put the domain and its persistence in F#, where Plasm
-stores immutable records, checks every query and makes every write a typed
-transaction. It is native AOT first: every commit is compiled ahead of time
+A stricter data layer for a C# application, over PostgreSQL or SQLite. You
+write the domain and its data code in one small F# project and call it from
+C#; ASP.NET, the host and your team's C# stay as they are. In that project
+Plasm stores immutable records, checks every query and makes every write a
+typed transaction, and C# gets each outcome as a union the compiler makes it
+handle case by case. It is native AOT first: every commit is compiled ahead of time
 and checked natively. It also serves a long-running API through Hot Chocolate,
 on the runtime. Its design comes from [Ecto](https://github.com/elixir-ecto/ecto).
 

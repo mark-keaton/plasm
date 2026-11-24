@@ -10,6 +10,7 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
 ## Next: in the library
 
+- A build step in Plasm.CSharp that writes the C# side from the F# data project: the records, the unions, the JSON context and each outcome's answer over HTTP
 - Selection inside a GraphQL card's comments and labels
 - Kanban's own F# server as a native binary
 
