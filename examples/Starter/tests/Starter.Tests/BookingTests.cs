@@ -125,6 +125,20 @@ public class BookingTests(Database db)
     });
 
     [Fact]
+    public Task Each_refusal_of_the_rules_is_its_own_code() => Sandboxed(async data =>
+    {
+        async Task<string> Code(Task<ChangeResult<EquipmentView>> change) =>
+            Assert.IsType<Refused>((await change).Value).Code;
+        var projector = await Add(data, "Projector");
+        Assert.Equal("WhoRequired", await Code(data.BookAsync(projector.Id, projector.Version, "  ", Nine, Nine.AddHours(1), CancellationToken.None)));
+        Assert.Equal("EndsBeforeItStarts", await Code(data.BookAsync(projector.Id, projector.Version, "Ada", Nine, Nine, CancellationToken.None)));
+        Assert.Equal("ReasonRequired", await Code(data.TakeOutOfServiceAsync(projector.Id, projector.Version, " ", CancellationToken.None)));
+        Assert.Equal("AlreadyAvailable", await Code(data.ReturnToServiceAsync(projector.Id, projector.Version, CancellationToken.None)));
+        var withdrawn = Stored(await data.TakeOutOfServiceAsync(projector.Id, projector.Version, "lamp broken", CancellationToken.None));
+        Assert.Equal("AlreadyOutOfService", await Code(data.TakeOutOfServiceAsync(withdrawn.Id, withdrawn.Version, "again", CancellationToken.None)));
+    });
+
+    [Fact]
     public Task A_change_from_a_stale_copy_is_stale() => Sandboxed(async data =>
     {
         var projector = await Add(data, "Projector");

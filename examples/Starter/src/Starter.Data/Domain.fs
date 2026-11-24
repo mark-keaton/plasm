@@ -82,32 +82,45 @@ module Equipment =
           Bookings = []
           Version = 1 }
 
-    /// Books the equipment for `who` from `from` until `until`, if it is
-    /// available and nobody has any of that time.
+    /// Whether `booking` has any of the time from `from` until `until`.
+    let private overlaps (from: DateTimeOffset) (until: DateTimeOffset) (booking: Booking) =
+        booking.From < until && from < booking.Until
+
+    /// Books the equipment for `who` from `from` until `until`. Refused when
+    /// nobody is named, when it ends before it starts, when the equipment
+    /// is out of service, or when someone has some of that time.
     let book (id: BookingId) (who: string) (from: DateTimeOffset) (until: DateTimeOffset) (equipment: Equipment) =
-        let clash = equipment.Bookings |> List.tryFind (fun b -> b.From < until && from < b.Until)
+        if String.IsNullOrWhiteSpace who then
+            Error WhoRequired
+        elif until <= from then
+            Error EndsBeforeItStarts
+        else
+            match equipment.Condition with
+            | OutOfService(reason, _) -> Error(NotAvailable reason)
+            | Available ->
+                match equipment.Bookings |> List.tryFind (overlaps from until) with
+                | Some taken -> Error(AlreadyBooked taken.Who)
+                | None ->
+                    let booking =
+                        { Id = id
+                          Equipment = equipment.Id
+                          Who = who.Trim()
+                          From = from
+                          Until = until }
 
-        match equipment.Condition, clash with
-        | _ when String.IsNullOrWhiteSpace who -> Error WhoRequired
-        | _ when until <= from -> Error EndsBeforeItStarts
-        | OutOfService(reason, _), _ -> Error(NotAvailable reason)
-        | Available, Some other -> Error(AlreadyBooked other.Who)
-        | Available, None ->
-            let booking =
-                { Id = id
-                  Equipment = equipment.Id
-                  Who = who.Trim()
-                  From = from
-                  Until = until }
+                    Ok { equipment with Bookings = equipment.Bookings @ [ booking ] }
 
-            Ok { equipment with Bookings = equipment.Bookings @ [ booking ] }
-
+    /// Out of service from `now`, saying why. Refused with no reason, or
+    /// when it is out of service already.
     let takeOutOfService (reason: string) (now: DateTimeOffset) (equipment: Equipment) =
-        match equipment.Condition with
-        | _ when String.IsNullOrWhiteSpace reason -> Error ReasonRequired
-        | OutOfService _ -> Error AlreadyOutOfService
-        | Available -> Ok { equipment with Condition = OutOfService(reason.Trim(), now) }
+        if String.IsNullOrWhiteSpace reason then
+            Error ReasonRequired
+        else
+            match equipment.Condition with
+            | OutOfService _ -> Error AlreadyOutOfService
+            | Available -> Ok { equipment with Condition = OutOfService(reason.Trim(), now) }
 
+    /// Available again. Refused when it is available already.
     let returnToService (equipment: Equipment) =
         match equipment.Condition with
         | Available -> Error AlreadyAvailable
