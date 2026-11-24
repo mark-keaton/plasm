@@ -28,8 +28,22 @@ type SeamViewAttribute(viewOf: Type) =
     member val Name: string | null = null with get, set
     /// Record fields the view leaves out.
     member val Omit: string[] = [||] with get, set
-    /// Members of the F# record (properties that are not fields) the view carries too.
-    member val Add: string[] = [||] with get, set
+
+/// A field of an F# record's view: a member of the record that is not one
+/// of its fields (a computed field, `member o.Total = ...`), which the view
+/// carries too, last unless placed; or one of its fields, placed. `After` or
+/// `Before` names the field it goes next to.
+[<Sealed; AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true); Conditional("PLASM_SEAM_CONFIG")>]
+type SeamFieldAttribute(record: Type, ``member``: string) =
+    inherit Attribute()
+    /// The F# record.
+    member _.Record = record
+    /// The member, or field, of the record.
+    member _.Member = ``member``
+    /// The field this one comes after in the view and its JSON.
+    member val After: string | null = null with get, set
+    /// The field this one comes before.
+    member val Before: string | null = null with get, set
 
 /// How one case of an F# union is seen from C#.
 [<Sealed; AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true); Conditional("PLASM_SEAM_CONFIG")>]

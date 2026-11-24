@@ -4,7 +4,8 @@
 /// and nameof in it.
 ///
 ///   [assembly: SeamData(typeof(BookingData))]
-///   [assembly: SeamView(typeof(JobNote), Name = "NoteView", Omit = [nameof(JobNote.Id)], Add = [nameof(JobNote.Length)])]
+///   [assembly: SeamView(typeof(JobNote), Name = "NoteView", Omit = [nameof(JobNote.Id)])]
+///   [assembly: SeamField(typeof(Order), nameof(Order.Total), After = nameof(Order.Lines))]
 ///   [assembly: SeamCase(typeof(Condition), nameof(Condition.Available), Name = "Bookable", Kind = "bookable")]
 ///   [assembly: SeamJson(typeof(NewJob), typeof(Quote))]
 module Plasm.Seam.Config
@@ -32,9 +33,16 @@ type ViewConfig =
       At: At
       mutable Name: string option
       Omit: List<string>
-      Add: List<string>
       mutable Used: bool
       OmitUsed: HashSet<string> }
+
+type FieldConfig =
+    { Record: string
+      Member: string
+      At: At
+      mutable After: string option
+      mutable Before: string option
+      mutable Used: bool }
 
 type CaseConfig =
     { Union: string
@@ -49,10 +57,11 @@ type Config =
       Data: List<DataConfig>
       Views: List<ViewConfig>
       Cases: List<CaseConfig>
+      Fields: List<FieldConfig>
       /// The host's own types the JSON context lists too, as written.
       Json: List<string> }
 
-let private attributes = [ "SeamData"; "SeamView"; "SeamCase"; "SeamJson" ]
+let private attributes = [ "SeamData"; "SeamView"; "SeamField"; "SeamCase"; "SeamJson" ]
 
 let read (file: string) : Config =
     if not (System.IO.File.Exists file) then
@@ -63,6 +72,7 @@ let read (file: string) : Config =
           Data = List()
           Views = List()
           Cases = List()
+          Fields = List()
           Json = List() }
 
     let where (node: SyntaxNode) =
@@ -151,19 +161,40 @@ let read (file: string) : Config =
                       At = at
                       Name = None
                       Omit = List()
-                      Add = List()
                       Used = false
                       OmitUsed = HashSet() }
 
                 setNamed
                     [ "Name", (fun x -> view.Name <- Some(identifier x))
-                      "Omit", (fun x -> view.Omit.AddRange(texts x.Expression))
-                      "Add", (fun x -> view.Add.AddRange(texts x.Expression)) ]
+                      "Omit", (fun x -> view.Omit.AddRange(texts x.Expression)) ]
 
                 if config.Views |> Seq.exists (fun v -> v.Type = view.Type) then
                     bad a $"SeamView is written twice for {view.Type}"
 
                 config.Views.Add view
+            | "SeamField" ->
+                if positional.Length <> 2 then
+                    bad a "SeamField takes a record and one of its members: SeamField(typeof(YourRecord), nameof(YourRecord.Total), After = nameof(YourRecord.Lines))"
+
+                let field =
+                    { Record = typeOf positional[0].Expression
+                      Member = text positional[1].Expression
+                      At = at
+                      After = None
+                      Before = None
+                      Used = false }
+
+                setNamed
+                    [ "After", (fun x -> field.After <- Some(text x.Expression))
+                      "Before", (fun x -> field.Before <- Some(text x.Expression)) ]
+
+                if field.After.IsSome && field.Before.IsSome then
+                    bad a $"SeamField places {field.Record}.{field.Member} both after and before: give one"
+
+                if config.Fields |> Seq.exists (fun f -> f.Record = field.Record && f.Member = field.Member) then
+                    bad a $"SeamField is written twice for {field.Record}.{field.Member}"
+
+                config.Fields.Add field
             | "SeamJson" ->
                 setNamed []
 

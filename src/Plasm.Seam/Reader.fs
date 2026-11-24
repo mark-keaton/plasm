@@ -134,21 +134,52 @@ module private Meta =
                     "global::" + ns + name + arguments
                 | outer -> csName outer + "." + name + arguments
 
-    /// A domain type as F# would say it, for messages and the lock.
+    let private fsharpNames =
+        dict
+            [ "System.String", "string"
+              "System.Boolean", "bool"
+              "System.Byte", "byte"
+              "System.SByte", "sbyte"
+              "System.Int16", "int16"
+              "System.UInt16", "uint16"
+              "System.Int32", "int"
+              "System.UInt32", "uint"
+              "System.Int64", "int64"
+              "System.UInt64", "uint64"
+              "System.Single", "float32"
+              "System.Double", "float"
+              "System.Decimal", "decimal"
+              "System.Char", "char"
+              "System.Object", "obj" ]
+
+    /// A domain type as F# writes it (`int option`, `Result<int, string>`,
+    /// `int * string`), for messages and the lock.
     let rec display (t: Type) : string =
         if t.IsGenericParameter then
             "'" + t.Name
         elif t.IsArray then
             display (nonNull (t.GetElementType())) + "[]"
+        elif not (isNull t.FullName) && fsharpNames.ContainsKey t.FullName then
+            fsharpNames[t.FullName]
         else
             let ns = if String.IsNullOrEmpty t.Namespace then "" else t.Namespace + "."
             let outer = match t.DeclaringType with null -> "" | o -> o.Name + "."
             let name = tickless (ns + outer + t.Name)
+            let args = if t.IsGenericType then t.GetGenericArguments() |> Array.map display else [||]
+            let definition = if t.IsGenericType then (match t.GetGenericTypeDefinition().FullName with null -> "" | f -> f) else ""
 
-            if t.IsGenericType then
-                name + "<" + (t.GetGenericArguments() |> Seq.map display |> String.concat ", ") + ">"
-            else
-                name
+            match definition with
+            | "Microsoft.FSharp.Core.FSharpOption`1" -> $"{args[0]} option"
+            | "Microsoft.FSharp.Core.FSharpValueOption`1" -> $"{args[0]} voption"
+            | "Microsoft.FSharp.Collections.FSharpList`1" -> $"{args[0]} list"
+            | "Microsoft.FSharp.Collections.FSharpSet`1" -> $"Set<{args[0]}>"
+            | "Microsoft.FSharp.Collections.FSharpMap`2" -> $"Map<{args[0]}, {args[1]}>"
+            | "Microsoft.FSharp.Core.FSharpResult`2" -> $"Result<{args[0]}, {args[1]}>"
+            | "Microsoft.FSharp.Core.FSharpFunc`2" -> $"{args[0]} -> {args[1]}"
+            | d when d.StartsWith "System.Tuple`" -> String.concat " * " args
+            | d when d.StartsWith "System.ValueTuple`" -> "struct (" + String.concat " * " args + ")"
+            | _ when t.IsGenericType -> name + "<" + String.concat ", " args + ">"
+            | _ -> name
 
     let pascal (name: string) =
         if name.Length = 0 || Char.IsUpper name[0] then name else string (Char.ToUpperInvariant name[0]) + name.Substring 1
@@ -259,8 +290,27 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
           Shapes = List()
           Data = List()
           Refusals = List()
+          Docs = Dictionary()
           Json = List()
           HostJson = List() }
+
+    // The F# doc comments, from the XML doc beside each data assembly (a data
+    // project that writes one: GenerateDocumentationFile).
+    do
+        for p in dataPaths do
+            let xml = Path.ChangeExtension(p, ".xml")
+
+            if File.Exists xml then
+                for m in Xml.Linq.XDocument.Load(xml).Descendants(Xml.Linq.XName.Get "member") do
+                    match m.Attribute(Xml.Linq.XName.Get "name"), m.Element(Xml.Linq.XName.Get "summary") with
+                    | null, _
+                    | _, null -> ()
+                    | name, summary ->
+                        let text =
+                            summary.Nodes() |> Seq.map string |> String.concat "" |> fun t -> Text.RegularExpressions.Regex.Replace(t, @"\s+", " ").Trim()
+
+                        if text <> "" then
+                            seam.Docs[name.Value] <- text
 
     let known = Dictionary<Type, Cross>()
     let names = Dictionary<string, string>()
@@ -268,6 +318,7 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
     let json = HashSet<string>()
     let views = Dictionary<Type, ViewConfig>()
     let cases = Dictionary<Type * string, CaseConfig>()
+    let fieldsFor = Dictionary<Type, List<FieldConfig>>()
     let mutable fresh = 0
 
     let nextName () =
@@ -669,34 +720,60 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
                       Member = p.Name
                       Cross = go (treeOfProperty p at) AsField at }
 
-        for add in (match view with Some v -> List.ofSeq v.Add | None -> []) do
-            let v = view.Value
+        let computed (m: string) =
+            declared
+            |> Array.tryPick (fun (p, flags) ->
+                if p.Name = m && flags.IsNone && p.GetIndexParameters().Length = 0 then
+                    match p.GetMethod with
+                    | null -> None
+                    | g when g.IsPublic && not g.IsStatic -> Some p
+                    | _ -> None
+                else
+                    None)
 
-            let property =
-                declared
-                |> Array.tryPick (fun (p, m) -> if p.Name = add && m.IsNone then Some p else None)
+        for f in (match fieldsFor.TryGetValue t with
+                  | true, l -> List.ofSeq l
+                  | _ -> []) do
+            f.Used <- true
+            let whole = $"{Meta.display t}.{f.Member}"
 
-            match property with
-            | Some p when
-                (match p.GetMethod with
-                 | null -> false
-                 | g -> g.IsPublic && not g.IsStatic)
-                && p.GetIndexParameters().Length = 0
-                ->
-                if fields |> Seq.exists (fun f -> f.Name = Meta.pascal add) then
-                    Seam.failAt "SEAM003" v.At.Origin $"SeamView adds {v.Type}.{add}, but the view already has a field of that name"
+            let place (field: Field) =
+                match f.After, f.Before with
+                | None, None -> fields.Add field
+                | Some other, _
+                | _, Some other ->
+                    let side = if f.After.IsSome then "after" else "before"
 
-                let at = $"{Meta.display t}.{add}"
+                    match fields |> Seq.tryFindIndex (fun x -> x.Member = other) with
+                    | Some i -> fields.Insert((if f.After.IsSome then i + 1 else i), field)
+                    | None -> Seam.failAt "SEAM003" f.At.Origin $"SeamField places {whole} {side} {other}, which {name} does not have"
 
-                fields.Add
-                    { Name = Meta.pascal add
-                      Member = add
-                      Cross = go (treeOfProperty p at) AsField at }
-            | _ ->
-                Seam.failAt
-                    "SEAM003"
-                    v.At.Origin
-                    $"SeamView adds {v.Type}.{add}, which is not a public member (a property that is not a field) of the record: in F#, write `member r.{add} = ...` on it"
+            match fields |> Seq.tryFindIndex (fun x -> x.Member = f.Member) with
+            | Some i ->
+                if f.After.IsNone && f.Before.IsNone then
+                    Seam.failAt "SEAM003" f.At.Origin $"SeamField names {whole}, a field {name} has already: give After or Before to place it"
+
+                let field = fields[i]
+                fields.RemoveAt i
+                place field
+            | None ->
+                if recordFields |> Array.exists (fun (_, p) -> p.Name = f.Member) then
+                    Seam.failAt "SEAM003" f.At.Origin $"SeamField names {whole}, which SeamView omits from {name}"
+
+                match computed f.Member with
+                | Some p ->
+                    if fields |> Seq.exists (fun x -> x.Name = Meta.pascal f.Member) then
+                        Seam.failAt "SEAM003" f.At.Origin $"SeamField adds {whole}, but {name} already has a field of that name"
+
+                    place
+                        { Name = Meta.pascal f.Member
+                          Member = f.Member
+                          Cross = go (treeOfProperty p whole) AsField whole }
+                | None ->
+                    Seam.failAt
+                        "SEAM003"
+                        f.At.Origin
+                        $"SeamField names {whole}, which is neither a field nor a public member of the record: for a computed field, write `member r.{f.Member} = ...` on it"
 
         if fields.Count = 0 then
             Seam.failAt "SEAM003" (view |> Option.bind _.At.Origin) $"{Meta.display t}'s view {name} would have no field left"
@@ -761,8 +838,8 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
                 | true, v ->
                     v.Used <- true
 
-                    if v.Omit.Count + v.Add.Count > 0 then
-                        Seam.failAt "SEAM003" v.At.Origin $"SeamView has Omit or Add for {v.Type}, which is a union: they are for a record's fields"
+                    if v.Omit.Count > 0 then
+                        Seam.failAt "SEAM003" v.At.Origin $"SeamView has Omit for {v.Type}, which is a union: Omit is for a record's fields"
 
                     Some v
                 | _ -> None
@@ -827,6 +904,7 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
 
                 list.Add
                     { Name = caseName
+                      Case = c.Name
                       Kind = kind
                       DomainCase = if found.Length = 1 then "" else $"{Meta.csName t}.Tags.{c.Name}"
                       Cast = if not c.Fields.IsEmpty && c.Holder <> t then Some(Meta.csName c.Holder) else None
@@ -1114,6 +1192,16 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
         for v in config.Views do
             views[find v.Type v.At] <- v
 
+        for f in config.Fields do
+            let r = find f.Record f.At
+
+            if not (Meta.isRecord r) then
+                Seam.failAt "SEAM003" f.At.Origin $"SeamField names {Meta.dotted r}, which is not an F# record"
+
+            match fieldsFor.TryGetValue r with
+            | true, l -> l.Add f
+            | _ -> fieldsFor[r] <- List [ f ]
+
         for c in config.Cases do
             let u = find c.Union c.At
 
@@ -1152,6 +1240,10 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
             for o in v.Omit do
                 if not (v.OmitUsed.Contains o) then
                     Seam.failAt "SEAM003" v.At.Origin $"SeamView omits {v.Type}.{o}, which is not a field of the record"
+
+        for f in config.Fields do
+            if not f.Used then
+                Seam.failAt "SEAM004" f.At.Origin $"SeamField names {f.Record}, which no data method returns, so it has no view: remove it, or check the type"
 
         for c in config.Cases do
             if not c.Used then

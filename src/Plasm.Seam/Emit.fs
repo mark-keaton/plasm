@@ -41,6 +41,53 @@ let private parameters (all: string list) (indent: string) =
     else
         "\n" + (all |> List.map (fun p -> indent + "    " + p) |> String.concat ",\n")
 
+/// The F# doc comment's summary for `id`, as a C# one, or `fallback`.
+let private summary (seam: SeamModel) (line: string -> unit) (indent: string) (id: string) (fallback: string list) =
+    match seam.Docs.TryGetValue id with
+    | true, text -> line $"{indent}/// <summary>{text}</summary>"
+    | _ ->
+        for f in fallback do
+            line $"{indent}/// {f}"
+
+/// Each field's F# doc comment, as the C# record's parameter's.
+let private paramDocs (seam: SeamModel) (line: string -> unit) (owner: string) (fields: Field seq) =
+    for f in fields do
+        match seam.Docs.TryGetValue $"P:{owner}.{f.Member}" with
+        | true, text -> line $"/// <param name=\"{f.Name}\">{text}</param>"
+        | _ -> ()
+
+/// A member's doc id: by its name, and the number of its parameters.
+let private memberDoc (seam: SeamModel) (owner: string) (m: Member) =
+    if m.Property then
+        $"P:{owner}.{m.Name}"
+    else
+        let bare = $"M:{owner}.{m.Name}"
+
+        let count (id: string) =
+            if not (id.Contains '(') then
+                0
+            else
+                let inside = id.Substring(id.IndexOf '(' + 1).TrimEnd(')')
+                let mutable depth = 0
+                let mutable commas = 0
+
+                for ch in inside do
+                    match ch with
+                    | '{' -> depth <- depth + 1
+                    | '}' -> depth <- depth - 1
+                    | ',' when depth = 0 -> commas <- commas + 1
+                    | _ -> ()
+
+                commas + 1
+
+        match
+            seam.Docs.Keys
+            |> Seq.filter (fun k -> (k = bare || k.StartsWith(bare + "(")) && count k = m.Parameters.Length)
+            |> List.ofSeq
+        with
+        | [ one ] -> one
+        | _ -> ""
+
 let private fieldList (fields: Field seq) =
     fields |> Seq.map (fun f -> $"{f.Cross.CsFull} {id' f.Name}") |> List.ofSeq
 
@@ -52,13 +99,14 @@ let private viewsFile (seam: SeamModel) =
 
     for r in seam.Records do
         line ""
-        line $"/// {r.Display}, as C# sees it."
+        summary seam line "" $"T:{r.Display}" [ $"{r.Display}, as C# sees it." ]
+        paramDocs seam line r.Display r.Fields
         line $"public sealed record {r.Name}({parameters (fieldList r.Fields) String.Empty});"
 
     for u in seam.Unions do
         for c in u.Cases do
             line ""
-            line $"/// A case of {u.Name}."
+            summary seam line "" $"T:{u.Display}.{c.Case}" [ $"A case of {u.Name}." ]
             let fields = if c.Fields.Count = 0 then "" else $"({parameters (fieldList c.Fields) String.Empty})"
             line $"public sealed record {c.Name}{fields}"
             line "{"
@@ -66,7 +114,7 @@ let private viewsFile (seam: SeamModel) =
             line "}"
 
         line ""
-        line $"/// {u.Display}, as C# sees it: a switch over it that misses a case does not compile."
+        summary seam line "" $"T:{u.Display}" [ $"{u.Display}, as C# sees it: a switch over it that misses a case does not compile." ]
         line $"[JsonUnion(TypeClassifier = typeof({u.Name}ByKind))]"
         line $"""public union {u.Name}({u.Cases |> Seq.map _.Name |> String.concat ", "});"""
         line ""
@@ -202,8 +250,15 @@ let private dataFile (seam: SeamModel) (data: DataClass) =
 
     let line (s: string) = text.Append(s).Append('\n') |> ignore
     line ""
-    line $"/// What the host calls: every public member of the F# type {data.Display},"
-    line "/// taking plain arguments and answering views."
+
+    summary
+        seam
+        line
+        ""
+        $"T:{data.Display}"
+        [ $"What the host calls: every public member of the F# type {data.Display},"
+          "taking plain arguments and answering views." ]
+
     line $"public sealed class {data.Name}({data.Domain} inner)"
     line "{"
     line "    /// The F# object this one calls."
@@ -211,6 +266,7 @@ let private dataFile (seam: SeamModel) (data: DataClass) =
 
     for m in data.Members do
         line ""
+        summary seam line "    " (memberDoc seam data.Display m) []
         let target = if m.Static then data.Domain else "inner"
 
         if m.Property then

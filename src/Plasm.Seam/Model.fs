@@ -45,6 +45,8 @@ type RecordView =
 
 type CaseView =
     { Name: string
+      /// The case's F# name.
+      Case: string
       Kind: string
       /// The domain's tag for the case, empty for a union of one case.
       DomainCase: string
@@ -110,6 +112,8 @@ type SeamModel =
       Shapes: List<OutcomeShape>
       Data: List<DataClass>
       Refusals: List<RefusalView>
+      /// Each F# doc comment's summary, by its documentation id (T:Shop.Order).
+      Docs: Dictionary<string, string>
       /// Every type the JSON context lists, as C# spells it.
       Json: List<string>
       /// The host's own types it lists too, as Seam.cs writes them.

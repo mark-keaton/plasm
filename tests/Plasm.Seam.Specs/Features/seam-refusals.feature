@@ -122,4 +122,4 @@ Feature: A domain's refusal reaches C# as Refused, its code the case's name
               Task.FromResult(Changed<Order, string>("no"))
       """
     When the seam is written into the namespace Shop.Api
-    Then the seam stops with SEAM013: "Shop.Orders.CancelAsync's result: System.String is the refusal of a Changed, and a refusal is a public F# union"
+    Then the seam stops with SEAM013: "Shop.Orders.CancelAsync's result: string is the refusal of a Changed, and a refusal is a public F# union"
