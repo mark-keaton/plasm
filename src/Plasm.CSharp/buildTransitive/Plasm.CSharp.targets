@@ -13,6 +13,15 @@
        PlasmSeamDrift      write (rewrite seam.lock, say what changed) or fail (stop);
                            default fail when ContinuousIntegrationBuild=true
        PlasmSeamHttp       false to leave out the ASP.NET helper; default: true in a web project -->
+  <!-- A C# switch over one of Plasm.CSharp's unions, or a union the seam
+       writes, that misses a case does not compile: the compiler's warning
+       CS8509 is an error in every C# project that has the package, whether or
+       not it treats warnings as errors. PlasmExhaustiveSwitch=false leaves it
+       a warning. -->
+  <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj' and '$(PlasmExhaustiveSwitch)' != 'false'">
+    <WarningsAsErrors>$(WarningsAsErrors);CS8509</WarningsAsErrors>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
     <PlasmSeamConfig Condition="'$(PlasmSeamConfig)' == ''">$(MSBuildProjectDirectory)/Seam.cs</PlasmSeamConfig>
     <PlasmSeam Condition="'$(PlasmSeam)' == '' and Exists('$(PlasmSeamConfig)')">true</PlasmSeam>

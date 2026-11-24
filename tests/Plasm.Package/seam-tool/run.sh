@@ -8,8 +8,9 @@
 # says what changed in the contract. The host prints what it is given as the
 # seam's source-generated JSON, under the runtime and as a native binary,
 # which must print the same, warning only FSharp.Core's two summary lines.
-# An endpoint whose body is a record no JSON context lists does not build
-# (SEAM030).
+# Two builds must fail, though the host does not treat warnings as errors: a
+# switch that misses a case of the seam's union (CS8509), and an endpoint
+# whose body is a record no JSON context lists (SEAM030).
 # Run by tests/Plasm.Package/run.sh; with --pack in place of a feed, it packs
 # Plasm.Annotations, Plasm and Plasm.CSharp first.
 #   tests/Plasm.Package/seam-tool/run.sh <feed> <version>
@@ -84,6 +85,23 @@ check 'grep -q "Plasm.Seam: the contract changed, and seam.lock is rewritten (1 
 check 'grep -qF "Plasm.Seam:   added to class Orders = Shop.Orders: Task<int> CountAsync(CancellationToken cancellationToken)" "$work/changed.log"' "naming what changed"
 check 'grep -qF "public Task<int> CountAsync(CancellationToken cancellationToken)" "$app/Api/Seam/Orders.g.cs"' "and the C# class has the new member"
 
+# Red: a switch over the seam's union without one case does not build, though
+# the host does not treat warnings as errors: the package makes CS8509 one.
+cp -R "$app" "$work/red-switch"
+python3 - "$work/red-switch/Api/Program.cs" <<'PY'
+import sys
+p = sys.argv[1]; s = open(p).read()
+arm = '    Open => "open",\n'
+assert s.count(arm) == 1, "the Open arm is not where the check expects it"
+open(p, 'w').write(s.replace(arm, ''))
+PY
+if dotnet build "$work/red-switch/Api" -c Release -p:PlasmVersion="$version" -v q -m:1 -nodeReuse:false > "$work/red-switch.log" 2>&1; then
+  echo "seam-tool FAILED: a switch over StatusView without its Open arm built"; failed=1
+elif grep -q "error CS8509.*'Shop.Api.Open' is not covered" "$work/red-switch.log"; then
+  echo "seam-tool: a switch over StatusView without its Open arm is refused: error CS8509, naming Shop.Api.Open, with warnings not errors"
+else
+  echo "seam-tool FAILED: the switch without its Open arm failed otherwise:"; grep -E ' error ' "$work/red-switch.log" | sed 's/\[.*//' | sort -u | head -5; failed=1
+fi
 # Red: an endpoint whose body is a record no JSON context lists does not
 # build (SEAM030, Plasm.CSharp's analyzer); listed in Seam.cs, it builds.
 cp -R "$app" "$work/red-json"

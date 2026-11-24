@@ -9,9 +9,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <!-- FSharp.Core's two summary warnings, which no F# library can quiet for its users. -->
-    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104;IL3053</WarningsNotAsErrors>
+    <!-- Warnings are not errors here: a switch that misses a case is an error
+         all the same, because Plasm.CSharp's package makes CS8509 one. -->
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Data/Data.fsproj" />
