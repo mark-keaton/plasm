@@ -13,6 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Plasm.Seam/Plasm.Seam.fsproj" />
     <ProjectReference Include="../../src/Plasm.CSharp/Plasm.CSharp.fsproj" />
+    <ProjectReference Include="../../src/Plasm.Seam.Analyzers/Plasm.Seam.Analyzers.csproj" />
     <PackageReference Include="FSharp.Compiler.Service" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Reqnroll" />

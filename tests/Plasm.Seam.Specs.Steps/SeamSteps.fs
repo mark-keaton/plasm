@@ -10,8 +10,8 @@ open Plasm.Seam
 type SeamProject() =
     static let mutable n = 0
     let dir =
-        n <- n + 1
-        let d = Path.Combine(Compilers.work, $"scenario-{n}")
+        // Scenarios run in parallel: each takes its own number.
+        let d = Path.Combine(Compilers.work, $"scenario-{Threading.Interlocked.Increment &n}")
         Directory.CreateDirectory d |> ignore
         d
 
@@ -123,6 +123,27 @@ type SeamSteps(p: SeamProject) =
 
     [<StepDefinition("^the C# compiles with the host:$")>]
     member _.CompilesWith(host: string) = compiles [ "Host.cs", host ]
+
+    [<StepDefinition("^the C# with the host stops with (\\w+) at (.*?): \"(.*)\"$")>]
+    member _.CompileStops(code: string, at: string, text: string, host: string) =
+        let r = ran ()
+        let sources = ("Seam.cs", File.ReadAllText p.Config) :: r.Files @ [ "Host.cs", host ]
+        let diagnostics = Compilers.csharp sources (data ())
+        let want = unquote text
+
+        let found =
+            diagnostics
+            |> List.tryFind (fun d ->
+                let where = d.Location.GetLineSpan()
+                let place = $"{IO.Path.GetFileName where.Path}({where.StartLinePosition.Line + 1},{where.StartLinePosition.Character + 1})"
+
+                d.Id = code
+                && d.Severity = Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+                && place = at
+                && d.GetMessage().StartsWith want)
+
+        if found.IsNone then
+            fail ($"the C# did not stop with {code} at {at}: {want}\nIt says:\n" + (diagnostics |> List.map string |> String.concat "\n"))
 
     [<StepDefinition("^the seam stops with (SEAM\\d+) at (.*?): \"(.*)\"$")>]
     member _.Stops(code: string, at: string, text: string) =

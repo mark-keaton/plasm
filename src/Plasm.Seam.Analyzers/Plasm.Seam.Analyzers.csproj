@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The checks the C# compiler runs in a host that has Plasm.CSharp: they
+       stop a build that would only fail at run time. Not a package of its
+       own: Plasm.CSharp carries it in analyzers/dotnet/cs/. An analyzer runs
+       inside whatever compiler builds the host, so it targets netstandard2.0
+       against an older Roslyn than any SDK that builds .NET 11. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <Nullable>enable</Nullable>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <!-- Its one rule ships with Plasm.CSharp, whose status.md says when it changes. -->
+    <NoWarn>$(NoWarn);RS2008</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Not an F# project: none of src/'s FSharp.Core. -->
+    <PackageReference Remove="FSharp.Core" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" VersionOverride="4.14.0" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

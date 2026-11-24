@@ -8,6 +8,8 @@
 # says what changed in the contract. The host prints what it is given as the
 # seam's source-generated JSON, under the runtime and as a native binary,
 # which must print the same, warning only FSharp.Core's two summary lines.
+# An endpoint whose body is a record no JSON context lists does not build
+# (SEAM030).
 # Run by tests/Plasm.Package/run.sh; with --pack in place of a feed, it packs
 # Plasm.Annotations, Plasm and Plasm.CSharp first.
 #   tests/Plasm.Package/seam-tool/run.sh <feed> <version>
@@ -81,6 +83,44 @@ build changed
 check 'grep -q "Plasm.Seam: the contract changed, and seam.lock is rewritten (1 change). Commit it." "$work/changed.log"' "with a member added to the F# type, the seam runs again and rewrites seam.lock"
 check 'grep -qF "Plasm.Seam:   added to class Orders = Shop.Orders: Task<int> CountAsync(CancellationToken cancellationToken)" "$work/changed.log"' "naming what changed"
 check 'grep -qF "public Task<int> CountAsync(CancellationToken cancellationToken)" "$app/Api/Seam/Orders.g.cs"' "and the C# class has the new member"
+
+# Red: an endpoint whose body is a record no JSON context lists does not
+# build (SEAM030, Plasm.CSharp's analyzer); listed in Seam.cs, it builds.
+cp -R "$app" "$work/red-json"
+cat > "$work/red-json/Api/Endpoints.cs" <<'CS'
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+
+namespace Shop.Api;
+
+public static class Endpoints
+{
+    public static void Map(WebApplication app) =>
+        app.MapPost("/orders", (NewOrder input, CancellationToken ct) => Results.Ok());
+}
+
+public sealed record NewOrder(string Customer);
+CS
+python3 - "$work/red-json/Api/Api.csproj" <<'PY'
+import sys
+p = sys.argv[1]; s = open(p).read()
+end = '  <ItemGroup>\n    <ProjectReference'
+assert s.count(end) == 1
+open(p, 'w').write(s.replace(end, '  <ItemGroup>\n    <FrameworkReference Include="Microsoft.AspNetCore.App" />\n  </ItemGroup>\n' + end))
+PY
+if dotnet build "$work/red-json/Api" -c Release -p:PlasmVersion="$version" -v q -m:1 -nodeReuse:false > "$work/red-json.log" 2>&1; then
+  echo "seam-tool FAILED: a POST whose body NewOrder no JSON context lists built"; failed=1
+elif grep -q "Endpoints.cs(9,42): error SEAM030: NewOrder is the body of POST /orders, and no JSON context lists it" "$work/red-json.log"; then
+  echo "seam-tool: a POST whose body no JSON context lists is refused at build: SEAM030 at the parameter, naming NewOrder"
+else
+  echo "seam-tool FAILED: the unlisted body failed otherwise:"; grep -E ' error ' "$work/red-json.log" | sed 's/\[.*//' | sort -u | head -5; failed=1
+fi
+printf '\n[assembly: SeamJson(typeof(Shop.Api.NewOrder))]\n' >> "$work/red-json/Api/Seam.cs"
+if dotnet build "$work/red-json/Api" -c Release -p:PlasmVersion="$version" -v q -m:1 -nodeReuse:false > "$work/green-json.log" 2>&1; then
+  echo "seam-tool: listed in Seam.cs with SeamJson, it builds"
+else
+  echo "seam-tool FAILED: with NewOrder listed in Seam.cs, the host did not build:"; grep -E ' error ' "$work/green-json.log" | sed 's/\[.*//' | sort -u | head -5; failed=1
+fi
 
 rid=$(dotnet --info | sed -n 's/^ *RID: *//p' | head -1)
 dotnet build "$app/Api" -c Release -p:PlasmVersion="$version" -o "$work/jit" -v q -m:1 -nodeReuse:false > "$work/jit-build.log" 2>&1 || { echo "seam-tool: the host did not build"; grep -E ' error ' "$work/jit-build.log" | sed 's/\[.*//' | sort -u | head; exit 1; }

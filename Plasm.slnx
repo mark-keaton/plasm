@@ -6,6 +6,7 @@
     <Project Path="src/Plasm.Sqlite/Plasm.Sqlite.fsproj" />
     <Project Path="src/Plasm.CSharp/Plasm.CSharp.fsproj" />
     <Project Path="src/Plasm.Seam/Plasm.Seam.fsproj" />
+    <Project Path="src/Plasm.Seam.Analyzers/Plasm.Seam.Analyzers.csproj" />
     <Project Path="src/Plasm.HotChocolate/Plasm.HotChocolate.fsproj" />
     <Project Path="src/Plasm.FieldGetters/Plasm.FieldGetters.fsproj" />
   </Folder>

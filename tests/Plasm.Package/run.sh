@@ -87,12 +87,12 @@ if [[ "$sqreadme" =~ [0-9]+\.[0-9]+\.[0-9]+ ]]; then echo "pack: Plasm.Sqlite's 
 if [[ "$sqreadme" != *"Plasm is new"* ]]; then echo "pack: Plasm.Sqlite's readme does not say Plasm is new"; exit 1; fi
 echo "pack: Plasm.Sqlite carries $sqfiles; depends on $deps"
 # Plasm.CSharp: its assembly, its documentation and the readme, and the seam:
-# its build targets (build/, buildTransitive/) and the tool they run, built
-# with what it needs to run (tools/seam/); it depends on Plasm alone (and
+# its build targets (build/, buildTransitive/), the tool they run, built
+# with what it needs to run (tools/seam/), and its analyzer; it depends on Plasm alone (and
 # FSharp.Core), so a host of either provider takes it.
 cs="$feed/Plasm.CSharp.$version.nupkg"
 csfiles=$(unzip -Z1 "$cs" | grep -v -E '^(_rels/|package/|\[Content_Types\]\.xml$|Plasm\.CSharp\.nuspec$)' | sort | tr '\n' ' ')
-want_csfiles="README.md build/Plasm.CSharp.targets buildTransitive/Plasm.CSharp.targets lib/net11.0/Plasm.CSharp.dll lib/net11.0/Plasm.CSharp.xml tools/seam/FSharp.Core.dll tools/seam/Microsoft.CodeAnalysis.CSharp.dll tools/seam/Microsoft.CodeAnalysis.dll tools/seam/Plasm.Seam.deps.json tools/seam/Plasm.Seam.dll tools/seam/Plasm.Seam.runtimeconfig.json tools/seam/System.Reflection.MetadataLoadContext.dll "
+want_csfiles="README.md analyzers/dotnet/cs/Plasm.Seam.Analyzers.dll build/Plasm.CSharp.targets buildTransitive/Plasm.CSharp.targets lib/net11.0/Plasm.CSharp.dll lib/net11.0/Plasm.CSharp.xml tools/seam/FSharp.Core.dll tools/seam/Microsoft.CodeAnalysis.CSharp.dll tools/seam/Microsoft.CodeAnalysis.dll tools/seam/Plasm.Seam.deps.json tools/seam/Plasm.Seam.dll tools/seam/Plasm.Seam.runtimeconfig.json tools/seam/System.Reflection.MetadataLoadContext.dll "
 if [ "$csfiles" != "$want_csfiles" ]; then echo "pack: Plasm.CSharp carries $csfiles"; exit 1; fi
 csdeps=$(unzip -p "$cs" Plasm.CSharp.nuspec | grep -o '<dependency id="[^"]*" version="[^"]*"' | sed 's/<dependency id="\([^"]*\)" version="\([^"]*\)"/\1 \2/' | sort | tr '\n' ';')
 want_csdeps=$(printf '%s\n' "FSharp.Core $floor0" "Plasm $version" | sort | tr '\n' ';')

@@ -112,7 +112,7 @@ let private jsonGenerator =
 
 /// What C#'s compiler says of `sources` (name, text) over the data assembly:
 /// each diagnostic of warning or error, as the compiler prints it.
-let csharp (sources: (string * string) list) (data: string) : Diagnostic list =
+let private compileWith (sources: (string * string) list) (data: string) : Compilation * Diagnostic list =
     let parse = CSharpParseOptions(LanguageVersion.Preview)
 
     let trees =
@@ -135,6 +135,18 @@ let csharp (sources: (string * string) list) (data: string) : Diagnostic list =
     let mutable generated = Collections.Immutable.ImmutableArray<Diagnostic>.Empty
     driver.RunGeneratorsAndUpdateCompilation(compilation, &output, &generated) |> ignore
 
+    // Plasm.CSharp's analyzers, as the compiler runs them from its package.
+    let analyzers =
+        Collections.Immutable.ImmutableArray.Create<DiagnosticAnalyzer>(Plasm.Seam.Analyzers.RequestBodyJson())
+
+    let analyzed =
+        output.WithAnalyzers(analyzers).GetAllDiagnosticsAsync() |> Async.AwaitTask |> Async.RunSynchronously
+
+    output,
     [ yield! generated
-      yield! output.GetDiagnostics() ]
+      yield! analyzed ]
     |> List.filter (fun d -> d.Severity >= DiagnosticSeverity.Warning)
+
+/// What C#'s compiler says of `sources` (name, text) over the data assembly:
+/// each diagnostic of warning or error, as the compiler prints it.
+let csharp (sources: (string * string) list) (data: string) : Diagnostic list = snd (compileWith sources data)

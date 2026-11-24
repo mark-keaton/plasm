@@ -18,6 +18,8 @@
     <!-- The seam tool, built first and carried in tools/seam/: neither a
          reference of Plasm.CSharp nor a dependency of its package. -->
     <ProjectReference Include="../Plasm.Seam/Plasm.Seam.fsproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
+    <!-- The analyzer, built first and carried in analyzers/dotnet/cs/. -->
+    <ProjectReference Include="../Plasm.Seam.Analyzers/Plasm.Seam.Analyzers.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
   </ItemGroup>
   <!-- The seam's build targets, for a C# host (buildTransitive/Plasm.CSharp.targets). -->
   <ItemGroup>
@@ -28,10 +30,14 @@
     <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PlasmSeamToolInPackage</TargetsForTfmSpecificContentInPackage>
   </PropertyGroup>
   <!-- The tool as built, beside its dependencies, runtimeconfig and deps.json:
-       a build runs it with the dotnet that builds the host. -->
+       a build runs it with the dotnet that builds the host. And the analyzer,
+       which the C# compiler runs in any C# project that has the package. -->
   <Target Name="PlasmSeamToolInPackage">
-    <MSBuild Projects="../Plasm.Seam/Plasm.Seam.fsproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+    <MSBuild Projects="../Plasm.Seam/Plasm.Seam.fsproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)" RemoveProperties="TargetFramework">
       <Output TaskParameter="TargetOutputs" ItemName="_PlasmSeamToolPath" />
+    </MSBuild>
+    <MSBuild Projects="../Plasm.Seam.Analyzers/Plasm.Seam.Analyzers.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)" RemoveProperties="TargetFramework">
+      <Output TaskParameter="TargetOutputs" ItemName="_PlasmSeamAnalyzer" />
     </MSBuild>
     <PropertyGroup>
       <_PlasmSeamToolDir>@(_PlasmSeamToolPath->'%(RootDir)%(Directory)')</_PlasmSeamToolDir>
@@ -39,6 +45,7 @@
     <ItemGroup>
       <_PlasmSeamToolFile Include="$(_PlasmSeamToolDir)*.dll;$(_PlasmSeamToolDir)Plasm.Seam.runtimeconfig.json;$(_PlasmSeamToolDir)Plasm.Seam.deps.json" />
       <TfmSpecificPackageFile Include="@(_PlasmSeamToolFile)" PackagePath="tools/seam/%(Filename)%(Extension)" />
+      <TfmSpecificPackageFile Include="@(_PlasmSeamAnalyzer)" PackagePath="analyzers/dotnet/cs/%(Filename)%(Extension)" />
     </ItemGroup>
     <Error Condition="!Exists('$(_PlasmSeamToolDir)Plasm.Seam.dll')" Text="the seam tool is not built at $(_PlasmSeamToolDir): build Plasm.CSharp first" />
   </Target>
