@@ -222,12 +222,21 @@ let private ours = Text.RegularExpressions.Regex @"^plasm_t([0-9a-f]{8})_(\d+)_\
 /// The name a run before machines were named gave one: plasm_t<process>_<n>.
 let private older = Text.RegularExpressions.Regex @"^plasm_t(\d+)_\d+$"
 
-let private running (pid: int) =
+/// Whether the run that made a database made at `created` is still running
+/// as process `pid`: a process of that id, started before the database. One
+/// started after has the id again, and the run that made it is gone.
+let private running (pid: int) (created: DateTimeOffset option) =
     try
         use p = Diagnostics.Process.GetProcessById pid
+
         not p.HasExited
-    with :? ArgumentException ->
-        false
+        && (match created with
+            // A second of grace, for the server's clock against this machine's.
+            | Some at -> DateTimeOffset(p.StartTime) <= at.AddSeconds 1.0
+            | None -> true)
+    with
+    | :? ArgumentException -> false
+    | :? InvalidOperationException -> false
 
 type private Server =
     { Admin: string
@@ -279,13 +288,34 @@ let private server: Lazy<Task<Server>> =
                             names.Add(rows.GetString 0)
                     }
 
+                // When a database was made: its PG_VERSION file's time, which
+                // only a superuser may read; without it, a process of the id
+                // alive keeps the database.
+                let created (name: string) =
+                    task {
+                        try
+                            use read = conn.CreateCommand()
+                            read.CommandText <- "select (pg_stat_file('base/' || oid || '/PG_VERSION')).modification from pg_database where datname = @n"
+                            read.Parameters.AddWithValue("n", name) |> ignore
+                            let! at = read.ExecuteScalarAsync()
+
+                            return
+                                match at with
+                                | :? DateTime as t -> Some(DateTimeOffset(DateTime.SpecifyKind(t, DateTimeKind.Utc)))
+                                | :? DateTimeOffset as t -> Some t
+                                | _ -> None
+                        with :? PostgresException ->
+                            return None
+                    }
+
                 for name in names do
                     let m = ours.Match name
                     let o = older.Match name
+                    let! at = if m.Success || o.Success then created name else Task.FromResult None
 
                     let orphan =
-                        (m.Success && m.Groups[1].Value = machine && not (running (int m.Groups[2].Value)))
-                        || (o.Success && not (running (int o.Groups[1].Value)))
+                        (m.Success && m.Groups[1].Value = machine && not (running (int m.Groups[2].Value) at))
+                        || (o.Success && not (running (int o.Groups[1].Value) at))
 
                     if orphan then
                         use drop = conn.CreateCommand()

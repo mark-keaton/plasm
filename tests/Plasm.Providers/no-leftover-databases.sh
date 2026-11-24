@@ -5,7 +5,8 @@
 # process is gone. It starts a PostgreSQL of its own (Docker) to be that
 # server, so no other run is counted.
 #   no-leftover-databases.sh            runs the examples and some tests, and counts
-#   no-leftover-databases.sh --prove    also leaves an orphan, as a killed run does, and runs again
+#   no-leftover-databases.sh --prove    also leaves orphans (an older run's, a killed run's, ones whose
+#                                        process id is reused) and runs again
 set -uo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 if ! docker info > /dev/null 2>&1; then echo "PostgreSQL runs: no Docker here, so not checked"; exit 0; fi
@@ -35,9 +36,26 @@ if [ "${1:-}" = "--prove" ]; then
   # A run killed mid-way, as a run that dies is: the next run drops what it left.
   dotnet test --project "$root/tests/Plasm.Specs" --no-build -- --filter-class '*PredictableFunctional*' > /dev/null 2>&1 & pid=$!
   until [ "$(count)" -gt 0 ] || ! kill -0 $pid 2>/dev/null; do sleep 0.1; done
+  # A name the run made, while it runs: it says this machine's part.
+  seen=$(docker exec "$pg" psql -U postgres -tAc "select datname from pg_database where datname like 'plasm\_t%' and datname <> 'plasm_template' limit 1")
   pkill -9 -f "$root/tests/Plasm.Specs/bin/" 2>/dev/null; pkill -9 -P $pid 2>/dev/null; kill -9 $pid 2>/dev/null; wait $pid 2>/dev/null
   left=$(count); run; after=$(count)
   echo "PostgreSQL runs, one killed mid-run: $left test database(s) left by it, $after after the next run"
   [ "$left" -gt 0 ] && [ "$after" -eq 0 ] || status=1
+  # Process ids are reused. A database whose id now belongs to a process
+  # started after it was made is an orphan, of either form of name; one whose
+  # process started before it (this shell) is a run's, and kept. The killed
+  # run's name gave this machine's part.
+  machine=$(echo "$seen" | sed -n 's/^plasm_t\([0-9a-f]\{8\}\)_[0-9]*_[0-9]*$/\1/p')
+  for d in reuse_a reuse_b; do docker exec "$pg" psql -U postgres -qc "create database plasm_$d" > /dev/null; done
+  docker exec "$pg" psql -U postgres -qc "create database plasm_t${machine}_$$_1" > /dev/null
+  sleep 2; sleep 900 & later=$!
+  docker exec "$pg" psql -U postgres -qc "alter database plasm_reuse_a rename to plasm_t${later}_1" > /dev/null
+  docker exec "$pg" psql -U postgres -qc "alter database plasm_reuse_b rename to plasm_t${machine}_${later}_1" > /dev/null
+  planted=$(count); run; after=$(count)
+  kept=$(docker exec "$pg" psql -U postgres -tAc "select count(*) from pg_database where datname = 'plasm_t${machine}_$$_1'")
+  kill $later 2>/dev/null; wait $later 2>/dev/null
+  echo "PostgreSQL runs beside databases whose process id a later process holds, and one whose process is this check: $planted then, $after after the next run, the check's kept: $kept"
+  [ -n "$machine" ] && [ "$planted" -eq 3 ] && [ "$after" -eq 1 ] && [ "$kept" -eq 1 ] || status=1
 fi
 exit $status
