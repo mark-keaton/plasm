@@ -75,6 +75,31 @@ module UnionCards =
 
     let model = Model.buildOrFail [] [ typeof<Card> ]
 
+    /// A union whose case's field is an option.
+    type ErrandStatus =
+        | Unclaimed
+        | Claimed of by: Person option
+
+    [<Table "errands">]
+    type Errand = { Id: CardId; Status: ErrandStatus }
+
+    let errandModel = Model.buildOrFail [] [ typeof<Errand> ]
+
+    let errandTable =
+        "drop table if exists errands;
+         create table errands (
+           id bigint generated always as identity primary key,
+           status text not null,
+           status_by text);"
+
+    /// The status a scenario names.
+    let errandStatus (text: string) =
+        match text with
+        | "claimed by Ada" -> Claimed(Some(Person "ada"))
+        | "claimed by nobody" -> Claimed None
+        | "unclaimed" -> Unclaimed
+        | other -> failwith $"not an errand's status: {other}"
+
     let stageColumns = [ "stage_assignee"; "stage_since"; "stage_resolution"; "stage_resolution_reason"; "stage_at" ]
 
     let table =
@@ -149,6 +174,38 @@ type UnionFieldSteps(w: World) =
             let parts = values.Split '|'
             return ("stage" :: stageColumns, parts |> Array.map (fun v -> if v = "~" then None else Some v) |> List.ofArray) ||> List.zip |> Map.ofList
         }
+
+    [<StepDefinition("^an errands table with the Status columns$")>]
+    member _.ErrandTable() =
+        task {
+            do! w.Db.MakeTables(UnionCards.errandTable, UnionCards.errandModel)
+            w.Set("errandRepo", w.Db.RepoWith(model = UnionCards.errandModel))
+        }
+        |> unit
+
+    [<StepDefinition("^I insert an Errand (.+)$")>]
+    member _.InsertErrand(text: string) =
+        task {
+            let! r = w.Get<Repo>("errandRepo").Transact(Tx.insert { Id = CardId 0L; Status = UnionCards.errandStatus text }: Tx<_, unit>)
+            w.Set("errand", ok r)
+        }
+        |> unit
+
+    [<StepDefinition("^reading it back gives the same Errand$")>]
+    member _.ReadBackErrand() =
+        task {
+            let! r = w.Get<Repo>("errandRepo").All(plasm { for e in tableOf<UnionCards.Errand> do orderBy e.Id })
+            equal [ w.Get<UnionCards.Errand> "errand" ] (ok r) "errands"
+        }
+        |> unit
+
+    [<StepDefinition("^the errands table holds status (\\w+) and status_by (\\w+)$")>]
+    member _.ErrandHolds(case: string, by: string) =
+        task {
+            let! held = w.Db.Scalar<string>("select concat_ws('|', status, coalesce(status_by, 'NULL')) from errands limit 1")
+            equal $"{case}|{by}" held "status|status_by"
+        }
+        |> unit
 
     [<StepDefinition("a cards table with the Stage columns")>]
     member _.Table() =

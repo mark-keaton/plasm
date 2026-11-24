@@ -55,6 +55,23 @@ Feature: A union with fields is stored across columns
       When I build a model of a record whose union has a case holding a list
       Then the model is refused for that field, saying a case field must be a scalar or a union
 
+  Rule: A case's field may be an option
+
+    # Errand = { Id: CardId; Status: ErrandStatus }
+    # ErrandStatus = Unclaimed | Claimed of by: Person option
+    # errands(id, status, status_by)
+    Scenario Outline: An Errand <status> is written and read back, its absent option NULL
+      Given an errands table with the Status columns
+      When I insert an Errand <status>
+      Then reading it back gives the same Errand
+      And the errands table holds status <case> and status_by <by>
+
+      Examples:
+        | status            | case      | by   |
+        | claimed by Ada    | claimed   | ada  |
+        | claimed by nobody | claimed   | NULL |
+        | unclaimed         | unclaimed | NULL |
+
   Rule: Queries read a union as F# does
 
     Scenario: A case test
