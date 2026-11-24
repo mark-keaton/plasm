@@ -220,6 +220,16 @@ done
 [ "$failed" = 0 ] && echo "Starter's committed contracts (seam.lock, seam.sqlite.lock) are what its builds write"
 dotnet build src/Starter.Api -c Release -o "$work/st-jit" -v q > "$work/st-build.log" 2>&1 || { cat "$work/st-build.log"; exit 1; }
 dotnet "$work/st-jit/Starter.Api.dll" ddl > "$work/st-jit.txt" 2>&1 || true
+# The Starter's generated C# and its PostgreSQL DDL, as the site quotes them:
+# committed copies (tests/Plasm.Package/starter/) that must be what this build wrote.
+same() { # what the build wrote, the committed copy
+  if diff -q <(tr -d '\r' < "$1") <(tr -d '\r' < "$2") > /dev/null; then return 0; fi
+  echo "Starter: $2 is not what the build writes; if the change is meant, copy $(basename "$1") over it:"; diff -u "$2" "$1" | head -20; failed=1; return 1
+}
+same "$st/src/Starter.Api/Seam/Views.g.cs" "$here/starter/Views.g.cs" \
+  && same "$st/src/Starter.Api/Seam/SeamHttp.g.cs" "$here/starter/SeamHttp.g.cs" \
+  && same "$work/st-jit.txt" "$here/starter/ddl.postgres.sql" \
+  && echo "Starter: its Views.g.cs, SeamHttp.g.cs and PostgreSQL DDL are the committed copies the site quotes"
 dotnet publish src/Starter.Api -c Release -r "$rid" -o "$work/st-native" -v m > "$work/st-native.log" 2>&1 || { tail -30 "$work/st-native.log"; exit 1; }
 rm -rf "src/Starter.Api/obj/Release/net11.0/$rid/native" "src/Starter.Api/obj/Release/net11.0/$rid/plasm-aot"
 dotnet publish src/Starter.Api -c Release -r "$rid" -p:PlasmFieldGetters=false -o "$work/st-without" -v m > "$work/st-without.log" 2>&1 || { tail -30 "$work/st-without.log"; exit 1; }
