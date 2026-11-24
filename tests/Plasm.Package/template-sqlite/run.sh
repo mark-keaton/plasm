@@ -64,6 +64,9 @@ cat > "$gen/nuget.config" <<XML
 XML
 rid=$(dotnet --info | sed -n 's/^ *RID: *//p' | head -1)
 cd "$gen"
+# The project comes with its contract, the SQLite one: a build that may not
+# change seam.lock passes.
+if [ -f src/Lending.Api/seam.lock ] && [ ! -f src/Lending.Api/seam.sqlite.lock ] && dotnet build src/Lending.Api -p:PlasmSeamDrift=fail -v q > "$work/lock.log" 2>&1; then echo "template-sqlite: the made project's seam.lock is the contract its build writes"; else echo "template-sqlite: the made project has no seam.lock of its own, or its build changes it:"; ls src/Lending.Api; grep -E ' error ' "$work/lock.log" 2>/dev/null | sed 's/\[.*//' | sort -u | head; failed=1; fi
 dotnet test --project tests/Lending.Tests > "$work/test.log" 2>&1 || { echo "template-sqlite: the made project's tests failed"; tail -30 "$work/test.log"; failed=1; }
 echo "template-sqlite: tests, runtime: $(grep -E '^\s+(total|failed):' "$work/test.log" | tr -s ' ' | tr '\n' ' ')"
 dotnet publish tests/Lending.Tests -c Release -r "$rid" -o "$work/tests-native" -v m -m:1 -nodeReuse:false > "$work/tests-native.log" 2>&1 || { tail -30 "$work/tests-native.log"; exit 1; }

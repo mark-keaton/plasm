@@ -1,2 +1,5 @@
 bin/
 obj/
+# Written by the seam at every build, from Seam.cs and the F# data project;
+# seam.lock, beside it, is the contract to commit.
+src/*/Seam/*.g.cs

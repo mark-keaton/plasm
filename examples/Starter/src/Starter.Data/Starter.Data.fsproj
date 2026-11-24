@@ -3,6 +3,8 @@
        reference only this project, and call one type: BookingData. -->
   <PropertyGroup>
     <IsAotCompatible>true</IsAotCompatible>
+    <!-- Its /// comments: the seam carries them into the C# it writes. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Domain.fs" />

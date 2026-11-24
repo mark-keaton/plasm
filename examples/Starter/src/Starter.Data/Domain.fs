@@ -51,7 +51,8 @@ type Equipment =
       [<Version>]
       Version: int }
 
-/// Why the rules refuse.
+/// Why the rules refuse. C# is given each as Refused: the case's name, and
+/// its Message.
 type Refusal =
     | WhoRequired
     | ReasonRequired
@@ -61,8 +62,8 @@ type Refusal =
     | AlreadyOutOfService
     | AlreadyAvailable
 
-module Refusal =
-    let describe refusal =
+    /// Why, in the rules' own words.
+    member refusal.Message =
         match refusal with
         | WhoRequired -> "A booking needs the name of who it is for."
         | ReasonRequired -> "Taking equipment out of service needs a reason."

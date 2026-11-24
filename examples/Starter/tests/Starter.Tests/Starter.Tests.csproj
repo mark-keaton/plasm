@@ -20,6 +20,7 @@
     <!--#endif -->
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/Starter.Data/Starter.Data.fsproj" />
+    <!-- The API, whose build writes the C# BookingData (Seam/) the tests call. -->
+    <ProjectReference Include="../../src/Starter.Api/Starter.Api.csproj" />
   </ItemGroup>
 </Project>

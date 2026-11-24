@@ -22,7 +22,7 @@
 
   <ItemGroup>
     <PackageReference Remove="FSharp.Core" />
-    <None Include="$(Starter)**" Exclude="$(Starter)**/bin/**;$(Starter)**/obj/**;$(Starter)**/TestResults/**;$(Starter)packages/**;$(Starter).nuget/**" Pack="true" PackagePath="content/Starter/%(RecursiveDir)%(Filename)%(Extension)" Visible="false" />
+    <None Include="$(Starter)**" Exclude="$(Starter)**/bin/**;$(Starter)**/obj/**;$(Starter)**/TestResults/**;$(Starter)packages/**;$(Starter).nuget/**;$(Starter)src/*/Seam/*.g.cs" Pack="true" PackagePath="content/Starter/%(RecursiveDir)%(Filename)%(Extension)" Visible="false" />
   </ItemGroup>
 
   <!-- template.json, with the Starter's Plasm.Postgres version (the text the

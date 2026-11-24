@@ -1,9 +1,8 @@
-// Every endpoint calls BookingData, the F# side, and turns what it returns
-// into a response. C# writes no query and composes no transaction.
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using Plasm.CSharp;
-using Starter.Data;
+// Every endpoint calls BookingData, the C# class the seam writes over the F#
+// one (Seam/BookingData.g.cs), and ToHttp turns its outcome into a response
+// (Seam/SeamHttp.g.cs). C# writes no query, no transaction, no view and no
+// mapping.
+using Starter.Api;
 
 // `ddl`: print the SQL that creates the tables, and stop.
 if (args is ["ddl"])
@@ -17,7 +16,7 @@ var builder = WebApplication.CreateSlimBuilder(args);
 // a null or missing argument, so none reaches F#.
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
-    o.SerializerOptions.TypeInfoResolverChain.Insert(0, StarterJson.Default);
+    o.SerializerOptions.TypeInfoResolverChain.Insert(0, SeamJson.Default);
     o.SerializerOptions.RespectNullableAnnotations = true;
     o.SerializerOptions.RespectRequiredConstructorParameters = true;
 });
@@ -72,42 +71,27 @@ builder.Services.AddSingleton(data);
 
 var app = builder.Build();
 
-app.MapPost("/equipment", async (NewEquipment input, BookingData d, CancellationToken ct) =>
-    await d.AddEquipmentAsync(input.Name, ct) switch
-    {
-        EquipmentView e => Results.Created($"/equipment/{e.Id}", e),
-        Invalid invalid => Results.BadRequest(invalid),
-    });
+// ToHttp: the value 200 (an add 201, at its Location), Missing 404, Invalid
+// 400, Refused 422, Stale 409, each with the case as its body.
+app.MapPost("/equipment", (NewEquipment input, BookingData d, CancellationToken ct) =>
+    d.AddEquipmentAsync(input.Name, ct).ToHttp(e => $"/equipment/{e.Id}"));
 
 app.MapGet("/equipment", async (BookingData d, CancellationToken ct) =>
     Results.Ok(await d.AllEquipmentAsync(ct)));
 
-app.MapGet("/equipment/{id:guid}", async (Guid id, BookingData d, CancellationToken ct) =>
-    await d.EquipmentAsync(id, ct) switch
-    {
-        EquipmentView e => Results.Ok(e),
-        Missing missing => Results.NotFound(missing),
-    });
+app.MapGet("/equipment/{id:guid}", (Guid id, BookingData d, CancellationToken ct) =>
+    d.EquipmentAsync(id, ct).ToHttp());
 
-app.MapPost("/equipment/{id:guid}/bookings", async (Guid id, NewBooking input, BookingData d, CancellationToken ct) =>
-    Changed(await d.BookAsync(id, input.Version, input.Who, input.From, input.Until, ct)));
+app.MapPost("/equipment/{id:guid}/bookings", (Guid id, NewBooking input, BookingData d, CancellationToken ct) =>
+    d.BookAsync(id, input.Version, input.Who, input.From, input.Until, ct).ToHttp());
 
-app.MapPost("/equipment/{id:guid}/out-of-service", async (Guid id, OutOfService input, BookingData d, CancellationToken ct) =>
-    Changed(await d.TakeOutOfServiceAsync(id, input.Version, input.Reason, ct)));
+app.MapPost("/equipment/{id:guid}/out-of-service", (Guid id, OutOfService input, BookingData d, CancellationToken ct) =>
+    d.TakeOutOfServiceAsync(id, input.Version, input.Reason, ct).ToHttp());
 
-app.MapPost("/equipment/{id:guid}/in-service", async (Guid id, InService input, BookingData d, CancellationToken ct) =>
-    Changed(await d.ReturnToServiceAsync(id, input.Version, ct)));
+app.MapPost("/equipment/{id:guid}/in-service", (Guid id, InService input, BookingData d, CancellationToken ct) =>
+    d.ReturnToServiceAsync(id, input.Version, ct).ToHttp());
 
 app.Run();
-
-static IResult Changed(Changed<EquipmentView> outcome) => outcome switch
-{
-    EquipmentView e => Results.Ok(e),
-    Missing missing => Results.NotFound(missing),
-    Refused refused => Results.UnprocessableEntity(refused),
-    Stale stale => Results.Conflict(stale),
-    Invalid invalid => Results.BadRequest(invalid),
-};
 
 sealed class StartingAt(DateTimeOffset start) : TimeProvider
 {
@@ -117,22 +101,8 @@ sealed class StartingAt(DateTimeOffset start) : TimeProvider
     public override DateTimeOffset GetUtcNow() => start.ToUniversalTime() + System.GetElapsedTime(started);
 }
 
+// The request bodies: Seam.cs lists them for the seam's JSON context.
 record NewEquipment(string Name);
 record NewBooking(int Version, string Who, DateTimeOffset From, DateTimeOffset Until);
 record OutOfService(int Version, string Reason);
 record InService(int Version);
-
-[JsonSourceGenerationOptions(JsonSerializerDefaults.Web, RespectNullableAnnotations = true, RespectRequiredConstructorParameters = true)]
-[JsonSerializable(typeof(EquipmentView))]
-[JsonSerializable(typeof(EquipmentView[]))]
-[JsonSerializable(typeof(Bookable))]
-[JsonSerializable(typeof(Withdrawn))]
-[JsonSerializable(typeof(Missing))]
-[JsonSerializable(typeof(Refused))]
-[JsonSerializable(typeof(Stale))]
-[JsonSerializable(typeof(Invalid))]
-[JsonSerializable(typeof(NewEquipment))]
-[JsonSerializable(typeof(NewBooking))]
-[JsonSerializable(typeof(OutOfService))]
-[JsonSerializable(typeof(InService))]
-partial class StarterJson : JsonSerializerContext;

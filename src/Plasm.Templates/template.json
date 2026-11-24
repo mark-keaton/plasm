@@ -9,6 +9,18 @@
   "sourceName": "Starter",
   "preferNameDirectory": true,
   "tags": { "language": "C#", "type": "solution" },
+  "sources": [
+    {
+      "modifiers": [
+        {
+          "condition": "(STARTER_SQLITE)",
+          "exclude": [ "src/Starter.Api/seam.lock" ],
+          "rename": { "src/Starter.Api/seam.sqlite.lock": "src/Starter.Api/seam.lock" }
+        },
+        { "condition": "(!STARTER_SQLITE)", "exclude": [ "src/Starter.Api/seam.sqlite.lock" ] }
+      ]
+    }
+  ],
   "symbols": {
     "plasmVersion": {
       "type": "generated",

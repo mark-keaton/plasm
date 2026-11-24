@@ -1,0 +1,65 @@
+# The C# contract Plasm.Seam wrote from the F# data assembly and Seam.cs. Commit this file.
+# A build rewrites it when the contract changes, and says what changed; a build with
+# -p:PlasmSeamDrift=fail (the default when ContinuousIntegrationBuild=true) stops instead.
+
+record EquipmentView = Starter.Equipment
+  Id: Guid
+  Name: string
+  Condition: ConditionView
+  Bookings: BookingView[]
+  Version: int
+record BookingView = Starter.Booking
+  Who: string
+  From: DateTimeOffset
+  Until: DateTimeOffset
+union ConditionView = Starter.Condition
+  Bookable kind "bookable"
+  Withdrawn kind "withdrawn" with Reason: string, Since: DateTimeOffset
+refusal Starter.Refusal
+  WhoRequired
+  ReasonRequired
+  EndsBeforeItStarts
+  NotAvailable
+  AlreadyBooked
+  AlreadyOutOfService
+  AlreadyAvailable
+class BookingData = Starter.Data.BookingData
+  static Task<BookingData> OpenAsync(string connectionString, TimeProvider time, CancellationToken cancellationToken)
+  static Task<BookingData> OpenAsync(string connectionString, Action<string> onSql, TimeProvider time, CancellationToken cancellationToken)
+  static string DatabaseFile(string connectionString)
+  static Task CreateDatabaseAsync(string connectionString, CancellationToken cancellationToken)
+  Task<T> SandboxAsync<T>(Func<BookingData, Task<T>> body, CancellationToken cancellationToken)
+  Task<Added<EquipmentView>> AddEquipmentAsync(string name, CancellationToken cancellationToken)
+  Task<Found<EquipmentView>> EquipmentAsync(Guid id, CancellationToken cancellationToken)
+  Task<EquipmentView[]> AllEquipmentAsync(CancellationToken cancellationToken)
+  Task<Changed<EquipmentView>> BookAsync(Guid id, int version, string who, DateTimeOffset from, DateTimeOffset until, CancellationToken cancellationToken)
+  Task<Changed<EquipmentView>> TakeOutOfServiceAsync(Guid id, int version, string reason, CancellationToken cancellationToken)
+  Task<Changed<EquipmentView>> ReturnToServiceAsync(Guid id, int version, CancellationToken cancellationToken)
+  static string Ddl
+http Added
+  value 201
+  Invalid 400
+http Found
+  value 200
+  Missing 404
+http Changed
+  value 200
+  Missing 404
+  Refused 422
+  Stale 409
+  Invalid 400
+json SeamJson
+  Bookable
+  BookingView
+  ConditionView
+  EquipmentView
+  EquipmentView[]
+  Withdrawn
+  Invalid
+  Missing
+  Refused
+  Stale
+  NewEquipment
+  NewBooking
+  OutOfService
+  InService

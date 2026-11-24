@@ -3,7 +3,7 @@ using Xunit;
 using Npgsql;
 #endif
 using Plasm.CSharp;
-using Starter.Data;
+using Starter.Api;
 #if (!STARTER_SQLITE)
 using Testcontainers.PostgreSql;
 #endif

@@ -183,7 +183,7 @@ if diff -u "$work/jit.txt" "$work/native.txt"; then echo "native binary prints w
 # would have it, except that it restores Plasm from this feed, copied into its
 # packages/, at the feed's version, in place of nuget.org's.
 st="$work/starter"
-rsync -a --exclude bin --exclude obj --exclude TestResults --exclude packages --exclude .nuget "$repo/examples/Starter/" "$st/"
+rsync -a --exclude bin --exclude obj --exclude TestResults --exclude packages --exclude .nuget --exclude "Seam/*.g.cs" "$repo/examples/Starter/" "$st/"
 mkdir -p "$st/packages"
 cp "$feed"/*.nupkg "$st/packages/"
 cat > "$st/nuget.config" <<XML
@@ -211,6 +211,12 @@ for p in Postgres Sqlite CSharp; do
   if ! grep -q "Include=\"Plasm.$p\" Version=\"$version\"" "$st/Directory.Packages.props"; then echo "Starter's Directory.Packages.props names no Plasm.$p version to replace"; exit 1; fi
 done
 cd "$st"
+# The contract the Starter commits is the one its build writes, for each
+# database: a build that may not change seam.lock (as on a CI server) passes.
+for db in postgres sqlite; do
+  dotnet build src/Starter.Api -p:StarterDatabase=$db -p:PlasmSeamDrift=fail -v q > "$work/st-lock-$db.log" 2>&1 || { echo "Starter's $db build changes its committed contract:"; grep -E ' error ' "$work/st-lock-$db.log" | sed 's/\[.*//' | sort -u | head; failed=1; }
+done
+[ "$failed" = 0 ] && echo "Starter's committed contracts (seam.lock, seam.sqlite.lock) are what its builds write"
 dotnet build src/Starter.Api -c Release -o "$work/st-jit" -v q > "$work/st-build.log" 2>&1 || { cat "$work/st-build.log"; exit 1; }
 dotnet "$work/st-jit/Starter.Api.dll" ddl > "$work/st-jit.txt" 2>&1 || true
 dotnet publish src/Starter.Api -c Release -r "$rid" -o "$work/st-native" -v m > "$work/st-native.log" 2>&1 || { tail -30 "$work/st-native.log"; exit 1; }
@@ -246,11 +252,12 @@ cd "$repo"
 tpl="$feed/Plasm.Templates.$version.nupkg"
 if [ ! -f "$tpl" ]; then echo "template: $feed has no Plasm.Templates.$version.nupkg"; exit 1; fi
 # The Starter's tracked files; in an exported tree, with no git, its files
-# but what a build or a run leaves (bin, obj, TestResults, packages, .nuget).
+# but what a build or a run leaves (bin, obj, TestResults, packages, .nuget,
+# and the C# the seam writes, Seam/*.g.cs).
 if git -C "$repo" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
   want=$(git -C "$repo" ls-files examples/Starter | sed 's|^examples/Starter/||' | sort)
 else
-  want=$(cd "$repo/examples/Starter" && find . -type f -not -path '*/bin/*' -not -path '*/obj/*' -not -path '*/TestResults/*' -not -path './packages/*' -not -path './.nuget/*' | sed 's|^\./||' | sort)
+  want=$(cd "$repo/examples/Starter" && find . -type f -not -path '*/bin/*' -not -path '*/obj/*' -not -path '*/TestResults/*' -not -path './packages/*' -not -path './.nuget/*' -not -path './src/*/Seam/*.g.cs' | sed 's|^\./||' | sort)
 fi
 have=$(unzip -Z1 "$tpl" | sed -n 's|^content/Starter/||p' | grep -v '^\.template\.config/' | grep -v '/$' | sort)
 if [ "$want" != "$have" ]; then echo "template: its files are not the Starter's"; diff <(echo "$want") <(echo "$have"); exit 1; fi
@@ -275,6 +282,8 @@ if [ -n "$switch" ]; then echo "template: the Starter's switch is left in:"; ech
 echo "template: Lending, from plasm-api: no Starter left, no SQLite and no switch, Plasm.Postgres $version, nuget.org alone"
 cp "$app/nuget.config" "$gen/nuget.config"
 cd "$gen"
+# The project comes with its contract: a build that may not change seam.lock passes.
+if dotnet build src/Lending.Api -p:PlasmSeamDrift=fail -v q > "$work/tpl-lock.log" 2>&1; then echo "template: the made project's seam.lock is the contract its build writes"; else echo "template: the made project's build changes its seam.lock:"; grep -E ' error ' "$work/tpl-lock.log" | sed 's/\[.*//' | sort -u | head; failed=1; fi
 dotnet test --project tests/Lending.Tests > "$work/tpl-test.log" 2>&1 || { echo "the made project's tests failed"; tail -30 "$work/tpl-test.log"; failed=1; }
 echo "the made project's tests: $(grep -E '^\s+(total|failed):' "$work/tpl-test.log" | tr -s ' ' | tr '\n' ' ')"
 dotnet publish src/Lending.Api -c Release -r "$rid" -o "$work/tpl-native" -v m > "$work/tpl-native.log" 2>&1 || { tail -30 "$work/tpl-native.log"; exit 1; }

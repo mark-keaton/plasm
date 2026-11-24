@@ -4,6 +4,11 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- On a CI server (CI=true, as GitHub Actions and most others set it), a
+         build that would change the contract seam.lock describes stops,
+         naming each change, and so does one with no seam.lock; anywhere else
+         it rewrites seam.lock and says what changed. -->
+    <PlasmSeamDrift Condition="'$(PlasmSeamDrift)' == '' and '$(CI)' == 'true'">fail</PlasmSeamDrift>
     <!--#if (STARTER_SWITCH) -->
     <!-- The database this copy builds for: postgres, or sqlite with
          -p:StarterDatabase=sqlite. A project made by `dotnet new plasm-api`
