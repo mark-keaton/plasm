@@ -9,13 +9,13 @@ module Kanban.Server.Workflows
 
 open System
 open Plasm
+open Plasm.CSharp
 open Kanban
 open Kanban.Server.Db
 
-/// Why a transaction stopped without a database failure.
-type Refusal =
-    | Domain of DomainError
-    | Missing of what: string
+/// Why a transaction stopped without a database failure: what it reads is
+/// not there (Stop.Missing), or the domain refused (Stop.Refused).
+type Refusal = Stop<DomainError>
 
 /// A board as the list of boards shows it: the board, with what was read of
 /// its cards.
@@ -209,13 +209,13 @@ module Queries =
             })
 
 /// The one row a query finds, or the refusal that `what` is missing.
-let private one (what: string) (query: Query<'T>) : Tx<'T, Refusal> =
-    Tx.one query |> Tx.orReject (Missing what)
+let private one (what: string) (query: Query<'T>) : Tx<'T, Stop<'R>> =
+    Tx.one query |> Tx.orReject (Stop.Missing what)
 
 /// The card, if the caller's copy (`expected`) is the stored one; a stale
 /// copy is a conflict.
 let private currentCard (id: CardId) (expected: int) : Tx<Card, Refusal> =
-    Tx.oneAsSeen (Queries.cardById id, expected) |> Tx.orReject (Missing "card")
+    Tx.oneAsSeen (Queries.cardById id, expected) |> Tx.orReject (Stop.Missing "card")
 
 /// A board and the cards it starts with: all of them, or none.
 let createBoard (board: Board) (first: Card list) : Tx<Board, Refusal> =
@@ -226,7 +226,7 @@ let createBoard (board: Board) (first: Card list) : Tx<Board, Refusal> =
     }
 
 /// Adds the card `create` makes for the board.
-let addCard (slug: Slug) (create: Board -> Card) : Tx<Card, Refusal> =
+let addCard (slug: Slug) (create: Board -> Card) : Tx<Card, Stop<'R>> =
     transaction {
         let! board = one $"board {slug.Value}" (Queries.boardBySlug slug)
         return! Tx.insert (create board)
@@ -243,7 +243,7 @@ let changeCard (id: CardId) (expected: int) (decide: Board -> int -> Card -> Res
         let! card = currentCard id expected
         let! board = one "board" (Queries.boardById card.Board)
         let! inProgress = Tx.count (Queries.inProgressOn card.Board)
-        let! changed = decide board (int inProgress) card |> Tx.ofResult Domain
+        let! changed = decide board (int inProgress) card |> Tx.ofResult Stop.Refused
         return! Tx.update (card, changed)
     }
 
@@ -256,7 +256,7 @@ let changeCard (id: CardId) (expected: int) (decide: Board -> int -> Card -> Res
 let relabel (id: CardId) (expected: int) (newId: unit -> LabelId) (decide: Card -> Result<Label list, DomainError>) : Tx<Card, Refusal> =
     transaction {
         let! card = currentCard id expected
-        let! wanted = decide card |> Tx.ofResult Domain
+        let! wanted = decide card |> Tx.ofResult Stop.Refused
         let tags: Tag list = [ for name in wanted -> { Id = newId (); Name = name } ]
         let! _ = Tx.execute (Bulk.insertMissing(tags, fun l -> l.Name))
         let! stored = Tx.all (Queries.labelsNamed wanted)
@@ -293,6 +293,6 @@ let sendStaleBack (now: DateTimeOffset) : Tx<int, Refusal> =
 let addComment (id: CardId) (write: Card -> Result<Card, DomainError>) : Tx<Card, Refusal> =
     transaction {
         let! card = one "card" (Queries.cardById id)
-        let! changed = write card |> Tx.ofResult Domain
+        let! changed = write card |> Tx.ofResult Stop.Refused
         return! Tx.update (card, changed)
     }

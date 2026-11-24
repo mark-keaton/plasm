@@ -264,23 +264,18 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
 
     /// Runs a workflow as the F# server does: serializable, run again on a
     /// serialization failure. Plasm.CSharp's Outcome reads what it returns.
-    let transact (tx: Tx<'T, Refusal>) (ct: CancellationToken) : Task<Result<'T, TransactionError<Refusal>>> =
+    let transact (tx: Tx<'T, Stop<'R>>) (ct: CancellationToken) : Task<Result<'T, TransactionError<Stop<'R>>>> =
         repo.Transact(tx, ct, isolation = IsolationLevel.Serializable, retry = RetryPolicy.OnSerializationFailure 5)
 
     let field (name: string) (parse: 'a -> Result<'b, string>) (value: 'a) =
         parse value |> Result.mapError (fun message -> [ name, message ])
 
-    /// The workflows' reasons for stopping, as the case of a change each means.
-    let rejected (refusal: Refusal) : Changed<CardView> =
-        match refusal with
-        | Refusal.Missing what -> Changed { What = what }
-        | Domain error -> Changed(View.refused error)
-
-    /// A workflow that changes one card, run, and told as a Changed.
+    /// A workflow that changes one card, run, and told as a Changed: the
+    /// card's view, and the domain's refusal as Refused (View.refused).
     let changed (tx: Tx<Card, Refusal>) ct : Task<Changed<CardView>> =
         task {
             let! result = transact tx ct
-            return Outcome.changed View.card rejected result
+            return Outcome.changed result |> Changed.map View.card |> Changed.refused View.refused
         }
 
     let change (card: Guid) (version: int) (decide: Board -> int -> Card -> Result<Card, DomainError>) ct : Task<Changed<CardView>> =
@@ -299,7 +294,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
                 | None -> checking
                 | Some onSql -> { checking with OnCommand = Some(fun e -> onSql.Invoke e.Sql) }
 
-            let! repo = Repo.Start(model, PostgresProvider dataSource, typeof<Refusal>.Assembly, options, cancellationToken)
+            let! repo = Repo.Start(model, PostgresProvider dataSource, typeof<BoardLine>.Assembly, options, cancellationToken)
 
             if checks = StartupChecks.Run then
                 repo.CheckFields CardFields.all
@@ -473,7 +468,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
             | Ok(slug, name, limit) ->
                 let board: Board = { Id = BoardId(newId ()); Slug = slug; Name = name; WipLimit = limit }
                 let! result = transact (createBoard board []) cancellationToken
-                return Outcome.added (fun stored -> View.summary [] { Board = stored; Newest = []; Blocked = [] }) result
+                return Outcome.added result |> Added.map (fun stored -> View.summary [] { Board = stored; Newest = []; Blocked = [] })
         }
 
     member _.AddCardAsync(board: string, title: string, cancellationToken: CancellationToken) : Task<Answered<CardView>> =
@@ -484,14 +479,9 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
             | Ok slug, Ok title ->
                 let id = CardId(newId ())
                 let now = clock ()
+                // Adding a card stops only when the board is not there.
                 let! result = transact (addCard slug (fun b -> Card.create id b title now)) cancellationToken
-
-                let rejected =
-                    function
-                    | Refusal.Missing what -> Answered { What = what }
-                    | Domain error -> unavailable "Adding a card stopped" (DomainError.describe error) null
-
-                return Outcome.answered View.card rejected result
+                return Outcome.answered result |> Answered.map View.card
         }
 
     /// `assignee` starts work on the card, if the board's limit allows it.
@@ -513,7 +503,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
                       PasswordHash = hash.Invoke password.Value }
 
                 let! result = transact (Tx.insert account) cancellationToken
-                return Outcome.added (fun (stored: Account) -> { Name = stored.Name.Value; PasswordHash = stored.PasswordHash }) result
+                return Outcome.added result |> Added.map (fun (stored: Account) -> { Name = stored.Name.Value; PasswordHash = stored.PasswordHash })
             | n, p ->
                 let problems (r: Result<_, (string * string) list>) = match r with Error e -> e | Ok _ -> []
                 return Added(Invalid.fields (problems n @ problems p))
@@ -587,7 +577,7 @@ type KanbanData private (repo: Repo, clock: unit -> DateTimeOffset, newId: unit 
             | Ok slug ->
                 match! transact (sendAllBack slug) cancellationToken with
                 | Ok n -> return Found { SentBack.Cards = n }
-                | Error { Failure = TxFailure.Rejected(Refusal.Missing what) } -> return Found { What = what }
+                | Error { Failure = TxFailure.Rejected(Stop.Missing what) } -> return Found { What = what }
                 | Error error -> return unavailable "Sending cards back stopped" error.Step null
         }
 

@@ -71,11 +71,17 @@ module private Db =
 
     let first = Guid.Parse "01900000-0000-7000-8000-000000000001"
 
+/// What the rules refuse of a note: nothing, here; a change still names it.
+type NoteRefusal =
+    | NoRule
+
+    member r.Message = "no rule refuses a note"
+
 [<Sealed>]
 type Notes private (repo: Repo) =
-    let run (tx: Tx<'T, unit>) = repo.Transact(tx).Result
+    let run (tx: Tx<'T, Stop<NoteRefusal>>) = repo.Transact(tx).Result
 
-    let noRejection () : Changed<'T> = invalidOp "nothing here is rejected"
+    let noRefusal (_: NoteRefusal) : Refused = invalidOp "nothing here is refused"
 
     /// The notes in the SQLite file `path`, made from the model's DDL.
     static member Open(path: string) =
@@ -89,16 +95,16 @@ type Notes private (repo: Repo) =
 
     member _.Add(title: string) : Added<NoteView> =
         let id = if title = "Groceries" then Db.first else Guid.Parse "01900000-0000-7000-8000-000000000002"
-        Outcome.added Db.view (run (Tx.insert ({ Id = NoteId id; Title = title; Version = 1 }: Note)))
+        Outcome.added (run (Tx.insert ({ Id = NoteId id; Title = title; Version = 1 }: Note))) |> Added.map Db.view
 
     member _.Read(id: Guid) : Found<NoteView> =
-        Outcome.found "note" Db.view (repo.One(Db.byId (NoteId id)).Result)
+        Outcome.found "note" (repo.One(Db.byId (NoteId id)).Result) |> Found.map Db.view
 
     /// A note renamed from a copy older than the stored one: Stale.
     member _.RenameStale() : Changed<NoteView> =
         let note = (repo.One(Db.byId (NoteId Db.first)).Result |> Result.toOption |> Option.flatten).Value
         run (Tx.update (note, { note with Title = "Shopping" })) |> ignore
-        Outcome.changed Db.view noRejection (run (Tx.update (note, { note with Title = "Errands" })))
+        Outcome.changed (run (Tx.update (note, { note with Title = "Errands" }))) |> Changed.map Db.view |> Changed.refused noRefusal
 
     /// A filed note, keyed by a shelf holding "/", retitled from an old copy: Stale, by its parts.
     member _.RetitleFiledStale() : Changed<NoteView> =
@@ -106,4 +112,4 @@ type Notes private (repo: Repo) =
         let stored = match run (Tx.insert filed) with Ok f -> f | Error e -> failwith e.Display
         run (Tx.update (stored, { stored with Title = "Crash (again)" })) |> ignore
         let view (f: Filed) : NoteView = { Id = Guid.Empty; Title = f.Title; Condition = ConditionView(Bookable()) }
-        Outcome.changed view noRejection (run (Tx.update (stored, { stored with Title = "Retitled" })))
+        Outcome.changed (run (Tx.update (stored, { stored with Title = "Retitled" }))) |> Changed.map view |> Changed.refused noRefusal

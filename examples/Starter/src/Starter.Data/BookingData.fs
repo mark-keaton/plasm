@@ -67,22 +67,18 @@ module private Db =
     /// Every piece of equipment, ordered by name.
     let byName = plasm { for e in tableOf<Equipment> do orderBy e.Name }
 
-    /// Why a transaction stopped without a database failure.
-    type Stop =
-        | Ruled of Refusal
-        | Gone
-
-    /// The equipment as the caller saw it (`seen`), changed as `decide` says.
-    let change (id: EquipmentId) (seen: int) (decide: Equipment -> Result<Equipment, Refusal>) : Tx<Equipment, Stop> =
+    /// The equipment as the caller saw it (`seen`), changed as `decide` says:
+    /// Stop.Missing when it is not there, Stop.Refused when the rules refuse.
+    let change (id: EquipmentId) (seen: int) (decide: Equipment -> Result<Equipment, Refusal>) : Tx<Equipment, Stop<Refusal>> =
         transaction {
-            let! equipment = Tx.oneAsSeen (byId id, seen) |> Tx.orReject Gone
-            let! changed = decide equipment |> Tx.ofResult Ruled
+            let! equipment = Tx.oneAsSeen (byId id, seen) |> Tx.orReject (Stop.Missing "equipment")
+            let! changed = decide equipment |> Tx.ofResult Stop.Refused
             return! Tx.update (equipment, changed)
         }
 
     /// The tables, as Plasm would create them: the model alone, no database.
     let ddl =
-        lazy (Repo.Start(model, Store.printing (), typeof<Stop>.Assembly, RepoOptions.Unchecked).Result.Ddl())
+        lazy (Repo.Start(model, Store.printing (), typeof<Equipment>.Assembly, RepoOptions.Unchecked).Result.Ddl())
 
 module private View =
     let condition (condition: Condition) =
@@ -115,16 +111,12 @@ module private View =
 [<Sealed>]
 type BookingData private (repo: Repo, time: TimeProvider) =
 
-    /// Why a change stopped, as the case of Changed each means.
-    let rejected (stop: Db.Stop) : Changed<EquipmentView> =
-        match stop with
-        | Db.Gone -> Changed { What = "equipment" }
-        | Db.Ruled refusal -> Changed(View.refused refusal)
-
-    let changed (tx: Tx<Equipment, Db.Stop>) (ct: CancellationToken) : Task<Changed<EquipmentView>> =
+    /// The equipment as stored when `tx` commits, as its view, or why not:
+    /// the rules' refusal as Refused (View.refused).
+    let changed (tx: Tx<Equipment, Stop<Refusal>>) (ct: CancellationToken) : Task<Changed<EquipmentView>> =
         task {
             let! result = repo.Transact(tx, cancellationToken = ct)
-            return Outcome.changed View.equipment rejected result
+            return Outcome.changed result |> Changed.map View.equipment |> Changed.refused View.refused
         }
 
     static member private Open(connectionString: string, onSql: Action<string> option, time: TimeProvider, cancellationToken: CancellationToken) =
@@ -190,20 +182,20 @@ type BookingData private (repo: Repo, time: TimeProvider) =
             | Ok name ->
                 let equipment = Equipment.create (EquipmentId(Guid.CreateVersion7())) name
                 let! result = repo.Transact((Tx.insert equipment: Tx<Equipment, unit>), cancellationToken = cancellationToken)
-                return Outcome.added View.equipment result
+                return Outcome.added result |> Added.map View.equipment
         }
 
     member _.EquipmentAsync(id: Guid, cancellationToken: CancellationToken) : Task<Found<EquipmentView>> =
         task {
             let! result = repo.One(Db.byId (EquipmentId id), cancellationToken)
-            return Outcome.found "equipment" View.equipment result
+            return Outcome.found "equipment" result |> Found.map View.equipment
         }
 
     /// Every piece of equipment, ordered by name: none is an empty array.
     member _.AllEquipmentAsync(cancellationToken: CancellationToken) : Task<EquipmentView[]> =
         task {
             let! result = repo.All(Db.byName, cancellationToken = cancellationToken)
-            return Outcome.all "equipment" View.equipment result
+            return Outcome.all "equipment" result |> Array.map View.equipment
         }
 
     /// Books the equipment, if `version` is the one stored. `from` and

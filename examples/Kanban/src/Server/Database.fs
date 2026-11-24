@@ -40,7 +40,7 @@ let start (dataSource: NpgsqlDataSource) (log: ILogger) : Task<Repo> =
                 Some(fun command ->
                     log.LogDebug("{Milliseconds:0.0} ms, {Rows} rows: {Sql}", command.Duration.TotalMilliseconds, command.Rows, command.Sql)) }
 
-    Repo.Start(Db.model, PostgresProvider dataSource, queriesIn = typeof<Workflows.Refusal>.Assembly, options = options)
+    Repo.Start(Db.model, PostgresProvider dataSource, queriesIn = typeof<Workflows.BoardLine>.Assembly, options = options)
 
 /// Every difference between the tables and `Db.model` that would make a read
 /// or a write fail; empty when they fit. Start-up has already checked this

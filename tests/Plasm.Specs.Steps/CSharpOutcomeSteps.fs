@@ -2,6 +2,7 @@ namespace Plasm.Specs.CSharpOutcomes
 
 open System
 open Plasm
+open Plasm.CSharp
 
 type NoteId = NoteId of Guid
 
@@ -17,11 +18,13 @@ type Note =
       [<Version>]
       Version: int }
 
-/// Why a note's transaction stops: the project's own reasons, which it maps
-/// to the case each means.
-type NoteStop =
-    | Gone
+/// Why the rules refuse a note's change, in the domain's own words.
+type NoteRefusal =
     | TitleTaken of string
+
+    member r.Message =
+        match r with
+        | TitleTaken title -> $"a note is already called {title}"
 
 module Notes =
     let model = Model.buildOrFail [] [ typeof<Note> ]
@@ -37,12 +40,23 @@ module Notes =
         { Id = id; Title = n.Title; Version = n.Version }
 
     /// The note as the caller saw it (`seen`), renamed, unless it has the title already.
-    let rename (id: NoteId) (seen: int) (title: string) : Tx<Note, NoteStop> =
+    let rename (id: NoteId) (seen: int) (title: string) : Tx<Note, Stop<NoteRefusal>> =
         transaction {
-            let! note = Tx.oneAsSeen (byId id, seen) |> Tx.orReject Gone
+            let! note = Tx.oneAsSeen (byId id, seen) |> Tx.orReject (Stop.Missing "note")
 
             if note.Title = title then
-                return! Tx.fail (TitleTaken title)
+                return! Tx.fail (Stop.Refused(TitleTaken title))
+            else
+                return! Tx.update (note, { note with Title = title })
+        }
+
+    /// As rename, a request whose input is refused as Invalid.
+    let renameAsked (id: NoteId) (seen: int) (title: string) : Tx<Note, Stop<Invalid>> =
+        transaction {
+            let! note = Tx.oneAsSeen (byId id, seen) |> Tx.orReject (Stop.Missing "note")
+
+            if note.Title = title then
+                return! Tx.fail (Stop.Refused(Invalid.field "title" $"is already {title}"))
             else
                 return! Tx.update (note, { note with Title = title })
         }
@@ -94,12 +108,8 @@ type CSharpOutcomeSteps(w: World) =
 
     let given' () = w.Get<obj> "given"
 
-    let rejected (stop: NoteStop) : Changed<NoteView> =
-        match stop with
-        | Gone -> Changed { What = "note" }
-        | TitleTaken title -> Changed { Code = "TitleTaken"; Message = $"a note is already called {title}" }
-
-    let renamed (n: Note) (title: string) =
+    /// The note renamed, and what C# is given of it, as `given` makes it.
+    let renamedAs (given: Changed<Note, NoteRefusal> -> obj) (n: Note) (title: string) =
         task {
             let! r = repo().Transact(Notes.rename n.Id n.Version title)
 
@@ -107,8 +117,10 @@ type CSharpOutcomeSteps(w: World) =
             | Ok stored -> remember stored
             | Error _ -> ()
 
-            return (Outcome.changed Notes.view rejected r).Value
+            return given (Outcome.changed r)
         }
+
+    let renamed = renamedAs (fun c -> c.Value)
 
     member private _.Case<'T>() : 'T =
         match given' () with
@@ -157,7 +169,23 @@ type CSharpOutcomeSteps(w: World) =
         given (fun () ->
             task {
                 let! r = repo().One(Notes.byId (note title).Id)
-                return (Outcome.found "note" Notes.view r).Value
+                return (Outcome.found "note" r).Value
+            })
+
+    [<StepDefinition("^C# reads the note \"(.*)\", made a view with Found\\.map$")>]
+    member _.ReadView(title: string) =
+        given (fun () ->
+            task {
+                let! r = repo().One(Notes.byId (note title).Id)
+                return (Outcome.found "note" r |> Found.map Notes.view).Value
+            })
+
+    [<StepDefinition("^C# reads a note that is not there, made a view with Found\\.map$")>]
+    member _.ReadNoneView() =
+        given (fun () ->
+            task {
+                let! r = repo().One(Notes.byId (NoteId(Guid.CreateVersion7())))
+                return (Outcome.found "note" r |> Found.map Notes.view).Value
             })
 
     [<StepDefinition("^C# reads a note that is not there$")>]
@@ -165,7 +193,7 @@ type CSharpOutcomeSteps(w: World) =
         given (fun () ->
             task {
                 let! r = repo().One(Notes.byId (NoteId(Guid.CreateVersion7())))
-                return (Outcome.found "note" Notes.view r).Value
+                return (Outcome.found "note" r).Value
             })
 
     [<StepDefinition("^C# reads every note, ordered by title$")>]
@@ -173,7 +201,7 @@ type CSharpOutcomeSteps(w: World) =
         given (fun () ->
             task {
                 let! r = repo().All Notes.byTitle
-                return box (Outcome.all "notes" Notes.view r)
+                return box (Outcome.all "notes" r)
             })
 
     [<StepDefinition("^C# renames \"(.*)\" to \"(.*)\", which the rules refuse$")>]
@@ -181,6 +209,18 @@ type CSharpOutcomeSteps(w: World) =
 
     [<StepDefinition("^C# renames \"(.*)\" to \"(.*)\" from the copy it read first$")>]
     member _.RenameStale(_from: string, title: string) = given (fun () -> renamed (w.Get<Note> "firstCopy") title)
+
+    [<StepDefinition("^C# renames \"(.*)\" to \"(.*)\", made a view with Changed\\.map$")>]
+    member _.RenameView(from: string, title: string) =
+        given (fun () -> renamedAs (fun c -> (c |> Changed.map Notes.view).Value) (note from) title)
+
+    [<StepDefinition("^C# renames \"(.*)\" to \"(.*)\", its refusal made Refused with Changed\\.refused$")>]
+    member _.RenameRefusedAs(from: string, title: string) =
+        let refused (r: NoteRefusal) : Refused =
+            match r with
+            | TitleTaken _ -> { Code = "TitleTaken"; Message = r.Message }
+
+        given (fun () -> renamedAs (fun c -> (c |> Changed.refused refused).Value) (note from) title)
 
     [<StepDefinition("^C# renames \"(.*)\" to \"([^\"]*)\"$")>]
     member _.Rename(from: string, title: string) = given (fun () -> renamed (note from) title)
@@ -193,14 +233,8 @@ type CSharpOutcomeSteps(w: World) =
         given (fun () ->
             task {
                 let n = note "not there"
-                let! r = repo().Transact(Notes.rename n.Id n.Version "anything")
-
-                let rejected =
-                    function
-                    | Gone -> Answered { What = "note" }
-                    | TitleTaken title -> Answered(Invalid.field "title" $"is already {title}")
-
-                return (Outcome.answered Notes.view rejected r).Value
+                let! r = repo().Transact(Notes.renameAsked n.Id n.Version "anything")
+                return (Outcome.answered r).Value
             })
 
     [<StepDefinition("^C# renames \"(.*)\" to \"(.*)\", as a request answered$")>]
@@ -208,9 +242,8 @@ type CSharpOutcomeSteps(w: World) =
         given (fun () ->
             task {
                 let n = note from
-                let! r = repo().Transact(Notes.rename n.Id n.Version title)
-                let rejected = function Gone -> Answered { What = "note" } | TitleTaken t -> Answered(Invalid.field "title" $"is already {t}")
-                return (Outcome.answered Notes.view rejected r).Value
+                let! r = repo().Transact(Notes.renameAsked n.Id n.Version title)
+                return (Outcome.answered r).Value
             })
 
     [<StepDefinition("^C# adds the note \"(.*)\"$")>]
@@ -218,13 +251,21 @@ type CSharpOutcomeSteps(w: World) =
         given (fun () ->
             task {
                 let! r = repo().Transact(Tx.insert { Id = NoteId(Guid.CreateVersion7()); Title = title; Version = 1 }: Tx<_, unit>)
-                return (Outcome.added Notes.view r).Value
+                return (Outcome.added r).Value
+            })
+
+    [<StepDefinition("^C# adds the note \"(.*)\", made a view with Added\\.map$")>]
+    member _.AddView(title: string) =
+        given (fun () ->
+            task {
+                let! r = repo().Transact(Tx.insert { Id = NoteId(Guid.CreateVersion7()); Title = title; Version = 1 }: Tx<_, unit>)
+                return (Outcome.added r |> Added.map Notes.view).Value
             })
 
     [<StepDefinition("^C# adds a note whose title the domain refuses$")>]
     member _.AddRefused() =
         // The domain's check, before the database: an empty title is no title.
-        given (fun () -> task { return (Added<NoteView>(Invalid.field "title" "is empty")).Value })
+        given (fun () -> task { return (Added<Note>(Invalid.field "title" "is empty")).Value })
 
     [<StepDefinition("^the keyed Issue (.*)#(\\d+) \"(.*)\", changed since it was read$")>]
     member _.KeyedIssue(repoName: string, number: int, title: string) =
@@ -251,9 +292,8 @@ type CSharpOutcomeSteps(w: World) =
         given (fun () ->
             task {
                 let first = w.Get<CompositeKeys.Issue> "firstIssue"
-                let! r = w.Get<Repo>("keyedRepo").Transact(Tx.update (first, { first with Title = "Retitled" }): Tx<_, unit>)
-                let rejected () : Changed<string> = failwith "nothing rejects a retitle"
-                return (Outcome.changed (fun (i: CompositeKeys.Issue) -> i.Title) rejected r).Value
+                let! r = w.Get<Repo>("keyedRepo").Transact(Tx.update (first, { first with Title = "Retitled" }): Tx<_, Stop<NoteRefusal>>)
+                return (Outcome.changed r |> Changed.map (fun (i: CompositeKeys.Issue) -> i.Title)).Value
             })
 
     [<StepDefinition("^it is given the NoteView of \"(.*)\"$")>]
@@ -268,15 +308,26 @@ type CSharpOutcomeSteps(w: World) =
         let v = this.Case<NoteView>()
         equal (title, version) (v.Title, v.Version) "the title and version"
 
-    [<StepDefinition("^it is given the NoteViews of \"(.*)\" and \"(.*)\", in that order$")>]
-    member this.Views(a: string, b: string) =
-        let vs = this.Case<NoteView[]>()
-        equal [| a; b |] (vs |> Array.map _.Title) "the titles, in order"
-        let id t = let (NoteId id) = (note t).Id in id
-        equal [| id a; id b |] (vs |> Array.map _.Id) "the ids"
+    [<StepDefinition("^it is given the Note \"(.*)\"$")>]
+    member this.Record(title: string) =
+        let n = this.Case<Note>()
+        equal ((note title).Id, title) (n.Id, n.Title) "the id and title"
 
-    [<StepDefinition("^it is given no NoteView$")>]
-    member this.NoViews() = equal 0 (this.Case<NoteView[]>().Length) "the views"
+    [<StepDefinition("^it is given the Note \"(.*)\", at version (\\d+)$")>]
+    member this.RecordAt(title: string, version: int) =
+        let n = this.Case<Note>()
+        equal (title, version) (n.Title, n.Version) "the title and version"
+
+    [<StepDefinition("^it is given the Notes \"(.*)\" and \"(.*)\", in that order$")>]
+    member this.Records(a: string, b: string) =
+        let ns = this.Case<Note[]>()
+        equal [| (note a).Id, a; (note b).Id, b |] (ns |> Array.map (fun n -> n.Id, n.Title)) "the ids and titles, in order"
+
+    [<StepDefinition("^it is given no Note$")>]
+    member this.NoRecords() = equal 0 (this.Case<Note[]>().Length) "the notes"
+
+    [<StepDefinition("^it is given the refusal TitleTaken \"(.*)\"$")>]
+    member this.Refusal(title: string) = equal (TitleTaken title) (this.Case<NoteRefusal>()) "the refusal"
 
     [<StepDefinition("^it is given Missing, saying \"(.*)\"$")>]
     member this.Missing(what: string) = equal what (this.Case<Missing>().What) "what is missing"

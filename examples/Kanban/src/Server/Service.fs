@@ -11,6 +11,7 @@ open System.Data
 open System.Threading
 open Microsoft.Extensions.Logging
 open Plasm
+open Plasm.CSharp
 open Kanban
 open Kanban.Api
 open Kanban.Server.Db
@@ -115,8 +116,8 @@ let private unavailable (deps: Deps) (what: string) (detail: obj) : ApiError =
 
 let private ofTransactionError (deps: Deps) (error: TransactionError<Refusal>) : ApiError =
     match error.Failure with
-    | TxFailure.Rejected(Domain refusal) -> Rejected refusal
-    | TxFailure.Rejected(Missing what) -> NotFound what
+    | TxFailure.Rejected(Stop.Refused refusal) -> Rejected refusal
+    | TxFailure.Rejected(Stop.Missing what) -> NotFound what
     // The caller's copy is stale: read so (Tx.oneAsSeen), or changed between
     // this transaction's read and its write.
     | TxFailure.Conflict _ -> Stale

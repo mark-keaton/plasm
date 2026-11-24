@@ -294,7 +294,7 @@ type QuerySteps(w: World) =
                 Repo.Start(
                     Kanban.Server.Db.model,
                     Plasm.Postgres.PostgresProvider(Npgsql.NpgsqlDataSource.Create "Host=localhost"),
-                    queriesIn = typeof<Kanban.Server.Workflows.Refusal>.Assembly,
+                    queriesIn = typeof<Kanban.Server.Workflows.BoardLine>.Assembly,
                     options = options
                 )
 

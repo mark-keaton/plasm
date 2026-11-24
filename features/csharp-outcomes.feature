@@ -4,47 +4,51 @@
 Feature: A C# host is given one of the cases an outcome can have
   As an F# developer whose data layer a C# host calls
   I want the outcomes C# switches over written once, in a package
-  So that each project writes its views, not the cases every project retypes
+  So that no project retypes the cases, nor maps its records and refusals to them
 
   Plasm.CSharp holds the cases C# switches over: Missing, Refused, Stale,
   Invalid; the unions over them, each a struct of C#'s union shape: Found<'T>
   (the value or Missing), Added<'T> (the value or Invalid), Answered<'T> (the
-  value, Missing or Invalid) and Changed<'T> (the value, Missing, Refused,
-  Stale or Invalid); and the functions that read a read's or a transaction's
-  result as one of them, and a read of many as an array of views. Each
-  project maps its own reason for stopping a transaction to the case it
-  means; a database that fails throws UnavailableException. It depends on
-  Plasm alone, so a host of either provider takes it, and an F# host need
-  not.
+  value, Missing or Invalid), Changed<'T> (the value, Missing, Refused, Stale
+  or Invalid) and Changed<'T, 'R> (the value, Missing, the domain's refusal
+  'R, Stale or Invalid); and the functions that read a read's or a
+  transaction's result as one of them, the records as they are, and a read
+  of many as an array. The seam gives C# their views; Found.map, Added.map,
+  Answered.map and Changed.map make a view in F#. A transaction stops in the
+  domain's terms with Stop: Stop.Missing, naming what is not there, or
+  Stop.Refused, with the domain's refusal. A database that fails throws
+  UnavailableException. It depends on Plasm alone, so a host of either
+  provider takes it, and an F# host need not.
 
   # Note = { Id: NoteId; [<Unique>] Title: string; [<Version>] Version: int }
   # NoteView = { Id: Guid; Title: string; Version: int }
-  # A note's transaction stops with NoteStop: Gone, or TitleTaken of string.
+  # A note's transaction stops with Stop<NoteRefusal>: Stop.Missing "note",
+  # or Stop.Refused (TitleTaken title), whose Message is the rules' words.
   Background:
     Given a configured relational database
     And notes, each with a unique title and a version
 
   Rule: A read that can miss is Found
 
-    Scenario: A note that is there is found as its view
+    Scenario: A note that is there is found as the record
       Given the note "Groceries"
       When C# reads the note "Groceries"
-      Then it is given the NoteView of "Groceries"
+      Then it is given the Note "Groceries"
 
     Scenario: A note that is not there is Missing, saying what is missing
       When C# reads a note that is not there
       Then it is given Missing, saying "note"
 
-  Rule: A read of many is an array of views
+  Rule: A read of many is an array
 
-    Scenario: A read of many is each record's view, in the query's order
+    Scenario: A read of many is each record, in the query's order
       Given the notes "Groceries" and "Errands"
       When C# reads every note, ordered by title
-      Then it is given the NoteViews of "Errands" and "Groceries", in that order
+      Then it is given the Notes "Errands" and "Groceries", in that order
 
     Scenario: A read of none is an empty array
       When C# reads every note, ordered by title
-      Then it is given no NoteView
+      Then it is given no Note
 
     Scenario: A read of many the database fails throws UnavailableException, carrying the provider's exception
       Given the notes table is gone
@@ -56,14 +60,14 @@ Feature: A C# host is given one of the cases an outcome can have
     Scenario: A change is the note as stored
       Given the note "Groceries"
       When C# renames "Groceries" to "Shopping"
-      Then it is given the NoteView of "Shopping", at version 2
+      Then it is given the Note "Shopping", at version 2
 
-    Scenario: A transaction stopped by the rules is the case the project maps it to
+    Scenario: A transaction the rules stop with Stop.Refused is the domain's refusal
       Given the note "Groceries"
       When C# renames "Groceries" to "Groceries", which the rules refuse
-      Then it is given Refused, with the code "TitleTaken" and the rules' words
+      Then it is given the refusal TitleTaken "Groceries"
 
-    Scenario: A record gone is the case the project maps it to
+    Scenario: A transaction stopped with Stop.Missing is Missing, saying what the transaction named
       When C# renames a note that is not there
       Then it is given Missing, saying "note"
 
@@ -87,7 +91,7 @@ Feature: A C# host is given one of the cases an outcome can have
 
     Scenario: An add is the note as stored
       When C# adds the note "Groceries"
-      Then it is given the NoteView of "Groceries", at version 1
+      Then it is given the Note "Groceries", at version 1
 
     Scenario: An add the database refuses is Invalid
       Given the note "Groceries"
@@ -100,6 +104,11 @@ Feature: A C# host is given one of the cases an outcome can have
 
   Rule: A request answered is the value, Missing or Invalid
 
+    Scenario: A request whose input the rules refuse with Stop.Refused is answered Invalid
+      Given the note "Groceries"
+      When C# renames "Groceries" to "Groceries", as a request answered
+      Then it is given Invalid, with the field "title" and "is already Groceries"
+
     Scenario: A request whose record is gone is answered Missing
       When C# renames a note that is not there, as a request answered
       Then it is given Missing, saying "note"
@@ -108,6 +117,31 @@ Feature: A C# host is given one of the cases an outcome can have
       Given the notes "Groceries" and "Errands"
       When C# renames "Errands" to "Groceries", as a request answered
       Then it is given Invalid, with the field "title" and "is already taken"
+
+  Rule: An outcome's record is made a view in F# with its map
+
+    Scenario: Found.map makes the record its view
+      Given the note "Groceries"
+      When C# reads the note "Groceries", made a view with Found.map
+      Then it is given the NoteView of "Groceries"
+
+    Scenario: Found.map keeps Missing
+      When C# reads a note that is not there, made a view with Found.map
+      Then it is given Missing, saying "note"
+
+    Scenario: Changed.map makes the record its view, and keeps the refusal
+      Given the note "Groceries"
+      When C# renames "Groceries" to "Shopping", made a view with Changed.map
+      Then it is given the NoteView of "Shopping", at version 2
+
+    Scenario: Changed.refused makes the refusal Refused, as a host without the seam takes it
+      Given the note "Groceries"
+      When C# renames "Groceries" to "Groceries", its refusal made Refused with Changed.refused
+      Then it is given Refused, with the code "TitleTaken" and the rules' words
+
+    Scenario: Added.map makes the stored record its view
+      When C# adds the note "Groceries", made a view with Added.map
+      Then it is given the NoteView of "Groceries", at version 1
 
   Rule: A database that fails throws
 

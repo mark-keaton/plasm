@@ -94,6 +94,15 @@ type Changed<'T, 'R when 'T: not null and 'R: not null> =
     interface IUnion with
         member this.Value = this.value
 
+/// Why a transaction stopped, in the domain's terms: what it reads is not
+/// there (`Tx.orReject (Stop.Missing "job")`), or the rules refused, with the
+/// domain's own reason (`Tx.ofResult Stop.Refused`). Outcome's functions read
+/// it as the outcome's Missing and refusal.
+[<RequireQualifiedAccess>]
+type Stop<'R> =
+    | Missing of what: string
+    | Refused of 'R
+
 /// The database could not be reached or failed: what was being done, and the
 /// provider's exception, when there is one. ASP.NET Core answers it with a 500.
 /// Outcome's functions throw it; a data layer need not make one.

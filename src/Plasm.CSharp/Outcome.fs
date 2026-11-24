@@ -55,11 +55,13 @@ module internal Keys =
 
     let text (key: obj) : string[] = parts key |> Array.ofList
 
-/// Reads a read's or a transaction's result as what C# is given. Each project
-/// maps its own reason for stopping a transaction (TxFailure.Rejected) to the
-/// case it means; Plasm's failures are read here: a stale copy is Stale, the
-/// database's refusal of fields Invalid, and a database that fails throws
-/// UnavailableException.
+/// Reads a read's or a transaction's result as what C# is given, the
+/// records as they are: the seam gives C# their views (and a view can be made
+/// in F# with Found.map, Changed.map and the others). A transaction stops in
+/// the domain's terms with Stop: Stop.Missing is the outcome's Missing,
+/// Stop.Refused its refusal. Plasm's failures are read here: a stale copy is
+/// Stale, the database's refusal of fields Invalid, and a database that fails
+/// throws UnavailableException.
 [<RequireQualifiedAccess>]
 module Outcome =
     let private unavailable (what: string) (error: DbError) : 'a =
@@ -77,54 +79,103 @@ module Outcome =
 
     let private stale (entity: string) (key: obj) : Stale = { What = entity; Key = Keys.text key }
 
-    /// A read of at most one record (repo.One): its view, or Missing, saying `what`.
-    let found (what: string) (view: 'S -> 'T) (result: Result<'S option, DbError>) : Found<'T> =
+    /// A read of at most one record (repo.One): the record, or Missing, saying `what`.
+    let found (what: string) (result: Result<'S option, DbError>) : Found<'S> =
         match result with
-        | Ok(Some s) -> Found(view s)
+        | Ok(Some s) -> Found s
         | Ok None -> Found { What = what }
         | Error e -> unavailable $"reading {what}" e
 
-    /// A read of many (repo.All): each record's view, in the query's order,
-    /// an empty array when there are none. A read the database fails throws
+    /// A read of many (repo.All): the records, in the query's order, an empty
+    /// array when there are none. A read the database fails throws
     /// UnavailableException, "reading `what`", carrying the provider's exception.
-    let all (what: string) (view: 'S -> 'T) (result: Result<'S list, DbError>) : 'T[] =
+    let all (what: string) (result: Result<'S list, DbError>) : 'S[] =
         match result with
-        | Ok records -> records |> List.map view |> Array.ofList
+        | Ok records -> Array.ofList records
         | Error e -> unavailable $"reading {what}" e
 
-    /// An add (repo.Transact): the record's view, or Invalid when the database
-    /// refuses its fields. An add stopped by the rules, or stale, throws: an
-    /// add that can be refused is a request answered, or a change.
-    let added (view: 'S -> 'T) (result: Result<'S, TransactionError<'R>>) : Added<'T> =
+    /// An add (repo.Transact): the record as stored, or Invalid when the
+    /// database refuses its fields. An add stopped by the rules, or stale,
+    /// throws: an add that can be refused is a request answered, or a change.
+    let added (result: Result<'S, TransactionError<'R>>) : Added<'S> =
         match result with
-        | Ok s -> Added(view s)
+        | Ok s -> Added s
         | Error e ->
             match e.Failure with
             | TxFailure.InvalidChanges(_, errors) -> Added(Invalid.ofErrors errors)
             | _ -> failed e "an add was refused, which Added has no case for"
 
-    /// A request answered (repo.Transact): the view, what `rejected` makes of
-    /// the transaction's own reason for stopping (Missing or Invalid), or
-    /// Invalid when the database refuses its fields.
-    let answered (view: 'S -> 'T) (rejected: 'R -> Answered<'T>) (result: Result<'S, TransactionError<'R>>) : Answered<'T> =
+    /// A request answered (repo.Transact): the answer, Missing for
+    /// Stop.Missing, the input's problems for Stop.Refused, or Invalid when the
+    /// database refuses its fields.
+    let answered (result: Result<'S, TransactionError<Stop<Invalid>>>) : Answered<'S> =
         match result with
-        | Ok s -> Answered(view s)
+        | Ok s -> Answered s
         | Error e ->
             match e.Failure with
-            | TxFailure.Rejected reason -> rejected reason
+            | TxFailure.Rejected(Stop.Missing what) -> Answered { What = what }
+            | TxFailure.Rejected(Stop.Refused invalid) -> Answered invalid
             | TxFailure.InvalidChanges(_, errors) -> Answered(Invalid.ofErrors errors)
             | _ -> failed e "a stale copy, which Answered has no case for"
 
-    /// A change (repo.Transact): the record's view as stored, what `rejected`
-    /// makes of the transaction's own reason for stopping (Missing or
-    /// Refused), Stale for a copy older than the stored record, or Invalid
-    /// when the database refuses its fields.
-    let changed (view: 'S -> 'T) (rejected: 'R -> Changed<'T>) (result: Result<'S, TransactionError<'R>>) : Changed<'T> =
+    /// A change (repo.Transact): the record as stored, Missing for
+    /// Stop.Missing, the domain's refusal for Stop.Refused, Stale for a copy
+    /// older than the stored record, or Invalid when the database refuses its
+    /// fields.
+    let changed (result: Result<'S, TransactionError<Stop<'R>>>) : Changed<'S, 'R> =
         match result with
-        | Ok s -> Changed(view s)
+        | Ok s -> Changed<'S, 'R>(s)
         | Error e ->
             match e.Failure with
-            | TxFailure.Rejected reason -> rejected reason
-            | TxFailure.Conflict(entity, key) -> Changed(stale entity key)
-            | TxFailure.InvalidChanges(_, errors) -> Changed(Invalid.ofErrors errors)
+            | TxFailure.Rejected(Stop.Missing what) -> Changed<'S, 'R>({ What = what }: Missing)
+            | TxFailure.Rejected(Stop.Refused refusal) -> Changed<'S, 'R>(refusal)
+            | TxFailure.Conflict(entity, key) -> Changed<'S, 'R>(stale entity key)
+            | TxFailure.InvalidChanges(_, errors) -> Changed<'S, 'R>(Invalid.ofErrors errors)
             | _ -> failed e "an outcome Changed has no case for"
+
+/// A Found's record made into something else, a view of it, its Missing kept.
+[<RequireQualifiedAccess>]
+module Found =
+    let map (view: 'S -> 'T) (found: Found<'S>) : Found<'T> =
+        match found.Value with
+        | :? Missing as m -> Found m
+        | s -> Found(view (s :?> 'S))
+
+/// An Added's record made into something else, its Invalid kept.
+[<RequireQualifiedAccess>]
+module Added =
+    let map (view: 'S -> 'T) (added: Added<'S>) : Added<'T> =
+        match added.Value with
+        | :? Invalid as i -> Added i
+        | s -> Added(view (s :?> 'S))
+
+/// An Answered's answer made into something else, its Missing and Invalid kept.
+[<RequireQualifiedAccess>]
+module Answered =
+    let map (view: 'S -> 'T) (answered: Answered<'S>) : Answered<'T> =
+        match answered.Value with
+        | :? Missing as m -> Answered m
+        | :? Invalid as i -> Answered i
+        | s -> Answered(view (s :?> 'S))
+
+/// A change's record made into something else, and its refusal into Refused,
+/// for a host that takes the outcome without the seam.
+[<RequireQualifiedAccess>]
+module Changed =
+    let map (view: 'S -> 'T) (changed: Changed<'S, 'R>) : Changed<'T, 'R> =
+        match changed.Value with
+        | :? Missing as m -> Changed<'T, 'R>(m)
+        | :? Stale as s -> Changed<'T, 'R>(s)
+        | :? Invalid as i -> Changed<'T, 'R>(i)
+        | :? 'R as r -> Changed<'T, 'R>(r)
+        | s -> Changed<'T, 'R>(view (s :?> 'S))
+
+    /// The refusal as Refused, its code and its words as `refused` says them:
+    /// what the seam does by itself, the code the refusal case's name.
+    let refused (refused: 'R -> Refused) (changed: Changed<'T, 'R>) : Changed<'T> =
+        match changed.Value with
+        | :? Missing as m -> Changed<'T>(m)
+        | :? Stale as s -> Changed<'T>(s)
+        | :? Invalid as i -> Changed<'T>(i)
+        | :? 'R as r -> Changed<'T>(refused r)
+        | t -> Changed<'T>(t :?> 'T)
