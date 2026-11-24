@@ -44,6 +44,7 @@
     <File Path="docs/adr/0001-architecture.md" />
     <File Path="docs/acceptance.md" />
     <File Path="docs/status.md" />
+    <File Path="docs/seam-lock.md" />
     <File Path="docs/benchmarks.md" />
     <File Path="docs/ecto-compatibility.md" />
   </Folder>

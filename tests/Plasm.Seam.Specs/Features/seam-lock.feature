@@ -99,6 +99,12 @@ Feature: seam.lock holds the contract, and a CI build does not change it
     When the seam is written into the namespace Shop.Api, as a CI build writes it
     Then the seam wrote its files, and left seam.lock as it was
 
+  Scenario: In CI, a lock whose comments differ is the same contract, and the build passes
+    Given the seam is written into the namespace Shop.Api
+    And seam.lock gains the comment "reviewed by the team"
+    When the seam is written into the namespace Shop.Api, as a CI build writes it
+    Then the seam wrote its files, and left seam.lock as it was
+
   Scenario: In CI, a host without seam.lock stops the build: there is nothing to check the contract against
     When the seam is written into the namespace Shop.Api, as a CI build writes it
     Then the seam stops with SEAM020 at seam.lock: "seam.lock is not there, and PlasmSeamDrift=fail writes none"

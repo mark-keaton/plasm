@@ -6,97 +6,47 @@ module Plasm.Seam.Lock
 open System.IO
 open System.Text
 
-let private top =
-    "# The C# contract Plasm.Seam wrote from the F# data assembly and Seam.cs. Commit this file.\n"
-    + "# A build rewrites it when the contract changes, and says what changed; a build with\n"
-    + "# -p:PlasmSeamDrift=fail (the default when ContinuousIntegrationBuild=true) stops instead.\n\n"
+/// The contract the seam wrote, as the format's model (LockFile).
+let model (seam: SeamModel) (http: bool) : LockFile.Lock =
+    let field (f: Field) : LockFile.Field = { Name = f.Name; Type = Emit.short f.Cross.CsFull }
 
-let describe (seam: SeamModel) (http: bool) : string =
-    let text = StringBuilder(top)
-    let add (s: string) = text.Append(s).Append('\n') |> ignore
-    let fields (fs: Field seq) = fs |> Seq.map (fun f -> $"{f.Name}: {Emit.short f.Cross.CsFull}") |> String.concat ", "
+    let signature (m: Member) =
+        let text = Emit.short (Emit.signature m true false)
 
-    for r in seam.Records do
-        let what =
-            match seam.Whats.TryGetValue(r.Display.Substring(r.Display.LastIndexOf '.' + 1)) with
-            | true, word -> $", Missing and Stale say \"{word}\""
-            | _ -> ""
+        match LockFile.signature text with
+        | Some s -> s
+        | None -> failwith $"the seam wrote a member line its own format does not read: {text}"
 
-        add $"""record {r.Name} = {r.Display}{(if r.Into.IsSome then ", and from C#" else "")}{what}"""
+    let sections =
+        [ for r in seam.Records do
+              let what =
+                  match seam.Whats.TryGetValue(r.Display.Substring(r.Display.LastIndexOf '.' + 1)) with
+                  | true, word -> Some word
+                  | _ -> None
 
-        for f in r.Fields do
-            add $"  {f.Name}: {Emit.short f.Cross.CsFull}"
+              LockFile.Record(r.Name, r.Display, r.Into.IsSome, what, [ for f in r.Fields -> field f ])
+          for u in seam.Unions do
+              LockFile.Union(u.Name, u.Display, [ for c in u.Cases -> { Name = c.Name; Kind = c.Kind; Fields = [ for f in c.Fields -> field f ] } ])
+          for r in seam.Refusals do
+              LockFile.Refusal(r.Display, r.Codes)
+          for d in seam.Data do
+              LockFile.Class(
+                  d.Name,
+                  d.Display,
+                  d.Store |> Option.map _.Display,
+                  (d.Store |> Option.exists _.File),
+                  (if http && d.Store.IsSome then Some("Add" + d.Name) else None),
+                  [ for m in d.Members -> signature m ]
+              )
+          if http then
+              for s in seam.Shapes |> Seq.filter Emit.hasHttp do
+                  LockFile.Http(s.Name, [ for (cs, n) as c in s.Cases -> (if cs.IsNone then "value" else n), snd (Emit.status s c).Value ])
+          LockFile.Json [ for j in Seq.append seam.Json seam.HostJson -> Emit.short j ] ]
 
-    for u in seam.Unions do
-        add $"union {u.Name} = {u.Display}"
+    { Version = LockFile.Current; Sections = sections }
 
-        for c in u.Cases do
-            let with' = if c.Fields.Count > 0 then " with " + fields c.Fields else ""
-            add $"  {c.Name} kind \"{c.Kind}\"{with'}"
-
-    for r in seam.Refusals do
-        add $"refusal {r.Display}"
-
-        for code in r.Codes do
-            add $"  {code}"
-
-    for d in seam.Data do
-        add $"class {d.Name} = {d.Display}"
-
-        match d.Store with
-        | Some store ->
-            let file = if store.File then ", DatabaseFile, CreateDatabaseAsync" else ""
-            add $"  opened from {store.Display}: OpenAsync, Ddl, SandboxAsync{file}"
-            if http then add $"  Add{d.Name}"
-        | None -> ()
-
-        for m in d.Members do
-            add $"  {Emit.short (Emit.signature m true false)}"
-
-    if http then
-        for s in seam.Shapes |> Seq.filter Emit.hasHttp do
-            add $"http {s.Name}"
-
-            for (cs, n) as c in s.Cases do
-                add $"""  {(if cs.IsNone then "value" else n)} {snd (Emit.status s c).Value}"""
-
-    add "json SeamJson"
-
-    for j in Seq.append seam.Json seam.HostJson do
-        add $"  {Emit.short j}"
-
-    text.ToString()
-
-/// Each fact as (section, line), comments and blank lines left out.
-let private facts (text: string) =
-    let mutable section = ""
-
-    [ for raw in text.Split '\n' do
-          let line = raw.TrimEnd('\r', ' ')
-
-          if line.Length > 0 && line[0] <> '#' then
-              if line[0] <> ' ' then section <- line
-              ((if line[0] = ' ' then section else ""), line.Trim()) ]
-
-/// What changed between two locks, each change a line.
-let changes (before: string) (after: string) : string list =
-    let b = facts before
-    let a = facts after
-
-    let gone =
-        b
-        |> List.filter (fun x -> not (List.contains x a))
-        |> List.map (fun (s, l) -> if s = "" then $"removed: {l}" else $"removed from {s}: {l}")
-
-    let added =
-        a
-        |> List.filter (fun x -> not (List.contains x b))
-        |> List.map (fun (s, l) -> if s = "" then $"added: {l}" else $"added to {s}: {l}")
-
-    match gone @ added with
-    | [] when b <> a -> [ "the order of its lines changed" ]
-    | [] -> [ "only its comments or spacing changed" ]
-    | all -> all
+/// The lock's text, as the format writes it.
+let describe (seam: SeamModel) (http: bool) : string = LockFile.write (model seam http)
 
 /// What the lock check did: nothing, wrote a new lock, or rewrote one.
 type Checked =
@@ -104,8 +54,15 @@ type Checked =
     | Wrote
     | Rewrote of string list
 
+/// Compares the lock at `path` with `text`, the one the seam would write, as
+/// the format reads both: their versions, comments and spacing aside.
 let check (path: string) (text: string) (fail: bool) : Checked =
     let name = Path.GetFileName path
+
+    let next =
+        match LockFile.parse text with
+        | Ok l -> l
+        | Error wrong -> failwith $"the seam wrote a lock its own format does not read: %A{wrong}"
 
     if not (File.Exists path) then
         if fail then
@@ -119,13 +76,29 @@ let check (path: string) (text: string) (fail: bool) : Checked =
     else
         let old = File.ReadAllText(path).ReplaceLineEndings "\n"
 
-        if old = text then
-            Same
-        else
-            let found = changes old text
+        match LockFile.parse old with
+        | Error((n, why) :: _) when why.Contains "is a format newer" ->
+            Seam.failAt "SEAM021" (Some $"{path}({n},1)") why
+        | Error wrong ->
+            let lines = wrong |> List.map (fun (n, why) -> $"line {n}: {why}")
 
             if fail then
-                raise (ContractChanged(path, found))
+                Seam.failAt "SEAM021" (Some path) $"""{name} is not a lock ({String.concat "; " lines}): build without PlasmSeamDrift=fail to write it again, and commit it"""
 
             File.WriteAllText(path, text, UTF8Encoding false)
-            Rewrote found
+            Rewrote [ for l in lines -> $"{name} was not a lock, {l}, and is written again" ]
+        | Ok before ->
+            match LockFile.changes before next with
+            | [] ->
+                // The same contract: a CI build passes; another writes the
+                // lock as this format does, its comments and version too.
+                if not fail && old <> text then
+                    File.WriteAllText(path, text, UTF8Encoding false)
+
+                Same
+            | found ->
+                if fail then
+                    raise (ContractChanged(path, found))
+
+                File.WriteAllText(path, text, UTF8Encoding false)
+                Rewrote found

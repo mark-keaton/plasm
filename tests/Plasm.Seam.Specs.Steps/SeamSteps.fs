@@ -43,7 +43,7 @@ type SeamSteps(p: SeamProject) =
         [ yield p.Lock
           if Directory.Exists p.Out then yield! Directory.GetFiles(p.Out) ]
 
-    let writeAs (fail: bool) (http: bool) (ns: string) =
+    let writeAs (ci: bool) (http: bool) (ns: string) =
         let options: Program.Options =
             { Config = p.Config
               Out = p.Out
@@ -51,13 +51,24 @@ type SeamSteps(p: SeamProject) =
               Namespace = ns
               References = Compilers.references () @ [ data () ] |> Array.ofList
               Data = [| data () |]
-              Fail = fail
+              Fail = ci
               Http = http }
 
         p.Ran <-
             Some(
                 try
-                    Ok(Program.run options)
+                    let ran = Program.run options
+
+                    // Every lock is read back by the format and written again unchanged.
+                    let text = File.ReadAllText p.Lock
+
+                    match LockFile.parse text with
+                    | Ok _ when ran.Lock = Lock.Same -> () // left as it was: a scenario may have changed it
+                    | Ok lock when LockFile.write lock = text -> ()
+                    | Ok lock -> fail $"seam.lock, read and written again, is not the same:\n{LockFile.write lock}\nwhere it was\n{text}"
+                    | Error wrong -> fail $"the format does not read the lock it wrote: %A{wrong}"
+
+                    Ok ran
                 with
                 | SeamError(code, text, origin) -> Error(code, text, origin)
                 | ContractChanged(lock, changes) ->
@@ -113,7 +124,7 @@ type SeamSteps(p: SeamProject) =
     [<StepDefinition("^the seam rewrote seam\\.lock, saying \"(.*)\"$")>]
     member _.RewroteLock(change: string) =
         match (ran ()).Lock with
-        | Lock.Rewrote changes when List.contains change changes -> ()
+        | Lock.Rewrote changes when List.contains (unquote change) changes -> ()
         | other -> fail $"the seam did not say {change}: %A{other}"
 
     [<StepDefinition("^the seam wrote its files, and left seam\\.lock as it was$")>]
@@ -150,6 +161,58 @@ type SeamSteps(p: SeamProject) =
 
         if (squeeze source).Contains(squeeze (unquote text)) then
             fail $"{name} declares\n  {unquote text}\nIt reads:\n{source}"
+
+    [<StepDefinition("^seam\\.lock gains the comment \"(.*)\"$")>]
+    member _.GainsComment(comment: string) =
+        ran () |> ignore
+        File.AppendAllText(p.Lock, $"\n# {comment}\n")
+
+    [<StepDefinition("^seam\\.lock is written as it was before versions$")>]
+    member _.FormatZero() =
+        ran () |> ignore
+        let lines = File.ReadAllLines p.Lock |> Array.filter (fun l -> not (l.StartsWith "seam.lock "))
+        File.WriteAllText(p.Lock, String.Join("\n", lines) + "\n")
+
+    [<StepDefinition("^seam\\.lock's version is (\\d+)$")>]
+    member _.Version(v: int) =
+        ran () |> ignore
+        let lines = File.ReadAllLines p.Lock |> Array.map (fun l -> if l.StartsWith "seam.lock " then $"seam.lock {v}" else l)
+        File.WriteAllText(p.Lock, String.Join("\n", lines) + "\n")
+
+    [<StepDefinition("^seam\\.lock gains the line \"(.*)\" after \"(.*)\"$")>]
+    member _.GainsLine(line: string, after: string) =
+        ran () |> ignore
+        let lines = File.ReadAllLines p.Lock |> List.ofArray
+        let i = lines |> List.findIndex ((=) after)
+        File.WriteAllText(p.Lock, String.Join("\n", List.insertAt (i + 1) line lines) + "\n")
+
+    [<StepDefinition("^each example in docs/seam-lock\\.md is read as a lock, each refused one is refused, and each of its productions has an example$")>]
+    member _.Grammar() =
+        let rec up (d: DirectoryInfo) = if File.Exists(Path.Combine(d.FullName, "Plasm.slnx")) then d.FullName else up d.Parent
+        let doc = File.ReadAllText(Path.Combine(up (DirectoryInfo AppContext.BaseDirectory), "docs", "seam-lock.md"))
+        let blocks = Text.RegularExpressions.Regex.Matches(doc, "(?m)^ *```(example|refused)([^\n]*)\n((?:.*\n)*?) *```")
+        let ebnf = Text.RegularExpressions.Regex.Match(doc, "(?s)```ebnf\n(.*?)```").Groups[1].Value
+        let productions = Text.RegularExpressions.Regex.Matches(ebnf, @"(?m)^([a-z][a-z-]*)\s*=") |> Seq.map (fun m -> m.Groups[1].Value) |> Set.ofSeq
+        let shown = Collections.Generic.HashSet<string>()
+        let problems = Collections.Generic.List<string>()
+
+        for b in blocks do
+            let indent = b.Value.Length - b.Value.TrimStart(' ').Length
+            let lines = b.Groups[3].Value.Split('\n') |> Array.map (fun l -> if l.Length >= indent then l.Substring indent else l.TrimStart())
+            let body = String.Join("\n", lines)
+            let whole =
+                (if body.Contains "seam.lock " then "" else "seam.lock 1\n") + body + (if body.Contains "json SeamJson" then "" else "json SeamJson\n")
+
+            match b.Groups[1].Value, LockFile.parse whole with
+            | "example", Ok _ -> for t in b.Groups[2].Value.Trim().Split(' ') do shown.Add t |> ignore
+            | "example", Error wrong -> problems.Add $"an example is not read: %A{wrong}\n{whole}"
+            | _, Ok _ -> problems.Add $"a refused example is read:\n{whole}"
+            | _, Error _ -> ()
+
+        for p in productions do
+            if not (shown.Contains p) then problems.Add $"the production {p} has no example"
+
+        if problems.Count > 0 then fail (String.concat "\n" problems)
 
     [<StepDefinition("^seam\\.lock holds$")>]
     member _.LockHolds(text: string) =

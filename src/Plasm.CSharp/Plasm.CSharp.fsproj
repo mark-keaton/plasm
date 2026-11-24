@@ -26,6 +26,9 @@
   <ItemGroup>
     <None Include="build/Plasm.CSharp.targets" Pack="true" PackagePath="build/" />
     <None Include="buildTransitive/Plasm.CSharp.targets" Pack="true" PackagePath="buildTransitive/" />
+    <!-- seam.lock's format, its grammar and promises, for a developer offline:
+         the same file as the site's page (docs/seam-lock.md). -->
+    <None Include="../../docs/seam-lock.md" Pack="true" PackagePath="docs/seam-lock.md" Visible="false" />
   </ItemGroup>
   <PropertyGroup>
     <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PlasmSeamToolInPackage</TargetsForTfmSpecificContentInPackage>

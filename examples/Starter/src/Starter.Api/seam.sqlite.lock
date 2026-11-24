@@ -1,7 +1,10 @@
 # The C# contract Plasm.Seam wrote from the F# data assembly and Seam.cs. Commit this file.
-# A build rewrites it when the contract changes, and says what changed; a build with
-# -p:PlasmSeamDrift=fail (the default when ContinuousIntegrationBuild=true) stops instead.
+# A build rewrites it when the contract changes, and says what changed; a build in CI
+# (CI=true in a project made by the template, ContinuousIntegrationBuild=true, or
+# -p:PlasmSeamDrift=fail) stops instead. Its format: https://mark-keaton.github.io/plasm/docs/seam-lock.html
+# (and docs/seam-lock.md in Plasm.CSharp's package).
 
+seam.lock 1
 record NewEquipment = Starter.Data.NewEquipment, and from C#
   Name: string
 record EquipmentView = Starter.Equipment
@@ -35,9 +38,7 @@ refusal Starter.Refusal
   AlreadyBooked
   AlreadyOutOfService
   AlreadyAvailable
-class BookingData = Starter.Data.BookingData
-  opened from Starter.Data.BookingStore.store: OpenAsync, Ddl, SandboxAsync, DatabaseFile, CreateDatabaseAsync
-  AddBookingData
+class BookingData = Starter.Data.BookingData, opened from Starter.Data.BookingStore.store, its database a file, registered by AddBookingData
   Task<AddResult<EquipmentView>> AddEquipmentAsync(NewEquipment request, CancellationToken cancellationToken)
   Task<FindResult<EquipmentView>> EquipmentAsync(Guid id, CancellationToken cancellationToken)
   Task<EquipmentView[]> AllEquipmentAsync(CancellationToken cancellationToken)

@@ -74,8 +74,7 @@ Feature: A data project names its Store, and the seam writes the rest
     When the seam is written into the namespace Shop.Api
     Then seam.lock holds
       """
-      class Orders = Shop.Orders
-        opened from Shop.OrderStore.store: OpenAsync, Ddl, SandboxAsync, DatabaseFile, CreateDatabaseAsync
+      class Orders = Shop.Orders, opened from Shop.OrderStore.store, its database a file
         Task<AddResult<OrderView>> AddOrderAsync(string customer)
         Task<OrderView[]> OrdersAsync()
       """
@@ -122,9 +121,7 @@ Feature: A data project names its Store, and the seam writes the rest
     Then OrdersServices.g.cs declares "public static IServiceCollection AddOrders(this IServiceCollection services, string connectionString)"
     And seam.lock holds
       """
-      class Orders = Shop.Orders
-        opened from Shop.OrderStore.store: OpenAsync, Ddl, SandboxAsync, DatabaseFile, CreateDatabaseAsync
-        AddOrders
+      class Orders = Shop.Orders, opened from Shop.OrderStore.store, its database a file, registered by AddOrders
       """
     And the C# compiles with the host:
       """
@@ -185,7 +182,7 @@ Feature: A data project names its Store, and the seam writes the rest
     When the seam is written into the namespace Shop.Api
     Then seam.lock holds
       """
-      class Notes = Shop.Notes
-        opened from Shop.NoteStore.store: OpenAsync, Ddl, SandboxAsync
+      class Notes = Shop.Notes, opened from Shop.NoteStore.store
+        Task<int> CountAsync()
       """
     And Notes.g.cs does not declare "DatabaseFile"
