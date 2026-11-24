@@ -76,7 +76,7 @@ declarations and nothing of Hot Chocolate).
   Plasm does.
 - `AddPlasmUnion<'U>()` shows a type of C#'s union shape as a GraphQL union
   named as the type is, and `AddPlasmUnion<'U>(name)` names it, for a
-  generic type such as `Found<CardView>` (below).
+  generic type such as `FindResult<CardView>` (below).
 - `AddPlasmReadType<'T, 'V>(fields)` is the GraphQL object type of the
   fields of 'T a caller may read (`ReadField`), named and described as the
   view 'V is. Each field resolves from a row of the fields a request chose
@@ -245,12 +245,12 @@ Chocolate the case (`IUnion.Value`), so the case's fields resolve against it:
 
 A case's object type is referred to by its record's type, so a record that
 is a case of several unions, or the type of a field elsewhere, is one object
-type: Kanban's host registers Plasm.CSharp's `Changed<CardView>`,
-`Answered<CardView>` and `Found<CardView>`, and `CardView` is one type in all
-three and in `cards`. A generic type's own name (``Found`1``) is not one
+type: Kanban's host registers Plasm.CSharp's `ChangeResult<CardView>`,
+`RequestResult<CardView>` and `FindResult<CardView>`, and `CardView` is one type in all
+three and in `cards`. A generic type's own name (``FindResult`1``) is not one
 GraphQL allows, so `AddPlasmUnion<'U>()` refuses it, saying to name it:
-`AddPlasmUnion<Found<CardView>>("CardResult")`,
-`AddPlasmUnion<Changed<CardView>>("ChangeOutcome")`.
+`AddPlasmUnion<FindResult<CardView>>("CardResult")`,
+`AddPlasmUnion<ChangeResult<CardView>>("ChangeOutcome")`.
 
 ## Translation
 

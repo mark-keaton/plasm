@@ -3,14 +3,15 @@
 What Plasm does today, what is being built, and what it will not do. The
 repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
-## Now: after 0.4.0
+## Now: for 0.5.0
 
-- Plasm.CSharp: a read of many, as an array of views
+- A build step in Plasm.CSharp, the seam, that writes the C# side from the F# data project: the records, the unions, the JSON context and each outcome's answer over HTTP
+- The template and the Starter on it: an endpoint is one line, and a change is one call
+- Plasm.CSharp: a read of many as an array, and outcomes named for what they are the result of
 - Each package's XML documentation describing only what a caller can reach
 
 ## Next: in the library
 
-- A build step in Plasm.CSharp that writes the C# side from the F# data project: the records, the unions, the JSON context and each outcome's answer over HTTP
 - Selection inside a GraphQL card's comments and labels
 - Kanban's own F# server as a native binary
 

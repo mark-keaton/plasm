@@ -30,8 +30,8 @@ What the C# host sees of the F# core is `KanbanData` and the types its methods
 take and return. The rules for that surface:
 
 - **Nothing null crosses, either way.** Nothing the facade returns is null,
-  an F# option or an F# `Result`: a read that can miss returns `Found<T>`,
-  either the value or `Missing`, and a change returns `Changed<CardView>`:
+  an F# option or an F# `Result`: a read that can miss returns `FindResult<T>`,
+  either the value or `Missing`, and a change returns `ChangeResult<CardView>`:
   the card, or `Missing`, `Refused`, `Stale` or `Invalid` (Plasm.CSharp's,
   docs/csharp.md).
   Nothing the host passes in is null either. The host's JSON options respect
@@ -43,7 +43,7 @@ take and return. The rules for that surface:
   are records of their own, so C# switches on them:
 
   ```csharp
-  public static IResult Of(Changed<CardView> outcome) => outcome switch
+  public static IResult Of(ChangeResult<CardView> outcome) => outcome switch
   {
       CardView card => Results.Ok(card),
       Missing missing => Of(missing),
@@ -103,7 +103,7 @@ take and return. The rules for that surface:
    The card's comments and labels are read with it, because they are part of
    the card the rule decides on. The update checks the version again, so a
    change made between the read and the write is refused as well.
-5. **Outcome.** `Changed<CardView>` is one of five cases.
+5. **Outcome.** `ChangeResult<CardView>` is one of five cases.
 6. **HTTP answer** (`Outcomes.cs`): 200 with the card; 404 `Missing`; 422
    `Refused`, with the domain's code and words (`WipLimitReached`, ...); 409
    `Stale`, when the caller's copy is old, naming the record type and its key
@@ -132,7 +132,7 @@ mutation {
    sent. The resolver is one line, the same call the REST endpoint makes:
 
    ```csharp
-   public Task<Changed<CardView>> StartCard(Guid card, int version, ClaimsPrincipal user, [Service] KanbanData kanban, CancellationToken ct) =>
+   public Task<ChangeResult<CardView>> StartCard(Guid card, int version, ClaimsPrincipal user, [Service] KanbanData kanban, CancellationToken ct) =>
        kanban.StartAsync(card, version, user.Actor(), ct);
    ```
 
@@ -141,10 +141,10 @@ mutation {
    reaches the facade this way either.
 2. **Facade, workflow and SQL**: as over REST, above, statement for
    statement.
-3. **Outcome.** The resolver returns the `Changed<CardView>` struct. Hot
+3. **Outcome.** The resolver returns the `ChangeResult<CardView>` struct. Hot
    Chocolate is told once, in `Program.cs`, that it is the GraphQL
    `union ChangeOutcome = CardView | Missing | Refused | Stale | Invalid`
-   (`AddPlasmUnion<Changed<CardView>>("ChangeOutcome")`); a field middleware hands it
+   (`AddPlasmUnion<ChangeResult<CardView>>("ChangeOutcome")`); a field middleware hands it
    the case, and the case's own fields answer:
 
    ```json
@@ -248,9 +248,9 @@ Reads are open to anyone; every mutation needs someone signed in.
   property of the same name and type for is refused when the schema is
   built.
 - `card(id)` answers `union CardResult = CardView | Missing`, from
-  `CardAsync`'s `Found<CardView>`. A generic type's own name is not one
+  `CardAsync`'s `FindResult<CardView>`. A generic type's own name is not one
   GraphQL allows, so this union alone is named where it is registered
-  (`AddPlasmUnion<Found<CardView>>("CardResult")`).
+  (`AddPlasmUnion<FindResult<CardView>>("CardResult")`).
 - Each mutation calls the facade method its REST endpoint calls, and answers
   the facade's outcome as a union of its cases:
 

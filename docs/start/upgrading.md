@@ -5,6 +5,176 @@ the one before, the newest first and, within a version, the most serious
 first. [`docs/status.md`](../status.md) has every entry in full, under
 "Changed".
 
+## From 0.4.0 to 0.5.0
+
+0.5.0 is not released yet: this section describes what the repository holds
+for it.
+
+Plasm.CSharp gains a build step, the seam: it reads the compiled F# data
+project and writes the C# side before the C# compile (the records, the
+unions, the JSON context, each outcome's answer over HTTP). Plasm.CSharp
+needs .NET 11 and C# 15, for its unions. An application without Plasm.CSharp
+has one thing to look at, the first below. One with it has the first five,
+and the rest if it takes the seam.
+
+### On Repo.All and Repo.Transact the cancellation token comes first
+
+The optional parameters are `All(query, ?cancellationToken, ?consistency)`
+and `Transact(tx, ?cancellationToken, ?isolation, ?retry)`, so
+`repo.All(query, ct)` and `repo.Transact(tx, ct)` compile. A call that passed
+a setting by position no longer compiles. Name it:
+`repo.All(query, consistency = ReadConsistency.Snapshot)`,
+`repo.Transact(tx, isolation = IsolationLevel.Serializable)`. A call that
+names the token is unchanged, and `Repo.Start` keeps its order.
+
+### The outcomes are named for what they are the result of
+
+| 0.4.0 | 0.5.0 |
+|---|---|
+| `Found<T>` | `FindResult<T>` |
+| `Added<T>` | `AddResult<T>` |
+| `Answered<T>` | `RequestResult<T>` |
+| `Changed<T>` | `ChangeResult<T>` |
+| `Found.map`, `Added.map`, `Answered.map`, `Changed.map`, `Changed.refused` | `FindResult.map`, `AddResult.map`, `RequestResult.map`, `ChangeResult.map`, `ChangeResult.refused` |
+
+There is also a new `ChangeResult<T, R>`, whose refusal is the domain's own
+type. The cases (`Missing`, `Refused`, `Stale`, `Invalid`) and the functions
+of `Outcome` keep their names, and no JSON changes. Write the new name where
+the old one is: a C# switch, a method's return type, an F# constructor call
+(`FindResult { What = "board" }`).
+
+### Outcome reads a result as the records themselves
+
+`Outcome`'s functions no longer take a view, or a function for a stopped
+transaction. They answer with the records, and a view is mapped after:
+
+| 0.4.0 | 0.5.0 |
+|---|---|
+| `Outcome.found "x" view r` | `Outcome.found r \|> FindResult.map view` |
+| `Outcome.all "x" view r` | `Outcome.all r \|> Array.map view` |
+| `Outcome.added view r` | `Outcome.added r \|> AddResult.map view` |
+| `Outcome.answered view rejected r` | `Outcome.answered r \|> RequestResult.map view` |
+| `Outcome.changed view rejected r` | `Outcome.changed r` |
+
+A transaction stops in terms Plasm.CSharp gives, `Stop<'R>`, so a project's
+own stop union (`Gone | Ruled of Refusal`) and its `rejected` function go:
+
+- For `Outcome.answered` the transaction stops with `Stop<Invalid>`:
+  `Tx.orReject (Stop.Missing "x")`,
+  `Tx.fail (Stop.Refused (Invalid.field "f" "why"))`.
+- For `Outcome.changed` it stops with `Stop<'R>`, `'R` the domain's refusal:
+  `Tx.orReject (Stop.Missing "x")`, `Tx.ofResult Stop.Refused`. The answer is
+  a `ChangeResult<'S, 'R>`. Where C# takes it without the seam, add
+  `|> ChangeResult.map view |> ChangeResult.refused toRefused`.
+- A `typeof<Stop>.Assembly` given to `Repo.Start` names another type of the
+  data project.
+
+The compiler's message for an old call is its own: FS0001, a function given
+where a `Result` was expected.
+
+### Missing is named by the record type
+
+`Outcome.found` and `Outcome.all` take no name. A 404's body says
+`{"what":"Equipment"}`, as a stale change's 409 always did, where it said the
+word the call gave (`"equipment"`). A client that reads `what` sees the
+change. To keep another word, say so in Seam.cs:
+`[assembly: SeamView(typeof(Equipment), What = "equipment")]`, which
+`Missing` and `Stale` both then say. A transaction's own
+`Stop.Missing "board"` keeps its word.
+
+### A switch that misses a case no longer builds
+
+CS8509 is an error in every C# project that has Plasm.CSharp, whether or not
+the project treats warnings as errors. Give the switch its missing arms, or
+set `<PlasmExhaustiveSwitch>false</PlasmExhaustiveSwitch>`.
+
+### New: a change in one call
+
+`repo.Change(Db.byId id, version, rule, ct)` reads the record as the caller
+saw it, applies the rule (`'T -> Result<'T, 'R>`), writes it and answers a
+`ChangeResult<'T, 'R>`. It replaces a hand-written change helper.
+`Change.asSeen query version rule` is the transaction itself, for a change
+that does more. Nothing breaks by its being there.
+
+### With the seam: requests are F# records
+
+A data method may take an F# record of its request
+(`NewBooking = { Version; Who; From; Until }`). C# is given a record of the
+same fields, its JSON already in the seam's context, and an endpoint passes
+its body whole: `d.BookAsync(id, input, ct)`. Request records declared in C#
+are no longer needed. A request body that is a C# record no JSON context
+lists is the build error SEAM030, where it was a 500 at run time.
+
+### With the seam: the data project names its Store
+
+The data project gives a `Store<T>` value: the model, the provider, a
+provider for the DDL, the queries' assembly, and how `T` is made over a
+repository and the clock. A SQLite project gives a `FileStore<T>`, with the
+database file. From it the seam writes `OpenAsync`, `Ddl` and `SandboxAsync`,
+and for a file `DatabaseFile` and `CreateDatabaseAsync`; the data type's
+hand-written ones go.
+
+In the host, `builder.Services.AddBookingData(connectionString)` replaces
+opening by hand. It opens as the host starts, before it serves. Its clock is
+the registered `TimeProvider`, and its SQL goes to the logger at Debug.
+
+### A project made from 0.4.0's template
+
+The simplest path is a new project from 0.5.0's template, with the domain
+(`Domain.fs`) moved into it. By hand, with `<Name>` the project's name:
+
+`Directory.Packages.props`: `Plasm.Postgres` or `Plasm.Sqlite`, and
+`Plasm.CSharp`, at 0.5.0.
+
+The data project:
+
+- `BookingData.fs` loses its view types (`EquipmentView`, `BookingView`,
+  `ConditionView` with `Bookable`, `Withdrawn` and `ConditionByKind`), the
+  `View` module, `Db.Stop`, `rejected` and `changed`.
+- Its methods take and return the domain's types:
+  `EquipmentAsync(id: EquipmentId, ct) : Task<FindResult<Equipment>>`,
+  `AllEquipmentAsync : Task<Equipment[]>`.
+- Each change is `repo.Change(Db.byId id, request.Version, rule, ct)`.
+- The requests are F# records (`NewEquipment`, `NewBooking`, `OutOfService`,
+  `InService`).
+- The plumbing is a `BookingStore` module with the Store value.
+- In `Domain.fs`, `Refusal` gains `member r.Message`, which was
+  `Refusal.describe`.
+- The project file sets
+  `<GenerateDocumentationFile>true</GenerateDocumentationFile>`, so that the
+  `///` comments reach C#.
+
+The API project:
+
+- A new `Seam.cs`: `SeamData(typeof(<Name>.Data.BookingData))`,
+  `SeamView(typeof(Booking), Omit = [nameof(Booking.Id), nameof(Booking.Equipment)])`,
+  and a `SeamCase` each for `Available`, named `Bookable`, and
+  `OutOfService`, named `Withdrawn`, so that the JSON is as it was.
+- `Program.cs` has `using <Name>.Api;` where it had `using <Name>.Data;`, and
+  `SeamJson.Default` in the resolver chain where it had `<Name>Json.Default`.
+- It registers the data with
+  `builder.Services.AddBookingData(connectionString)`, a `ClockStart` clock
+  as the `TimeProvider`, and LogSql as
+  `builder.Logging.AddFilter(typeof(BookingData).FullName, LogLevel.Debug)`.
+- Each endpoint is one line ending `.ToHttp()`; the add's is
+  `.ToHttp(e => $"/equipment/{e.Id}")`.
+- The C# request records, the JSON context class and the `Changed(...)`
+  helper go.
+- The first build writes `Seam/*.g.cs` and `seam.lock`.
+
+The tests reference the API project where they referenced the data project,
+with `using <Name>.Api;`, and their calls pass records
+(`new NewBooking(version, who, from, until)`). Their assertions are
+unchanged.
+
+The repository:
+
+- `.gitignore` gains `src/*/Seam/*.g.cs`. Commit `src/<Name>.Api/seam.lock`:
+  it is the contract between the two projects.
+- `Directory.Build.props` gains
+  `<PlasmSeamDrift Condition="'$(PlasmSeamDrift)' == '' and '$(CI)' == 'true'">fail</PlasmSeamDrift>`,
+  so that a CI build stops when the contract would change.
+
 ## From 0.3.0 to 0.4.0
 
 0.4.0 adds a package, `Plasm.CSharp`, and a SQLite choice in the template:

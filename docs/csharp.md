@@ -62,7 +62,10 @@ record of its own.
 
 The shapes every project would write the same are in the package
 **Plasm.CSharp**, which depends on Plasm alone (either provider; an F# host
-need not take it). It holds:
+need not take it). This page describes it as the repository has it, for
+0.5.0, which is not released yet: 0.4.0's names differ, and
+[Upgrading](start/upgrading.md) lists each. It needs .NET 11 and C# 15, for
+its unions. It holds:
 
 - the cases: `Missing { What }`, `Refused { Code; Message }`,
   `Stale { What; Key }` (the record type, and its key's parts as text in key
@@ -70,36 +73,38 @@ need not take it). It holds:
   holding a "/" is still one part), `FieldProblem { Field; Message }` and
   `Invalid { Problems }`;
 - the unions of them, each with only the cases its kind of call can have:
-  - **a read that can miss returns `Found<'T>`**: the value, or `Missing`
+  - **a read that can miss returns `FindResult<'T>`**: the value, or `Missing`
     (`BoardAsync`);
-  - **an add returns `Added<'T>`**: the value, or `Invalid` (`CreateBoardAsync`);
+  - **an add returns `AddResult<'T>`**: the value, or `Invalid` (`CreateBoardAsync`);
   - **a request about something that must be there, with input to check,
-    returns `Answered<'T>`**: the value, `Missing` or `Invalid`
+    returns `RequestResult<'T>`**: the value, `Missing` or `Invalid`
     (`AddCardAsync`, `DonePageAsync`);
-  - **a change returns `Changed<'T>`**: the value, `Missing`, `Refused`,
+  - **a change returns `ChangeResult<'T>`**: the value, `Missing`, `Refused`,
     `Stale` or `Invalid`. Every change can be `Invalid`: the database may
     refuse what it writes field by field (a unique or a check constraint);
 - `Outcome.found`, `Outcome.added`, `Outcome.answered` and `Outcome.changed`,
-  which read a read's or a transaction's result as one of them. Each project
-  maps its own reason for stopping a transaction (`TxFailure.Rejected`) to
-  the case it means, a function to the union:
-  `function Refusal.Missing what -> Changed { What = what } | Domain e -> Changed(View.refused e)`.
+  which read a read's or a transaction's result as one of them, holding the
+  records themselves. A view is mapped after:
+  `Outcome.changed result |> ChangeResult.map View.card |> ChangeResult.refused View.refused`.
+  A transaction stops with `Stop<'R>`, `Stop.Missing` or `Stop.Refused` of
+  the domain's own refusal, so a project writes no stop union of its own.
   Plasm's failures are read for it: a stale copy is `Stale`, the database's
   refusal of fields `Invalid` (`Invalid.ofErrors`: camel-cased fields, a
   duplicate "is already taken"), and a database that fails throws
   `UnavailableException`;
-- `Outcome.all`, for a read of many (`repo.All`): an array of views, in the
-  query's order, and an empty array for none. An array has no case to switch
-  over, so it is no union. The Starter's `AllEquipmentAsync` returns
-  `EquipmentView[]` with it. A read the database fails throws
-  `UnavailableException`, as `Outcome.found` does. It ships with the next
-  release and is not in 0.4.0;
+- `Outcome.all`, for a read of many (`repo.All`): an array of the records, in
+  the query's order, and an empty array for none. An array has no case to
+  switch over, so it is no union. A read the database fails throws
+  `UnavailableException`, as `Outcome.found` does;
+- `repo.Change(query, version, rule, ct)`, a change in one call: it reads the
+  record as the caller saw it, applies the rule (`'T -> Result<'T, 'R>`),
+  writes it and answers a `ChangeResult<'T, 'R>`;
 - `Invalid.field` and `Invalid.fields`, for input refused before the
   database, and `ByKind`, the base of a union's JSON classifier (below).
 
 A project writes its views (`CardView`, `StageView`) and the fields that are
 unions of its own. A host that names a union (GraphQL) names each by its use:
-Kanban's host registers `Changed<CardView>` as `ChangeOutcome`.
+Kanban's host registers `ChangeResult<CardView>` as `ChangeOutcome`.
 - **A field that holds a different fact in each case is a union-shaped
   type too.** A card's `Stage` is a `StageView`: `InBacklog`, `InProgress`
   (with its assignee and start), `WasShipped` (with its time) or
@@ -160,7 +165,7 @@ was measured on the first only:
 
 | F# | What C# writes | Fix belongs |
 |---|---|---|
-| `'T option` | `FSharpOption<T>`; `None` is a null reference, and `card.Blocked.Value` on it compiles without a warning and throws NullReferenceException | Facade: `Found<'T>`, or `Nullable<T>` for a value in a view |
+| `'T option` | `FSharpOption<T>`; `None` is a null reference, and `card.Blocked.Value` on it compiles without a warning and throws NullReferenceException | Facade: `FindResult<'T>`, or `Nullable<T>` for a value in a view |
 | `Result<_, _>` | `FSharpResult<T, E>`: `.IsOk`, `.ResultValue`, `.ErrorValue`, no deconstruction | Facade |
 | F# list | Read as `IEnumerable<T>` as it is; built with `ListModule.OfSeq(...)` | Facade: arrays |
 | Single-case union id | `CardId.NewCardId(guid)`, `.Item`; a private one (`Slug`) only through `Slug.create`, an `FSharpResult` | Facade: `Guid` and `string` |
@@ -218,11 +223,12 @@ minimal API never writes an outcome itself; C# switches over it first.
 Reading JSON into an F# record leaves a field the JSON lacks at null, even
 one F# says cannot be, which is why the requests are C# records.
 
-A read of many is an array of views, and a source-generated context declares
-the array type as well as the view:
-`[JsonSerializable(typeof(EquipmentView[]))]`, in the Starter's host. Without
-that line the native API throws `NotSupportedException` when it writes the
-list: no `JsonTypeInfo` metadata was provided for the array type.
+A read of many is an array of views, and a source-generated context must
+declare the array type as well as the view, as in
+`[JsonSerializable(typeof(CardView[]))]`. Without that line the native API
+throws `NotSupportedException` when it writes the list: no `JsonTypeInfo`
+metadata was provided for the array type. The seam's own context,
+`SeamJson`, lists each array a data method returns.
 
 Nothing null crosses to F#. A minimal API binds requests with the host's own
 `SerializerOptions`, not the source-generated context's options, so the host
