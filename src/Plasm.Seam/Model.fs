@@ -8,6 +8,10 @@ open System.Collections.Generic
 /// (SEAMnnn) and, when known, the place it was written; the build stops.
 exception SeamError of Code: string * Text: string * Origin: string option
 
+/// The generated contract would change, and the build is not to change it
+/// (PlasmSeamDrift=fail): the lock file, and each change, a line.
+exception ContractChanged of Lock: string * Changes: string list
+
 module Seam =
     let fail code text = raise (SeamError(code, text, None))
     let failAt code origin text = raise (SeamError(code, text, origin))

@@ -43,7 +43,7 @@ type SeamSteps(p: SeamProject) =
         [ yield p.Lock
           if Directory.Exists p.Out then yield! Directory.GetFiles(p.Out) ]
 
-    let write (ns: string) =
+    let writeAs (fail: bool) (ns: string) =
         let options: Program.Options =
             { Config = p.Config
               Out = p.Out
@@ -51,16 +51,20 @@ type SeamSteps(p: SeamProject) =
               Namespace = ns
               References = Compilers.references () @ [ data () ] |> Array.ofList
               Data = [| data () |]
-              Fail = false
+              Fail = fail
               Http = false }
 
         p.Ran <-
             Some(
                 try
                     Ok(Program.run options)
-                with SeamError(code, text, origin) ->
-                    Error(code, text, origin)
+                with
+                | SeamError(code, text, origin) -> Error(code, text, origin)
+                | ContractChanged(lock, changes) ->
+                    Error("SEAM020", Program.contractChanged lock changes + "\n" + String.concat "\n" changes, Some lock)
             )
+
+    let write = writeAs false
 
     let unquote (s: string) = s.Replace("\\\"", "\"")
 
@@ -94,6 +98,33 @@ type SeamSteps(p: SeamProject) =
     [<StepDefinition("^the seam is written into the namespace ([\\w.]+)$")>]
     member _.Written(ns: string) = write ns
 
+    [<StepDefinition("^the seam is written into the namespace ([\\w.]+), as a CI build writes it$")>]
+    member _.WrittenInCi(ns: string) = writeAs true ns
+
+    [<StepDefinition("^the seam wrote seam\\.lock$")>]
+    member _.WroteLock() =
+        match (ran ()).Lock with
+        | Lock.Wrote -> ()
+        | other -> fail $"the seam did not write seam.lock: %A{other}"
+
+    [<StepDefinition("^the seam rewrote seam\\.lock, saying \"(.*)\"$")>]
+    member _.RewroteLock(change: string) =
+        match (ran ()).Lock with
+        | Lock.Rewrote changes when List.contains change changes -> ()
+        | other -> fail $"the seam did not say {change}: %A{other}"
+
+    [<StepDefinition("^the seam wrote its files, and left seam\\.lock as it was$")>]
+    member _.LockSame() =
+        match (ran ()).Lock with
+        | Lock.Same -> ()
+        | other -> fail $"seam.lock was not left as it was: %A{other}"
+
+    [<StepDefinition("^it names the change \"(.*)\"$")>]
+    member _.NamesChange(change: string) =
+        match p.Ran with
+        | Some(Error(_, text, _)) when text.Split('\n') |> Array.contains change -> ()
+        | other -> fail $"the change {change} is not named: %A{other}"
+
     [<StepDefinition("^the seam is written into the namespace ([\\w.]+) again$")>]
     member _.WrittenAgain(ns: string) =
         ran () |> ignore
@@ -112,7 +143,8 @@ type SeamSteps(p: SeamProject) =
 
     [<StepDefinition("^seam\\.lock holds$")>]
     member _.LockHolds(text: string) =
-        ran () |> ignore
+        // Read whether the seam wrote its files or stopped: a stopped build leaves it as it was.
+        if p.Ran.IsNone then fail "the seam was not written"
         let lock = File.ReadAllText(p.Lock).ReplaceLineEndings "\n"
 
         if not (lock.Contains(text.ReplaceLineEndings "\n")) then

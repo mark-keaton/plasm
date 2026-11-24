@@ -113,15 +113,7 @@ let check (path: string) (text: string) (fail: bool) : Checked =
             let found = changes old text
 
             if fail then
-                for change in found do
-                    eprintfn $"{path} : error SEAM020: the contract would change: {change}"
-
-                let s = if found.Length = 1 then "" else "s"
-
-                Seam.failAt
-                    "SEAM020"
-                    (Some path)
-                    $"the generated C# no longer matches {name} ({found.Length} change{s}, above). If the change is meant, build without PlasmSeamDrift=fail and commit {name}"
+                raise (ContractChanged(path, found))
 
             File.WriteAllText(path, text, UTF8Encoding false)
             Rewrote found

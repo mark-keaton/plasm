@@ -5,7 +5,8 @@
 # mapping, a class over the F# Orders, the JSON context) and seam.lock, and
 # compiles them with the host. Built again unchanged, the seam is skipped and
 # no file is rewritten; with a member added to the F# type, it runs again and
-# says what changed in the contract. The host prints what it is given as the
+# says what changed in the contract; in CI (ContinuousIntegrationBuild=true)
+# such a change stops the build instead, naming it. The host prints what it is given as the
 # seam's source-generated JSON, under the runtime and as a native binary,
 # which must print the same, warning only FSharp.Core's two summary lines.
 # Two builds must fail, though the host does not treat warnings as errors: a
@@ -139,6 +140,25 @@ if dotnet build "$work/red-json/Api" -c Release -p:PlasmVersion="$version" -v q 
 else
   echo "seam-tool FAILED: with NewOrder listed in Seam.cs, the host did not build:"; grep -E ' error ' "$work/green-json.log" | sed 's/\[.*//' | sort -u | head -5; failed=1
 fi
+
+# In CI (ContinuousIntegrationBuild=true) a change to the contract stops the
+# build, naming it, and seam.lock is left as it was.
+python3 - "$app/Data/Orders.fs" <<'PY'
+import sys
+p = sys.argv[1]; s = open(p).read()
+end = '    member _.CountAsync(cancellationToken: CancellationToken) : Task<int> = Task.FromResult orders.Length\n'
+assert s.count(end) == 1, "CountAsync is not where the check expects it"
+open(p, 'w').write(s.replace(end, end + '\n    member _.EmptyAsync(cancellationToken: CancellationToken) : Task<bool> = Task.FromResult orders.IsEmpty\n'))
+PY
+cp "$app/Api/seam.lock" "$work/seam.lock.before"
+if dotnet build "$app/Api" -c Release -p:PlasmVersion="$version" -p:ContinuousIntegrationBuild=true -v q -m:1 -nodeReuse:false > "$work/ci.log" 2>&1; then
+  echo "seam-tool FAILED: a CI build that changes the contract built"; failed=1
+elif grep -qF "seam.lock : error SEAM020: the contract would change: added to class Orders = Shop.Orders: Task<bool> EmptyAsync(CancellationToken cancellationToken)" "$work/ci.log"; then
+  echo "seam-tool: a CI build that would change the contract stops, naming the change (SEAM020)"
+else
+  echo "seam-tool FAILED: the CI build failed otherwise:"; grep -E ' error ' "$work/ci.log" | sed 's/\[.*//' | sort -u | head -5; failed=1
+fi
+check 'cmp -s "$app/Api/seam.lock" "$work/seam.lock.before"' "and leaves seam.lock as it was"
 
 rid=$(dotnet --info | sed -n 's/^ *RID: *//p' | head -1)
 dotnet build "$app/Api" -c Release -p:PlasmVersion="$version" -o "$work/jit" -v q -m:1 -nodeReuse:false > "$work/jit-build.log" 2>&1 || { echo "seam-tool: the host did not build"; grep -E ' error ' "$work/jit-build.log" | sed 's/\[.*//' | sort -u | head; exit 1; }

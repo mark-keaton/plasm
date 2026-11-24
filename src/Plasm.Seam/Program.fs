@@ -47,7 +47,14 @@ let private write (folder: string) (files: (string * string) list) =
         if not (File.Exists path) || File.ReadAllText path <> text then
             File.WriteAllText(path, text, UTF8Encoding false)
 
-/// One run: reads, checks the lock, writes. Throws SeamError for a mistake.
+/// What a build that is not to change the contract says when it would.
+let contractChanged (lock: string) (changes: string list) =
+    let name = Path.GetFileName lock
+    let s = if changes.Length = 1 then "" else "s"
+    $"the generated C# no longer matches {name} ({changes.Length} change{s}, below). If the change is meant, build without PlasmSeamDrift=fail and commit {name}"
+
+/// One run: reads, checks the lock, writes. Throws SeamError for a mistake,
+/// and ContractChanged when the contract would change and must not.
 let run (o: Options) : Ran =
     let config = Config.read o.Config
     use reader = new Reader(config, o.References, o.Data, o.Namespace)
@@ -106,6 +113,13 @@ let main args =
 
         0
     with
+    | ContractChanged(lock, changes) ->
+        eprintfn $"{lock} : error SEAM020: {contractChanged lock changes}"
+
+        for change in changes do
+            eprintfn $"{lock} : error SEAM020: the contract would change: {change}"
+
+        1
     | SeamError(code, text, origin) ->
         eprintfn $"""{origin |> Option.defaultValue "Plasm.Seam"} : error {code}: {text}"""
         1
