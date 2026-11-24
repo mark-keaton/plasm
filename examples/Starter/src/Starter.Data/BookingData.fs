@@ -5,14 +5,12 @@
 /// Seam.cs) writes the C# the API and the tests call: a view of each record
 /// and union, and a C# BookingData over this one, whose outcomes are of those
 /// views, each refusal a Refused. No view, and no mapping to one, is written
-/// here. A database that cannot be reached throws Plasm.CSharp's
+/// here, and no plumbing: BookingStore, at the end, says where the data is.
+/// A database that cannot be reached throws Plasm.CSharp's
 /// UnavailableException.
 namespace Starter.Data
 
 open System
-#if STARTER_SQLITE
-open System.IO
-#endif
 open System.Threading
 open System.Threading.Tasks
 open Plasm
@@ -27,10 +25,6 @@ module private Db =
 
     /// Every piece of equipment, ordered by name.
     let byName = plasm { for e in tableOf<Equipment> do orderBy e.Name }
-
-    /// The tables, as Plasm would create them: the model alone, no database.
-    let ddl =
-        lazy (Repo.Start(model, Store.printing (), typeof<Equipment>.Assembly, RepoOptions.Unchecked).Result.Ddl())
 
 /// What the API is asked, as its requests' bodies say it: the seam gives C#
 /// a record of the same fields for each, reads its JSON, and makes this one
@@ -48,61 +42,9 @@ type OutOfService = { Version: int; Reason: string }
 type InService = { Version: int }
 
 [<Sealed>]
-type BookingData private (repo: Repo, time: TimeProvider) =
-
-    static member private Open(connectionString: string, onSql: Action<string> option, time: TimeProvider, cancellationToken: CancellationToken) =
-        task {
-            let options =
-                match onSql with
-                | None -> RepoOptions.Default
-                | Some onSql -> { RepoOptions.Default with OnCommand = Some(fun e -> onSql.Invoke e.Sql) }
-
-            let! repo = Repo.Start(Db.model, Store.provider connectionString, typeof<BookingData>.Assembly, options, cancellationToken)
-            return BookingData(repo, time)
-        }
-
-    /// Starts Plasm's repository over the database `connectionString` names,
-    /// opened as Store.fs says (where its connections are configured). It
-    /// checks every query and the tables first, so one that would fail throws
-    /// here, before anything is served. Every change takes its time from
-    /// `time`, the application's one clock: TimeProvider.System, or a test's own.
-    static member OpenAsync(connectionString: string, time: TimeProvider, cancellationToken: CancellationToken) : Task<BookingData> =
-        BookingData.Open(connectionString, None, time, cancellationToken)
-
-    /// As OpenAsync, `onSql` given the SQL of each command sent, BEGIN and
-    /// COMMIT included (a log).
-    static member OpenAsync(connectionString: string, onSql: Action<string>, time: TimeProvider, cancellationToken: CancellationToken) : Task<BookingData> =
-        BookingData.Open(connectionString, Some onSql, time, cancellationToken)
-
-    /// The SQL that creates the tables.
-    static member Ddl: string = Db.ddl.Value
-#if STARTER_SQLITE
-
-    /// The file `connectionString` names, its full path.
-    static member DatabaseFile(connectionString: string) : string = Store.file connectionString
-
-    /// Makes the database: the file `connectionString` names, with the tables
-    /// Ddl creates. A file already there is never changed: IOException.
-    static member CreateDatabaseAsync(connectionString: string, cancellationToken: CancellationToken) : Task =
-        task {
-            let file = Store.file connectionString
-
-            if File.Exists file then
-                raise (IOException $"{file} exists: a database is made only where there is none")
-
-            use! connection = (Store.provider connectionString).OpenConnection cancellationToken
-            use command = connection.CreateCommand()
-            command.CommandText <- BookingData.Ddl
-            let! _ = command.ExecuteNonQueryAsync cancellationToken
-            ()
-        }
-        :> Task
-#endif
-
-    /// `body` over a BookingData whose every change is rolled back when it
-    /// ends: one connection, one transaction, never committed. For tests.
-    member _.SandboxAsync(body: Func<BookingData, Task<'T>>, cancellationToken: CancellationToken) : Task<'T> =
-        repo.Sandbox((fun sandboxed -> body.Invoke(BookingData(sandboxed, time))), cancellationToken)
+/// What C# calls: the operations, each over the repository and the clock
+/// BookingStore makes it with.
+type BookingData(repo: Repo, time: TimeProvider) =
 
     /// Adds equipment called `name`: Invalid, with the field, when the name
     /// is not one (EquipmentName.create) or is taken.
@@ -148,3 +90,21 @@ type BookingData private (repo: Repo, time: TimeProvider) =
 
     member _.ReturnToServiceAsync(id: EquipmentId, request: InService, cancellationToken: CancellationToken) =
         repo.Change("equipment", Db.byId id, request.Version, Equipment.returnToService, cancellationToken)
+
+/// Where BookingData's data is, from Store.fs. The seam gives C# all the
+/// rest from it: BookingData opened (Plasm checking every query and the
+/// tables first), its DDL, a test's sandbox, the database made where it is a
+/// file, and AddBookingData for ASP.NET.
+module BookingStore =
+    let private reached: Store<BookingData> =
+        { Model = Db.model
+          Provider = Store.provider
+          Printing = Store.printing
+          Queries = typeof<Equipment>.Assembly
+          Make = fun repo time -> BookingData(repo, time) }
+
+#if STARTER_SQLITE
+    let store: FileStore<BookingData> = { Store = reached; File = Store.file }
+#else
+    let store: Store<BookingData> = reached
+#endif

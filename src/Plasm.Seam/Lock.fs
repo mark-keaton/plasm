@@ -38,6 +38,13 @@ let describe (seam: SeamModel) (http: bool) : string =
     for d in seam.Data do
         add $"class {d.Name} = {d.Display}"
 
+        match d.Store with
+        | Some store ->
+            let file = if store.File then ", DatabaseFile, CreateDatabaseAsync" else ""
+            add $"  opened from {store.Display}: OpenAsync, Ddl, SandboxAsync{file}"
+            if http then add $"  Add{d.Name}"
+        | None -> ()
+
         for m in d.Members do
             add $"  {Emit.short (Emit.signature m true false)}"
 

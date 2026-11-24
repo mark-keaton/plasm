@@ -60,14 +60,14 @@ var connectionString = builder.Configuration.GetConnectionString("Starter")
 // ClockStart=2030-01-02T09:00:00Z starts the API's clock at that instant, from
 // where it runs on at the system's pace: what the rules read as now. Unset,
 // the clock is the system's.
-var time = builder.Configuration["ClockStart"] is { } start
-    ? new StartingAt(DateTimeOffset.Parse(start, System.Globalization.CultureInfo.InvariantCulture))
-    : TimeProvider.System;
-// LogSql=true prints each command Plasm sends, its BEGIN and COMMIT included.
-var data = bool.TryParse(builder.Configuration["LogSql"], out var logSql) && logSql
-    ? await BookingData.OpenAsync(connectionString, sql => Console.WriteLine("SQL: " + sql.Replace('\n', ' ')), time, CancellationToken.None)
-    : await BookingData.OpenAsync(connectionString, time, CancellationToken.None);
-builder.Services.AddSingleton(data);
+if (builder.Configuration["ClockStart"] is { } start)
+    builder.Services.AddSingleton<TimeProvider>(new StartingAt(DateTimeOffset.Parse(start, System.Globalization.CultureInfo.InvariantCulture)));
+// LogSql=true logs each command Plasm sends, its BEGIN and COMMIT included.
+if (bool.TryParse(builder.Configuration["LogSql"], out var logSql) && logSql)
+    builder.Logging.AddFilter(typeof(BookingData).FullName, LogLevel.Debug);
+// BookingData, opened as the host starts: Plasm checks every query and the
+// tables first, so one that would fail stops the API before it serves.
+builder.Services.AddBookingData(connectionString);
 
 var app = builder.Build();
 

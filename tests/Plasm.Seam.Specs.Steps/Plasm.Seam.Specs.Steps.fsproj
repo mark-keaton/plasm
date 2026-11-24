@@ -13,6 +13,8 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Plasm.Seam/Plasm.Seam.fsproj" />
     <ProjectReference Include="../../src/Plasm.CSharp/Plasm.CSharp.fsproj" />
+    <!-- A Store's scenarios open a SQLite file in process. -->
+    <ProjectReference Include="../../src/Plasm.Sqlite/Plasm.Sqlite.fsproj" />
     <ProjectReference Include="../../src/Plasm.Seam.Analyzers/Plasm.Seam.Analyzers.csproj" />
     <PackageReference Include="FSharp.Compiler.Service" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />

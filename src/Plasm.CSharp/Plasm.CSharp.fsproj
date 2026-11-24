@@ -11,6 +11,7 @@
     <Compile Include="Cases.fs" />
     <Compile Include="Outcome.fs" />
     <Compile Include="ByKind.fs" />
+    <Compile Include="Store.fs" />
     <Compile Include="Seam.fs" />
   </ItemGroup>
   <ItemGroup>

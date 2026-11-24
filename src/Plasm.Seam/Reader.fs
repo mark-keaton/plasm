@@ -315,6 +315,7 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
     let known = Dictionary<Type, Cross>()
     let names = Dictionary<string, string>()
     let wrappers = Dictionary<Type, string>()
+    let stores = Dictionary<Type, StoreView>()
     let json = HashSet<string>()
     let views = Dictionary<Type, ViewConfig>()
     let cases = Dictionary<Type * string, CaseConfig>()
@@ -499,6 +500,11 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
             | true, wrapper ->
                 if use' = AsField then
                     raise (cannot where t "a data type is not part of a view")
+
+                if use' = AsResult && stores.ContainsKey t then
+                    raise (
+                        cannot where t $"its Store ({stores[t].Display}) opens it, so no member answers it: OpenAsync and SandboxAsync are written from the Store"
+                    )
 
                 { Cs = wrapper
                   Domain = Meta.csName t
@@ -1230,7 +1236,8 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
         { Name = wrappers[t]
           Domain = Meta.csName t
           Display = Meta.display t
-          Members = List.ofSeq members }
+          Members = List.ofSeq members
+          Store = match stores.TryGetValue t with | true, s -> Some s | _ -> None }
 
     member _.Read() : SeamModel =
         for v in config.Views do
@@ -1273,6 +1280,30 @@ type Reader(config: Config, references: string[], dataPaths: string[], ns: strin
             claim name (Meta.dotted t) (Some d.At)
             wrappers[t] <- name
             roots.Add t
+
+        // Each data type's Store, if the data project gives one: a public value
+        // of Plasm.CSharp's Store<T> or FileStore<T>, T the data type.
+        for t in roots do
+            let found =
+                [ for a in data do
+                      for holder in a.GetTypes() do
+                          if Meta.visible holder then
+                              for p in holder.GetProperties(BindingFlags.Public ||| BindingFlags.Static ||| BindingFlags.DeclaredOnly) do
+                                  let pt = p.PropertyType
+                                  let full = Meta.full pt
+
+                                  if (full = "Plasm.CSharp.Store`1" || full = "Plasm.CSharp.FileStore`1") && pt.GetGenericArguments().[0] = t then
+                                      yield
+                                          { Access = $"{Meta.csName holder}.{p.Name}"
+                                            Display = $"{Meta.dotted holder}.{p.Name}"
+                                            File = full = "Plasm.CSharp.FileStore`1" } ]
+
+            match found with
+            | [] -> ()
+            | [ one ] -> stores[t] <- one
+            | many ->
+                let all = many |> List.map _.Display |> String.concat " and "
+                Seam.fail "SEAM014" $"{Meta.dotted t} has two Stores, {all}: keep one, which the seam opens it with"
 
         for t in roots do
             seam.Data.Add(dataType t)

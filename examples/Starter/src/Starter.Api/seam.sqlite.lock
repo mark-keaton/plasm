@@ -36,18 +36,14 @@ refusal Starter.Refusal
   AlreadyOutOfService
   AlreadyAvailable
 class BookingData = Starter.Data.BookingData
-  static Task<BookingData> OpenAsync(string connectionString, TimeProvider time, CancellationToken cancellationToken)
-  static Task<BookingData> OpenAsync(string connectionString, Action<string> onSql, TimeProvider time, CancellationToken cancellationToken)
-  static string DatabaseFile(string connectionString)
-  static Task CreateDatabaseAsync(string connectionString, CancellationToken cancellationToken)
-  Task<T> SandboxAsync<T>(Func<BookingData, Task<T>> body, CancellationToken cancellationToken)
+  opened from Starter.Data.BookingStore.store: OpenAsync, Ddl, SandboxAsync, DatabaseFile, CreateDatabaseAsync
+  AddBookingData
   Task<AddResult<EquipmentView>> AddEquipmentAsync(NewEquipment request, CancellationToken cancellationToken)
   Task<FindResult<EquipmentView>> EquipmentAsync(Guid id, CancellationToken cancellationToken)
   Task<EquipmentView[]> AllEquipmentAsync(CancellationToken cancellationToken)
   Task<ChangeResult<EquipmentView>> BookAsync(Guid id, NewBooking request, CancellationToken cancellationToken)
   Task<ChangeResult<EquipmentView>> TakeOutOfServiceAsync(Guid id, OutOfService request, CancellationToken cancellationToken)
   Task<ChangeResult<EquipmentView>> ReturnToServiceAsync(Guid id, InService request, CancellationToken cancellationToken)
-  static string Ddl
 http AddResult
   value 201
   Invalid 400

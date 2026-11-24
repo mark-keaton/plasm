@@ -47,6 +47,8 @@ let plasmAssemblies =
     [ typeof<Plasm.TableAttribute>.Assembly.Location
       typeof<Plasm.Query>.Assembly.Location
       typeof<Plasm.CSharp.Missing>.Assembly.Location
+      typeof<Plasm.Sqlite.SqliteOptions>.Assembly.Location
+      typeof<Microsoft.Data.Sqlite.SqliteConnection>.Assembly.Location
       typeof<Microsoft.FSharp.Core.Unit>.Assembly.Location ]
 
 /// Every reference a host over the data project has: the frameworks, Plasm, FSharp.Core.
@@ -82,7 +84,8 @@ let fsharp (name: string) (source: string) : Result<string, string> =
                        yield $"-r:{r}"
                    yield file |]
 
-            let diagnostics, failure = checker.Force().Compile argv |> Async.RunSynchronously
+            // One compile at a time: the compiler service's Compile is not run side by side.
+            let diagnostics, failure = lock checker (fun () -> checker.Force().Compile argv |> Async.RunSynchronously)
 
             let errors =
                 diagnostics
@@ -90,7 +93,7 @@ let fsharp (name: string) (source: string) : Result<string, string> =
                 |> Array.map (fun d -> $"{d.Range.StartLine},{d.Range.StartColumn}: FS{d.ErrorNumber:D4}: {d.Message}")
 
             match failure with
-            | Some e -> Error $"the F# compiler failed: {e.Message}"
+            | Some e -> Error("the F# compiler failed: " + string e + "\n" + String.concat "\n" errors)
             | None when errors.Length > 0 -> Error(String.concat "\n" errors)
             | None -> Ok dll
     )

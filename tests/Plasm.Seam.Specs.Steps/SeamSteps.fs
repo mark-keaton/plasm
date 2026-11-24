@@ -43,7 +43,7 @@ type SeamSteps(p: SeamProject) =
         [ yield p.Lock
           if Directory.Exists p.Out then yield! Directory.GetFiles(p.Out) ]
 
-    let writeAs (fail: bool) (ns: string) =
+    let writeAs (fail: bool) (http: bool) (ns: string) =
         let options: Program.Options =
             { Config = p.Config
               Out = p.Out
@@ -52,7 +52,7 @@ type SeamSteps(p: SeamProject) =
               References = Compilers.references () @ [ data () ] |> Array.ofList
               Data = [| data () |]
               Fail = fail
-              Http = false }
+              Http = http }
 
         p.Ran <-
             Some(
@@ -64,7 +64,7 @@ type SeamSteps(p: SeamProject) =
                     Error("SEAM020", Program.contractChanged lock changes + "\n" + String.concat "\n" changes, Some lock)
             )
 
-    let write = writeAs false
+    let write = writeAs false false
 
     let unquote (s: string) = s.Replace("\\\"", "\"")
 
@@ -99,7 +99,10 @@ type SeamSteps(p: SeamProject) =
     member _.Written(ns: string) = write ns
 
     [<StepDefinition("^the seam is written into the namespace ([\\w.]+), as a CI build writes it$")>]
-    member _.WrittenInCi(ns: string) = writeAs true ns
+    member _.WrittenInCi(ns: string) = writeAs true false ns
+
+    [<StepDefinition("^the seam is written into the namespace ([\\w.]+), as a web project$")>]
+    member _.WrittenWeb(ns: string) = writeAs false true ns
 
     [<StepDefinition("^the seam wrote seam\\.lock$")>]
     member _.WroteLock() =

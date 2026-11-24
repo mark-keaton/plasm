@@ -92,11 +92,16 @@ type Member =
       Returns: Returns
       Result: Cross option }
 
+/// A data type's Store, found in the data project: the C# that reaches it
+/// (Starter.Data.BookingStore.store), and whether its database is a file.
+type StoreView = { Access: string; Display: string; File: bool }
+
 type DataClass =
     { Name: string
       Domain: string
       Display: string
-      Members: Member list }
+      Members: Member list
+      Store: StoreView option }
 
 /// A domain refusal (the `'R` of a ChangeResult<'T, 'R>), as C# is given it: a
 /// Refused whose Code is its case's name, known at build, and whose Message

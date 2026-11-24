@@ -266,10 +266,64 @@ let private dataFile (seam: SeamModel) (data: DataClass) =
         [ $"What the host calls: every public member of the F# type {data.Display},"
           "taking plain arguments and answering views." ]
 
-    line $"public sealed class {data.Name}({data.Domain} inner)"
-    line "{"
-    line "    /// The F# object this one calls."
-    line $"    public {data.Domain} Inner => inner;"
+    match data.Store with
+    | None ->
+        line $"public sealed class {data.Name}({data.Domain} inner)"
+        line "{"
+        line "    /// The F# object this one calls."
+        line $"    public {data.Domain} Inner => inner;"
+    | Some store ->
+        // Opened from the project's Store: its repository and clock kept, for the sandbox.
+        let reach = if store.File then store.Access + ".Store" else store.Access
+        let n = data.Name
+
+        line $"public sealed class {n}"
+        line "{"
+        line $"    readonly {data.Domain} inner;"
+        line "    readonly global::Plasm.Repo repo;"
+        line "    readonly TimeProvider time;"
+        line ""
+        line $"    {n}({data.Domain} inner, global::Plasm.Repo repo, TimeProvider time)"
+        line "    {"
+        line "        this.inner = inner;"
+        line "        this.repo = repo;"
+        line "        this.time = time;"
+        line "    }"
+        line ""
+        line "    /// The F# object this one calls."
+        line $"    public {data.Domain} Inner => inner;"
+        line ""
+        line $"    /// Opens {n} over the database `connectionString` names, from {store.Display}: Plasm"
+        line "    /// checks every query and the tables first, so one that would fail throws here,"
+        line "    /// before anything is served. Every change takes its time from `time`."
+        line $"    public static Task<{n}> OpenAsync(string connectionString, TimeProvider time, CancellationToken cancellationToken) =>"
+        line "        OpenAsync(connectionString, time, null, cancellationToken);"
+        line ""
+        line "    /// As OpenAsync, `onSql` given the SQL of each command sent, BEGIN and COMMIT included."
+        line $"    public static async Task<{n}> OpenAsync(string connectionString, TimeProvider time, Action<string>? onSql, CancellationToken cancellationToken)"
+        line "    {"
+        line $"        var opened = await {reach}.OpenAsync(connectionString, time, onSql, cancellationToken);"
+        line $"        return new {n}(opened.Data, opened.Repo, time);"
+        line "    }"
+        line ""
+        line "    /// The SQL that creates the tables."
+        line $"    public static string Ddl => {reach}.Ddl();"
+
+        if store.File then
+            line ""
+            line "    /// The file `connectionString` names, its full path."
+            line $"    public static string DatabaseFile(string connectionString) => {store.Access}.DatabaseFile(connectionString);"
+            line ""
+            line "    /// Makes the database: the file `connectionString` names, with the tables Ddl"
+            line "    /// creates. A file already there is never changed: IOException."
+            line $"    public static Task CreateDatabaseAsync(string connectionString, CancellationToken cancellationToken) =>"
+            line $"        {store.Access}.CreateDatabaseAsync(connectionString, cancellationToken);"
+
+        line ""
+        line $"    /// `body` over a {n} whose every change is rolled back when it ends: one"
+        line "    /// connection, one transaction, never committed. For tests."
+        line $"    public Task<T> SandboxAsync<T>(Func<{n}, Task<T>> body, CancellationToken cancellationToken) =>"
+        line $"        {reach}.SandboxAsync<T>(repo, time, sandboxed => body(new {n}(sandboxed.Data, sandboxed.Repo, time)), cancellationToken);"
 
     for m in data.Members do
         line ""
@@ -378,15 +432,79 @@ public static class SeamHttp
     line "}"
     short (text.ToString())
 
+/// AddXxx, for a data type opened from its Store: ASP.NET opens it when the
+/// host starts, before any request, and gives it to every endpoint.
+let private servicesFile (seam: SeamModel) (data: DataClass) =
+    let text =
+        StringBuilder(
+            start
+                seam
+                [ "System"
+                  "System.Threading"
+                  "System.Threading.Tasks"
+                  "Microsoft.Extensions.DependencyInjection"
+                  "Microsoft.Extensions.DependencyInjection.Extensions"
+                  "Microsoft.Extensions.Hosting"
+                  "Microsoft.Extensions.Logging" ]
+        )
+
+    let line (s: string) = text.Append(s).Append('\n') |> ignore
+    let n = data.Name
+
+    line
+        $"""
+/// {n} for ASP.NET: `builder.Services.Add{n}(connectionString)`.
+public static class {n}Services
+{{
+    /// Opens {n} when the host starts, so Plasm's check of every query and the
+    /// tables stops the application before it serves a request, and gives it to
+    /// every endpoint that takes it. Its clock is the container's TimeProvider
+    /// (TimeProvider.System when none is registered); each command's SQL goes
+    /// to the logger of {n} at Debug.
+    public static IServiceCollection Add{n}(this IServiceCollection services, string connectionString)
+    {{
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton(provider => new {n}Start(
+            connectionString,
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<ILogger<{n}>>()));
+        services.AddHostedService(provider => provider.GetRequiredService<{n}Start>());
+        services.AddSingleton(provider => provider.GetRequiredService<{n}Start>().Data);
+        return services;
+    }}
+}}
+
+/// Opens {n} as the host starts; Add{n} registers it.
+public sealed class {n}Start(string connectionString, TimeProvider time, ILogger<{n}> logger) : IHostedService
+{{
+    {n}? data;
+
+    /// {n}, opened.
+    public {n} Data => data ?? throw new InvalidOperationException("{n} is opened when the host starts, and was asked for before it started.");
+
+    public async Task StartAsync(CancellationToken cancellationToken) =>
+        data = await {n}.OpenAsync(
+            connectionString,
+            time,
+            logger.IsEnabled(LogLevel.Debug) ? sql => logger.LogDebug("{{Sql}}", sql) : null,
+            cancellationToken);
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}}"""
+
+    short (text.ToString())
+
 /// Every file the seam writes, by name.
 let files (seam: SeamModel) (http: bool) : (string * string) list =
     // The data classes first: writing a parameter marks the records it takes,
     // whose mapping back SeamMap then writes.
     let data = [ for d in seam.Data -> d.Name + ".g.cs", dataFile seam d ]
+    let services = [ for d in seam.Data do if http && d.Store.IsSome then yield d.Name + "Services.g.cs", servicesFile seam d ]
 
     [ "Views.g.cs", viewsFile seam
       "SeamMap.g.cs", mapFile seam
       "SeamJson.g.cs", jsonFile seam
       yield! data
+      yield! services
       if http && seam.Shapes.Count > 0 then
           "SeamHttp.g.cs", httpFile seam ]
