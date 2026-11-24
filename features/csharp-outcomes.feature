@@ -11,10 +11,11 @@ Feature: A C# host is given one of the cases an outcome can have
   (the value or Missing), Added<'T> (the value or Invalid), Answered<'T> (the
   value, Missing or Invalid) and Changed<'T> (the value, Missing, Refused,
   Stale or Invalid); and the functions that read a read's or a transaction's
-  result as one of them. Each project maps its own reason for stopping a
-  transaction to the case it means; a database that fails throws
-  UnavailableException. It depends on Plasm alone, so a host of either
-  provider takes it, and an F# host need not.
+  result as one of them, and a read of many as an array of views. Each
+  project maps its own reason for stopping a transaction to the case it
+  means; a database that fails throws UnavailableException. It depends on
+  Plasm alone, so a host of either provider takes it, and an F# host need
+  not.
 
   # Note = { Id: NoteId; [<Unique>] Title: string; [<Version>] Version: int }
   # NoteView = { Id: Guid; Title: string; Version: int }
@@ -33,6 +34,22 @@ Feature: A C# host is given one of the cases an outcome can have
     Scenario: A note that is not there is Missing, saying what is missing
       When C# reads a note that is not there
       Then it is given Missing, saying "note"
+
+  Rule: A read of many is an array of views
+
+    Scenario: A read of many is each record's view, in the query's order
+      Given the notes "Groceries" and "Errands"
+      When C# reads every note, ordered by title
+      Then it is given the NoteViews of "Errands" and "Groceries", in that order
+
+    Scenario: A read of none is an empty array
+      When C# reads every note, ordered by title
+      Then it is given no NoteView
+
+    Scenario: A read of many the database fails throws UnavailableException, carrying the provider's exception
+      Given the notes table is gone
+      When C# reads every note, ordered by title
+      Then UnavailableException is thrown, naming the read of "notes", with the provider's exception inside
 
   Rule: A change is the record as stored, or why not
 

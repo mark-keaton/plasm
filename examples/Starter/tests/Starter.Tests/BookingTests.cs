@@ -92,6 +92,16 @@ public class BookingTests(Database db)
     });
 
     [Fact]
+    public Task Every_piece_of_equipment_is_listed_by_name() => Sandboxed(async data =>
+    {
+        Assert.Empty(await data.AllEquipmentAsync(CancellationToken.None));
+        foreach (var name in new[] { "Projector", "Camera", "Easel" })
+            await Add(data, name);
+        var all = await data.AllEquipmentAsync(CancellationToken.None);
+        Assert.Equal(["Camera", "Easel", "Projector"], all.Select(e => e.Name));
+    });
+
+    [Fact]
     public Task A_booking_is_stored_with_the_equipment() => Sandboxed(async data =>
     {
         var projector = await Add(data, "Projector");

@@ -84,6 +84,14 @@ module Outcome =
         | Ok None -> Found { What = what }
         | Error e -> unavailable $"reading {what}" e
 
+    /// A read of many (repo.All): each record's view, in the query's order,
+    /// an empty array when there are none. A read the database fails throws
+    /// UnavailableException, "reading `what`", carrying the provider's exception.
+    let all (what: string) (view: 'S -> 'T) (result: Result<'S list, DbError>) : 'T[] =
+        match result with
+        | Ok records -> records |> List.map view |> Array.ofList
+        | Error e -> unavailable $"reading {what}" e
+
     /// An add (repo.Transact): the record's view, or Invalid when the database
     /// refuses its fields. An add stopped by the rules, or stale, throws: an
     /// add that can be refused is a request answered, or a change.

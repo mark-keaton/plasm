@@ -157,18 +157,26 @@ for _ in $(seq 1 120); do
   kill -0 "$api" 2>/dev/null || break
   sleep 0.5
 done
-added=""; read=""
+added=""; read=""; list=""; id=""
 if [ "$up" = 1 ]; then
   added=$(curl -s -X POST -H 'Content-Type: application/json' -d '{"name":"Projector"}' "http://127.0.0.1:$port/equipment")
   id=$(printf '%s' "$added" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
   read=$(curl -s "http://127.0.0.1:$port/equipment/$id")
+  list=$(curl -s "http://127.0.0.1:$port/equipment")
 fi
 kill "$api" 2>/dev/null || true; sleep 1; kill -9 "$api" 2>/dev/null || true; wait "$api" 2>/dev/null || true; api=""
 echo "--- Development, no file"; cat "$work/dev.txt"
-echo "added: $added"; echo "read: $read"
+echo "added: $added"; echo "read: $read"; echo "list: $list"
 if [ -f "$work/dev/lending.db" ] && [[ "$(cat "$work/dev.txt")" == *"$work/dev/lending.db"* ]] && [[ "$read" == *'"name":"Projector"'* ]]; then
   echo "scenario: in Development a missing file is made at start, its full path printed, and the API serves"
 else
   echo "scenario FAILED: in Development a missing file is made at start, its full path printed, and the API serves"; failed=1
+fi
+# The list, from the native binary: its JSON is the array's, which the API's
+# JSON context declares (EquipmentView[]).
+if [[ "$list" == '[{"id":"'"$id"'","name":"Projector"'* ]]; then
+  echo "scenario: the native API lists the equipment, as an array of views"
+else
+  echo "scenario FAILED: the native API lists the equipment, as an array of views"; failed=1
 fi
 exit $failed

@@ -112,6 +112,16 @@ for p in $packages; do
   if [ "$declared" != "$floor" ]; then echo "pack: $p depends on FSharp.Core $declared, not the floor $floor"; exit 1; fi
 done
 echo "pack: every package depends on FSharp.Core $floor or later"
+# A packed XML doc describes only what a caller can reach: no internal or
+# private member (src/reachable-docs.fsx, which the pack filters each with).
+docs=0
+for p in $packages; do
+  mkdir "$work/docs-$p"
+  unzip -q "$feed/$p.$version.nupkg" "lib/net11.0/$p.dll" "lib/net11.0/$p.xml" -d "$work/docs-$p"
+  dotnet fsi --quiet "$repo/src/reachable-docs.fsx" check "$work/docs-$p/lib/net11.0/$p.dll" "$work/docs-$p/lib/net11.0/$p.xml" || { echo "pack: $p's XML doc describes members no caller can reach"; exit 1; }
+  docs=$((docs + $(grep -c '<member ' "$work/docs-$p/lib/net11.0/$p.xml")))
+done
+echo "pack: every package's XML doc describes only members a caller can reach ($docs in all)"
 echo "pack: version $version; Plasm's package carries: $(unzip -Z1 "$feed/Plasm.$version.nupkg" | grep -E '^(build|buildTransitive|tools)/' | tr '\n' ' ')"
 
 mkdir -p "$app"

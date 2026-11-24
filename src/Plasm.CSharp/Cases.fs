@@ -78,5 +78,10 @@ type Changed<'T when 'T: not null> =
 
 /// The database could not be reached or failed: what was being done, and the
 /// provider's exception, when there is one. ASP.NET Core answers it with a 500.
-type UnavailableException(message: string, inner: exn | null) =
+/// Outcome's functions throw it; a data layer need not make one.
+type UnavailableException
+    /// `message`, what was being done and why it failed ("reading notes:
+    /// ..."); `inner`, the provider's exception, or null when the failure is
+    /// Plasm's own (a transaction misused, an outcome with no case for it).
+    (message: string, inner: exn | null) =
     inherit Exception(message, inner)

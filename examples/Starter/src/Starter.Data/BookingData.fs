@@ -1,7 +1,8 @@
 /// What C# calls: one type, BookingData. Its methods take plain arguments and
 /// return a Task of plain types; an outcome that can go more than one way is
 /// one of Plasm.CSharp's unions (Found, Added, Changed), which C# switches
-/// over, and the compiler names a case it does not handle. Nothing returned is
+/// over, and the compiler names a case it does not handle; a read of many is
+/// an array. Nothing returned is
 /// null, an F# option or an F# Result; a database that cannot be reached
 /// throws Plasm.CSharp's UnavailableException.
 namespace Starter.Data
@@ -62,6 +63,9 @@ module private Db =
 
     let byId =
         Query.prepare (fun (id: Arg<EquipmentId>) -> plasm { for e in tableOf<Equipment> do where (e.Id = id.Value) })
+
+    /// Every piece of equipment, ordered by name.
+    let byName = plasm { for e in tableOf<Equipment> do orderBy e.Name }
 
     /// Why a transaction stopped without a database failure.
     type Stop =
@@ -193,6 +197,13 @@ type BookingData private (repo: Repo, time: TimeProvider) =
         task {
             let! result = repo.One(Db.byId (EquipmentId id), cancellationToken)
             return Outcome.found "equipment" View.equipment result
+        }
+
+    /// Every piece of equipment, ordered by name: none is an empty array.
+    member _.AllEquipmentAsync(cancellationToken: CancellationToken) : Task<EquipmentView[]> =
+        task {
+            let! result = repo.All(Db.byName, cancellationToken = cancellationToken)
+            return Outcome.all "equipment" View.equipment result
         }
 
     /// Books the equipment, if `version` is the one stored. `from` and

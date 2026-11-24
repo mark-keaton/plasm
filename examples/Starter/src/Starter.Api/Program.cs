@@ -79,6 +79,9 @@ app.MapPost("/equipment", async (NewEquipment input, BookingData d, Cancellation
         Invalid invalid => Results.BadRequest(invalid),
     });
 
+app.MapGet("/equipment", async (BookingData d, CancellationToken ct) =>
+    Results.Ok(await d.AllEquipmentAsync(ct)));
+
 app.MapGet("/equipment/{id:guid}", async (Guid id, BookingData d, CancellationToken ct) =>
     await d.EquipmentAsync(id, ct) switch
     {
@@ -121,6 +124,7 @@ record InService(int Version);
 
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web, RespectNullableAnnotations = true, RespectRequiredConstructorParameters = true)]
 [JsonSerializable(typeof(EquipmentView))]
+[JsonSerializable(typeof(EquipmentView[]))]
 [JsonSerializable(typeof(Bookable))]
 [JsonSerializable(typeof(Withdrawn))]
 [JsonSerializable(typeof(Missing))]

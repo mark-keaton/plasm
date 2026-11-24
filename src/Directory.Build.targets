@@ -1,0 +1,17 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.targets', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!-- A package's XML doc describes only what a caller can reach: as each
+       package is packed, src/reachable-docs.fsx drops from its XML doc the
+       members that are internal or private, which the F# compiler writes there
+       too (a reader of the packed XML, an IDE or an agent, would be shown
+       functions nobody outside can call). Only at pack, so a build pays
+       nothing. tests/Plasm.Package/run.sh checks the packed XML. -->
+  <Target Name="PlasmReachableDocs" BeforeTargets="GenerateNuspec"
+          Condition="'$(GenerateDocumentationFile)' == 'true' and '$(IncludeBuildOutput)' != 'false'">
+    <!-- A package that documents itself has its XML doc: none is a pack gone
+         wrong, never one packed without it. -->
+    <Error Condition="!Exists('$(OutDir)$(TargetName).xml')" Text="$(OutDir)$(TargetName).xml is missing: $(MSBuildProjectName)'s XML doc, which every package carries" />
+    <Exec Command="dotnet fsi --quiet &quot;$(MSBuildThisFileDirectory)reachable-docs.fsx&quot; filter &quot;$(OutDir)$(TargetFileName)&quot; &quot;$(OutDir)$(TargetName).xml&quot;" />
+  </Target>
+</Project>

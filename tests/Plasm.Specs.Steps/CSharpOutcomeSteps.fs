@@ -29,6 +29,9 @@ module Notes =
     let byId =
         Query.prepare (fun (id: Arg<NoteId>) -> plasm { for n in tableOf<Note> do where (n.Id = id.Value) })
 
+    /// Every note, ordered by title.
+    let byTitle = plasm { for n in tableOf<Note> do orderBy n.Title }
+
     let view (n: Note) : NoteView =
         let (NoteId id) = n.Id
         { Id = id; Title = n.Title; Version = n.Version }
@@ -165,6 +168,14 @@ type CSharpOutcomeSteps(w: World) =
                 return (Outcome.found "note" Notes.view r).Value
             })
 
+    [<StepDefinition("^C# reads every note, ordered by title$")>]
+    member _.ReadAll() =
+        given (fun () ->
+            task {
+                let! r = repo().All Notes.byTitle
+                return box (Outcome.all "notes" Notes.view r)
+            })
+
     [<StepDefinition("^C# renames \"(.*)\" to \"(.*)\", which the rules refuse$")>]
     member _.RenameRefused(from: string, title: string) = given (fun () -> renamed (note from) title)
 
@@ -257,6 +268,16 @@ type CSharpOutcomeSteps(w: World) =
         let v = this.Case<NoteView>()
         equal (title, version) (v.Title, v.Version) "the title and version"
 
+    [<StepDefinition("^it is given the NoteViews of \"(.*)\" and \"(.*)\", in that order$")>]
+    member this.Views(a: string, b: string) =
+        let vs = this.Case<NoteView[]>()
+        equal [| a; b |] (vs |> Array.map _.Title) "the titles, in order"
+        let id t = let (NoteId id) = (note t).Id in id
+        equal [| id a; id b |] (vs |> Array.map _.Id) "the ids"
+
+    [<StepDefinition("^it is given no NoteView$")>]
+    member this.NoViews() = equal 0 (this.Case<NoteView[]>().Length) "the views"
+
     [<StepDefinition("^it is given Missing, saying \"(.*)\"$")>]
     member this.Missing(what: string) = equal what (this.Case<Missing>().What) "what is missing"
 
@@ -286,6 +307,12 @@ type CSharpOutcomeSteps(w: World) =
     member this.UnavailableRead() =
         let e = this.Case<UnavailableException>()
         check (e.Message.StartsWith "reading note: ") e.Message
+        check (not (isNull e.InnerException)) "no provider exception inside"
+
+    [<StepDefinition("^UnavailableException is thrown, naming the read of \"(.*)\", with the provider's exception inside$")>]
+    member this.UnavailableReadAll(what: string) =
+        let e = this.Case<UnavailableException>()
+        check (e.Message.StartsWith $"reading {what}: ") e.Message
         check (not (isNull e.InnerException)) "no provider exception inside"
 
     [<StepDefinition("^UnavailableException is thrown, naming the step that failed$")>]
