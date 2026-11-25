@@ -347,10 +347,13 @@ binary from a cold disk cache, and pays for it):
 The C# outer, F# inner shape on Lambda: `examples/Kanban/src/Lambda` is a
 custom-runtime function in C# (Amazon.Lambda.RuntimeSupport, executable
 `bootstrap`, `PublishAot`) that references `Kanban.Data` alone, as the C#
-host does (csharp.md). It writes no query and composes no transaction: each
-call is a `KanbanData` method, and what the method returns is switched over
-with no default arm. `KanbanData.OpenAsync` runs once, in init, over Npgsql's
-slim builder with arrays and transport security; nothing else is needed.
+host does (csharp.md). It writes no query, no transaction, no view and no
+mapping: each call is a method of `Boards`, the C# the seam writes from the
+function's `Seam.cs` over the F# `Kanban.Data.Boards`, and what the method
+returns is switched over with no default arm. `Boards.OpenAsync` runs once,
+in init, over Npgsql's slim builder with arrays and transport security
+(Kanban.Data's `BoardStore`); nothing else is needed. Not a web project, the
+function gets no ToHttp and no AddBoards from the seam.
 
 An event is a plain typed request, not an API Gateway event:
 `{"call":"start","card":"…","version":1,"assignee":"Ada"}`. The calls are
@@ -374,7 +377,7 @@ of its own, against a migrated database of its own, which the function
 reaches through the host's gateway. The checks are a board read and a board
 missing; a start the domain refuses and a start of a missing card; a stale
 rename; a card and a board refused as invalid field by field; an event
-without an argument refused before F# is called; `KanbanData` opened once,
+without an argument refused before F# is called; `Boards` opened once,
 before the first event's handler ends; no IL warning naming Plasm; and no
 glibc symbol newer than Amazon Linux 2023's 2.34. The publish takes about
 85 s; each scenario takes about 1.4 s. The publish directory also holds
@@ -382,7 +385,8 @@ glibc symbol newer than Amazon Linux 2023's 2.34. The publish takes about
 `.xml` files, which a deployment leaves out: `bootstrap` alone is the
 package.
 
-Measured on an Apple M4 Max, the database in a container on the function's
+Measured before the function moved to the seam (it called `KanbanData`, a
+hand-written facade, then), on an Apple M4 Max, the database in a container on the function's
 Docker network (as `run.sh` has it), median of five fresh containers each
 after the first, whose cold disk cache costs it about 2.5 times as much:
 
@@ -403,13 +407,14 @@ Through the host's gateway, which is the scenarios' route, the first
 connection takes 13 to 18 ms and the whole opening takes 42 to 49 ms.
 
 What it costs to open is mostly checking, not connecting. Opening checks
-Kanban's 17 query values and its four tables against the database, plus the
-facade's `CheckFields`, and that takes about 28 ms once the connection is
-made. A host chooses with a plain value of Kanban.Data's own:
-`KanbanData.OpenAsync(dataSource, StartupChecks.Skip, ct)` opens without
-any of the three checks, while `StartupChecks.Run`, like every other
-`OpenAsync`, keeps them. No Plasm type crosses to C#. The function reads its
-choice from `KANBAN_STARTUP_CHECKS` (`run`, the default, or `skip`).
+Kanban's 17 query values and its four tables against the database (then
+also the facade's `CheckFields`, which only the GraphQL host's projection
+runs now), and that took about 28 ms once the connection was made. The seam
+gives every data type with a Store two openings:
+`Boards.OpenUncheckedAsync(connectionString, time, ct)` opens without the
+check, while `Boards.OpenAsync` keeps it. No Plasm type crosses to C#. The
+function reads its choice from `KANBAN_STARTUP_CHECKS` (`run`, the default,
+or `skip`).
 
 Skipping is safe only where a test has already run the check, on the same
 binary and against the same migrations. Here that test is the function's own

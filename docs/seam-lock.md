@@ -111,7 +111,7 @@ A header's clauses come in the order the grammar gives them.
   ```
 - **class**: the C# class over an F# data type, and its members.
   - `, opened from S`: the data project's Store S, from which the seam writes
-    OpenAsync, Ddl and SandboxAsync.
+    OpenAsync, OpenUncheckedAsync, Ddl and SandboxAsync.
   - `, its database a file`: DatabaseFile and CreateDatabaseAsync as well.
   - `, registered by AddX`: the registration for ASP.NET.
   ```example class member-line type-params parameters parameter constraint

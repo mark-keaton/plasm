@@ -6,7 +6,7 @@ Feature: A data project names its Store, and the seam writes the rest
   connection string becomes a provider, a provider that reaches no database
   for the DDL, the assembly of its queries, and how its data type is made
   over a repository and the clock. The seam finds it and gives the C# data
-  type OpenAsync, Ddl, SandboxAsync (and DatabaseFile and CreateDatabaseAsync
+  type OpenAsync, OpenUncheckedAsync, Ddl, SandboxAsync (and DatabaseFile and CreateDatabaseAsync
   for a file), and, in a web project, AddXxx: the data type opened as the
   host starts, before any request, its clock the container's TimeProvider,
   its SQL logged at Debug. The F# data type holds only its operations.
@@ -106,6 +106,45 @@ Feature: A data project names its Store, and the seam writes the rest
                   var named = Orders.DatabaseFile(cs) == Path.GetFullPath(file) ? "the file named" : "another file";
                   var ddl = Orders.Ddl.Contains("create table orders") ? "the DDL creates orders" : Orders.Ddl;
                   return $"{named}; the sandbox saw {seen}, and kept {kept}; then {all.Length} stored: {all[0].Customer}; {ddl}";
+              }
+              finally
+              {
+                  SqliteConnection.ClearAllPools();
+                  File.Delete(file);
+              }
+          }
+      }
+      """
+
+  # A host whose tests open it with the check over the same migrations, and
+  # that cannot spend the check at each start (a Lambda function's cold start),
+  # opens it without: a query the database cannot run then fails when it runs.
+  Scenario: OpenUncheckedAsync opens the data type without the start-up check
+    When the seam is written into the namespace Shop.Api
+    Then the host, run, prints "checked: refused; unchecked: opened, and the first read failed"
+      """
+      using System.IO;
+      using Microsoft.Data.Sqlite;
+
+      namespace Shop.Api;
+
+      public static class Host
+      {
+          public static string Run()
+          {
+              // A database with no tables: the check refuses it.
+              var file = Path.Combine(Path.GetTempPath(), $"plasm-seam-unchecked-{Guid.NewGuid():N}.db");
+              var cs = $"Data Source={file}";
+              try
+              {
+                  string checkedOpen;
+                  try { Orders.OpenAsync(cs, TimeProvider.System, default).Wait(); checkedOpen = "opened"; }
+                  catch (AggregateException) { checkedOpen = "refused"; }
+                  var orders = Orders.OpenUncheckedAsync(cs, TimeProvider.System, default).Result;
+                  string read;
+                  try { orders.OrdersAsync().Wait(); read = "the first read answered"; }
+                  catch (AggregateException) { read = "the first read failed"; }
+                  return $"checked: {checkedOpen}; unchecked: opened, and {read}";
               }
               finally
               {

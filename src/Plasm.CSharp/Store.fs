@@ -45,6 +45,16 @@ type Store<'Data> =
             return { Repo = repo; Data = store.Make repo time }
         }
 
+    /// Starts Plasm's repository without the start-up check: a query or table
+    /// that would fail fails when it is used. For a host whose tests open it
+    /// with the check over the same migrations, and that cannot spend the
+    /// check at each start (a Lambda function's cold start).
+    member store.OpenUncheckedAsync(connectionString: string, time: TimeProvider, cancellationToken: CancellationToken) : Task<Opened<'Data>> =
+        task {
+            let! repo = Repo.Start(store.Model, store.Provider connectionString, store.Queries, RepoOptions.Unchecked, cancellationToken)
+            return { Repo = repo; Data = store.Make repo time }
+        }
+
     /// The SQL that creates the tables.
     member store.Ddl() : string =
         Repo.Start(store.Model, store.Printing(), store.Queries, RepoOptions.Unchecked).Result.Ddl()

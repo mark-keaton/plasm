@@ -210,8 +210,8 @@ public sealed class Steps(IReqnrollOutputHelper output)
     }
 
     /// A new container over the same database, the first one stopped.
-    [Given("^it runs again, opening KanbanData (with|without) its start-up check$")]
-    [When("^it runs again, opening KanbanData (with|without) its start-up check$")]
+    [Given("^it runs again, opening Boards (with|without) its start-up check$")]
+    [When("^it runs again, opening Boards (with|without) its start-up check$")]
     public async Task RunsAgain(string with)
     {
         await StopFunction();
@@ -292,25 +292,25 @@ public sealed class Steps(IReqnrollOutputHelper output)
         if (needed > has) throw new Exception($"bootstrap needs glibc {needed}; Amazon Linux 2023 has {has}");
     }
 
-    /// The function logs "KanbanData opened" when OpenAsync returns, and
+    /// The function logs "Boards opened" when OpenAsync returns, and
     /// "invocation" as its handler ends each event. (The emulator starts the
     /// function when the first event comes, so its own "START RequestId" line
     /// comes before the function's init; on Lambda, init comes first.)
-    [Then("the function's log says KanbanData was opened once, before its first event")]
+    [Then("the function's log says Boards was opened once, before its first event")]
     public async Task OpenedOnce()
     {
         var lines = (await Docker.Logs(function!)).Split('\n');
-        var opened = lines.Select((l, i) => (l, i)).Where(x => x.l.Contains("KanbanData opened")).Select(x => x.i).ToList();
+        var opened = lines.Select((l, i) => (l, i)).Where(x => x.l.Contains("Boards opened")).Select(x => x.i).ToList();
         var first = Array.FindIndex(lines, l => Regex.IsMatch(l, @"\binvocation [0-9.]+ ms"));
-        Equal(1, opened.Count, "times KanbanData was opened");
-        if (first < 0 || opened[0] > first) throw new Exception("KanbanData was not opened before the first event's handler ended:\n" + string.Join("\n", lines));
+        Equal(1, opened.Count, "times Boards was opened");
+        if (first < 0 || opened[0] > first) throw new Exception("Boards was not opened before the first event's handler ended:\n" + string.Join("\n", lines));
     }
 
-    [Then("the function's log says KanbanData was opened without its start-up check")]
+    [Then("the function's log says Boards was opened without its start-up check")]
     public async Task OpenedUnchecked()
     {
         var log = await Docker.Logs(function!);
-        if (!log.Contains("KanbanData opened without its start-up check")) throw new Exception("the function's log does not say so:\n" + log);
+        if (!log.Contains("Boards opened without its start-up check")) throw new Exception("the function's log does not say so:\n" + log);
     }
 
     /// The emulator answers an event whose init failed with no body, and logs

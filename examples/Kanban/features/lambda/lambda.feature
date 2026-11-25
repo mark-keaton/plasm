@@ -1,8 +1,9 @@
 Feature: Kanban as a Lambda function in C#
   The domain and its data code stay F#; a C# function serves them on AWS
-  Lambda's custom runtime, as the C# host serves them over HTTP: it calls one
-  F# type, KanbanData, opened once in the function's init, and switches over
-  what it returns with no default arm. C# writes no query and composes no
+  Lambda's custom runtime, as the C# host serves them over HTTP: it calls
+  Boards, the class the seam writes over one F# type (Kanban.Data.Boards),
+  opened once in the function's init, and switches over what it returns with
+  no default arm. C# writes no query and composes no
   transaction. An event names a call and its arguments; the answer is the
   outcome's case, by name, with its value. The function is published natively
   for linux-arm64 inside Amazon Linux 2023 and invoked through the Lambda
@@ -24,9 +25,9 @@ Feature: Kanban as a Lambda function in C#
     Scenario: The function is built on the FSharp.Core a new project gets
       Then the publish resolved FSharp.Core at the version Plasm's applications run on
 
-    Scenario: KanbanData is opened once, in the function's init
+    Scenario: Boards is opened once, in the function's init
       When I invoke it with {"call":"board","slug":"alpha"}
-      Then the function's log says KanbanData was opened once, before its first event
+      Then the function's log says Boards was opened once, before its first event
 
   Rule: A read answers with what it read, or that it is missing
 
@@ -70,7 +71,7 @@ Feature: Kanban as a Lambda function in C#
     # The event is read with required properties and nullable annotations
     # respected, so an argument left out or null stops in C#, as the
     # invocation's error, before any F# is called.
-    Scenario Outline: An event with an argument left out, or null, is refused before KanbanData is called
+    Scenario Outline: An event with an argument left out, or null, is refused before Boards is called
       When I invoke it with <event>
       Then the invocation fails with a JsonException naming "title"
       And the board "alpha" still has 2 cards
@@ -82,22 +83,22 @@ Feature: Kanban as a Lambda function in C#
 
   Rule: A function may open without the start-up check, which these scenarios run
 
-    # Every scenario's Background opens KanbanData with its check, in this
+    # Every scenario's Background opens Boards with its check, in this
     # binary, over Kanban's migrations: that check is what a function that
     # skips it at start relies on (docs/aot.md, "Kanban's C# function").
     Scenario: Opened without its start-up check, the function answers as when checked
-      Given it runs again, opening KanbanData without its start-up check
+      Given it runs again, opening Boards without its start-up check
       When "Ada" renames "Write" to "Write it" from version 1
       Then the answer is the card "Write" titled "Write it" at version 2
       When I invoke it with {"call":"board","slug":"nope"}
       Then it answers {"missing":{"what":"board nope"}}
-      And the function's log says KanbanData was opened without its start-up check
+      And the function's log says Boards was opened without its start-up check
 
     Scenario: Only the check finds a table that differs from the model, at start
       Given the table "accounts" has its column "password_hash" renamed to "hash"
-      When it runs again, opening KanbanData with its start-up check
+      When it runs again, opening Boards with its start-up check
       And I invoke it with {"call":"board","slug":"alpha"}
       Then its init fails, its log naming "accounts"
-      When it runs again, opening KanbanData without its start-up check
+      When it runs again, opening Boards without its start-up check
       And I invoke it with {"call":"board","slug":"alpha"}
       Then the answer is a board "Alpha" whose cards are "Write (backlog, v1); Test (backlog, v1)"

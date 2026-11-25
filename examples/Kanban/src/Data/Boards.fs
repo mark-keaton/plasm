@@ -15,6 +15,7 @@ open System.Data
 open System.Threading
 open System.Threading.Tasks
 open Plasm
+open Npgsql
 open Plasm.Postgres
 open Plasm.CSharp
 open Kanban
@@ -158,14 +159,18 @@ type Boards(repo: Repo, time: TimeProvider) =
         | Error problems -> Task.FromResult(ChangeResult<Card, DomainError>(Invalid.fields problems))
         | Ok title -> change card request.Version (fun _ _ c -> Card.rename title c) cancellationToken
 
-/// Where Boards' data is: PostgreSQL, at the connection string a host gives.
+/// Where Boards' data is: PostgreSQL, at the connection string a host gives,
+/// over Npgsql's slim data source with what Kanban's tables need (arrays) and
+/// TLS: the smaller native binary a Lambda function's cold start wants.
 /// The seam gives C# all the rest from it: Boards opened (Plasm checking
 /// every query and the tables first), its DDL, a test's sandbox, and AddBoards
 /// for ASP.NET.
 module BoardStore =
     let store: Store<Boards> =
         { Model = model
-          Provider = fun connectionString -> Postgres.connect connectionString :> IProvider
+          Provider =
+            fun connectionString ->
+                PostgresProvider(NpgsqlSlimDataSourceBuilder(connectionString).EnableArrays().EnableTransportSecurity().Build()) :> IProvider
           // A provider that reaches no database, for printing the DDL.
           Printing = fun () -> Postgres.connect "Host=localhost" :> IProvider
           Queries = typeof<BoardLine>.Assembly

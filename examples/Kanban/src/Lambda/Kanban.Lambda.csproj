@@ -2,7 +2,7 @@
   <!-- Kanban as an AWS Lambda function in C# (docs/aot.md, "Kanban's C#
        function"): a custom runtime on Amazon.Lambda.RuntimeSupport whose
        executable is `bootstrap`, published natively for linux-arm64, calling
-       one F# type (Kanban.Data.KanbanData). -->
+       the C# the seam writes over one F# type (Kanban.Data.Boards). -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AssemblyName>bootstrap</AssemblyName>
@@ -32,4 +32,6 @@
   </ItemGroup>
   <!-- Plasm's targets, from this repository rather than the package. -->
   <Import Project="../../../../src/Plasm/build/Plasm.Repository.targets" />
+  <!-- The seam (Seam.cs), from this repository rather than the package. -->
+  <Import Project="../../../../src/Plasm.CSharp/build/Plasm.CSharp.Repository.targets" />
 </Project>
