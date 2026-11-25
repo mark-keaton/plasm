@@ -12,9 +12,9 @@ Plasm.HotChocolate is for the runtime, not for a native binary: Hot Chocolate
 constructor is trimmed away, by its reflection-based and its source-generated
 setup alike). Core Plasm, `BuildQuery` and the declared fields among it, stays
 native, with no IL warning naming Plasm (`tests/Plasm.Aot`). So the split is:
-a native host calls the application's facade directly (Kanban's
-`Host.CSharp`), a GraphQL host runs on the runtime, and both stand on the same
-F# data library.
+a native host calls the application's data type directly (Kanban's
+`Host.CSharp`, through the C# Plasm.CSharp's build writes), a GraphQL host
+runs on the runtime, and both stand on the same F# data library.
 
 ## The two parts
 
@@ -87,6 +87,12 @@ declarations and nothing of Hot Chocolate).
   naming the field (`Card.titel is read, but CardView has no property
   titel`). Since a field resolves from the view by its name, REST's JSON and
   GraphQL's fields are named alike by construction.
+  `AddPlasmReadType<'T, 'V>(fields, map)` takes a type whose `View` methods
+  make each domain value a field reads its view, element by element for an
+  array: Plasm.CSharp's build writes one, `SeamMap`, so a field declared over
+  the domain's own values (a stage, comments, labels) resolves as the seam's
+  view, and one view serves REST and GraphQL. A field the map makes no view
+  of is refused when the schema is built, naming the map.
 - `PlasmRequest.Chosen(context, fields)` is the declared fields the request's
   selection of the field reads, through any types between (a page's
   `items`).
@@ -133,10 +139,11 @@ module CardFields =
 `title` is searched as the text of the card's `Title`: `Title.Value` is
 marked `[<ReflectedDefinition>]`, so Plasm reads its body, the wrapper's own
 field, as the title column (scalar-conventions.feature); `stage` is given as
-`backlog`, `doing` or `done` and compared with Kanban's own `kind c`. `KanbanData.OpenAsync` checks them after the repository starts, and
-`KanbanData.CardsAsync(chosen, refine, ct)` runs the cards query as `refine`
-makes it, reading the fields chosen of those `CardRead` declares. The host, in
-C#:
+`backlog`, `doing` or `done` and compared with Kanban's own `kind c`.
+`CardQueries.Over(boards)` checks them, and the fields `CardRead` declares,
+against the repository `Boards` opened, and `CardQueries.CardsAsync(chosen,
+refine, ct)` runs the cards query as `refine` makes it, reading the fields
+chosen of those `CardRead` declares. The host, in C#:
 
 ```csharp
 builder.Services
@@ -144,15 +151,16 @@ builder.Services
     .AddQueryType<Query>()
     .AddPlasmFiltering()
     .AddPlasmSorting()
-    .AddPlasmReadType<Card, CardView>(CardRead.all)
-    .AddPlasmUnion<StageView>();
+    .AddPlasmReadType<Card, CardView>(CardRead.all, typeof(SeamMap))
+    .AddPlasmUnion<StageView>()
+    .AddPlasmUnion<ResolutionView>();
 
 public class Query
 {
     [UseOffsetPaging(DefaultPageSize = Paging.Default, MaxPageSize = Paging.Most, IncludeTotalCount = true)]
     [UseFiltering(typeof(CardFilter))]
     [UseSorting(typeof(CardSort))]
-    public async Task<CollectionSegment<Selected<Card>>> Cards(IResolverContext context, [Service] KanbanData kanban, CancellationToken ct)
+    public async Task<CollectionSegment<Selected<Card>>> Cards(IResolverContext context, [Service] CardQueries kanban, CancellationToken ct)
     {
         Plasm.Query<Card> Filtered(Plasm.Query<Card> query) => PlasmRequest.Apply(context, CardFields.all, query, CardFields.created);
         var chosen = PlasmRequest.Chosen(context, CardRead.all);
@@ -230,17 +238,19 @@ Done by the database:
 
 ## A field of C#'s union shape
 
-Hot Chocolate 16.7.6 does not read C#'s union shape: it makes a `[<Union>]`
-struct such as `StageView` an object type with no fields, and refuses the
-schema (`The object type 'StageView' has to at least define one field in
-order to be valid.`). `AddPlasmUnion<StageView>()` makes it a GraphQL union
-instead: one object type per case record (a constructor's parameter type),
-`union StageView = InBacklog | InProgress | WasShipped | WasDropped`, every
-field of the type bound to it, and a field middleware that hands Hot
-Chocolate the case (`IUnion.Value`), so the case's fields resolve against it:
+Hot Chocolate 16.7.6 does not read C#'s union shape: it makes a union such
+as `StageView`, a struct underneath, an object type with no fields, and
+refuses the schema (`The object type 'StageView' has to at least define one
+field in order to be valid.`). `AddPlasmUnion<StageView>()` makes it a
+GraphQL union instead: one object type per case record (a constructor's
+parameter type), `union StageView = Backlog | Doing | Done`, every field of
+the type bound to it, and a field middleware that hands Hot Chocolate the
+case (`IUnion.Value`), so the case's fields resolve against it. A union
+inside a case is registered too: Kanban's `Done` holds a `ResolutionView`,
+`union ResolutionView = Shipped | Dropped`.
 
 ```graphql
-{ cards { title stage { __typename ... on InProgress { kind assignee since } } } }
+{ cards { title stage { __typename ... on Doing { kind assignee since } } } }
 ```
 
 A case's object type is referred to by its record's type, so a record that

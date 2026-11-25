@@ -18,42 +18,46 @@ so far, and says what is not.
 | Project | Language | What it is |
 |---|---|---|
 | `examples/Kanban/src/Shared` | F# | The domain: `Card`, `Board`, `Person`, `Password`, and every rule (`Card.start`, `Card.finish`, ...) as a function returning `Result<_, DomainError>`. No I/O. |
-| `examples/Kanban/src/Data` | F# | `Db.fs`: the model Plasm stores. `Workflows.fs`: the queries and transactions, one per change (`changeCard`, `addCard`, ...). `Facade.fs`: `KanbanData`, the one type C# calls. |
-| `examples/Kanban/src/Host` | C# | This host: ASP.NET Core, cookie authentication, REST (`Rest.cs`), GraphQL (`GraphQL.cs`), accounts (`Accounts.cs`), the background job (`StaleCards.cs`), its one clock (`Clock.cs`), and the one mapping from outcome to HTTP answer (`Outcomes.cs`). |
+| `examples/Kanban/src/Data` | F# | `Db.fs`: the model Plasm stores. `Workflows.fs`: the queries and transactions, one per change (`changeCard`, `addCard`, ...). `Boards.fs`: `Boards`, the one type C# calls, and `BoardStore`, where its data is. `CardQueries.fs`: GraphQL's projection, which reads only what a request selects. |
+| `examples/Kanban/src/Host` | C# | This host: ASP.NET Core, cookie authentication, REST (`Rest.cs`), GraphQL (`GraphQL.cs`), accounts (`Accounts.cs`), the background job (`StaleCards.cs`), its one clock (`Clock.cs`), and `Seam.cs`, which tells Plasm.CSharp's build what to write: the C# `Boards`, its views and requests, the JSON context and `ToHttp`, the one mapping from outcome to HTTP answer. |
 | `src/Plasm.HotChocolate` | F# | Turns Hot Chocolate's where, order, paging and selection into Plasm query refinements, generates the card type from the read declarations, and shows a C# union as a GraphQL union (docs/hotchocolate.md). |
-| `examples/Kanban/src/Host.CSharp` | C# | A second, minimal host that compiles natively; it is the proof that the F# core runs without code generation. Not the subject of this guide. |
+| `examples/Kanban/src/Host.CSharp` | C# | A second, minimal host that compiles natively; it is the proof that the F# core and what the build writes run without runtime code generation. Not the subject of this guide. |
 | `examples/Kanban/src/Server`, `Client` | F# | Kanban's own F# server and Fable client, which share the domain and data projects. |
 
 ## The boundary
 
-What the C# host sees of the F# core is `KanbanData` and the types its methods
-take and return. The rules for that surface:
+What the C# host sees of the F# core is `Boards`, the C# Plasm.CSharp's build
+writes over Kanban.Data's, and the views and requests its methods take and
+return (docs/csharp.md). The rules for that surface:
 
-- **Nothing null crosses, either way.** Nothing the facade returns is null,
-  an F# option or an F# `Result`: a read that can miss returns `FindResult<T>`,
-  either the value or `Missing`, and a change returns `ChangeResult<CardView>`:
-  the card, or `Missing`, `Refused`, `Stale` or `Invalid` (Plasm.CSharp's,
-  docs/csharp.md).
+- **Nothing null crosses, either way.** Nothing `Boards` returns is null,
+  an F# option or an F# `Result`: a read that can miss returns
+  `FindResult<T>`, either the value or `Missing`, and a change returns
+  `ChangeResult<CardView>`: the card, or `Missing`, `Refused`, `Stale` or
+  `Invalid` (Plasm.CSharp's). A card's blocker, which a card may not have,
+  is a nullable `BlockerView?`.
   Nothing the host passes in is null either. The host's JSON options respect
   C#'s nullable annotations and required constructor parameters, so a body
   that leaves out a field, or gives it as null, is answered 400 before any
-  endpoint runs. The facade is opened without a logger, not with a null one,
-  when no SQL is to be written.
-- **Outcomes are C# unions.** Each is a struct marked `[Union]` whose cases
-  are records of their own, so C# switches on them:
+  endpoint runs.
+- **Outcomes are C# unions**, whose cases are records of their own, so C#
+  switches on them. `ToHttp`, which the build writes, is one such switch;
+  this copy of it is the template's, committed so it can be quoted, and
+  Kanban's is the same:
 
+  <!-- from: tests/Plasm.Package/starter/SeamHttp.g.cs -->
   ```csharp
-  public static IResult Of(ChangeResult<CardView> outcome) => outcome switch
+  public static IResult ToHttp<T>(this ChangeResult<T> outcome) where T : notnull => outcome switch
   {
-      CardView card => Results.Ok(card),
-      Missing missing => Of(missing),
-      Refused refused => Of(refused),
-      Stale stale => Of(stale),
-      Invalid invalid => Of(invalid),
+      T x => Results.Ok(x),
+      Missing x => Results.NotFound(x),
+      Refused x => Results.UnprocessableEntity(x),
+      Stale x => Results.Conflict(x),
+      Invalid x => Results.BadRequest(x),
   };
   ```
 
-  No switch in the host has a default arm. If the facade adds a case, every
+  No switch in the host has a default arm. If the F# side adds a case, every
   switch that does not handle it is a compile error, not a 500 at run time.
 - **Every rule is the domain's.** The host passes the request's values and
   the person signed in; whether that person may do it, and whether the values
@@ -73,15 +77,19 @@ take and return. The rules for that surface:
    `RequireAuthorization()`s, so a request without the cookie is answered 401
    before any of this runs. The handler is one line:
 
+   <!-- from: examples/Kanban/src/Host/Rest.cs -->
    ```csharp
-   changes.MapPost("/cards/{id:guid}/start", async (Guid id, Versioned input, ClaimsPrincipal user, KanbanData kanban, CancellationToken ct) =>
-       Outcomes.Of(await kanban.StartAsync(id, input.Version, user.Actor(), ct)));
+   card.MapPost("/start", (Guid id, Versioned input, ClaimsPrincipal user, Boards kanban, CancellationToken ct) =>
+       kanban.StartAsync(id, new Start(input.Version, user.Actor()), ct).ToHttp());
    ```
 
    The body is read as `Versioned(int Version)`. A name the request also
-   sends (`"assignee": "Grace"`) is not read.
-2. **Facade method** (`Facade.fs`, `StartAsync`). It makes a `Person` of the
-   name, which the domain may refuse (then `Invalid`). Otherwise it runs the
+   sends (`"assignee": "Grace"`) is not read: the request `Boards` is given,
+   `Start`, names the person signed in.
+2. **F# method** (`Boards.fs`, `StartAsync`), through the C# `Boards`, which
+   turns the id into a `CardId` and the request into the F# `Start`. It
+   makes a `Person` of the name, which the domain may refuse (then
+   `Invalid`). Otherwise it runs the
    `changeCard` workflow with the rule `Card.start who now` as the decision,
    serializable, and retries up to five times on a serialization failure,
    waiting between attempts (docs/adr/0001-architecture.md).
@@ -103,15 +111,29 @@ take and return. The rules for that surface:
    The card's comments and labels are read with it, because they are part of
    the card the rule decides on. The update checks the version again, so a
    change made between the read and the write is refused as well.
-5. **Outcome.** `ChangeResult<CardView>` is one of five cases.
-6. **HTTP answer** (`Outcomes.cs`): 200 with the card; 404 `Missing`; 422
+5. **Outcome.** The F# method answers `ChangeResult<Card, DomainError>`; the
+   C# `Boards` gives the host `ChangeResult<CardView>`, the card as its view
+   and a `DomainError` as `Refused`.
+6. **HTTP answer** (`ToHttp`): 200 with the card; 404 `Missing`; 422
    `Refused`, with the domain's code and words (`WipLimitReached`, ...); 409
    `Stale`, when the caller's copy is old, naming the record type and its key
    (`{"what":"Card","key":["…"]}`); 400 `Invalid`, with each field and
    why.
 
-Sent again with the same version, the same request is answered
-`409 {"card": "..."}`.
+Sent again with the same version, the same request is answered 409,
+`{"what":"Card","key":["…"]}`.
+
+The card's JSON is the seam's view of the domain's card: its stage is the
+domain's union, with a finished card's resolution inside, and its labels
+are tags. Its board and creation time are left out (`Seam.cs`):
+
+```json
+{"id":"…","title":"Write","stage":{"kind":"backlog"},"blocked":null,"checklist":[],"comments":[{"author":"Ada","body":"first","at":"…"}],"labels":[{"name":"urgent"}],"version":1}
+```
+
+A stage in progress is `{"kind":"doing","assignee":"Ada","since":"…"}`; a
+finished one is `{"kind":"done","resolution":{"kind":"shipped"},"at":"…"}`
+or `{"kind":"done","resolution":{"kind":"dropped","reason":"…"},"at":"…"}`.
 
 ## The same change over GraphQL
 
@@ -119,9 +141,9 @@ Sent again with the same version, the same request is answered
 mutation {
   startCard(card: "22222222-...", version: 1) {
     __typename
-    ... on CardView { title version stage { __typename ... on InProgress { assignee } } }
+    ... on CardView { title version stage { __typename ... on Doing { assignee } } }
     ... on Refused { code message }
-    ... on Stale { card }
+    ... on Stale { what key }
   }
 }
 ```
@@ -131,31 +153,32 @@ mutation {
    the error `AUTH_NOT_AUTHENTICATED` before any resolver runs, and no SQL is
    sent. The resolver is one line, the same call the REST endpoint makes:
 
+   <!-- from: examples/Kanban/src/Host/GraphQL.cs -->
    ```csharp
-   public Task<ChangeResult<CardView>> StartCard(Guid card, int version, ClaimsPrincipal user, [Service] KanbanData kanban, CancellationToken ct) =>
-       kanban.StartAsync(card, version, user.Actor(), ct);
+   public Task<ChangeResult<CardView>> StartCard(Guid card, int version, ClaimsPrincipal user, [Service] Boards kanban, CancellationToken ct) =>
+       kanban.StartAsync(card, new Start(version, user.Actor()), ct);
    ```
 
    Hot Chocolate refuses a request that leaves out `card` or `version`, or
    gives null for either, since both are non-null in the schema; nothing null
-   reaches the facade this way either.
-2. **Facade, workflow and SQL**: as over REST, above, statement for
+   reaches F# this way either.
+2. **F# method, workflow and SQL**: as over REST, above, statement for
    statement.
-3. **Outcome.** The resolver returns the `ChangeResult<CardView>` struct. Hot
+3. **Outcome.** The resolver returns the `ChangeResult<CardView>` union. Hot
    Chocolate is told once, in `Program.cs`, that it is the GraphQL
    `union ChangeOutcome = CardView | Missing | Refused | Stale | Invalid`
    (`AddPlasmUnion<ChangeResult<CardView>>("ChangeOutcome")`); a field middleware hands it
    the case, and the case's own fields answer:
 
    ```json
-   {"data":{"startCard":{"__typename":"CardView","title":"Build it","version":2,"stage":{"__typename":"InProgress","assignee":"Margaret"}}}}
+   {"data":{"startCard":{"__typename":"CardView","title":"Build it","version":2,"stage":{"__typename":"Doing","assignee":"Margaret"}}}}
    ```
 
    Sent again with version 1, it reads the card (three statements), finds
    the version moved on, and updates nothing:
 
    ```json
-   {"data":{"startCard":{"__typename":"Stale","card":"22222222-..."}}}
+   {"data":{"startCard":{"__typename":"Stale","what":"Card","key":["22222222-..."]}}}
    ```
 
 A GraphQL answer has no status of its own: every case is a 200 with data,
@@ -166,7 +189,7 @@ or the authorization refuses is an error.
 
 Reads are open to anyone; every other endpoint needs someone signed in.
 
-| Endpoint | Facade method | Answers |
+| Endpoint | `Boards` method | Answers |
 |---|---|---|
 | `GET /boards` | `BoardsAsync` | 200: each board's counts and newest titles |
 | `GET /boards/{slug}` | `BoardAsync` | 200, 404 |
@@ -191,8 +214,8 @@ Reads are open to anyone; every other endpoint needs someone signed in.
 A change's answers are those of `ChangeOutcome`, above: 200, 404, 422 with
 the domain's code, 409, 400. A comment carries no version: it is added to
 the card as stored. Shipping and dropping are two endpoints rather than one
-`finish` with a resolution, so neither host nor facade parses a resolution
-from text.
+`finish` with a resolution, so neither the host nor `Boards` parses a
+resolution from text.
 
 What the domain decides, the host passes on unchanged. Blocking a card stops
 it shipping (`CardBlocked`), not starting: that is `Card.finish`'s rule, and
@@ -204,11 +227,11 @@ the REST scenarios follow it.
 `GET /account/me`, all in `Accounts.cs`.
 
 - Whether a name and a password are acceptable is the domain's (`Person`,
-  `Password`). `KanbanData.RegisterAsync` makes both and stores the account; a
+  `Password`). `Boards.RegisterAsync` makes both and stores the account; a
   name already taken comes back as `Invalid` on `name`, from the database's
   unique constraint.
 - The host hashes the password with ASP.NET Core Identity's
-  `PasswordHasher` and passes the hash function to the facade, so only the
+  `PasswordHasher` and passes the hash function to `RegisterAsync`, so only the
   hash is stored. The hasher's methods take the user the password is for,
   which its implementation does not read; the host passes one placeholder
   user, not null. Signing in reads the account (`AccountAsync`) and checks the
@@ -230,35 +253,41 @@ Reads are open to anyone; every mutation needs someone signed in.
   board's cards were a list before; they are a page now, so a request reads
   them as `boards { cards { items { title } } }`, which changed every
   client of this example. See docs/hotchocolate.md.
-- A request reads only what it selects. The `CardView` type is generated
-  from what `Kanban.Data` declares a caller may read (`CardRead`: each of
-  CardView's fields once, a quotation over the domain's `Card` and the
-  conversion to the view's value), and `KanbanData.CardsAsync(chosen, ...)`
-  reads only the chosen fields' columns, and a card's comments or labels
-  only when chosen. `{ cards { items { title } } }` reads the title column
-  and nothing else:
+- A request reads only what it selects. The `CardView` type's fields are
+  generated from what `Kanban.Data` declares a caller may read (`CardRead`:
+  each field once, a quotation over the domain's `Card`), and
+  `CardQueries.CardsAsync(chosen, ...)` reads only the chosen fields'
+  columns, and a card's comments or labels only when chosen. `CardQueries`
+  is made over `Boards`' repository (`CardQueries.Over(kanban.Inner)`), so
+  the host has one repository and one start-up check; the build does not
+  write it, since what a request reads is chosen when the request comes.
+  `{ cards { items { title } } }` reads the title column and nothing else:
 
   ```sql
   SELECT "c"."title" AS "c0" FROM "cards" AS "c" ORDER BY "c"."created", "c"."id" LIMIT @p0
   ```
 
-  The same GraphQL type answers a mutation's whole `CardView`, a field read
-  by the view's property of the declared name, so REST's JSON and GraphQL's
-  fields are named alike by construction; a declared field the view has no
-  property of the same name and type for is refused when the schema is
-  built.
+  The type is the seam's `CardView`, registered with
+  `AddPlasmReadType<Card, CardView>(CardRead.all, typeof(SeamMap))`: each
+  domain value a field reads (a stage, comments, labels) is made its view by
+  the build's `SeamMap`. So one `CardView` serves REST, a request's chosen
+  fields and a mutation's whole card; a declared field `SeamMap` makes no
+  view of is refused when the schema is built, naming `SeamMap`. A stage is
+  `union StageView = Backlog | Doing | Done`, a finished card's resolution
+  `union ResolutionView = Shipped | Dropped`, and a label a `TagView` with
+  its `name`.
 - `card(id)` answers `union CardResult = CardView | Missing`, from
   `CardAsync`'s `FindResult<CardView>`. A generic type's own name is not one
   GraphQL allows, so this union alone is named where it is registered
   (`AddPlasmUnion<FindResult<CardView>>("CardResult")`).
-- Each mutation calls the facade method its REST endpoint calls, and answers
-  the facade's outcome as a union of its cases:
+- Each mutation calls the `Boards` method its REST endpoint calls, and
+  answers its outcome as a union of its cases:
 
-| Mutation | Facade method | Answers |
+| Mutation | `Boards` method | Answers |
 |---|---|---|
-| `createBoard(slug, name, wipLimit)` | `CreateBoardAsync` | `CreateBoardOutcome = BoardSummary \| Invalid` |
+| `createBoard(slug, name, wipLimit)` | `CreateBoardAsync` | `CreateBoardOutcome = BoardSummaryView \| Invalid` |
 | `addCard(board, title)` | `AddCardAsync` | `AddCardOutcome = CardView \| Missing \| Invalid` |
-| `sendAllBack(board)` | `SendAllBackAsync` | `SendAllBackOutcome = SentBack \| Missing` |
+| `sendAllBack(board)` | `SendAllBackAsync` | `SendAllBackOutcome = SentBackView \| Missing` |
 | `startCard(card, version)` | `StartAsync`, as the person signed in | `ChangeOutcome` |
 | `shipCard`, `sendCardBack`, `reopenCard`, `unblockCard` `(card, version)` | `ShipAsync`, `SendBackAsync`, `ReopenAsync`, `UnblockAsync` | `ChangeOutcome` |
 | `dropCard`, `blockCard` `(card, version, reason)` | `DropAsync`, `BlockAsync` | `ChangeOutcome` |
@@ -279,8 +308,8 @@ hour unless configured).
 
 - **What is stale is the domain's.** `Card.staleAfter` (14 days) is how long
   a card may be in progress. The job calls
-  `KanbanData.SendStaleBackAsync()`, which runs `Workflows.sendStaleBack`
-  at the facade's "now": one UPDATE over every stale card, on every board:
+  `Boards.SendStaleBackAsync()`, which runs `Workflows.sendStaleBack`
+  at `Boards`' "now": one UPDATE over every stale card, on every board:
 
   ```sql
   UPDATE "cards" SET "stage" = @p0, "stage_assignee" = NULL, "stage_since" = NULL, "stage_resolution" = NULL,
@@ -289,13 +318,13 @@ hour unless configured).
   ```
 
 - **The host has one clock.** `Program.cs` makes one `TimeProvider`,
-  registers it in the host's services and opens `KanbanData` with the same
-  one (`OpenAsync(dataSource, time, ct)`), so every change is stamped with
+  registers it in the host's services and opens `Boards` with the same
+  one (`Boards.OpenAsync(connectionString, time, ...)`), so every change is stamped with
   its time and the job's "now" is its "now" as well; the job waits on it
   between runs (`PeriodicTimer`). It is the system's clock, or, when
   `KANBAN_CLOCK_START` is set, one that starts at that instant and runs on
-  from there (`Clock.cs`). The facade's overloads without a `TimeProvider`
-  use the system's, which is what `Host.CSharp` does. The scenarios for the
+  from there (`Clock.cs`). `Host.CSharp` registers no clock, so `AddBoards`
+  opens it on the system's. The scenarios for the
   job need no clock of their own: their cards are written as started days
   ago, and the job runs every second.
 - **No per-card decision runs, and nothing is skipped.** A bulk write does
@@ -347,10 +376,11 @@ machine's, and a process id since reused only delays a drop.
   hasher, but each wraps it in its own code. They are not meant to share a
   database of accounts.
 - **Each switch handles every case.** A union with five cases needs five
-  arms everywhere it is answered. `Outcomes.cs` keeps that to one place per
-  outcome type.
+  arms everywhere it is answered. `ToHttp`, which the build writes, keeps
+  that to one place per outcome type; the one answer this host switches by
+  hand is a card added, a 201 at its Location.
 - **A GraphQL client is not held to every case.** The C# host must handle a
-  case the facade adds, or not compile; a GraphQL client that asks for no
+  case the F# side adds, or not compile; a GraphQL client that asks for no
   fragment on it still gets its `__typename` and nothing else, and learns
   of it only from the schema.
 - **`[Authorize]` is a second package.** Hot Chocolate's authorization is
