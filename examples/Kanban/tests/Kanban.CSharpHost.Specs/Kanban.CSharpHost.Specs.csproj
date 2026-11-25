@@ -47,6 +47,10 @@
     <!-- Only for the F# server's migrations (Kanban.Server.Database.migrate); its
          ASP.NET Core packages come from the shared framework, as for Kanban.Specs. -->
     <ProjectReference Include="../../src/Server/Server.fsproj" />
+    <!-- The data layer, which the sandbox scenarios call through their own seam (Seam.cs). -->
+    <ProjectReference Include="../../src/Data/Kanban.Data.fsproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
+  <!-- The seam (Seam.cs), from this repository rather than the package. -->
+  <Import Project="../../../../src/Plasm.CSharp/build/Plasm.CSharp.Repository.targets" />
 </Project>

@@ -1,0 +1,113 @@
+# The C# contract Plasm.Seam wrote from the F# data assembly and Seam.cs. Commit this file.
+# A build rewrites it when the contract changes, and says what changed; a build in CI
+# (CI=true in a project made by the template, ContinuousIntegrationBuild=true, or
+# -p:PlasmSeamDrift=fail) stops instead. Its format: https://mark-keaton.github.io/plasm/docs/seam-lock.html
+# (and docs/seam-lock.md in Plasm.CSharp's package).
+
+seam.lock 1
+record BoardSummaryView = Kanban.Data.BoardSummary
+  Slug: string
+  Name: string
+  WipLimit: int
+  Backlog: int
+  Doing: int
+  Done: int
+  Newest: string[]
+record BoardView = Kanban.Data.BoardWithCards
+  Slug: string
+  Name: string
+  WipLimit: int
+  Cards: CardView[]
+record CardView = Kanban.Card
+  Id: Guid
+  Title: string
+  Stage: StageView
+  Comments: CommentView[]
+  Labels: TagView[]
+  Version: int
+record CommentView = Kanban.Comment
+  Author: string
+  Body: string
+  At: DateTimeOffset
+record TagView = Kanban.Tag
+  Name: string
+record NewBoard = Kanban.Data.NewBoard, and from C#
+  Slug: string
+  Name: string
+  WipLimit: int
+record NewCard = Kanban.Data.NewCard, and from C#
+  Title: string
+record Start = Kanban.Data.Start, and from C#
+  Version: int
+  Assignee: string
+record Rename = Kanban.Data.Rename, and from C#
+  Version: int
+  Title: string
+union StageView = Kanban.Stage
+  Backlog kind "backlog"
+  Doing kind "doing" with Assignee: string, Since: DateTimeOffset
+  Done kind "done" with Resolution: ResolutionView, At: DateTimeOffset
+union ResolutionView = Kanban.Resolution
+  Shipped kind "shipped"
+  Dropped kind "dropped" with Reason: string
+refusal Kanban.DomainError
+  WipLimitReached
+  AlreadyInProgress
+  NotInProgress
+  CardClosed
+  NotDone
+  DropNeedsReason
+  EmptyComment
+  TooManyLabels
+  EmptyItem
+  NoSuchItem
+  ItemsLeft
+  BlockNeedsReason
+  AlreadyBlocked
+  NotBlocked
+  CardBlocked
+class Boards = Kanban.Data.Boards, opened from Kanban.Data.BoardStore.store, registered by AddBoards
+  Task<BoardSummaryView[]> BoardsAsync(CancellationToken cancellationToken)
+  Task<FindResult<BoardView>> BoardAsync(string slug, CancellationToken cancellationToken)
+  Task<AddResult<BoardSummaryView>> CreateBoardAsync(NewBoard request, CancellationToken cancellationToken)
+  Task<RequestResult<CardView>> AddCardAsync(string board, NewCard request, CancellationToken cancellationToken)
+  Task<ChangeResult<CardView>> StartAsync(Guid card, Start request, CancellationToken cancellationToken)
+  Task<ChangeResult<CardView>> RenameAsync(Guid card, Rename request, CancellationToken cancellationToken)
+http FindResult
+  value 200
+  Missing 404
+http AddResult
+  value 201
+  Invalid 400
+http RequestResult
+  value 200
+  Missing 404
+  Invalid 400
+http ChangeResult
+  value 200
+  Missing 404
+  Refused 422
+  Stale 409
+  Invalid 400
+json SeamJson
+  Backlog
+  BoardSummaryView
+  BoardSummaryView[]
+  BoardView
+  CardView
+  CommentView
+  Doing
+  Done
+  Dropped
+  NewBoard
+  NewCard
+  Rename
+  ResolutionView
+  Shipped
+  StageView
+  Start
+  TagView
+  Invalid
+  Missing
+  Refused
+  Stale

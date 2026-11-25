@@ -1,0 +1,33 @@
+<Project>
+  <!-- The seam for a C# project in this repository (Kanban's hosts), which has
+       Plasm.CSharp through a project reference rather than the package: the
+       targets the package carries (buildTransitive/Plasm.CSharp.targets), with
+       the seam tool and its analyzer built here, from src/Plasm.Seam and
+       src/Plasm.Seam.Analyzers. -->
+  <ItemGroup>
+    <!-- The analyzer (SEAM030), run by the C# compiler as the package's is. -->
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../../Plasm.Seam.Analyzers/Plasm.Seam.Analyzers.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" Private="false" />
+    <!-- So that a restore of the importing project restores the tool too; it is
+         built and run by the target below, not referenced. -->
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../../Plasm.Seam/Plasm.Seam.fsproj"
+                      ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
+  <Import Project="$(MSBuildThisFileDirectory)../buildTransitive/Plasm.CSharp.targets" />
+  <!-- The tool as built here, in its own output folder whatever the importing
+       build's output, runtime or publish settings. -->
+  <Target Name="PlasmSeamToolFromRepository" BeforeTargets="_PlasmSeamInputs" Condition="'$(PlasmSeam)' == 'true'">
+    <MSBuild Projects="$(MSBuildThisFileDirectory)../../Plasm.Seam/Plasm.Seam.fsproj" Targets="Build" Properties="Configuration=$(Configuration)"
+             RemoveProperties="OutputPath;OutDir;RuntimeIdentifier;SelfContained;PublishAot;_PublishingToolOutput;TargetFramework">
+      <Output TaskParameter="TargetOutputs" PropertyName="PlasmSeamTool" />
+    </MSBuild>
+    <!-- Imported in the project's body, these targets are read before the SDK
+         sets the intermediate folder: the seam's own files go in it, set here
+         when the build runs. -->
+    <PropertyGroup>
+      <_PlasmSeamStamp>$(MSBuildProjectDirectory)/$(IntermediateOutputPath)seam.stamp</_PlasmSeamStamp>
+      <_PlasmSeamRefs>$(MSBuildProjectDirectory)/$(IntermediateOutputPath)seam.refs</_PlasmSeamRefs>
+      <_PlasmSeamData>$(MSBuildProjectDirectory)/$(IntermediateOutputPath)seam.data</_PlasmSeamData>
+    </PropertyGroup>
+  </Target>
+</Project>

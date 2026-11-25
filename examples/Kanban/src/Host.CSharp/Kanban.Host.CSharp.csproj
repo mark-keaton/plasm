@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <!-- A C# host over Kanban's F# domain and data code: minimal APIs on the
-       slim builder, calling one F# type (Kanban.Data.KanbanData). -->
+       slim builder, calling the C# the seam writes over one F# type (Kanban.Data.Boards). -->
   <PropertyGroup>
     <AssemblyName>Kanban.Host.CSharp</AssemblyName>
     <RootNamespace>Kanban.Host.CSharp</RootNamespace>
@@ -26,4 +26,6 @@
   </ItemGroup>
   <!-- Plasm's targets, from this repository rather than the package. -->
   <Import Project="../../../../src/Plasm/build/Plasm.Repository.targets" />
+  <!-- The seam (Seam.cs), from this repository rather than the package. -->
+  <Import Project="../../../../src/Plasm.CSharp/build/Plasm.CSharp.Repository.targets" />
 </Project>

@@ -13,6 +13,7 @@
     <Compile Include="Db.fs" />
     <Compile Include="Workflows.fs" />
     <Compile Include="Facade.fs" />
+    <Compile Include="Boards.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Shared/Shared.fsproj" />

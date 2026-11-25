@@ -1,12 +1,12 @@
-Feature: A test of the facade runs in a sandbox
-  A test of what KanbanData does opens the facade once and runs each test in
-  KanbanData.SandboxAsync: the facade it is given works on one connection in
-  one transaction that is rolled back when the test ends, so every test sees
-  the database as it was and leaves it so. C# sees the facade alone, never
-  Plasm's repository (docs/guide/testing.md).
+Feature: A test of the data layer runs in a sandbox
+  A test of what Boards does (the C# class the seam writes over the F# one)
+  opens it once and runs each test in Boards.SandboxAsync: the Boards it is
+  given works on one connection in one transaction that is rolled back when
+  the test ends, so every test sees the database as it was and leaves it so.
+  C# sees Boards alone, never Plasm's repository (docs/guide/testing.md).
 
   Background:
-    Given KanbanData is opened over a migrated database
+    Given Boards is opened over a migrated database
 
   Scenario: What a test does in a sandbox is gone after it
     When a test in a sandbox creates board "alpha" and adds the card "Write" to it

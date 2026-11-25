@@ -1,11 +1,9 @@
-// Kanban served by C#: every endpoint calls KanbanData, the F# facade over the
-// domain and its queries, and turns what it returns into a response. C# here
-// writes no query and composes no transaction.
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using Kanban.Data;
+// Kanban served by C#: every endpoint calls Boards, the C# class the seam
+// writes over the F# one (Seam/Boards.g.cs), and ToHttp turns its outcome
+// into a response (Seam/SeamHttp.g.cs). C# writes no query, no transaction,
+// no view and no mapping.
+using Kanban.Host.CSharp;
 using Plasm.CSharp;
-using Npgsql;
 
 // Started by a scenario (KANBAN_EXIT_WITH_STDIN=1): exit when the test
 // process that holds this host's standard input goes, so no host outlives a
@@ -18,12 +16,11 @@ if (Environment.GetEnvironmentVariable("KANBAN_EXIT_WITH_STDIN") == "1")
     });
 
 var builder = WebApplication.CreateSlimBuilder(args);
-// The context's own options do not reach a minimal API's binding: the host's
-// options must refuse a null or missing argument themselves, so that none
-// reaches F# (docs/csharp.md).
+// A minimal API binds with these options, not the context's own: both refuse
+// a null or missing argument, so none reaches F# (docs/csharp.md).
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
-    o.SerializerOptions.TypeInfoResolverChain.Insert(0, KanbanJson.Default);
+    o.SerializerOptions.TypeInfoResolverChain.Insert(0, SeamJson.Default);
     o.SerializerOptions.RespectNullableAnnotations = true;
     o.SerializerOptions.RespectRequiredConstructorParameters = true;
 });
@@ -31,78 +28,39 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 var connectionString = builder.Configuration.GetConnectionString("Kanban")
     ?? throw new InvalidOperationException("Set the connection string 'Kanban' (ConnectionStrings:Kanban).");
 
-// Opening the facade starts Plasm's repository, which checks every query and
-// the tables before anything is served.
-var dataSource = NpgsqlDataSource.Create(connectionString);
-var kanban = await KanbanData.OpenAsync(dataSource, CancellationToken.None);
-builder.Services.AddSingleton(dataSource);
-builder.Services.AddSingleton(kanban);
+// Boards, opened as the host starts: Plasm checks every query and the tables
+// first, so one that would fail stops the host before it serves.
+builder.Services.AddBoards(connectionString);
 
 var app = builder.Build();
 
-app.MapGet("/boards", (KanbanData k, CancellationToken ct) => k.BoardsAsync(ct));
+// ToHttp: the value 200 (a board added 201, at its Location), Missing 404,
+// Invalid 400, Refused 422, Stale 409, each with the case as its body.
+app.MapGet("/boards", async (Boards b, CancellationToken ct) => Results.Ok(await b.BoardsAsync(ct)));
 
-app.MapGet("/boards/{slug}", async (string slug, KanbanData k, CancellationToken ct) =>
-    await k.BoardAsync(slug, ct) switch
-    {
-        BoardView board => Results.Ok(board),
-        Missing missing => Results.NotFound(missing),
-    });
+app.MapGet("/boards/{slug}", (string slug, Boards b, CancellationToken ct) =>
+    b.BoardAsync(slug, ct).ToHttp());
 
-app.MapPost("/boards", async (NewBoard input, KanbanData k, CancellationToken ct) =>
-    await k.CreateBoardAsync(input.Slug, input.Name, input.WipLimit, ct) switch
-    {
-        BoardSummary board => Results.Created($"/boards/{board.Slug}", board),
-        Invalid invalid => Results.BadRequest(invalid),
-    });
+app.MapPost("/boards", (NewBoard input, Boards b, CancellationToken ct) =>
+    b.CreateBoardAsync(input, ct).ToHttp(board => $"/boards/{board.Slug}"));
 
-app.MapPost("/boards/{slug}/cards", async (string slug, NewCard input, KanbanData k, CancellationToken ct) =>
-    await k.AddCardAsync(slug, input.Title, ct) switch
+// A card added is created, at its Location: a RequestResult's value is 200 to
+// ToHttp, so this one answer is switched here.
+app.MapPost("/boards/{slug}/cards", async (string slug, NewCard input, Boards b, CancellationToken ct) =>
+    await b.AddCardAsync(slug, input, ct) switch
     {
         CardView card => Results.Created($"/cards/{card.Id}", card),
         Missing missing => Results.NotFound(missing),
         Invalid invalid => Results.BadRequest(invalid),
     });
 
-app.MapPost("/cards/{id:guid}/start", async (Guid id, Start input, KanbanData k, CancellationToken ct) =>
-    ChangeResult(await k.StartAsync(id, input.Version, input.Assignee, ct)));
+app.MapPost("/cards/{id:guid}/start", (Guid id, Start input, Boards b, CancellationToken ct) =>
+    b.StartAsync(id, input, ct).ToHttp());
 
-app.MapPut("/cards/{id:guid}/title", async (Guid id, Rename input, KanbanData k, CancellationToken ct) =>
-    ChangeResult(await k.RenameAsync(id, input.Version, input.Title, ct)));
+app.MapPut("/cards/{id:guid}/title", (Guid id, Rename input, Boards b, CancellationToken ct) =>
+    b.RenameAsync(id, input, ct).ToHttp());
 
 app.Run();
-
-static IResult ChangeResult(ChangeResult<CardView> outcome) => outcome switch
-{
-    CardView card => Results.Ok(card),
-    Missing missing => Results.NotFound(missing),
-    Refused refused => Results.UnprocessableEntity(refused),
-    Stale stale => Results.Conflict(stale),
-    Invalid invalid => Results.BadRequest(invalid),
-};
-
-record NewBoard(string Slug, string Name, int WipLimit);
-record NewCard(string Title);
-record Start(int Version, string Assignee);
-record Rename(int Version, string Title);
-
-[JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]
-[JsonSerializable(typeof(BoardSummary[]))]
-[JsonSerializable(typeof(BoardView))]
-[JsonSerializable(typeof(CardView))]
-[JsonSerializable(typeof(InBacklog))]
-[JsonSerializable(typeof(InProgress))]
-[JsonSerializable(typeof(WasShipped))]
-[JsonSerializable(typeof(WasDropped))]
-[JsonSerializable(typeof(Missing))]
-[JsonSerializable(typeof(Refused))]
-[JsonSerializable(typeof(Stale))]
-[JsonSerializable(typeof(Invalid))]
-[JsonSerializable(typeof(NewBoard))]
-[JsonSerializable(typeof(NewCard))]
-[JsonSerializable(typeof(Start))]
-[JsonSerializable(typeof(Rename))]
-partial class KanbanJson : JsonSerializerContext;
 
 /// Visible to the scenarios, which start this program.
 public partial class Program;

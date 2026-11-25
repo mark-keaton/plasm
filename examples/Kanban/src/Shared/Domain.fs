@@ -375,3 +375,7 @@ module DomainError =
         | AlreadyBlocked reason -> $"This card is already blocked: {reason}."
         | NotBlocked -> "This card is not blocked."
         | CardBlocked reason -> $"This card is blocked: {reason}. Unblock it first."
+
+type DomainError with
+    /// The refusal in words, for people: what C# is given with its code.
+    member e.Message = DomainError.describe e

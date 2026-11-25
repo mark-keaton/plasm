@@ -136,7 +136,7 @@ public sealed class Steps : IAsyncDisposable
         body = await answer.Content.ReadAsStringAsync();
     }
 
-    /// KanbanData's answers to a bad request say which field: {"problems": ...}
+    /// Boards' answers to a bad request say which field: {"problems": ...}
     /// or {"what": ...}. A body refused before the facade is neither.
     [Then("the host's build resolved FSharp.Core at the version Plasm's applications run on")]
     public void HostFSharpCore() =>
@@ -144,10 +144,10 @@ public sealed class Steps : IAsyncDisposable
             Built.FSharpCoreIn(Path.Combine(Built.Metadata("HostOutput"), "Kanban.Host.CSharp.deps.json")),
             "the FSharp.Core the host's build resolved");
 
-    [Then("the answer is not one of KanbanData's")]
+    [Then("the answer is not one of Boards'")]
     public void NotTheFacades()
     {
-        if (body.Contains("\"problems\"") || body.Contains("\"what\"")) throw new Exception("KanbanData answered: " + body);
+        if (body.Contains("\"problems\"") || body.Contains("\"what\"")) throw new Exception("Boards answered: " + body);
     }
 
     [Then("board {string} still has {int} cards")]
@@ -203,7 +203,7 @@ public sealed class Steps : IAsyncDisposable
     {
         static string Listed(IEnumerable<string> items) { var l = items.ToList(); return l.Count == 0 ? "none" : string.Join(", ", l); }
         var shown = JsonNode.Parse(body)!["cards"]!.AsArray().Select(c =>
-            $"{c!["title"]} ({c["stage"]!["kind"]}, v{c["version"]}, labels {Listed(c["labels"]!.AsArray().Select(l => (string)l!))}, " +
+            $"{c!["title"]} ({c["stage"]!["kind"]}, v{c["version"]}, labels {Listed(c["labels"]!.AsArray().Select(l => (string)l!["name"]!))}, " +
             $"comments {Listed(c["comments"]!.AsArray().Select(m => $"{m!["author"]}: {m["body"]}"))})");
         Equal(expected, string.Join("; ", shown), "the board's cards");
     }

@@ -74,7 +74,8 @@ builder.Services
     .AddQueryType<Query>()
     .AddMutationType<Mutation>()
     .AddAuthorization()
-    .AddTypeExtension<Boards>()
+    // In full: Kanban.Data has a Boards too, the type the C# host calls.
+    .AddTypeExtension<Kanban.Host.Boards>()
     .AddTypeExtension<BoardCards>()
     .AddDataLoader<BoardCardsLoader>()
     .AddDataLoader<BoardCountsLoader>()

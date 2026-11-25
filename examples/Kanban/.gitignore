@@ -7,3 +7,7 @@ features/lambda/*.feature.cs
 node_modules/
 src/Client/output/
 src/Server/wwwroot/
+# Written by the seam at every build, from each Seam.cs and the F# data
+# project; seam.lock beside it is the contract, and is committed.
+src/*/Seam/*.g.cs
+tests/*/Seam/*.g.cs

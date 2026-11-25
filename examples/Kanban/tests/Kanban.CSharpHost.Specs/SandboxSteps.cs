@@ -1,24 +1,21 @@
-using Kanban.Data;
 using Plasm.CSharp;
 using Kanban.Hosting;
-using Npgsql;
 using Reqnroll;
 
 namespace Kanban.CSharpHost.Specs;
 
-/// features/csharp/facade-sandbox.feature: the facade itself, with no host.
+/// features/csharp/facade-sandbox.feature: the data layer itself, with no host,
+/// through the seam's Boards (Seam.cs).
 [Binding]
 public sealed class SandboxSteps
 {
-    NpgsqlDataSource? dataSource;
-    KanbanData kanban = null!;
+    Boards kanban = null!;
     string connectionString = "";
     readonly List<string> inside = new();
 
     [AfterScenario]
     public async Task Close()
     {
-        if (dataSource is not null) await dataSource.DisposeAsync();
         if (connectionString != "") await Databases.Drop(connectionString);
     }
 
@@ -28,12 +25,11 @@ public sealed class SandboxSteps
             throw new Exception($"{what}: expected\n  {expected}\nbut was\n  {actual}");
     }
 
-    [Given("KanbanData is opened over a migrated database")]
+    [Given("Boards is opened over a migrated database")]
     public async Task Open()
     {
         connectionString = await Databases.Migrated();
-        dataSource = NpgsqlDataSource.Create(connectionString);
-        kanban = await KanbanData.OpenAsync(dataSource, CancellationToken.None);
+        kanban = await Boards.OpenAsync(connectionString, TimeProvider.System, CancellationToken.None);
     }
 
     static string Cards(FindResult<BoardView> found) => found switch
@@ -46,8 +42,8 @@ public sealed class SandboxSteps
     public async Task CreateAndAdd(string slug, string title) =>
         inside.Add(await kanban.SandboxAsync(async k =>
         {
-            Equal(true, await k.CreateBoardAsync(slug, slug, 3, CancellationToken.None) is { Value: BoardSummary }, "created");
-            Equal(true, await k.AddCardAsync(slug, title, CancellationToken.None) is { Value: CardView }, "added");
+            Equal(true, await k.CreateBoardAsync(new NewBoard(slug, slug, 3), CancellationToken.None) is { Value: BoardSummaryView }, "created");
+            Equal(true, await k.AddCardAsync(slug, new NewCard(title), CancellationToken.None) is { Value: CardView }, "added");
             return Cards(await k.BoardAsync(slug, CancellationToken.None));
         }, CancellationToken.None));
 
@@ -62,11 +58,11 @@ public sealed class SandboxSteps
     public async Task Refused(string slug, int limit) =>
         inside.AddRange(await kanban.SandboxAsync(async k =>
         {
-            await k.CreateBoardAsync(slug, slug, limit, CancellationToken.None);
-            var first = (CardView)(await k.AddCardAsync(slug, "One", CancellationToken.None)).Value;
-            var second = (CardView)(await k.AddCardAsync(slug, "Two", CancellationToken.None)).Value;
-            await k.StartAsync(first.Id, first.Version, "Ada", CancellationToken.None);
-            var refused = await k.StartAsync(second.Id, second.Version, "Bob", CancellationToken.None) switch
+            await k.CreateBoardAsync(new NewBoard(slug, slug, limit), CancellationToken.None);
+            var first = (CardView)(await k.AddCardAsync(slug, new NewCard("One"), CancellationToken.None)).Value;
+            var second = (CardView)(await k.AddCardAsync(slug, new NewCard("Two"), CancellationToken.None)).Value;
+            await k.StartAsync(first.Id, new Start(first.Version, "Ada"), CancellationToken.None);
+            var refused = await k.StartAsync(second.Id, new Start(second.Version, "Bob"), CancellationToken.None) switch
             {
                 Refused r => r.Code,
                 CardView => "started",
@@ -76,7 +72,7 @@ public sealed class SandboxSteps
             };
             var doing = await k.BoardAsync(slug, CancellationToken.None) switch
             {
-                BoardView board => board.Cards.Count(c => c.Stage.Value is InProgress).ToString(),
+                BoardView board => board.Cards.Count(c => c.Stage.Value is Doing).ToString(),
                 Missing => "missing",
             };
             return new List<string> { refused, doing };

@@ -1,11 +1,11 @@
 Feature: Kanban served by a C# host
   The domain and its data code stay F#; a C# minimal API serves them. C# calls
-  one F# type, KanbanData, with plain arguments and a CancellationToken, and
-  switches over what it returns: a read that can miss returns null, a write
-  that can be refused returns an outcome whose cases C# matches exhaustively.
-  C# writes no query and composes no transaction. The host runs as its own
-  process and each scenario talks to it over HTTP, on a database of its own
-  (docs/csharp.md).
+  Boards, the class the seam writes over one F# type (Kanban.Data.Boards), with
+  the requests' bodies and a CancellationToken, and answers with what it
+  returns: views the seam writes of the domain's own records, and outcomes
+  whose cases ToHttp turns into responses. C# writes no query, no transaction,
+  no view and no mapping. The host runs as its own process and each scenario
+  talks to it over HTTP, on a database of its own (docs/csharp.md).
 
   Background:
     Given the C# host serves a migrated database
@@ -31,11 +31,14 @@ Feature: Kanban served by a C# host
       Then the answer is 404
       And the answer's JSON is {"what":"board nope"}
 
-    Scenario: A card's JSON is the C# host's own: camelCase, with no null in it
+    # The seam's view of the domain's Card, in its fields' order, leaving out
+    # what Seam.cs omits: the board, the time it was made, its blocker and
+    # checklist, which this host never changes. A label is the domain's Tag.
+    Scenario: A card's JSON is the domain's card as the seam writes it: camelCase, with no null in it
       When I ask for board "alpha"
-      Then the first card's JSON, without its id, is {"title":"Write","stage":{"kind":"backlog"},"version":1,"labels":[],"comments":[]}
+      Then the first card's JSON, without its id, is {"title":"Write","stage":{"kind":"backlog"},"comments":[],"labels":[],"version":1}
 
-    # The stage is a union-shaped type: JSON is written as its case alone, so
+    # The stage is the domain's union: JSON is written as its case alone, so
     # each case carries a constant kind, and only the facts its stage has.
     Scenario: A card in progress says who works on it, and since when, in its stage
       Given "Ada" has started "Write"
@@ -81,10 +84,10 @@ Feature: Kanban served by a C# host
     # inserted into the host's JSON options; the options must respect nullable
     # annotations and required constructor parameters, or a null reaches F#
     # (docs/csharp.md).
-    Scenario Outline: A body with an argument null or left out is refused before KanbanData is called
+    Scenario Outline: A body with an argument null or left out is refused before Boards is called
       When I post <body> to "<path>"
       Then the answer is 400
-      And the answer is not one of KanbanData's
+      And the answer is not one of Boards'
       And board "alpha" still has 2 cards
 
       Examples:
