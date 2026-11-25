@@ -443,7 +443,7 @@ pre.install span { color: var(--ink-3); }
 .tour .loop .cap { text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
 .tour .loop .req { color: var(--accent-ink); } .tour .loop .res { color: var(--teal-ink); }
 .tour .loop .at, .tour .loop .codes { color: var(--ink-3); }
-.tour .lanes { --bend: 18px; position: relative; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 2px var(--bend) 2px 0; }
+.tour .lanes { --bend: 18px; position: relative; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 2px var(--bend) 20px; }
 .tour .lanes .track, .tour .lanes .fill { position: absolute; height: 2px; }
 .tour .lanes > .out { top: 10px; } .tour .lanes > .back { bottom: 10px; }
 .tour .lanes .track { left: 10%; right: 10%; }
@@ -454,10 +454,16 @@ pre.install span { color: var(--ink-3); }
 .tour .lanes .fill { transition: left .5s cubic-bezier(.6,0,.2,1), width .5s cubic-bezier(.6,0,.2,1); }
 .tour .lanes .bend { position: absolute; left: 90%; right: calc(-1 * var(--bend)); top: 10px; bottom: 10px; border: 2px solid var(--line-2); border-left: 0; border-radius: 0 24px 24px 0; transition: border-color .3s; }
 .tour .loop.turned .bend { border-color: var(--teal); }
+.tour .lanes .bend.home { left: calc(-1 * var(--bend)); right: 90%; border: 2px solid var(--line-2); border-right: 0; border-radius: 24px 0 0 24px; }
+.tour .loop.home .bend.home { border-color: var(--teal); }
+.tour .loop.home .lane.user .ly { background: var(--teal-soft); color: var(--teal-ink); border-color: var(--teal); }
+.tour .lanes .carry { position: absolute; z-index: 2; top: calc(100% + 1px); left: calc(10% + var(--at, 2) * 20%); transform: translateX(-50%); white-space: nowrap; font: 600 10.5px/1 var(--mono); padding: 3px 8px; border-radius: 99px; background: var(--teal); color: var(--surface); opacity: 0; transition: left .25s ease, transform .25s ease, opacity .25s ease; }
+.tour .loop.carrying .carry { opacity: 1; }
+.tour .loop.carry-edge .carry { transform: translateX(-14px); }
 .tour .lane { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
 .tour .lane .slot { position: relative; z-index: 1; height: 22px; display: flex; align-items: center; gap: 4px; }
 .tour .lane .ly { position: relative; z-index: 1; display: flex; align-items: center; gap: 4px; padding: 4px 7px; border-radius: 8px; border: 1px solid transparent; white-space: nowrap; color: var(--ink); transition: box-shadow .25s, border-color .25s; }
-.tour .lane.http .ly { background: var(--sunk); color: var(--ink-3); }
+.tour .lane.user .ly { background: var(--sunk); color: var(--ink-2); }
 .tour .lane.cs .ly { background: var(--amber-soft); } .tour .lane.fs .ly { background: var(--accent-soft); } .tour .lane.db .ly { background: var(--teal-soft); }
 .tour .lane.sm .ly { background: var(--surface); border: 1px dashed var(--line-2); }
 .tour .lane.here .ly { box-shadow: 0 0 0 2px var(--flow); }
@@ -507,6 +513,6 @@ pre.install span { color: var(--ink-3); }
 }
 @media (max-width: 360px) { .tour .chapter { display: none; } }
 @media (prefers-reduced-motion: reduce) {
-  .tour .dot, .tour .trail, .tour .proj, .tour .lanes .fill, .tour .lanes .bend, .tour .lane .ly, .tour .loop .d, .tour .loop-intro { transition: none; }
+  .tour .dot, .tour .trail, .tour .proj, .tour .lanes .fill, .tour .lanes .bend, .tour .lane .ly, .tour .loop .d, .tour .loop-intro, .tour .lanes .carry { transition: none; }
   .tour.live .stop.on, .tour.live .stop.on pre.tcode span.hl { animation: none; }
 }

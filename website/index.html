@@ -75,11 +75,12 @@ let orderPage page size (q: Query&lt;Order&gt;) =
     <div class="loop" id="tour-loop" aria-hidden="true">
       <div class="ends"><span class="req"><span class="cap">Request →</span> POST /equipment/{id}/bookings</span><span class="at" id="tour-step"></span></div>
       <div class="lanes">
-        <i class="track out"></i><i class="fill out"></i><i class="track back"></i><i class="fill back"></i><i class="bend"></i>
-        <div class="lane http"><span class="slot out"></span><span class="ly"><span class="long">HTTP</span><span class="short">HTTP</span></span><span class="slot back"></span></div>
+        <i class="track out"></i><i class="fill out"></i><i class="track back"></i><i class="fill back"></i><i class="bend"></i><i class="bend home"></i>
+        <div class="lane user" data-rows="user"><span class="slot out"></span><span class="ly"><span class="long">Your user</span><span class="short">User</span></span><span class="slot back"></span></div>
         <div class="lane cs" data-rows="program"><span class="slot out"></span><span class="ly"><span class="long">Program.cs</span><span class="short">C#</span><span class="badge">C#</span></span><span class="slot back"></span></div>
         <div class="lane sm" data-rows="seam"><span class="slot out"></span><span class="ly"><span class="long">The seam</span><span class="short">seam</span><span class="badge">gen</span></span><span class="slot back"></span></div>
         <div class="lane fs" data-rows="domain store booking"><span class="slot out"></span><span class="ly"><span class="long">MyApp.Data</span><span class="short">F#</span><span class="badge">F#</span></span><span class="slot back"></span></div>
+        <span class="carry"><span class="long" id="tour-carry"></span><span class="short" id="tour-carry-short"></span></span>
         <div class="lane db" data-rows="db"><span class="slot out"></span><span class="ly"><span class="long">Database</span><span class="short">SQL</span><span class="badge">SQL</span></span><span class="slot back"></span></div>
       </div>
       <div class="ends"><span class="res"><span class="cap">← Response</span></span><span class="codes"><span class="fn">.ToHttp(): </span>200 · 404 · 422 · 409 · 400</span></div>
@@ -280,7 +281,7 @@ let byName = plasm { for e in tableOf&lt;Equipment&gt; do orderBy e.Name }</pre>
 );</pre>
 </article>
 
-<article class="stop" data-chapter="2" data-up data-row="domain" data-path="src/MyApp.Data/Domain.fs">
+<article class="stop" data-chapter="2" data-up data-row="domain" data-carry="Refusal.AlreadyBooked" data-carry-short="AlreadyBooked" data-path="src/MyApp.Data/Domain.fs">
 <h3>A refusal carries its own name and words</h3>
 <p>On the way back there is nothing to map by hand. A refusal reaches C# as <code>Refused</code> with the case name as its code and this message.</p>
 <pre class="tcode" data-lang="fs" data-as="MyApp" data-hl="7-10" data-from="examples/Starter/src/Starter.Data/Domain.fs">type Refusal =
@@ -296,7 +297,7 @@ let byName = plasm { for e in tableOf&lt;Equipment&gt; do orderBy e.Name }</pre>
         | AlreadyBooked by -&gt; $"{by} has it booked for some of that time."</pre>
 </article>
 
-<article class="stop" data-chapter="2" data-up data-row="seam" data-seam data-path="src/MyApp.Api/Seam/SeamHttp.g.cs">
+<article class="stop" data-chapter="2" data-up data-row="seam" data-seam data-carry="Refused · ChangeResult&lt;T&gt;" data-carry-short="Refused" data-path="src/MyApp.Api/Seam/SeamHttp.g.cs">
 <h3>Back across the seam as a C# union</h3>
 <p><code>ChangeResult&lt;T&gt;</code> is a union, the feature new in C# 15 with .NET 11: the compiler knows every case it can hold. <code>.ToHttp()</code> is this switch, written for you.</p>
 <p>Write your own when an endpoint needs something different. There is no default arm, so leaving a case out stops the build.</p>
@@ -309,7 +310,7 @@ let byName = plasm { for e in tableOf&lt;Equipment&gt; do orderBy e.Name }</pre>
     Invalid x =&gt; Results.BadRequest(x),</pre>
 </article>
 
-<article class="stop" data-chapter="2" data-up data-row="program" data-path="what you get">
+<article class="stop" data-chapter="2" data-up data-row="program" data-lane="user" data-carry='422 {"code":"AlreadyBooked",…}' data-carry-short="422" data-path="what you get">
 <h3>What the data layer buys you</h3>
 <ul>
 <li>A state that should not exist cannot be written. Equipment is available, or out of service with a reason; never half of each.</li>

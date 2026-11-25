@@ -87,11 +87,14 @@
   });
 
   // -- the loop: a dot per stop beside its layer, above the chip on the way
-  // down, below it on the way back. A layer's data-rows names its tree rows.
+  // down, below it on the way back. A layer's data-rows names its tree rows,
+  // or a stop's data-lane names the layer when it is not a row (the user).
+  // On the way back a pill rides beside the dot, saying what the answer is there (data-carry).
   var loop = $("loop"), lanes = Array.prototype.slice.call(loop.querySelectorAll(".lane")), last = lanes.length - 1;
   var marks = S.map(function (s) {
     s.lane = -1;
-    lanes.forEach(function (l, n) { if ((l.dataset.rows || "").split(" ").indexOf(s.row) >= 0) s.lane = n; });
+    var key = s.el.dataset.lane || s.row;
+    lanes.forEach(function (l, n) { if ((l.dataset.rows || "").split(" ").indexOf(key) >= 0) s.lane = n; });
     var d = document.createElement("i");
     d.className = "d " + (s.up ? "back" : s.el.hasAttribute("data-startup") ? "start" : "out");
     if (s.lane >= 0) lanes[s.lane].querySelector(s.up ? ".slot.back" : ".slot.out").appendChild(d);
@@ -104,6 +107,15 @@
     loop.style.setProperty("--to", start ? 0 : s.up ? last : s.lane);
     loop.style.setProperty("--from", s.up ? s.lane : last);
     loop.classList.toggle("turned", s.up || s.lane === last);
+    loop.classList.toggle("home", s.up && s.lane === 0);
+    var carry = s.el.dataset.carry;
+    loop.classList.toggle("carrying", !!carry);
+    if (carry) {
+      $("carry").textContent = carry;
+      $("carry-short").textContent = s.el.dataset.carryShort || carry;
+      loop.style.setProperty("--at", s.lane);
+      loop.classList.toggle("carry-edge", s.lane === 0);
+    }
     $("step").textContent = (i + 1) + " / " + N;
   }
 
