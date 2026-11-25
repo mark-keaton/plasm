@@ -14,7 +14,9 @@
       pre-release prints a notice and gives after=skip.
 
   starter-pins.py wait MINUTES
-      After a release has published: waits until nuget.org lists every pin.
+      After a release has published: waits until nuget.org lists every pin,
+      and every package $PACKAGES names at the pins' version, since a pinned
+      package restores the ones under it.
 
 Outputs go to $GITHUB_OUTPUT, and one line saying what was decided to
 $GITHUB_STEP_SUMMARY. nuget.org not answering is a failure, never a reason
@@ -118,12 +120,24 @@ def release(version):
              f"Released like this, the Starter on main would name a version that does not exist. Change {PROPS} or the tag.")
 
 
+def wanted():
+    """The pins, and every package the release names ($PACKAGES) at the pins' version: a pinned
+    package restores those under it (Plasm, Plasm.Annotations), which nuget.org may list later."""
+    found = pins()
+    versions = {v for _, v in found}
+    named = {p.lower() for p, _ in found}
+    if len(versions) == 1:
+        version = next(iter(versions))
+        found += [(p, version) for p in os.environ.get("PACKAGES", "").split() if p.lower() not in named]
+    return found
+
+
 def wait(minutes):
     deadline = time.time() + 60 * minutes
     while True:
-        absent = [(p, v) for p, v in pins() if v.lower() not in listed(p)]
+        absent = [(p, v) for p, v in wanted() if v.lower() not in listed(p)]
         if not absent:
-            say("nuget.org lists every Plasm package the Starter pins.")
+            say("nuget.org lists every Plasm package the Starter pins, and every package this release published.")
             return
         names = ", ".join(f"{p} {v}" for p, v in absent)
         if time.time() > deadline:
