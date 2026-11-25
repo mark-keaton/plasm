@@ -426,6 +426,10 @@ pre.install span { color: var(--ink-3); }
 /* The loop, pinned above the tree and the panel: the five layers in a row, the
    request out along the top and the answer back along the bottom, a dot per
    stop beside its layer (tour.js). */
+.tour .loop-head { font-size: clamp(22px, 2.4vw, 28px); font-weight: 600; margin: 36px 0 -4px; text-wrap: balance; }
+.tour.live .loop-head { margin: 0 0 -6px; }
+@media (max-height: 800px) and (min-width: 901px) { .tour.live .loop-head { font-size: 22px; } }
+@media (max-width: 560px) { .tour .loop-head { font-size: 19px; } }
 .tour .loop { display: none; }
 .tour.live .loop { display: block; flex: none; container-type: inline-size; padding: 12px 18px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; font: 500 11px/1.4 var(--mono); }
 .tour .loop .ends { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 12px; }

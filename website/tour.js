@@ -157,7 +157,8 @@
     if (!waiting) { waiting = true; requestAnimationFrame(function () { waiting = false; onScroll(); }); }
   }, { passive: true });
   // The panel's height is what the pinned loop leaves of the screen.
-  function fit() { root.style.setProperty("--loop-h", loop.offsetHeight + "px"); }
+  // The heading and the loop above it count: what is measured is from the heading's top to the loop's bottom.
+  function fit() { root.style.setProperty("--loop-h", Math.ceil(loop.getBoundingClientRect().bottom - $("head").getBoundingClientRect().top) + "px"); }
   fit();
   window.addEventListener("resize", function () { fit(); place(); onScroll(); });
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(place);
