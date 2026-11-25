@@ -82,7 +82,11 @@ let htmlBlock = Regex(@"<pre[^>]*data-from=""(?<src>[^""]+)""[^>]*>(?<body>.*?)<
 
 let checkHtml (path: string) =
     for m in htmlBlock.Matches(read path) do
-        checkSnippet path m.Groups["src"].Value (WebUtility.HtmlDecode m.Groups["body"].Value)
+        // data-as="MyApp": the page shows the Starter under the name a reader
+        // gives the template, so the name is put back before the lines are looked for.
+        let shown = Regex.Match(m.Value, @"^<pre[^>]*data-as=""(?<as>[^""]+)""")
+        let body = WebUtility.HtmlDecode m.Groups["body"].Value
+        checkSnippet path m.Groups["src"].Value (if shown.Success then body.Replace(shown.Groups["as"].Value, "Starter") else body)
 
 // -- The docs menu: docs/README.md -------------------------------------------
 
@@ -219,7 +223,7 @@ let nav (prefix: string) (current: string) =
     $"""<header class="nav">
   <div class="wrap">
     <a class="brand" href="{prefix}index.html"><img src="{prefix}logo.svg" width="28" height="28" alt=""><span>Plasm</span></a>
-    {if current = "Docs" then search else "<span class=\"pill\">version 0.3 · PostgreSQL and SQLite · native AOT</span>"}
+    {if current = "Docs" then search else "<span class=\"pill\">version 0.5 · PostgreSQL and SQLite · native AOT</span>"}
     <span class="spacer"></span>
     <nav class="links" aria-label="Main">
       {link "Docs" (prefix + firstDoc)}
@@ -466,7 +470,7 @@ let llms () =
     let summary =
         "Plasm is a stricter data layer for a C# application, over PostgreSQL or SQLite. "
         + "The domain, its queries and its transactions are written in one small F# project, and C# calls it. "
-        + "It is native AOT first, and Hot Chocolate friendly on the runtime. Plasm is new: this is version 0.4, and its API may change before 1.0."
+        + "It is native AOT first, and Hot Chocolate friendly on the runtime. Plasm is new: this is version 0.5, and its API may change before 1.0."
 
     let index = StringBuilder()
     index.Append($"# Plasm\n\n> {summary}\n\n") |> ignore

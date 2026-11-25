@@ -59,43 +59,267 @@ let orderPage page size (q: Query&lt;Order&gt;) =
   </div>
 </section>
 
-<section class="band dark" id="csharp">
-  <div class="wrap section">
+<section class="band" id="tour">
+  <div class="wrap tour">
     <div class="lede">
-      <h2>C# outside, F# inside</h2>
-      <p>Modern C# reads unions as unions. The build writes a C# type over the F# one, so your C# passes the request whole, and gets back a union the compiler makes it handle case by case.</p>
+      <p class="eyebrow accent">How it fits together</p>
+      <h2>A stricter data layer, and the plumbing that reaches it</h2>
+      <p>Follow one request through the solution the template makes: down from <code>Program.cs</code>, across the seam into one F# project, to the database, and back out. The code is the template's own, shortened. It needs .NET 11.</p>
     </div>
-    <div class="pair">
-      <div class="code-card">
-        <div class="code-title">Your C# host · Rest.cs, and the switch the build writes</div>
-<pre class="code csharp" data-from="examples/Kanban/src/Host/Rest.cs">card.MapPost("/start", (Guid id, Versioned input, ClaimsPrincipal user, Boards kanban, CancellationToken ct) =&gt;
-    kanban.StartAsync(id, new Start(input.Version, user.Actor()), ct).ToHttp());</pre>
-<pre class="code csharp" data-from="tests/Plasm.Package/starter/SeamHttp.g.cs">public static IResult ToHttp&lt;T&gt;(this ChangeResult&lt;T&gt; outcome) where T : notnull =&gt; outcome switch
+
+    <div class="scrolly" id="tour-scrolly"><div class="pin">
+    <div class="layout">
+      <div class="panel tree" id="tour-tree">
+        <div class="pipe" id="tour-pipe"></div><div class="trail" id="tour-trail"></div><div class="dot" id="tour-dot"></div>
+        <div class="row dir"><span class="nm">MyApp/</span><span class="what"></span></div>
+        <div class="row dir" style="--d:1"><span class="nm">src/</span><span class="what"></span></div>
+        <div class="proj cs">
+          <div class="row" style="--d:1"><span class="nm"><b>MyApp.Api/</b><span class="badge">C#</span></span><span class="what">your application</span></div>
+          <button type="button" class="row" style="--d:2" data-row="program" data-lang="C#"><span class="nm">Program.cs</span><span class="what">start-up and endpoints</span></button>
+          <div class="row" style="--d:2" data-lang="C#"><span class="nm">Seam.cs</span><span class="what">what C# calls things; a few lines</span></div>
+        </div>
+        <div class="proj sm" id="tour-seam">
+          <button type="button" class="row" style="--d:1" data-row="seam"><span class="nm"><b>The seam</b><span class="badge">generated</span></span><span class="what">C# records and unions, written by the build</span></button>
+        </div>
+        <div class="proj fs">
+          <div class="row" style="--d:1"><span class="nm"><b>MyApp.Data/</b><span class="badge">F#</span></span><span class="what">the data layer</span></div>
+          <button type="button" class="row" style="--d:2" data-row="domain" data-lang="F#"><span class="nm">Domain.fs</span><span class="what">the model and the rules</span></button>
+          <button type="button" class="row" style="--d:2" data-row="store" data-lang="F#"><span class="nm">Store.fs</span><span class="what">which database</span></button>
+          <button type="button" class="row" style="--d:2" data-row="booking" data-lang="F#"><span class="nm">BookingData.fs</span><span class="what">queries and the methods C# calls</span></button>
+        </div>
+        <div class="proj db">
+          <button type="button" class="row" style="--d:1" data-row="db"><span class="nm"><svg class="cyl" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4a5.5 2 0 0 1 11 0v8a5.5 2 0 0 1-11 0z M2.5 4a5.5 2 0 0 0 11 0" fill="none" stroke="currentColor" stroke-width="1.4"/></svg><b>Database</b><span class="badge">SQL</span></span><span class="what">PostgreSQL or SQLite, through Plasm</span></button>
+        </div>
+        <div class="row dir dim" style="--d:1"><span class="nm">tests/MyApp.Tests/</span><span class="what">C#, calling the same methods</span></div>
+      </div>
+
+      <div class="crumb" id="tour-crumb" hidden></div>
+      <div class="panel detail">
+        <div class="meta"><span class="dir-chip" id="tour-chip"></span><span class="path" id="tour-path"></span></div>
+        <div class="body" id="tour-body" aria-live="polite">
+
+<article class="stop" data-chapter="0" data-row="program" data-path="src/MyApp.Api/Program.cs">
+<h3>It starts like any ASP.NET application</h3>
+<p>A builder, services, endpoints, <code>app.Run()</code>. Nothing here is specific to Plasm, and it stays that way.</p>
+<pre class="tcode" data-lang="cs" data-as="MyApp" data-hl="1" data-from="examples/Starter/src/Starter.Api/Program.cs">var builder = WebApplication.CreateSlimBuilder(args);
+// ...
+var app = builder.Build();
+// ...
+app.Run();</pre>
+</article>
+
+<article class="stop" data-chapter="0" data-row="program" data-path="src/MyApp.Api/Program.cs">
+<h3>The data layer is one line, where AddDbContext would go</h3>
+<p>The build writes <code>AddBookingData</code> for you from the F# project. It takes its clock from the container and logs its SQL through <code>ILogger</code>.</p>
+<p>When the host starts, Plasm checks every record and every query against the real schema. If they disagree, the application stops before it serves a request.</p>
+<pre class="tcode" data-lang="cs" data-as="MyApp" data-hl="4" data-from="examples/Starter/src/Starter.Api/Program.cs">var connectionString = builder.Configuration.GetConnectionString("MyApp")
+    ?? throw new InvalidOperationException("Set the connection string 'MyApp' (ConnectionStrings__MyApp).");
+// ...
+builder.Services.AddBookingData(connectionString);
+
+var app = builder.Build();</pre>
+</article>
+
+<article class="stop" data-chapter="0" data-row="program" data-path="src/MyApp.Api/Program.cs">
+<h3>A request arrives at an endpoint</h3>
+<p>ASP.NET binds the route and the body and injects <code>BookingData</code>. The endpoint passes the request on whole and turns the answer into an HTTP result with <code>.ToHttp()</code>.</p>
+<p>That is the entire endpoint.</p>
+<pre class="tcode" data-lang="cs" data-as="MyApp" data-hl="2" data-from="examples/Starter/src/Starter.Api/Program.cs">app.MapPost("/equipment/{id:guid}/bookings", (Guid id, NewBooking input, BookingData d, CancellationToken ct) =&gt;
+    d.BookAsync(id, input, ct).ToHttp());</pre>
+</article>
+
+<article class="stop" data-chapter="0" data-row="seam" data-seam data-path="src/MyApp.Api/Seam/Views.g.cs">
+<h3>The seam is C# you did not write</h3>
+<p><code>BookingData</code>, <code>NewBooking</code> and <code>EquipmentView</code> are ordinary C# types. The build writes them from your F# project, as files you can open and step into.</p>
+<p>Below this line is the data layer: the part you came for.</p>
+<div class="split">
+<div><div class="lbl fs">You wrote, in F#</div>
+<pre class="tcode" data-lang="fs" data-as="MyApp" data-from="examples/Starter/src/Starter.Data/Domain.fs">type Condition =
+    | Available
+    | OutOfService of reason: string * since: DateTimeOffset
+// ...
+type Booking =
+    { Id: BookingId
+      Equipment: EquipmentId
+      Who: string
+      From: DateTimeOffset
+      Until: DateTimeOffset }</pre></div>
+<div class="arrow" aria-hidden="true">&rarr;</div>
+<div><div class="lbl cs">The build wrote, in C#</div>
+<pre class="tcode" data-lang="cs" data-hl="5" data-from="tests/Plasm.Package/starter/Views.g.cs">public sealed record BookingView(string Who, DateTimeOffset From, DateTimeOffset Until);
+// ...
+public sealed record Withdrawn(string Reason, DateTimeOffset Since)
+// ...
+public union ConditionView(Bookable, Withdrawn);</pre></div>
+</div>
+</article>
+
+<article class="stop" data-chapter="1" data-row="domain" data-path="src/MyApp.Data/Domain.fs">
+<h3>The model: a record is a table</h3>
+<p>This is the whole model for equipment and its bookings. Records are immutable. The attributes say how each is stored, so there is no separate mapping class and no migration to keep in step.</p>
+<p>A piece of equipment owns its bookings: they are read, changed and deleted with it, in order of their start.</p>
+<pre class="tcode" data-lang="fs" data-as="MyApp" data-hl="9-18" data-from="examples/Starter/src/Starter.Data/Domain.fs">[&lt;Table "bookings"&gt;]
+type Booking =
+    { Id: BookingId
+      Equipment: EquipmentId
+      Who: string
+      From: DateTimeOffset
+      Until: DateTimeOffset }
+
+[&lt;Table "equipment"&gt;]
+type Equipment =
+    { Id: EquipmentId
+      [&lt;Unique&gt;]
+      Name: EquipmentName
+      Condition: Condition
+      [&lt;OrderedBy(nameof the&lt;Booking&gt;.From)&gt;]
+      Bookings: Booking list
+      [&lt;Version&gt;]
+      Version: int }</pre>
+</article>
+
+<article class="stop" data-chapter="1" data-row="domain" data-path="src/MyApp.Data/Domain.fs">
+<h3>A union says exactly which states exist</h3>
+<p>In C# this would be an enum, a nullable reason and a nullable date, with nothing stopping an available item from carrying a reason. Here the reason and the date exist only when the equipment is out of service.</p>
+<p>Add a third case later and the compiler lists every place that must now handle it.</p>
+<pre class="tcode" data-lang="fs" data-as="MyApp" data-hl="1-3" data-from="examples/Starter/src/Starter.Data/Domain.fs">type Condition =
+    | Available
+    | OutOfService of reason: string * since: DateTimeOffset</pre>
+</article>
+
+<article class="stop" data-chapter="1" data-row="domain" data-path="src/MyApp.Data/Domain.fs">
+<h3>Values that cannot be wrong, ids that cannot be mixed up</h3>
+<p>An <code>EquipmentName</code> can only be made by <code>create</code>, so every name in the program is 1 to 60 characters, trimmed. Plasm reads stored names through the same function.</p>
+<p>An <code>EquipmentId</code> and a <code>BookingId</code> are both a <code>Guid</code> underneath, but passing one where the other belongs does not compile.</p>
+<pre class="tcode" data-lang="fs" data-as="MyApp" data-hl="8-13" data-from="examples/Starter/src/Starter.Data/Domain.fs">type EquipmentId = EquipmentId of Guid
+type BookingId = BookingId of Guid
+// ...
+type EquipmentName =
+    private
+    | EquipmentName of string
+// ...
+    static member create(text: string | null) : Result&lt;EquipmentName, string&gt; =
+        let t = (match text with null -&gt; "" | t -&gt; t).Trim()
+
+        if t.Length = 0 then Error "is required"
+        elif t.Length &gt; 60 then Error "must be at most 60 characters"
+        else Ok(EquipmentName t)</pre>
+</article>
+
+<article class="stop" data-chapter="1" data-row="booking" data-path="src/MyApp.Data/BookingData.fs">
+<h3>Queries are typed values, checked before the first request</h3>
+<p>A query is written against the record, not against strings. Reading an <code>Equipment</code> brings its bookings with it.</p>
+<p>Plasm finds every query in the project when the application starts and checks it against the real schema, so a query that would fail fails then, not when a customer reaches it.</p>
+<pre class="tcode" data-lang="fs" data-as="MyApp" data-hl="2,5" data-from="examples/Starter/src/Starter.Data/BookingData.fs">let byId =
+    Query.prepare (fun (id: Arg&lt;EquipmentId&gt;) -&gt; plasm { for e in tableOf&lt;Equipment&gt; do where (e.Id = id.Value) })
+
+/// Every piece of equipment, ordered by name.
+let byName = plasm { for e in tableOf&lt;Equipment&gt; do orderBy e.Name }</pre>
+</article>
+
+<article class="stop" data-chapter="1" data-row="domain" data-path="src/MyApp.Data/Domain.fs">
+<h3>A rule is a plain function</h3>
+<p>It is handed the equipment as it is now and answers with the changed record or a named refusal. There is no database in it, so it is tested without one.</p>
+<p>Leave out a case of <code>Condition</code> and the F# compiler says which one is missing.</p>
+<pre class="tcode" data-lang="fs" data-as="MyApp" data-hl="11-14" data-from="examples/Starter/src/Starter.Data/Domain.fs">let book (id: BookingId) (who: string) (from: DateTimeOffset) (until: DateTimeOffset) (equipment: Equipment) =
+    if String.IsNullOrWhiteSpace who then
+        Error WhoRequired
+    elif until &lt;= from then
+        Error EndsBeforeItStarts
+    else
+        match equipment.Condition with
+        | OutOfService(reason, _) -&gt; Error(NotAvailable reason)
+        | Available -&gt;
+            match equipment.Bookings |&gt; List.tryFind (overlaps from until) with
+            | Some taken -&gt; Error(AlreadyBooked taken.Who)
+            | None -&gt;
+                // ...
+                Ok { equipment with Bookings = equipment.Bookings @ [ booking ] }</pre>
+</article>
+
+<article class="stop" data-chapter="1" data-row="booking" data-path="src/MyApp.Data/BookingData.fs">
+<h3>A change names the record, the version seen and the rule</h3>
+<p>This is the method the endpoint called. Plasm does the rest in one transaction: read the record, apply the rule, write the result.</p>
+<p>If someone else changed the record since the caller read it, the version does not match and nothing is written.</p>
+<pre class="tcode" data-lang="fs" data-as="MyApp" data-hl="6" data-from="examples/Starter/src/Starter.Data/BookingData.fs">member _.BookAsync(id: EquipmentId, request: NewBooking, cancellationToken: CancellationToken) =
+    let booking = BookingId(Guid.CreateVersion7())
+    let from = request.From.ToUniversalTime()
+    let until = request.Until.ToUniversalTime()
+    let rule = Equipment.book booking request.Who from until
+    repo.Change(Db.byId id, request.Version, rule, cancellationToken)</pre>
+</article>
+
+<article class="stop" data-chapter="1" data-row="db" data-lit="store db" data-path="the table Plasm prints for PostgreSQL">
+<h3>The table is what the record said</h3>
+<p>Plasm prints this DDL from the records; you run it. The union became a column and two that are filled only when it is out of service. The version column is what refuses a stale write.</p>
+<p>Plasm checks the schema at start and never alters an existing database. <code>Store.fs</code> is the one file that knows whether this is PostgreSQL or SQLite.</p>
+<pre class="tcode" data-lang="sql" data-hl="4-6" data-from="tests/Plasm.Package/starter/ddl.postgres.sql">create table equipment (
+  id uuid not null primary key,
+  name text not null,
+  condition text not null,
+  condition_reason text,
+  condition_since timestamp with time zone,
+  version integer not null default 1,
+  constraint equipment_name_key unique (name)
+);</pre>
+</article>
+
+<article class="stop" data-chapter="2" data-up data-row="domain" data-path="src/MyApp.Data/Domain.fs">
+<h3>A refusal carries its own name and words</h3>
+<p>On the way back there is nothing to map by hand. A refusal reaches C# as <code>Refused</code> with the case name as its code and this message.</p>
+<pre class="tcode" data-lang="fs" data-as="MyApp" data-hl="7-10" data-from="examples/Starter/src/Starter.Data/Domain.fs">type Refusal =
+    | WhoRequired
+    | ReasonRequired
+    | EndsBeforeItStarts
+    | NotAvailable of reason: string
+    | AlreadyBooked of by: string
+// ...
+    member refusal.Message =
+        match refusal with
+// ...
+        | AlreadyBooked by -&gt; $"{by} has it booked for some of that time."</pre>
+</article>
+
+<article class="stop" data-chapter="2" data-up data-row="seam" data-seam data-path="src/MyApp.Api/Seam/SeamHttp.g.cs">
+<h3>Back across the seam as a C# union</h3>
+<p><code>ChangeResult&lt;T&gt;</code> is a union, the feature new in C# 15 with .NET 11: the compiler knows every case it can hold. <code>.ToHttp()</code> is this switch, written for you.</p>
+<p>Write your own when an endpoint needs something different. There is no default arm, so leaving a case out stops the build.</p>
+<pre class="tcode" data-lang="cs" data-hl="5-6" data-from="tests/Plasm.Package/starter/SeamHttp.g.cs">public static IResult ToHttp&lt;T&gt;(this ChangeResult&lt;T&gt; outcome) where T : notnull =&gt; outcome switch
 {
     T x =&gt; Results.Ok(x),
     Missing x =&gt; Results.NotFound(x),
     Refused x =&gt; Results.UnprocessableEntity(x),
     Stale x =&gt; Results.Conflict(x),
-    Invalid x =&gt; Results.BadRequest(x),
-};</pre>
-      </div>
-      <div class="code-card">
-        <div class="code-title">Your F# domain · Boards.fs</div>
-<pre class="code fsharp" data-from="examples/Kanban/src/Data/Boards.fs">/// The assignee starts work on the card, if the board's limit allows it.
-member _.StartAsync(card: CardId, request: Start, cancellationToken: CancellationToken) : Task&lt;ChangeResult&lt;Card, DomainError&gt;&gt; =
-    match field "assignee" Person.create request.Assignee with
-    | Error problems -&gt; Task.FromResult(ChangeResult&lt;Card, DomainError&gt;(Invalid.fields problems))
-    | Ok who -&gt; change card request.Version (Card.start who (time.GetUtcNow())) cancellationToken</pre>
+    Invalid x =&gt; Results.BadRequest(x),</pre>
+</article>
+
+<article class="stop" data-chapter="2" data-up data-row="program" data-path="what you get">
+<h3>What the data layer buys you</h3>
+<ul>
+<li>A state that should not exist cannot be written. Equipment is available, or out of service with a reason; never half of each.</li>
+<li>A value that passed validation stays valid, and one kind of id cannot be passed as another.</li>
+<li>Every expected failure reaches your endpoint as a named case you must handle: not found, refused by a rule, changed by someone else, invalid.</li>
+<li>Two people editing the same record cannot silently overwrite each other.</li>
+<li>Every query is checked against the real schema when the application starts.</li>
+<li>The whole application publishes as one native binary, with no warnings from Plasm.</li>
+</ul>
+<pre class="install">$ dotnet new install Plasm.Templates
+$ dotnet new plasm-api -n MyApp</pre>
+<div class="ctas"><a class="btn primary" href="{{docs}}">Get started</a><a class="btn" href="docs/guide/types-and-records.html">Read the guide</a></div>
+</article>
+
+        </div>
+        <div class="controls">
+          <span class="chapter" id="tour-chapter"></span><span class="count" id="tour-count"></span>
+          <div class="dots" id="tour-dots"></div>
+        </div>
       </div>
     </div>
-    <div class="points">
-      <div><h3>C# writes no query</h3><p>Queries and transactions stay in F#. Each endpoint is one call.</p></div>
-      <div><h3>A new outcome breaks the build</h3><p>The switch has no default arm. Add a case in F#, and every C# switch that misses it stops compiling.</p></div>
-      <div><h3>Nothing null crosses</h3><p>A missing or null argument is refused while the request is read, before F# is called.</p></div>
-      <div><h3>AOT first, always</h3><p>Every commit is compiled natively and must print what the runtime prints, with no trim warning naming Plasm.</p></div>
-    </div>
+    </div></div>
+    <div class="key"><span><i style="background:var(--accent)"></i>the request going down</span><span><i style="background:var(--teal)"></i>the answer coming back</span><span>Left and right arrow keys step through.</span></div>
   </div>
 </section>
+<script src="tour.js" defer></script>
 
 <section class="band alt" id="guarantees">
   <div class="wrap section">
@@ -204,7 +428,7 @@ after |&gt; shouldBe __</pre>
   <div class="wrap section split top">
     <div>
       <h2>Honest status</h2>
-      <p class="muted">Plasm is new: this is version 0.4, and its API may change before 1.0. It runs on PostgreSQL and on SQLite. No migrations: Plasm prints the tables the model expects and checks the database against them.</p>
+      <p class="muted">Plasm is new: this is version 0.5, and its API may change before 1.0. It runs on PostgreSQL and on SQLite. No migrations: Plasm prints the tables the model expects and checks the database against them.</p>
       <p class="muted">Every behaviour is an executable Gherkin scenario, run against PostgreSQL, and every commit is also compiled natively.</p>
       <a class="more" href="docs/status.html">What is verified and what is missing</a>
     </div>

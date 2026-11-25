@@ -7,9 +7,6 @@ first. [`docs/status.md`](../status.md) has every entry in full, under
 
 ## From 0.4.0 to 0.5.0
 
-0.5.0 is not released yet: this section describes what the repository holds
-for it.
-
 Plasm.CSharp gains a build step, the seam: it reads the compiled F# data
 project and writes the C# side before the C# compile (the records, the
 unions, the JSON context, each outcome's answer over HTTP). Plasm.CSharp

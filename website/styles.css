@@ -10,6 +10,8 @@
   --accent: #5B5BD6;
   --accent-ink: #2B2B8A;
   --accent-soft: #E9E8FF;
+  --teal: #0F8A7E;
+  --hl: #FFF1B8;
   --teal-soft: #E6F4F1;
   --teal-ink: #0B5A53;
   --amber-soft: #FCEFE3;
@@ -38,6 +40,8 @@
     --accent: #8B8BF0;
     --accent-ink: #C9C9FF;
     --accent-soft: #272A4D;
+    --teal: #4FCDBD;
+    --hl: #4A3F12;
     --teal-soft: #13302D;
     --teal-ink: #8FE0D3;
     --amber-soft: #3A2414;
@@ -332,3 +336,111 @@ pre.install span { color: var(--ink-3); }
 #prompt .bullet { padding-left: 2ch; text-indent: -2ch; }
 .hero .code-card { margin-top: 12px; }
 #prompt div { white-space: pre-wrap; }
+
+/* -- The tour: one request through the template's solution (tour.js) -------- */
+/* Without the script the stops are articles read in order, and the tree is hidden. */
+.tour { --flow: var(--accent); padding-top: 80px; padding-bottom: 72px; }
+.tour.up { --flow: var(--teal); }
+.tour .lede code, .tour .detail code { font: 0.9em var(--mono); background: var(--sunk); padding: 1px 5px; border-radius: 5px; }
+.tour .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; min-width: 0; }
+.tour .tree, .tour .crumb, .tour .controls, .tour .meta, .tour .key { display: none; }
+.tour .detail { margin-top: 28px; padding: 8px 22px 20px; }
+.tour .stop { padding: 14px 0 18px; }
+.tour .stop + .stop { border-top: 1px solid var(--line); }
+.tour .detail h3 { font: 600 22px/1.25 var(--display); margin: 12px 0 6px; text-wrap: balance; }
+.tour .detail p { margin: 6px 0; color: var(--ink-2); max-width: 62ch; }
+.tour .detail ul { margin: 8px 0; padding-left: 20px; color: var(--ink-2); max-width: 62ch; }
+.tour .detail li { margin: 6px 0; }
+.tour pre.tcode { font: 12.5px/1.6 var(--mono); background: var(--sunk); border-radius: 8px; padding: 10px 14px; overflow-x: auto; margin: 14px 0 0; }
+.tour pre.tcode span { display: block; padding: 0 14px; min-width: max-content; }
+.tour pre.tcode span.hl { background: linear-gradient(var(--hl), var(--hl)) no-repeat; background-size: 100% 100%; box-shadow: inset 3px 0 0 var(--flow); }
+.tour pre.tcode i { font-style: normal; }
+.tour pre.tcode .k { color: var(--tok-k); } .tour pre.tcode .t { color: var(--tok-t); } .tour pre.tcode .s { color: var(--tok-s); } .tour pre.tcode .c { color: var(--tok-c); }
+.tour .split { display: grid; grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr); gap: 6px; align-items: start; margin-top: 14px; }
+.tour .split pre.tcode { margin: 6px 0 0; font-size: 11.5px; }
+.tour .split .lbl { font: 600 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+.tour .split .lbl.fs { color: var(--accent-ink); } .tour .split .lbl.cs { color: var(--amber-ink); }
+.tour .split .arrow { font: 600 20px/1 var(--display); color: var(--ink-3); text-align: center; align-self: center; }
+.tour .stop .ctas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.tour .stop .btn { min-height: 42px; padding: 0 16px; font-size: 14px; }
+@media (max-width: 560px) { .tour .split { grid-template-columns: 1fr; } .tour .split .arrow { transform: rotate(90deg); } }
+
+/* With the script: the section pins, and scrolling steps through the stops. */
+.tour.live .scrolly { margin-top: 12px; }
+.tour.live .pin { position: sticky; top: 0; height: 100vh; display: flex; align-items: center; }
+.tour.live .layout { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 20px; align-items: center; width: 100%; max-height: 100vh; }
+.tour.live .detail { margin-top: 0; padding: 20px 22px 16px; }
+.tour.live .stop { display: none; padding: 0; border: 0; }
+.tour.live .stop.on { display: block; animation: tour-in .25s ease-out; }
+.tour.live pre.tcode { padding: 10px 0; }
+.tour.live .stop.on pre.tcode span.hl { animation: tour-sweep .55s ease-out; }
+@keyframes tour-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tour-sweep { from { background-size: 0 100%; } to { background-size: 100% 100%; } }
+@media (min-width: 901px) {
+  .tour.live .detail { display: flex; flex-direction: column; max-height: calc(100vh - 24px); }
+  .tour.live .body { overflow-y: auto; min-height: 0; flex: 0 1 auto; }
+}
+@media (min-width: 901px) and (min-height: 760px) { .tour.live .body { min-height: 468px; } }
+
+.tour.live .tree { display: block; position: relative; padding: 12px 0 12px 34px; font: 14px/1.4 var(--mono); }
+.tour .pipe { position: absolute; left: 18px; width: 3px; border-radius: 2px; background: var(--line-2); }
+.tour .trail { position: absolute; left: 18px; width: 3px; border-radius: 2px; background: var(--flow); transition: top .7s cubic-bezier(.6,0,.2,1), height .7s cubic-bezier(.6,0,.2,1), background .3s; }
+.tour .dot { position: absolute; left: 11px; top: 0; width: 17px; height: 17px; border-radius: 50%; background: var(--flow); border: 3px solid var(--surface); box-shadow: 0 0 0 2px var(--flow); transition: transform .7s cubic-bezier(.6,0,.2,1), background .3s, box-shadow .3s; }
+.tour .row { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: baseline; width: 100%; padding: 7px 14px 7px calc(8px + var(--d, 0) * 18px); border: 0; background: none; color: inherit; font: inherit; text-align: left; border-radius: 8px; }
+.tour button.row { cursor: pointer; }
+.tour button.row:hover { background: color-mix(in srgb, var(--surface) 60%, transparent); }
+.tour button.row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tour .row.here { background: var(--surface); box-shadow: inset 0 0 0 2px var(--flow); }
+.tour .row .nm { white-space: nowrap; } .tour .row .nm b { font-weight: 500; }
+.tour .row .what { font: 13px/1.4 var(--body); color: var(--ink-3); min-width: 0; }
+.tour .dir .nm { color: var(--ink-3); }
+.tour .dim { opacity: .6; }
+.tour .proj { margin: 4px 12px 4px 0; border-radius: 10px; padding: 4px; transition: opacity .35s; }
+.tour .proj.cs { background: var(--amber-soft); } .tour .proj.fs { background: var(--accent-soft); } .tour .proj.db { background: var(--teal-soft); }
+.tour .proj.sm { background: none; border: 2px dashed var(--line-2); transition: border-color .3s, opacity .35s; } .tour .proj.sm.on { border-color: var(--flow); }
+.tour .tree .faded { opacity: .5; }
+.tour .badge { font: 600 10.5px/1 var(--mono); letter-spacing: .08em; padding: 3px 6px; border-radius: 4px; margin-left: 8px; vertical-align: 1px; }
+.tour .cs .badge { background: var(--amber-ink); color: var(--amber-soft); } .tour .fs .badge { background: var(--accent-ink); color: var(--accent-soft); } .tour .db .badge { background: var(--teal-ink); color: var(--teal-soft); }
+.tour .sm .badge { background: var(--ink-3); color: var(--surface); }
+.tour .row[data-lang] .nm::before { content: attr(data-lang); display: inline-block; font: 600 9px/15px var(--mono); width: 21px; text-align: center; border-radius: 3px; margin-right: 8px; vertical-align: 1px; }
+.tour .row[data-lang="C#"] .nm::before { background: var(--amber-ink); color: var(--amber-soft); }
+.tour .row[data-lang="F#"] .nm::before { background: var(--accent-ink); color: var(--accent-soft); }
+.tour .row .cyl { width: 15px; height: 15px; vertical-align: -2px; margin-right: 7px; color: var(--teal-ink); }
+
+.tour.live .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.tour .dir-chip { font: 600 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; padding: 5px 9px; border-radius: 99px; background: var(--accent-soft); color: var(--accent-ink); }
+.tour.up .dir-chip { background: var(--teal-soft); color: var(--teal-ink); }
+.tour .path { font: 500 12px/1.4 var(--mono); color: var(--ink-3); }
+.tour.live .controls { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.tour .chapter { font: 600 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; }
+.tour .count { font: 500 12px/1 var(--mono); color: var(--ink-3); white-space: nowrap; }
+.tour .dots { display: flex; gap: 5px; margin-left: auto; flex: 1 1 0; min-width: 0; justify-content: flex-end; }
+.tour .dots button { flex: 0 1 18px; min-width: 4px; height: 6px; padding: 0; border-radius: 3px; border: 0; background: var(--line-2); cursor: pointer; }
+.tour .dots button.gap { margin-left: 10px; }
+.tour .dots button.done { background: var(--ink-3); }
+.tour .dots button.on { background: var(--ink); }
+.tour .dots button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tour.live .key { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 12px; font-size: 13.5px; color: var(--ink-3); }
+.tour .key i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+
+/* A narrow screen has a line saying where the request is, in place of the tree. */
+@media (max-width: 900px) {
+  .tour.live .pin { align-items: stretch; padding: 8px 0; }
+  .tour.live .layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); gap: 8px; align-items: stretch; }
+  .tour.live .tree { display: none; }
+  .tour.live .crumb:not([hidden]) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font: 500 13px/1.3 var(--mono); padding: 10px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--flow); min-width: 0; }
+  .tour .crumb b { font-weight: 600; } .tour .crumb .sep { color: var(--ink-3); }
+  .tour .crumb .where { padding: 3px 7px; border-radius: 5px; }
+  .tour .crumb .where.cs { background: var(--amber-soft); color: var(--amber-ink); } .tour .crumb .where.fs { background: var(--accent-soft); color: var(--accent-ink); }
+  .tour .crumb .where.sm { border: 1px dashed var(--line-2); } .tour .crumb .where.db { background: var(--teal-soft); color: var(--teal-ink); }
+  .tour.live .detail { display: flex; flex-direction: column; min-height: 0; }
+  .tour.live .body { overflow-y: auto; min-height: 0; flex: 1; }
+  .tour.live .detail h3 { font-size: 18px; margin-top: 8px; }
+  .tour.live .meta .path { display: none; }
+  .tour.live .key { padding-bottom: 8px; }
+  .tour .dots { gap: 3px; } .tour .dots button.gap { margin-left: 5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour .dot, .tour .trail, .tour .proj { transition: none; }
+  .tour.live .stop.on, .tour.live .stop.on pre.tcode span.hl { animation: none; }
+}

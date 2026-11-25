@@ -2,10 +2,9 @@
 
 The domain and the data code stay F#; C# serves them. With Plasm.CSharp the
 build writes the C# side from the F# project, so the C# a host writes is its
-endpoints and a few lines saying what to call things. This page describes
-Plasm.CSharp as the repository has it, for 0.5.0, which is not released yet:
-0.4.0's names differ, and [Upgrading](start/upgrading.md) lists each. It
-needs .NET 11 and C# 15, for its unions.
+endpoints and a few lines saying what to call things. This is Plasm.CSharp
+as 0.5.0 has it: 0.4.0's names differ, and [Upgrading](start/upgrading.md)
+lists each. It needs .NET 11 and C# 15, for its unions.
 
 `examples/Kanban` shows it with three C# hosts over one F# project:
 

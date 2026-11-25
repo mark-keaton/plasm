@@ -3,12 +3,9 @@
 What Plasm does today, what is being built, and what it will not do. The
 repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
-## Now: for 0.5.0
+## Now: after 0.5.0
 
-- A build step in Plasm.CSharp, the seam, that writes the C# side from the F# data project: the records, the unions, the JSON context and each outcome's answer over HTTP
-- The template and the Starter on it: an endpoint is one line, and a change is one call
-- Plasm.CSharp: a read of many as an array, and outcomes named for what they are the result of
-- Each package's XML documentation describing only what a caller can reach
+- Nothing yet: what follows 0.5.0 is being chosen from Next
 
 ## Next: in the library
 
@@ -22,7 +19,11 @@ repository's `ROADMAP.md` and the site's roadmap page are this one list.
 
 ## Shipped
 
-- Plasm, Plasm.Postgres, Plasm.Sqlite, Plasm.HotChocolate and Plasm.CSharp on NuGet: 0.4.0, published from a GitHub release
+- Plasm, Plasm.Postgres, Plasm.Sqlite, Plasm.HotChocolate and Plasm.CSharp on NuGet: 0.5.0, published from a GitHub release
+- A build step in Plasm.CSharp, the seam, that writes the C# side from the F# data project: the records, the unions, the JSON context and each outcome's answer over HTTP; its contract, seam.lock, in a defined format
+- The template, the Starter and Kanban's C# hosts on it: an endpoint is one line, and a change is one call
+- Plasm.CSharp: a read of many as an array, and outcomes named for what they are the result of
+- Each package's XML documentation describing only what a caller can reach
 - Plasm.CSharp: what an F# data layer hands a C# host, the outcome unions and their standard cases
 - A SQLite choice in the template, `--database sqlite`, for a new project that needs no database server
 - Stored records by convention, owned and linked lists, unions with fields, array columns, composite keys

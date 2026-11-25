@@ -6,12 +6,13 @@ C#. It stores the domain's own immutable records, reads them with
 queries the compiler checks, and writes them in typed transactions. It
 compiles ahead of time (native AOT), and every commit is checked natively.
 
-Plasm is new: this is version 0.4, and its API may change before 1.0.
+Plasm is new: this is version 0.5, and its API may change before 1.0.
 [Status](../status.md) says what is verified and what is missing.
 
-A new application starts from the template: an F# library on the packages,
-a C# minimal API that calls it through one type, and C# tests in a sandbox.
-Its tests need Docker.
+A new application starts from the template: an F# data project on the
+packages, a C# minimal API, and C# tests in a sandbox. The build writes the C#
+side from the F# project, so each endpoint is one line. It needs the .NET 11
+SDK, and its tests need Docker.
 
 ```sh
 dotnet new install Plasm.Templates
@@ -111,5 +112,5 @@ dotnet run --project examples/Plasm.Examples
 ## Where next
 
 - [The one way](one-way.md) to build an application with Plasm.
-- [From C#](../csharp.md): the F# facade a C# host calls.
+- [From C#](../csharp.md): what the build writes, and the one type a C# host calls.
 - The koans teach all of this one blank at a time: `dotnet run --project koans/Plasm.Koans`.

@@ -11,7 +11,7 @@ handle case by case. It is native AOT first: every commit is compiled ahead of t
 and checked natively. It also serves a long-running API through Hot Chocolate,
 on the runtime. Its design comes from [Ecto](https://github.com/elixir-ecto/ecto).
 
-> **Status:** Plasm is new: this is version 0.4, and its API may change before 1.0.
+> **Status:** Plasm is new: this is version 0.5, and its API may change before 1.0.
 > It runs on PostgreSQL and on SQLite; [`docs/sqlite.md`](docs/sqlite.md) says where SQLite differs.
 > [`docs/status.md`](docs/status.md) says what is verified and what is missing.
 
