@@ -427,7 +427,14 @@ pre.install span { color: var(--ink-3); }
    request out along the top and the answer back along the bottom, a dot per
    stop beside its layer (tour.js). */
 .tour .loop-head { font-size: clamp(22px, 2.4vw, 28px); font-weight: 600; margin: 36px 0 -4px; text-wrap: balance; }
-.tour.live .loop-head { margin: 0 0 -6px; }
+.tour .hint { display: none; }
+.tour.live .loop-intro { display: grid; grid-template-rows: 1fr; margin-bottom: -6px; transition: grid-template-rows .25s ease, opacity .25s ease, margin-bottom .25s ease; }
+.tour.live .loop-intro > div { min-height: 0; overflow: hidden; }
+.tour.live .loop-head { margin: 0; }
+.tour.live .hint { display: block; margin: 4px 0 0; font: 500 13px/1.4 var(--mono); color: var(--accent-ink); }
+.tour .hint .touch { display: none; }
+@media (hover: none) and (pointer: coarse) { .tour .hint .keys { display: none; } .tour .hint .touch { display: inline; } }
+.tour.live.begun .loop-intro { grid-template-rows: 0fr; opacity: 0; margin-bottom: -16px; }
 @media (max-height: 800px) and (min-width: 901px) { .tour.live .loop-head { font-size: 22px; } }
 @media (max-width: 560px) { .tour .loop-head { font-size: 19px; } }
 .tour .loop { display: none; }
@@ -482,6 +489,7 @@ pre.install span { color: var(--ink-3); }
 
 /* A narrow screen has a line saying where the request is, in place of the tree. */
 @media (max-width: 900px) {
+  .tour.live.begun .loop-intro { margin-bottom: -8px; }
   .tour.live .pin { justify-content: flex-start; gap: 8px; padding: 8px 0; }
   .tour.live .layout { flex: 1 1 0; grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); gap: 8px; align-items: stretch; }
   .tour.live .tree { display: none; }
@@ -499,6 +507,6 @@ pre.install span { color: var(--ink-3); }
 }
 @media (max-width: 360px) { .tour .chapter { display: none; } }
 @media (prefers-reduced-motion: reduce) {
-  .tour .dot, .tour .trail, .tour .proj, .tour .lanes .fill, .tour .lanes .bend, .tour .lane .ly, .tour .loop .d { transition: none; }
+  .tour .dot, .tour .trail, .tour .proj, .tour .lanes .fill, .tour .lanes .bend, .tour .lane .ly, .tour .loop .d, .tour .loop-intro { transition: none; }
   .tour.live .stop.on, .tour.live .stop.on pre.tcode span.hl { animation: none; }
 }

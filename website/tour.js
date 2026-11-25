@@ -112,6 +112,10 @@
     i = k;
     var s = S[i];
     strip(s);
+    if (root.classList.contains("begun") !== i > 0) {
+      root.classList.toggle("begun", i > 0);
+      fit(); setTimeout(fit, 300);
+    }
     root.classList.toggle("up", s.up);
     Object.keys(rows).forEach(function (key) { rows[key].classList.toggle("here", s.lit.indexOf(key) >= 0); });
     $("seam").classList.toggle("on", s.seam);
@@ -158,10 +162,11 @@
   }, { passive: true });
   // The panel's height is what the pinned loop leaves of the screen.
   // The heading and the loop above it count: what is measured is from the heading's top to the loop's bottom.
-  function fit() { root.style.setProperty("--loop-h", Math.ceil(loop.getBoundingClientRect().bottom - $("head").getBoundingClientRect().top) + "px"); }
+  // The heading is there on the first stop only; it folds away on the next, and the panel takes its height.
+  function fit() { root.style.setProperty("--loop-h", Math.ceil(loop.getBoundingClientRect().bottom - $("intro").getBoundingClientRect().top) + "px"); }
   fit();
   window.addEventListener("resize", function () { fit(); place(); onScroll(); });
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(place);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { place(); fit(); });
   onScroll();
   window.addEventListener("keydown", function (e) {
     var r = scrolly.getBoundingClientRect();
