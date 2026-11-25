@@ -63,29 +63,29 @@ let orderPage page size (q: Query&lt;Order&gt;) =
   <div class="wrap section">
     <div class="lede">
       <h2>C# outside, F# inside</h2>
-      <p>Modern C# reads F# unions as unions. So the boundary is one F# type: your C# passes plain arguments and a cancellation token, and gets back a union the compiler makes it handle case by case.</p>
+      <p>Modern C# reads unions as unions. The build writes a C# type over the F# one, so your C# passes the request whole, and gets back a union the compiler makes it handle case by case.</p>
     </div>
     <div class="pair">
       <div class="code-card">
-        <div class="code-title">Your C# host · Rest.cs, Outcomes.cs</div>
-<pre class="code csharp" data-from="examples/Kanban/src/Host/Rest.cs">card.MapPost("/start", async (Guid id, Versioned input, ClaimsPrincipal user, KanbanData kanban, CancellationToken ct) =&gt;
-    Outcomes.Of(await kanban.StartAsync(id, input.Version, user.Actor(), ct)));</pre>
-<pre class="code csharp" data-from="examples/Kanban/src/Host/Outcomes.cs">public static IResult Of(ChangeResult&lt;CardView&gt; outcome) =&gt; outcome switch
+        <div class="code-title">Your C# host · Rest.cs, and the switch the build writes</div>
+<pre class="code csharp" data-from="examples/Kanban/src/Host/Rest.cs">card.MapPost("/start", (Guid id, Versioned input, ClaimsPrincipal user, Boards kanban, CancellationToken ct) =&gt;
+    kanban.StartAsync(id, new Start(input.Version, user.Actor()), ct).ToHttp());</pre>
+<pre class="code csharp" data-from="tests/Plasm.Package/starter/SeamHttp.g.cs">public static IResult ToHttp&lt;T&gt;(this ChangeResult&lt;T&gt; outcome) where T : notnull =&gt; outcome switch
 {
-    CardView card =&gt; Results.Ok(card),
-    Missing missing =&gt; Of(missing),
-    Refused refused =&gt; Of(refused),
-    Stale stale =&gt; Of(stale),
-    Invalid invalid =&gt; Of(invalid),
+    T x =&gt; Results.Ok(x),
+    Missing x =&gt; Results.NotFound(x),
+    Refused x =&gt; Results.UnprocessableEntity(x),
+    Stale x =&gt; Results.Conflict(x),
+    Invalid x =&gt; Results.BadRequest(x),
 };</pre>
       </div>
       <div class="code-card">
-        <div class="code-title">Your F# domain · Facade.fs</div>
-<pre class="code fsharp" data-from="examples/Kanban/src/Data/Facade.fs">/// `assignee` starts work on the card, if the board's limit allows it.
-member _.StartAsync(card: Guid, version: int, assignee: string, cancellationToken: CancellationToken) : Task&lt;ChangeResult&lt;CardView&gt;&gt; =
-    match field "assignee" Person.create assignee with
-    | Error problems -&gt; Task.FromResult(ChangeResult&lt;CardView&gt;(Invalid.fields problems))
-    | Ok who -&gt; change card version (Card.start who (clock ())) cancellationToken</pre>
+        <div class="code-title">Your F# domain · Boards.fs</div>
+<pre class="code fsharp" data-from="examples/Kanban/src/Data/Boards.fs">/// The assignee starts work on the card, if the board's limit allows it.
+member _.StartAsync(card: CardId, request: Start, cancellationToken: CancellationToken) : Task&lt;ChangeResult&lt;Card, DomainError&gt;&gt; =
+    match field "assignee" Person.create request.Assignee with
+    | Error problems -&gt; Task.FromResult(ChangeResult&lt;Card, DomainError&gt;(Invalid.fields problems))
+    | Ok who -&gt; change card request.Version (Card.start who (time.GetUtcNow())) cancellationToken</pre>
       </div>
     </div>
     <div class="points">

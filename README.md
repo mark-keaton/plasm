@@ -26,36 +26,39 @@ has it with a Copy button.
 
 ## C# outside, F# inside
 
-C# passes plain arguments and a cancellation token to one F# type, and gets
-back a union the compiler makes it handle case by case. This is
-[`examples/Kanban`](examples/Kanban): an endpoint, the switch every endpoint
-answers through, and the F# member they call.
+C# calls one type, which the build writes over the F# one, passes it the
+request whole, and gets back a union the compiler makes it handle case by
+case. This is [`examples/Kanban`](examples/Kanban): an endpoint, the switch
+it answers through, and the F# member it calls.
 
 <!-- from: examples/Kanban/src/Host/Rest.cs -->
 ```csharp
-card.MapPost("/start", async (Guid id, Versioned input, ClaimsPrincipal user, KanbanData kanban, CancellationToken ct) =>
-    Outcomes.Of(await kanban.StartAsync(id, input.Version, user.Actor(), ct)));
+card.MapPost("/start", (Guid id, Versioned input, ClaimsPrincipal user, Boards kanban, CancellationToken ct) =>
+    kanban.StartAsync(id, new Start(input.Version, user.Actor()), ct).ToHttp());
 ```
 
-<!-- from: examples/Kanban/src/Host/Outcomes.cs -->
+`ToHttp` is a switch the build writes too. This copy is the template's,
+committed so that it can be quoted; Kanban's is the same:
+
+<!-- from: tests/Plasm.Package/starter/SeamHttp.g.cs -->
 ```csharp
-public static IResult Of(ChangeResult<CardView> outcome) => outcome switch
+public static IResult ToHttp<T>(this ChangeResult<T> outcome) where T : notnull => outcome switch
 {
-    CardView card => Results.Ok(card),
-    Missing missing => Of(missing),
-    Refused refused => Of(refused),
-    Stale stale => Of(stale),
-    Invalid invalid => Of(invalid),
+    T x => Results.Ok(x),
+    Missing x => Results.NotFound(x),
+    Refused x => Results.UnprocessableEntity(x),
+    Stale x => Results.Conflict(x),
+    Invalid x => Results.BadRequest(x),
 };
 ```
 
-<!-- from: examples/Kanban/src/Data/Facade.fs -->
+<!-- from: examples/Kanban/src/Data/Boards.fs -->
 ```fsharp
-/// `assignee` starts work on the card, if the board's limit allows it.
-member _.StartAsync(card: Guid, version: int, assignee: string, cancellationToken: CancellationToken) : Task<ChangeResult<CardView>> =
-    match field "assignee" Person.create assignee with
-    | Error problems -> Task.FromResult(ChangeResult<CardView>(Invalid.fields problems))
-    | Ok who -> change card version (Card.start who (clock ())) cancellationToken
+/// The assignee starts work on the card, if the board's limit allows it.
+member _.StartAsync(card: CardId, request: Start, cancellationToken: CancellationToken) : Task<ChangeResult<Card, DomainError>> =
+    match field "assignee" Person.create request.Assignee with
+    | Error problems -> Task.FromResult(ChangeResult<Card, DomainError>(Invalid.fields problems))
+    | Ok who -> change card request.Version (Card.start who (time.GetUtcNow())) cancellationToken
 ```
 
 C# writes no query and composes no transaction. The switch has no default

@@ -22,6 +22,7 @@ Reference are the engineering records the library is built against.
 ## Hosting
 
 - [From C#](csharp.md)
+- [seam.lock's format](seam-lock.md)
 - [Hot Chocolate](hotchocolate.md)
 - [Native AOT and Lambda](aot.md)
 - [SQLite](sqlite.md)

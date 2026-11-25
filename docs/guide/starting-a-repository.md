@@ -56,16 +56,16 @@ or `Ignore`. The tour does so once, to print the DDL before the tables exist:
         let ddl = printer.Ddl()
 ```
 
-`RepoOptions.Unchecked` skips both. Kanban's facade lets its host choose,
-because a Lambda function may prefer a shorter init once its scenarios have
-run the check:
+`RepoOptions.Unchecked` skips both. Kanban's Lambda function chooses, since
+a function may prefer a shorter init once its scenarios have run the check.
+Plasm.CSharp's build writes both openings from the data project's Store,
+`OpenAsync` and `OpenUncheckedAsync`:
 
-<!-- from: examples/Kanban/src/Data/Facade.fs -->
-```fsharp
-            let checking =
-                match checks with
-                | StartupChecks.Run -> RepoOptions.Default
-                | StartupChecks.Skip -> RepoOptions.Unchecked
+<!-- from: examples/Kanban/src/Lambda/Program.cs -->
+```csharp
+var kanban = check
+    ? await Boards.OpenAsync(connectionString, TimeProvider.System, CancellationToken.None)
+    : await Boards.OpenUncheckedAsync(connectionString, TimeProvider.System, CancellationToken.None);
 ```
 
 ## The tables

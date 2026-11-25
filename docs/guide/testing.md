@@ -41,7 +41,8 @@ And gone afterwards:
 A C# test of an F# facade runs in the same sandbox through the facade, never
 the repository: the facade offers `SandboxAsync(body, ct)`, which gives `body`
 a facade over `repo.Sandbox`'s repository and returns what `body` returns.
-Kanban's is `KanbanData.SandboxAsync`
+With Plasm.CSharp the build writes it from the data project's Store. Kanban's
+is `Boards.SandboxAsync`
 ([`facade-sandbox.feature`](../../examples/Kanban/features/csharp/facade-sandbox.feature)):
 a board created inside is read there and gone afterwards.
 
@@ -49,8 +50,8 @@ a board created inside is read there and gone afterwards.
 ```csharp
 inside.Add(await kanban.SandboxAsync(async k =>
 {
-    Equal(true, await k.CreateBoardAsync(slug, slug, 3, CancellationToken.None) is { Value: BoardSummary }, "created");
-    Equal(true, await k.AddCardAsync(slug, title, CancellationToken.None) is { Value: CardView }, "added");
+    Equal(true, await k.CreateBoardAsync(new NewBoard(slug, slug, 3), CancellationToken.None) is { Value: BoardSummaryView }, "created");
+    Equal(true, await k.AddCardAsync(slug, new NewCard(title), CancellationToken.None) is { Value: CardView }, "added");
     return Cards(await k.BoardAsync(slug, CancellationToken.None));
 }, CancellationToken.None));
 ```

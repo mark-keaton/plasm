@@ -464,9 +464,9 @@ let docsPage (index: int) (page: Page) =
 
 let llms () =
     let summary =
-        "Plasm is persistence for an F# domain over PostgreSQL or SQLite, made to be embedded in a C# application: "
-        + "the domain, its queries and its transactions are F#, and a C# host calls one F# facade. "
-        + "It is native AOT first, and Hot Chocolate friendly on the runtime. Plasm is new: this is version 0.3, and its API may change before 1.0."
+        "Plasm is a stricter data layer for a C# application, over PostgreSQL or SQLite. "
+        + "The domain, its queries and its transactions are written in one small F# project, and C# calls it. "
+        + "It is native AOT first, and Hot Chocolate friendly on the runtime. Plasm is new: this is version 0.4, and its API may change before 1.0."
 
     let index = StringBuilder()
     index.Append($"# Plasm\n\n> {summary}\n\n") |> ignore
