@@ -291,12 +291,13 @@ public sealed partial class Steps
 
     string refused = "";
 
-    void BuildSchema(Plasm.ReadField<Card> field)
+    void BuildSchema(Plasm.ReadField<Card> field, Type? views = null)
     {
         try
         {
-            new ServiceCollection().AddGraphQLServer()
-                .AddPlasmReadType<Card, CardView>(new[] { field });
+            var server = new ServiceCollection().AddGraphQLServer();
+            if (views is null) server.AddPlasmReadType<Card, CardView>(new[] { field });
+            else server.AddPlasmReadType<Card, CardView>(new[] { field }, views);
         }
         catch (InvalidOperationException e)
         {
@@ -314,6 +315,10 @@ public sealed partial class Steps
     [When("a schema is built with the card field {string} read from the title")]
     public void TitleMisnamed(string name) =>
         BuildSchema(Plasm.ReadField.via(name, Read<Title>("Title"), FuncConvert.FromFunc<Title, string>(t => t.Value)));
+
+    [When("a schema is built over SeamMap with the card field {string} read as the domain's title")]
+    public void TitleAsDomain(string name) =>
+        BuildSchema(Plasm.ReadField.value(name, Read<Title>("Title")), typeof(SeamMap));
 
     [When("a schema is built with the card field {string} read as text")]
     public void VersionAsText(string name) =>

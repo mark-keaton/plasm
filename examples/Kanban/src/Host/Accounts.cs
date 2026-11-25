@@ -1,8 +1,7 @@
 // Registering, signing in and out. Whether a name and a password are
-// acceptable is the domain's (Person, Password, through KanbanData); the host
+// acceptable is the domain's (Person, Password, through Boards); the host
 // hashes the password and keeps who is signed in in a cookie.
 using System.Security.Claims;
-using Kanban.Data;
 using Plasm.CSharp;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -12,6 +11,7 @@ namespace Kanban.Host;
 
 public static class Accounts
 {
+    /// Who signs in: a body of a name and a password, as NewAccount's.
     record Credentials(string Name, string Password);
     record SignedIn(string Name);
 
@@ -60,14 +60,14 @@ public static class Accounts
     {
         var account = app.MapGroup("/account");
 
-        account.MapPost("/register", async (Credentials input, HttpContext http, KanbanData kanban, CancellationToken ct) =>
-            await kanban.RegisterAsync(input.Name, input.Password, Hash, ct) switch
+        account.MapPost("/register", async (NewAccount input, HttpContext http, Boards kanban, CancellationToken ct) =>
+            await kanban.RegisterAsync(input, Hash, ct) switch
             {
                 AccountView registered => await SignedInAs(http, registered.Name),
-                Invalid invalid => await NobodyThen(http, Outcomes.Of(invalid)),
+                Invalid invalid => await NobodyThen(http, Results.BadRequest(invalid)),
             });
 
-        account.MapPost("/signin", async (Credentials input, HttpContext http, KanbanData kanban, CancellationToken ct) =>
+        account.MapPost("/signin", async (Credentials input, HttpContext http, Boards kanban, CancellationToken ct) =>
         {
             var password = input.Password;
             return await kanban.AccountAsync(input.Name, ct) switch

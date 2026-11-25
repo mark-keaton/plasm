@@ -1,5 +1,5 @@
 Feature: Kanban's changes over GraphQL, each outcome a member of a union
-  Every mutation calls the same KanbanData method its REST endpoint calls and
+  Every mutation calls the same Boards method its REST endpoint calls and
   answers with the facade's outcome as it is: a GraphQL union whose members
   are the outcome's cases (the card, Missing, Refused, Stale, Invalid, ...),
   registered once for each outcome type (Plasm.HotChocolate's AddPlasmUnion).
@@ -40,8 +40,8 @@ Feature: Kanban's changes over GraphQL, each outcome a member of a union
   Rule: Each case of an outcome is answered as itself
 
     Scenario: A board is created
-      When I ask for 'mutation { createBoard(slug: "gemini", name: "Gemini", wipLimit: 3) { __typename ... on BoardSummary { slug } } }'
-      Then the answer is a "BoardSummary"
+      When I ask for 'mutation { createBoard(slug: "gemini", name: "Gemini", wipLimit: 3) { __typename ... on BoardSummaryView { slug } } }'
+      Then the answer is a "BoardSummaryView"
       And the boards are "apollo: 0 backlog, 0 doing, 0 done; gemini: 0 backlog, 0 doing, 0 done"
 
     Scenario: Starting a card answers the card as stored
@@ -49,6 +49,12 @@ Feature: Kanban's changes over GraphQL, each outcome a member of a union
       When I ask for 'mutation { startCard(card: "<Guidance>", version: <Guidance:version>) { __typename ... on CardView { version stage { __typename } } } }'
       Then the answer is a "CardView"
       And "Guidance" is in progress for "Margaret"
+
+    Scenario: A finished card's stage is Done, its resolution a union of its own
+      Given the cards "Guidance" on "apollo"
+      And "Guidance" is in progress
+      When I ask for 'mutation { shipCard(card: "<Guidance>", version: <Guidance:version>) { __typename ... on CardView { stage { __typename ... on Done { resolution { __typename } } } } } }'
+      Then the answer's JSON is {"data":{"shipCard":{"__typename":"CardView","stage":{"__typename":"Done","resolution":{"__typename":"Shipped"}}}}}
 
     Scenario: A rule's refusal is Refused, with the domain's code
       Given the cards "Guidance", "Docking", "Re-entry" on "apollo"
@@ -80,8 +86,8 @@ Feature: Kanban's changes over GraphQL, each outcome a member of a union
     Scenario: Sending every card back answers how many
       Given the cards "Guidance", "Docking" on "apollo"
       And "Guidance" and "Docking" are in progress
-      When I ask for 'mutation { sendAllBack(board: "apollo") { __typename ... on SentBack { cards } } }'
-      Then the answer is a "SentBack"
+      When I ask for 'mutation { sendAllBack(board: "apollo") { __typename ... on SentBackView { cards } } }'
+      Then the answer is a "SentBackView"
       And "Guidance" is in the backlog
 
     Scenario: A label that is not one is Invalid, by its place

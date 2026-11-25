@@ -111,11 +111,44 @@ public sealed partial class Steps
     [When("{string} is sent back")]
     public Task SendBack(string title) => Change(HttpMethod.Post, title, "send-back");
 
-    [Given("{string} is blocked because {string}")]
+    [StepDefinition("{string} is blocked because {string}")]
     public async Task Block(string title, string reason)
     {
         await Change(HttpMethod.Post, title, "block", new() { ["reason"] = reason });
         Succeeded($"blocking \"{title}\"");
+    }
+
+    [When("{string} is renamed {string}")]
+    public Task Rename(string title, string to) => Change(HttpMethod.Put, title, "title", new() { ["title"] = to });
+
+    // -- A card's JSON: the seam's view of the domain's Card -------------------
+
+    JsonObject AnsweredCard => JsonNode.Parse(body)!.AsObject();
+
+    [Then("the answer's card has the fields {string}")]
+    public void CardFields(string fields) =>
+        Equal(fields, string.Join(", ", AnsweredCard.Select(p => p.Key)), "the card's fields in " + body);
+
+    [Then("the answer's card is not blocked, with no checklist")]
+    public void NotBlocked() =>
+        Equal("null []", $"{AnsweredCard["blocked"]?.ToJsonString() ?? "null"} {AnsweredCard["checklist"]!.ToJsonString()}", "the card's blocker and checklist");
+
+    [Then("the answer's card's stage, without its time, is {}")]
+    public void StageWithoutTime(string expected)
+    {
+        var stage = AnsweredCard["stage"]!.AsObject().DeepClone().AsObject();
+        DateTimeOffset.Parse((string)stage["at"]!);
+        stage.Remove("at");
+        Equal(expected, stage.ToJsonString(), "the card's stage");
+    }
+
+    [Then("the answer's card is blocked because {string}, with the checklist {string}")]
+    public void BlockedWith(string reason, string checklist)
+    {
+        var card = AnsweredCard;
+        DateTimeOffset.Parse((string)card["blocked"]!["since"]!);
+        var items = card["checklist"]!.AsArray().Select(i => $"{i!["text"]}: {((bool)i["done"]! ? "done" : "to do")}");
+        Equal((reason, checklist), ((string)card["blocked"]!["reason"]!, string.Join(", ", items)), "the card's blocker and checklist");
     }
 
     [When("{string} is unblocked")]

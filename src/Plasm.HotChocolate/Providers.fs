@@ -83,22 +83,80 @@ type IPlasmReadType<'T> =
 /// named as the application's view 'V is and resolving each field from either:
 /// a row of the fields a request chose (Selected<'T>), through the field's
 /// declaration, or a whole view (a change's outcome), through the view's
-/// property of the declared name. That each declared field has such a
-/// property, of the declaration's type, is checked when the schema is built,
-/// and refused naming the field.
-type PlasmReadType<'T, 'V>(fields: ReadField<'T> list) =
+/// property of the declared name. A field read as the property's own type is
+/// that value; one read as another is made the property's by `views`, a type
+/// whose static View methods take the one and return the other (the seam's
+/// SeamMap, from a domain record or union to its view), element by element
+/// where the property is an array. That each declared field has such a
+/// property, of the declaration's type or one `views` makes from it, is
+/// checked when the schema is built, and refused naming the field.
+type PlasmReadType<'T, 'V>(fields: ReadField<'T> list, views: System.Type option) =
     inherit ObjectType()
 
     static let camel (name: string) = string (System.Char.ToLowerInvariant name.[0]) + name.Substring 1
 
-    /// The view's property for each declared field, or why there is none.
-    static member Properties(fields: ReadField<'T> list) =
+    /// `views`' View from `from` to `into`.
+    static let viewOf (views: System.Type option) (from: System.Type) (into: System.Type) =
+        views
+        |> Option.bind (fun v ->
+            v.GetMethods(System.Reflection.BindingFlags.Public ||| System.Reflection.BindingFlags.Static)
+            |> Array.tryFind (fun (m: System.Reflection.MethodInfo) ->
+                m.Name = "View"
+                && m.ReturnType = into
+                && (match m.GetParameters() with
+                    | [| p |] -> p.ParameterType = from
+                    | _ -> false)))
+
+    /// The element type of a sequence of `t`, other than a string.
+    static let elementOf (t: System.Type) =
+        if t = typeof<string> then
+            None
+        else
+            t.GetInterfaces()
+            |> Array.append [| t |]
+            |> Array.tryPick (fun i ->
+                if i.IsGenericType && i.GetGenericTypeDefinition() = typedefof<System.Collections.Generic.IEnumerable<_>> then
+                    Some(i.GetGenericArguments().[0])
+                else
+                    None)
+
+    /// How a value read as `from` becomes the property's `into`, if it can.
+    static let conversion (views: System.Type option) (from: System.Type) (into: System.Type) : (obj -> obj) option =
+        if from = into then
+            Some id
+        else
+            match viewOf views from into with
+            | Some m -> Some(fun value -> m.Invoke(null, [| value |]))
+            | None ->
+                match elementOf from, into.IsArray with
+                | Some a, true ->
+                    let b = into.GetElementType()
+
+                    viewOf views a b
+                    |> Option.map (fun m ->
+                        fun (value: obj) ->
+                            let items = [| for item in (value :?> System.Collections.IEnumerable) -> m.Invoke(null, [| item |]) |]
+                            let array = System.Array.CreateInstance(b, items.Length)
+                            items |> Array.iteri (fun i item -> array.SetValue(item, i))
+                            box array)
+                | _ -> None
+
+    /// The view's property for each declared field, and how a value read
+    /// becomes it, or why there is none.
+    static member Properties(fields: ReadField<'T> list, views: System.Type option) =
         [ for f in fields ->
               match typeof<'V>.GetProperties() |> Array.tryFind (fun p -> camel p.Name = f.Name) with
-              | Some p when p.PropertyType = f.ValueType -> f, p
               | Some p ->
-                  invalidOp
-                      $"{typeof<'T>.Name}.{f.Name} is read as a {f.ValueType.Name}, but {typeof<'V>.Name}.{p.Name} is a {p.PropertyType.Name}"
+                  match conversion views f.ValueType p.PropertyType with
+                  | Some convert -> f, p, convert
+                  | None ->
+                      let through =
+                          match views with
+                          | Some v -> $", and {v.Name} has no View from one to the other"
+                          | None -> ""
+
+                      invalidOp
+                          $"{typeof<'T>.Name}.{f.Name} is read as a {f.ValueType.Name}, but {typeof<'V>.Name}.{p.Name} is a {p.PropertyType.Name}{through}"
               | None -> invalidOp $"{typeof<'T>.Name}.{f.Name} is read, but {typeof<'V>.Name} has no property {f.Name}" ]
 
     interface IPlasmReadType<'T> with
@@ -115,12 +173,12 @@ type PlasmReadType<'T, 'V>(fields: ReadField<'T> list) =
             .IsOfType(fun _ value -> value :? Selected<'T> || value :? 'V)
         |> ignore
 
-        for f, p in PlasmReadType<'T, 'V>.Properties fields do
+        for f, p, convert in PlasmReadType<'T, 'V>.Properties(fields, views) do
             // Pure, as a property read is: a value already in hand, so the
             // field costs what the view's own would (no resolver weight).
             let read (context: IResolverContext) : obj =
                 match context.Parent<obj>() with
-                | :? Selected<'T> as row -> row.Get f
+                | :? Selected<'T> as row -> convert (row.Get f)
                 | view -> p.GetValue view
 
             let field = d.Field(p).Name(f.Name)
@@ -195,12 +253,22 @@ type PlasmRequestExecutorBuilderExtensions =
     /// and by the property of its name from the other (PlasmReadType).
     [<Extension>]
     static member AddPlasmReadType<'T, 'V>(builder: IRequestExecutorBuilder, fields: ReadField<'T> seq) : IRequestExecutorBuilder =
+        PlasmRequestExecutorBuilderExtensions.ReadType<'T, 'V>(builder, fields, None)
+
+    /// As AddPlasmReadType<'T, 'V>(fields), a field read as another type than
+    /// its property's made the property's by `views`' static View methods:
+    /// the seam's SeamMap, from each domain record and union to its view.
+    [<Extension>]
+    static member AddPlasmReadType<'T, 'V>(builder: IRequestExecutorBuilder, fields: ReadField<'T> seq, views: System.Type) : IRequestExecutorBuilder =
+        PlasmRequestExecutorBuilderExtensions.ReadType<'T, 'V>(builder, fields, Some views)
+
+    static member private ReadType<'T, 'V>(builder: IRequestExecutorBuilder, fields: ReadField<'T> seq, views: System.Type option) : IRequestExecutorBuilder =
         let fields = List.ofSeq fields
         // Checked here, as the schema is described, and again when it is built.
-        PlasmReadType<'T, 'V>.Properties fields |> ignore
+        PlasmReadType<'T, 'V>.Properties(fields, views) |> ignore
 
         builder
-            .AddType(PlasmReadType<'T, 'V>(fields))
+            .AddType(PlasmReadType<'T, 'V>(fields, views))
             .BindRuntimeType(typeof<Selected<'T>>, typeof<PlasmReadType<'T, 'V>>)
             .BindRuntimeType(typeof<'V>, typeof<PlasmReadType<'T, 'V>>)
 

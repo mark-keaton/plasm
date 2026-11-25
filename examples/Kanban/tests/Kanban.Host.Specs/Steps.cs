@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -85,6 +86,23 @@ public sealed partial class Steps : IAsyncDisposable
                 };
                 await c.ExecuteNonQueryAsync();
             }
+        }
+    }
+
+    [Given(@"^the card ""(.*)"" has the labels (.*)$")]
+    public async Task Labels(string title, string labels)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        foreach (var name in Regex.Matches(labels, "\"([^\"]*)\"").Select(m => m.Groups[1].Value))
+        {
+            var label = Guid.NewGuid();
+            await using (var l = new NpgsqlCommand("insert into labels (id, name) values ($1, $2)", connection)
+                         { Parameters = { new() { Value = label }, new() { Value = name } } })
+                await l.ExecuteNonQueryAsync();
+            await using var c = new NpgsqlCommand("insert into card_labels (card_id, label_id) select id, $2 from cards where title = $1", connection)
+            { Parameters = { new() { Value = title }, new() { Value = label } } };
+            await c.ExecuteNonQueryAsync();
         }
     }
 

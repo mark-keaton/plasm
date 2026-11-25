@@ -1,8 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- What the server stores and does, as values (Db.fs, Workflows.fs), and
-       KanbanData, the type a C# host calls (Facade.fs). Both hosts reference
-       this library: the F# server for the queries and workflows, the C# host
-       for the facade. -->
+  <!-- What the server stores and does, as values (Db.fs, Workflows.fs);
+       Boards, the type a C# host calls through the seam (Boards.fs); and
+       CardQueries, the projection a GraphQL host reads (CardQueries.fs). The
+       F# server references this library for the queries and workflows, the
+       C# hosts for Boards. -->
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
@@ -12,8 +13,8 @@
   <ItemGroup>
     <Compile Include="Db.fs" />
     <Compile Include="Workflows.fs" />
-    <Compile Include="Facade.fs" />
     <Compile Include="Boards.fs" />
+    <Compile Include="CardQueries.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Shared/Shared.fsproj" />

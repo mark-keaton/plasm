@@ -15,7 +15,8 @@ src/Shared   Domain.fs   types and rules, and on each stored record the few
              Api.fs      the contract between server and browser
 src/Data     Db.fs         which records are stored, and the server's own Account
              Workflows.fs  queries and transactions, as values
-             Facade.fs     KanbanData, the one type a C# host calls
+             Boards.fs     Boards, the one type a C# host calls, through the seam
+             CardQueries.fs  GraphQL's projection, which the seam does not cross
 src/Server   Service.fs    the API: parse input, run a workflow, map the outcome
              Database.fs   migrations (DbUp), and the repository, checked as it starts
              Host.fs       ASP.NET Core: services, cookie authentication, start-up,

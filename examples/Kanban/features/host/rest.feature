@@ -1,6 +1,6 @@
 Feature: Kanban over REST
-  Every endpoint calls one KanbanData method and answers through one mapping
-  from outcome to status: 200 or 201 with the value, 404 when something is
+  Every endpoint calls one method of Boards (the C# the seam writes over the
+  F# one) and answers through ToHttp, one mapping from outcome to status: 200 or 201 with the value, 404 when something is
   missing, 422 with the domain's code when a rule refuses, 409 when the
   caller's copy is old, 400 with each field and why when the input cannot be
   made into the domain's values. Reading is open to anyone; a change needs
@@ -98,6 +98,30 @@ Feature: Kanban over REST
       When "Guidance" is renamed "Navigation" from its first version, after it has changed
       Then the answer is 409
       And the card "Guidance" keeps its title
+
+  # A card's JSON is the seam's view of the domain's Card: the board it is on
+  # and when it was made are left out (Seam.cs), as no client reads them; its
+  # blocker and checklist are in, as this host changes both.
+  Rule: A card's JSON is the domain's card, as the seam writes it
+
+    Scenario: A card's JSON has the domain's fields, but its board and when it was made
+      Given the cards "Guidance" on "apollo"
+      When "Guidance" is renamed "Navigation"
+      Then the answer is 200
+      And the answer's card has the fields "id, title, stage, blocked, checklist, comments, labels, version"
+      And the answer's card is not blocked, with no checklist
+
+    Scenario: A finished card's stage holds how it ended
+      Given the cards "Guidance" on "apollo"
+      And "Guidance" is in progress
+      When "Guidance" ships
+      Then the answer's card's stage, without its time, is {"kind":"done","resolution":{"kind":"shipped"}}
+
+    Scenario: A blocked card says what blocks it, and its checklist its items
+      Given the cards "Guidance" on "apollo"
+      And "Guidance" has the items "Align", "Test"
+      When "Guidance" is blocked because "waiting for the simulator"
+      Then the answer's card is blocked because "waiting for the simulator", with the checklist "Align: to do, Test: to do"
 
   Rule: Comments, labels and checklists are changes to a card
 

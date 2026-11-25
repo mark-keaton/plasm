@@ -1,15 +1,14 @@
 // Sends stale cards back to the backlog, when the host starts and then every
 // `Kanban:StaleCardsEvery` (an hour unless configured). Which cards are stale,
 // and what sending one back does, are the F# core's
-// (KanbanData.SendStaleBackAsync, Workflows.sendStaleBack), on the facade's
-// clock; this job says when. The wait between runs is the host's one clock,
-// the TimeProvider in its services, which the facade was opened with.
-using Kanban.Data;
+// (Boards.SendStaleBackAsync, Workflows.sendStaleBack), on Boards' clock;
+// this job says when. The wait between runs is the host's one clock, the
+// TimeProvider in its services, which Boards was opened with.
 using Plasm.CSharp;
 
 namespace Kanban.Host;
 
-public sealed class StaleCards(KanbanData kanban, TimeProvider time, IConfiguration configuration, ILogger<StaleCards> log) : BackgroundService
+public sealed class StaleCards(Boards kanban, TimeProvider time, IConfiguration configuration, ILogger<StaleCards> log) : BackgroundService
 {
     readonly TimeSpan every = configuration.GetValue("Kanban:StaleCardsEvery", TimeSpan.FromHours(1));
 

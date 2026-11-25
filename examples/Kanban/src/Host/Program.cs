@@ -1,15 +1,17 @@
 // Kanban's host as an application would write it (docs/kanban-host.md): ASP.NET
-// Core with cookie sign-in, REST and GraphQL over the one F# facade,
-// KanbanData. Every rule is the domain's; this host reads requests, keeps who
-// is signed in, calls the facade with the person signed in as the actor, and
-// turns each outcome into a response in one place (Outcomes.cs).
+// Core with cookie sign-in, REST and GraphQL over Boards, the C# the seam
+// writes over one F# type (Seam/Boards.g.cs), and GraphQL's projection,
+// CardQueries. Every rule is the domain's; this host reads requests, keeps who
+// is signed in, calls Boards with the person signed in as the actor, and
+// answers with ToHttp (Seam/SeamHttp.g.cs).
 using Kanban;
 using Kanban.Data;
 using Plasm.CSharp;
 using Kanban.Host;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Npgsql;
 using Plasm.HotChocolate;
+// The C# Boards the seam writes, not the F# one it calls.
+using Boards = Kanban.Host.Boards;
 
 // Started by a scenario (KANBAN_EXIT_WITH_STDIN=1): exit when the test
 // process that holds this host's standard input goes, so no host outlives a
@@ -25,24 +27,27 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("Kanban")
     ?? throw new InvalidOperationException("Set the connection string 'Kanban' (ConnectionStrings:Kanban).");
 
-var dataSource = NpgsqlDataSource.Create(connectionString);
 // The application's one clock: every change's time, the background job's
 // "now" and the wait between its runs (Clock.cs).
 var time = Clock.FromEnvironment();
-// Opening checks every query, the tables, and every declared card field.
-// KANBAN_SQL=1 writes each command's SQL to standard output, one line each.
-var kanban = Environment.GetEnvironmentVariable("KANBAN_SQL") == "1"
-    ? await KanbanData.OpenAsync(dataSource, sql => Console.WriteLine("SQL: " + sql.Replace('\n', ' ')), time, CancellationToken.None)
-    : await KanbanData.OpenAsync(dataSource, time, CancellationToken.None);
-builder.Services.AddSingleton(dataSource);
+// Opened before the host is built, as GraphQL's projection is made over it:
+// opening checks every query and the tables, and CardQueries every declared
+// card field. KANBAN_SQL=1 writes each command's SQL to standard output, one
+// line each.
+var kanban = await Boards.OpenAsync(connectionString, time,
+    Environment.GetEnvironmentVariable("KANBAN_SQL") == "1" ? sql => Console.WriteLine("SQL: " + sql.Replace('\n', ' ')) : null,
+    CancellationToken.None);
 builder.Services.AddSingleton(kanban);
+builder.Services.AddSingleton(CardQueries.Over(kanban.Inner));
 builder.Services.AddSingleton(time);
 builder.Services.AddHostedService<StaleCards>();
 
-// Nothing null crosses into the facade either: a request whose body leaves
-// out a field, or gives it as null, is answered 400 before an endpoint runs.
+// Nothing null crosses into F# either: a request whose body leaves out a
+// field, or gives it as null, is answered 400 before an endpoint runs. The
+// seam's context reads and writes what crosses.
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
+    o.SerializerOptions.TypeInfoResolverChain.Insert(0, SeamJson.Default);
     o.SerializerOptions.RespectNullableAnnotations = true;
     o.SerializerOptions.RespectRequiredConstructorParameters = true;
 });
@@ -74,23 +79,25 @@ builder.Services
     .AddQueryType<Query>()
     .AddMutationType<Mutation>()
     .AddAuthorization()
-    // In full: Kanban.Data has a Boards too, the type the C# host calls.
-    .AddTypeExtension<Kanban.Host.Boards>()
+    .AddTypeExtension<BoardList>()
     .AddTypeExtension<BoardCards>()
     .AddDataLoader<BoardCardsLoader>()
     .AddDataLoader<BoardCountsLoader>()
     .AddPlasmFiltering()
     .AddPlasmSorting()
     // A card, read with only the fields a request selects, or whole as a
-    // change's outcome: one type, generated from CardRead.
-    .AddPlasmReadType<Card, CardView>(CardRead.all)
-    // Each outcome a union of its cases, registered once.
+    // change's outcome: one type, the seam's CardView, its fields from
+    // CardRead, each domain value made its view by SeamMap.
+    .AddPlasmReadType<Card, CardView>(CardRead.all, typeof(SeamMap))
+    // Each union the seam writes, and each outcome, a union of its cases,
+    // registered once.
     .AddPlasmUnion<StageView>()
+    .AddPlasmUnion<ResolutionView>()
     .AddPlasmUnion<FindResult<CardView>>("CardResult")
     .AddPlasmUnion<ChangeResult<CardView>>("ChangeOutcome")
     .AddPlasmUnion<RequestResult<CardView>>("AddCardOutcome")
-    .AddPlasmUnion<AddResult<BoardSummary>>("CreateBoardOutcome")
-    .AddPlasmUnion<FindResult<SentBack>>("SendAllBackOutcome");
+    .AddPlasmUnion<AddResult<BoardSummaryView>>("CreateBoardOutcome")
+    .AddPlasmUnion<FindResult<SentBackView>>("SendAllBackOutcome");
 
 var app = builder.Build();
 app.UseAuthentication();

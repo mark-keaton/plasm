@@ -1,6 +1,6 @@
 Feature: The host has one clock
   "Now" is the TimeProvider the host registers in its services, and the host
-  opens KanbanData with the same one: every change is stamped with its time,
+  opens Boards with the same one: every change is stamped with its time,
   and the background job reads its "now" from it too (docs/kanban-host.md).
   A host started with KANBAN_CLOCK_START has a clock that starts at that
   instant and runs from there.

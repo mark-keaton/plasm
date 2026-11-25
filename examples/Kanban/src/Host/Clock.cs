@@ -1,4 +1,4 @@
-// The host's one clock, registered in its services and given to KanbanData.
+// The host's one clock, registered in its services and given to Boards.
 // KANBAN_CLOCK_START sets the instant it starts at, for a demonstration or a
 // scenario; it runs on from there at the system's pace, and its timers are
 // the system's.

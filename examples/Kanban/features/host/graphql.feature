@@ -159,8 +159,8 @@ Feature: Kanban's cards over GraphQL, filtered and ordered by the database
       And no comments or labels were read
 
     Scenario: A card's stage reads the stage's columns, and nothing else
-      When I ask for '{ cards(where: { stage: { eq: "doing" } }) { items { stage { __typename ... on InProgress { assignee } } } } }'
-      Then the answer's JSON is {"data":{"cards":{"items":[{"stage":{"__typename":"InProgress","assignee":"Ada"}}]}}}
+      When I ask for '{ cards(where: { stage: { eq: "doing" } }) { items { stage { __typename ... on Doing { assignee } } } } }'
+      Then the answer's JSON is {"data":{"cards":{"items":[{"stage":{"__typename":"Doing","assignee":"Ada"}}]}}}
       And the cards were read in one command, reading only "stage, stage_assignee, stage_at, stage_resolution, stage_resolution_reason, stage_since"
 
     Scenario: Comments selected are one more command for every card, and labels are not read
@@ -187,11 +187,25 @@ Feature: Kanban's cards over GraphQL, filtered and ordered by the database
       When a schema is built with the card field "version" read as text
       Then building the schema is refused with "Card.version is read as a String, but CardView.Version is a Int32"
 
-  Rule: The answer is the application's view
+    # A field read as a domain value is made the view's by SeamMap's View
+    # methods: one SeamMap has no View for is refused, naming it.
+    Scenario: A field read as a domain value SeamMap makes no view of is refused, naming SeamMap
+      When a schema is built over SeamMap with the card field "title" read as the domain's title
+      Then building the schema is refused with "Card.title is read as a Title, but CardView.Title is a String, and SeamMap has no View from one to the other"
+
+  # A field is read as the domain's value (a card's stage, its labels) and
+  # made the seam's view by SeamMap: the card GraphQL answers is the one REST
+  # answers, CardView, and its stage the domain's union, its cases by name.
+  Rule: The answer is the seam's view of the domain's card
 
     Scenario: A card's stage is a GraphQL union over its cases
-      When I ask for '{ cards(where: { stage: { eq: "doing" } }) { items { title stage { __typename ... on InProgress { kind assignee } } } } }'
-      Then the answer's JSON is {"data":{"cards":{"items":[{"title":"Build it","stage":{"__typename":"InProgress","kind":"doing","assignee":"Ada"}}]}}}
+      When I ask for '{ cards(where: { stage: { eq: "doing" } }) { items { title stage { __typename ... on Doing { kind assignee } } } } }'
+      Then the answer's JSON is {"data":{"cards":{"items":[{"title":"Build it","stage":{"__typename":"Doing","kind":"doing","assignee":"Ada"}}]}}}
+
+    Scenario: A card's labels are the domain's tags, each read as its view
+      Given the card "Build it" has the labels "urgent", "api"
+      When I ask for '{ cards(where: { stage: { eq: "doing" } }) { items { labels { name } } } }'
+      Then the answer's JSON is {"data":{"cards":{"items":[{"labels":[{"name":"api"},{"name":"urgent"}]}]}}}
 
   Rule: What the declarations do not allow is refused before any SQL
 

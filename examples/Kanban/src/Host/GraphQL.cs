@@ -2,7 +2,9 @@
 // where and order are read from Hot Chocolate's filter and sorting contexts by
 // Plasm.HotChocolate and built on Kanban's cards query from the fields
 // Kanban.Data declares (CardFields), so the database does both; C# writes no
-// query. A mutation answers the facade's outcome as a union of its cases.
+// query. A card is read by projection (CardQueries), only the fields a
+// request chose, each made the seam's view's (AddPlasmReadType with SeamMap);
+// a mutation calls Boards and answers its outcome as a union of its cases.
 using System.Collections.Concurrent;
 using System.Security.Claims;
 using GreenDonut;
@@ -25,7 +27,7 @@ public class Query
     [UseOffsetPaging(DefaultPageSize = Paging.Default, MaxPageSize = Paging.Most, IncludeTotalCount = true)]
     [UseFiltering(typeof(CardFilter))]
     [UseSorting(typeof(CardSort))]
-    public async Task<CollectionSegment<Selected<Card>>> Cards(IResolverContext context, [Service] KanbanData kanban, CancellationToken ct)
+    public async Task<CollectionSegment<Selected<Card>>> Cards(IResolverContext context, [Service] CardQueries kanban, CancellationToken ct)
     {
         Plasm.Query<Card> Filtered(Plasm.Query<Card> query) => PlasmRequest.Apply(context, CardFields.all, query, CardFields.created);
         var chosen = PlasmRequest.Chosen(context, CardRead.all);
@@ -34,67 +36,67 @@ public class Query
     }
 
     /// A card by its id: the card, or Missing (the union CardResult).
-    public Task<FindResult<CardView>> Card(Guid id, [Service] KanbanData kanban, CancellationToken ct) => kanban.CardAsync(id, ct);
+    public Task<FindResult<CardView>> Card(Guid id, [Service] Boards kanban, CancellationToken ct) => kanban.CardAsync(id, ct);
 }
 
-/// Every change, each the facade method its REST endpoint calls, answering
-/// the facade's outcome as a union of its cases. A change needs someone
+/// Every change, each the Boards method its REST endpoint calls, answering
+/// its outcome as a union of its cases. A change needs someone
 /// signed in, and is made as the person signed in (`user.Actor()`).
 [Authorize]
 public class Mutation
 {
-    public Task<AddResult<BoardSummary>> CreateBoard(string slug, string name, int wipLimit, [Service] KanbanData kanban, CancellationToken ct) =>
-        kanban.CreateBoardAsync(slug, name, wipLimit, ct);
+    public Task<AddResult<BoardSummaryView>> CreateBoard(string slug, string name, int wipLimit, [Service] Boards kanban, CancellationToken ct) =>
+        kanban.CreateBoardAsync(new NewBoard(slug, name, wipLimit), ct);
 
-    public Task<RequestResult<CardView>> AddCard(string board, string title, [Service] KanbanData kanban, CancellationToken ct) =>
-        kanban.AddCardAsync(board, title, ct);
+    public Task<RequestResult<CardView>> AddCard(string board, string title, [Service] Boards kanban, CancellationToken ct) =>
+        kanban.AddCardAsync(board, new NewCard(title), ct);
 
-    public Task<FindResult<SentBack>> SendAllBack(string board, [Service] KanbanData kanban, CancellationToken ct) =>
+    public Task<FindResult<SentBackView>> SendAllBack(string board, [Service] Boards kanban, CancellationToken ct) =>
         kanban.SendAllBackAsync(board, ct);
 
-    public Task<ChangeResult<CardView>> StartCard(Guid card, int version, ClaimsPrincipal user, [Service] KanbanData kanban, CancellationToken ct) =>
-        kanban.StartAsync(card, version, user.Actor(), ct);
+    public Task<ChangeResult<CardView>> StartCard(Guid card, int version, ClaimsPrincipal user, [Service] Boards kanban, CancellationToken ct) =>
+        kanban.StartAsync(card, new Start(version, user.Actor()), ct);
 
-    public Task<ChangeResult<CardView>> ShipCard(Guid card, int version, [Service] KanbanData kanban, CancellationToken ct) =>
-        kanban.ShipAsync(card, version, ct);
+    public Task<ChangeResult<CardView>> ShipCard(Guid card, int version, [Service] Boards kanban, CancellationToken ct) =>
+        kanban.ShipAsync(card, new Versioned(version), ct);
 
-    public Task<ChangeResult<CardView>> DropCard(Guid card, int version, string reason, [Service] KanbanData kanban, CancellationToken ct) =>
-        kanban.DropAsync(card, version, reason, ct);
+    public Task<ChangeResult<CardView>> DropCard(Guid card, int version, string reason, [Service] Boards kanban, CancellationToken ct) =>
+        kanban.DropAsync(card, new WithReason(version, reason), ct);
 
-    public Task<ChangeResult<CardView>> SendCardBack(Guid card, int version, [Service] KanbanData kanban, CancellationToken ct) =>
-        kanban.SendBackAsync(card, version, ct);
+    public Task<ChangeResult<CardView>> SendCardBack(Guid card, int version, [Service] Boards kanban, CancellationToken ct) =>
+        kanban.SendBackAsync(card, new Versioned(version), ct);
 
-    public Task<ChangeResult<CardView>> ReopenCard(Guid card, int version, [Service] KanbanData kanban, CancellationToken ct) =>
-        kanban.ReopenAsync(card, version, ct);
+    public Task<ChangeResult<CardView>> ReopenCard(Guid card, int version, [Service] Boards kanban, CancellationToken ct) =>
+        kanban.ReopenAsync(card, new Versioned(version), ct);
 
-    public Task<ChangeResult<CardView>> BlockCard(Guid card, int version, string reason, [Service] KanbanData kanban, CancellationToken ct) =>
-        kanban.BlockAsync(card, version, reason, ct);
+    public Task<ChangeResult<CardView>> BlockCard(Guid card, int version, string reason, [Service] Boards kanban, CancellationToken ct) =>
+        kanban.BlockAsync(card, new WithReason(version, reason), ct);
 
-    public Task<ChangeResult<CardView>> UnblockCard(Guid card, int version, [Service] KanbanData kanban, CancellationToken ct) =>
-        kanban.UnblockAsync(card, version, ct);
+    public Task<ChangeResult<CardView>> UnblockCard(Guid card, int version, [Service] Boards kanban, CancellationToken ct) =>
+        kanban.UnblockAsync(card, new Versioned(version), ct);
 
-    public Task<ChangeResult<CardView>> RenameCard(Guid card, int version, string title, [Service] KanbanData kanban, CancellationToken ct) =>
-        kanban.RenameAsync(card, version, title, ct);
+    public Task<ChangeResult<CardView>> RenameCard(Guid card, int version, string title, [Service] Boards kanban, CancellationToken ct) =>
+        kanban.RenameAsync(card, new Rename(version, title), ct);
 
-    public Task<ChangeResult<CardView>> RelabelCard(Guid card, int version, string[] labels, [Service] KanbanData kanban, CancellationToken ct) =>
-        kanban.RelabelAsync(card, version, labels, ct);
+    public Task<ChangeResult<CardView>> RelabelCard(Guid card, int version, string[] labels, [Service] Boards kanban, CancellationToken ct) =>
+        kanban.RelabelAsync(card, new WithLabels(version, labels), ct);
 
-    public Task<ChangeResult<CardView>> AddItem(Guid card, int version, string text, [Service] KanbanData kanban, CancellationToken ct) =>
-        kanban.AddItemAsync(card, version, text, ct);
+    public Task<ChangeResult<CardView>> AddItem(Guid card, int version, string text, [Service] Boards kanban, CancellationToken ct) =>
+        kanban.AddItemAsync(card, new WithText(version, text), ct);
 
-    public Task<ChangeResult<CardView>> TickItem(Guid card, int version, string text, [Service] KanbanData kanban, CancellationToken ct) =>
-        kanban.TickAsync(card, version, text, ct);
+    public Task<ChangeResult<CardView>> TickItem(Guid card, int version, string text, [Service] Boards kanban, CancellationToken ct) =>
+        kanban.TickAsync(card, new WithText(version, text), ct);
 
-    public Task<ChangeResult<CardView>> Comment(Guid card, string body, ClaimsPrincipal user, [Service] KanbanData kanban, CancellationToken ct) =>
-        kanban.CommentAsync(card, user.Actor(), body, ct);
+    public Task<ChangeResult<CardView>> Comment(Guid card, string body, ClaimsPrincipal user, [Service] Boards kanban, CancellationToken ct) =>
+        kanban.CommentAsync(card, user.Actor(), new NewComment(body), ct);
 }
 
 /// The boards, and a board's cards as a page with their own where and order:
 /// one DataLoader batch per argument set, so every board's page is one query.
 [ExtendObjectType(typeof(Query))]
-public class Boards
+public class BoardList
 {
-    public Task<BoardNode[]> GetBoards([Service] KanbanData kanban, CancellationToken ct) => kanban.BoardNodesAsync(ct);
+    public Task<BoardNode[]> GetBoards([Service] CardQueries kanban, CancellationToken ct) => kanban.BoardNodesAsync(ct);
 }
 
 [ExtendObjectType(typeof(BoardNode))]
@@ -124,7 +126,7 @@ public class BoardCards
 
 /// Every board's cards a request asks for with the same arguments and the
 /// same selection, in one query: keyed by board and request, one query each.
-public sealed class BoardCardsLoader(KanbanData kanban, IBatchScheduler scheduler, DataLoaderOptions options)
+public sealed class BoardCardsLoader(CardQueries kanban, IBatchScheduler scheduler, DataLoaderOptions options)
     : BatchDataLoader<(Guid Board, string Request), Selected<Card>[]>(scheduler, options)
 {
     readonly ConcurrentDictionary<string, (IReadOnlyList<ReadField<Card>> Chosen, Func<Plasm.Query<Card>, Plasm.Query<Card>> Refine)> requests = new();
@@ -151,7 +153,7 @@ public sealed class BoardCardsLoader(KanbanData kanban, IBatchScheduler schedule
 
 /// Every board's total a request asks for with the same arguments, in one
 /// command grouped by board.
-public sealed class BoardCountsLoader(KanbanData kanban, IBatchScheduler scheduler, DataLoaderOptions options)
+public sealed class BoardCountsLoader(CardQueries kanban, IBatchScheduler scheduler, DataLoaderOptions options)
     : BatchDataLoader<(Guid Board, string Request), int>(scheduler, options)
 {
     readonly ConcurrentDictionary<string, Func<Plasm.Query<Card>, Plasm.Query<Card>>> wheres = new();

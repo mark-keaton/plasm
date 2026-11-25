@@ -43,6 +43,39 @@ record Start = Kanban.Data.Start, and from C#
 record Rename = Kanban.Data.Rename, and from C#
   Version: int
   Title: string
+record Versioned = Kanban.Data.Versioned, and from C#
+  Version: int
+record WithReason = Kanban.Data.WithReason, and from C#
+  Version: int
+  Reason: string
+record WithText = Kanban.Data.WithText, and from C#
+  Version: int
+  Text: string
+record NewComment = Kanban.Data.NewComment, and from C#
+  Body: string
+record WithLabels = Kanban.Data.WithLabels, and from C#
+  Version: int
+  Labels: string[]
+record SentBackView = Kanban.Data.SentBack
+  Cards: int
+record WorkView = Kanban.Data.Work
+  Board: string
+  BoardName: string
+  Card: Guid
+  Title: string
+  Since: DateTimeOffset
+record DonePageView = Kanban.Data.DonePage
+  Cards: CardView[]
+  Page: int
+  Total: int
+  Pages: int
+record NewAccount = Kanban.Data.NewAccount, and from C#
+  Name: string
+  Password: string
+record AccountView = Kanban.Server.Db.Account
+  Id: Guid
+  Name: string
+  PasswordHash: string
 union StageView = Kanban.Stage
   Backlog kind "backlog"
   Doing kind "doing" with Assignee: string, Since: DateTimeOffset
@@ -73,7 +106,25 @@ class Boards = Kanban.Data.Boards, opened from Kanban.Data.BoardStore.store
   Task<RequestResult<CardView>> AddCardAsync(string board, NewCard request, CancellationToken cancellationToken)
   Task<ChangeResult<CardView>> StartAsync(Guid card, Start request, CancellationToken cancellationToken)
   Task<ChangeResult<CardView>> RenameAsync(Guid card, Rename request, CancellationToken cancellationToken)
+  Task<FindResult<CardView>> CardAsync(Guid card, CancellationToken cancellationToken)
+  Task<ChangeResult<CardView>> ShipAsync(Guid card, Versioned request, CancellationToken cancellationToken)
+  Task<ChangeResult<CardView>> DropAsync(Guid card, WithReason request, CancellationToken cancellationToken)
+  Task<ChangeResult<CardView>> SendBackAsync(Guid card, Versioned request, CancellationToken cancellationToken)
+  Task<ChangeResult<CardView>> ReopenAsync(Guid card, Versioned request, CancellationToken cancellationToken)
+  Task<ChangeResult<CardView>> BlockAsync(Guid card, WithReason request, CancellationToken cancellationToken)
+  Task<ChangeResult<CardView>> UnblockAsync(Guid card, Versioned request, CancellationToken cancellationToken)
+  Task<ChangeResult<CardView>> AddItemAsync(Guid card, WithText request, CancellationToken cancellationToken)
+  Task<ChangeResult<CardView>> TickAsync(Guid card, WithText request, CancellationToken cancellationToken)
+  Task<ChangeResult<CardView>> CommentAsync(Guid card, string author, NewComment request, CancellationToken cancellationToken)
+  Task<ChangeResult<CardView>> RelabelAsync(Guid card, WithLabels request, CancellationToken cancellationToken)
+  Task<FindResult<SentBackView>> SendAllBackAsync(string board, CancellationToken cancellationToken)
+  Task<SentBackView> SendStaleBackAsync(CancellationToken cancellationToken)
+  Task<WorkView[]> WorkOfAsync(string person, CancellationToken cancellationToken)
+  Task<RequestResult<DonePageView>> DonePageAsync(string board, int page, int size, CancellationToken cancellationToken)
+  Task<AddResult<AccountView>> RegisterAsync(NewAccount request, Func<string, string> hash, CancellationToken cancellationToken)
+  Task<FindResult<AccountView>> AccountAsync(string name, CancellationToken cancellationToken)
 json SeamJson
+  AccountView
   Backlog
   BoardSummaryView
   BoardSummaryView[]
@@ -82,15 +133,25 @@ json SeamJson
   CommentView
   Doing
   Done
+  DonePageView
   Dropped
+  NewAccount
   NewBoard
   NewCard
+  NewComment
   Rename
   ResolutionView
+  SentBackView
   Shipped
   StageView
   Start
   TagView
+  Versioned
+  WithLabels
+  WithReason
+  WithText
+  WorkView
+  WorkView[]
   Invalid
   Missing
   Refused
