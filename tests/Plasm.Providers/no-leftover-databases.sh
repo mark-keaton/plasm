@@ -33,11 +33,15 @@ if [ "${1:-}" = "--prove" ]; then
   planted=$(count); run; after=$(count)
   echo "PostgreSQL runs beside an orphan of a run before machines were named: $planted then, $after after the next run"
   [ "$planted" -eq 1 ] && [ "$after" -eq 0 ] || status=1
-  # A run killed mid-way, as a run that dies is: the next run drops what it left.
-  dotnet test --project "$root/tests/Plasm.Specs" --no-build -- --filter-class '*PredictableFunctional*' > /dev/null 2>&1 & pid=$!
-  until [ "$(count)" -gt 0 ] || ! kill -0 $pid 2>/dev/null; do sleep 0.1; done
-  # A name the run made, while it runs: it says this machine's part.
-  seen=$(docker exec "$pg" psql -U postgres -tAc "select datname from pg_database where datname like 'plasm\_t%' and datname <> 'plasm_template' limit 1")
+  # A run killed mid-way, as a run that dies is: the next run drops what it
+  # left. PLASM_TEST_HOLD_DROP holds its first test before it drops its
+  # database, so the run is killed with one up, whatever the timing.
+  PLASM_TEST_HOLD_DROP=1 dotnet test --project "$root/tests/Plasm.Specs" --no-build -- --filter-class '*PredictableFunctional*' > /dev/null 2>&1 & pid=$!
+  # Killed once a database of this run's is up: the query that sees it reads
+  # its name, which says this machine's part (plasm_t<machine>_<pid>_<n>).
+  newest() { docker exec "$pg" psql -U postgres -tAc "select datname from pg_database where datname ~ '^plasm_t[0-9a-f]{8}_[0-9]+_[0-9]+$' limit 1"; }
+  seen=""
+  until [ -n "$seen" ] || ! kill -0 $pid 2>/dev/null; do seen=$(newest); [ -n "$seen" ] || sleep 0.05; done
   pkill -9 -f "$root/tests/Plasm.Specs/bin/" 2>/dev/null; pkill -9 -P $pid 2>/dev/null; kill -9 $pid 2>/dev/null; wait $pid 2>/dev/null
   left=$(count); run; after=$(count)
   echo "PostgreSQL runs, one killed mid-run: $left test database(s) left by it, $after after the next run"
@@ -47,6 +51,11 @@ if [ "${1:-}" = "--prove" ]; then
   # process started before it (this shell) is a run's, and kept. The killed
   # run's name gave this machine's part.
   machine=$(echo "$seen" | sed -n 's/^plasm_t\([0-9a-f]\{8\}\)_[0-9]*_[0-9]*$/\1/p')
+  if [ -z "$machine" ]; then
+    echo "PostgreSQL runs, process ids reused: not checked, and failed: the killed run ended before a database of its was seen, so this machine's part of a name is unknown"
+    exit 1
+  fi
+  echo "PostgreSQL runs: this machine's part of a test database's name is $machine (from $seen)"
   for d in reuse_a reuse_b; do docker exec "$pg" psql -U postgres -qc "create database plasm_$d" > /dev/null; done
   docker exec "$pg" psql -U postgres -qc "create database plasm_t${machine}_$$_1" > /dev/null
   sleep 2; sleep 900 & later=$!
@@ -56,6 +65,6 @@ if [ "${1:-}" = "--prove" ]; then
   kept=$(docker exec "$pg" psql -U postgres -tAc "select count(*) from pg_database where datname = 'plasm_t${machine}_$$_1'")
   kill $later 2>/dev/null; wait $later 2>/dev/null
   echo "PostgreSQL runs beside databases whose process id a later process holds, and one whose process is this check: $planted then, $after after the next run, the check's kept: $kept"
-  [ -n "$machine" ] && [ "$planted" -eq 3 ] && [ "$after" -eq 1 ] && [ "$kept" -eq 1 ] || status=1
+  [ "$planted" -eq 3 ] && [ "$after" -eq 1 ] && [ "$kept" -eq 1 ] || status=1
 fi
 exit $status

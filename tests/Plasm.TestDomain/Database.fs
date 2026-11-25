@@ -748,6 +748,12 @@ let private freshPostgres (model: Model) : Task<TestDb> =
 
         let drop () =
             task {
+                // A test-only plant (no-leftover-databases.sh --prove): the test
+                // waits here, never dropping its database, so a run killed
+                // then leaves it as a run that dies mid-test does.
+                if Environment.GetEnvironmentVariable "PLASM_TEST_HOLD_DROP" = "1" then
+                    do! Task.Delay Timeout.Infinite
+
                 do! provider.DataSource.DisposeAsync()
                 // A repo made by RepoWith has a data source of its own; FORCE
                 // ends whatever connection is still open to the database.
