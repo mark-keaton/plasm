@@ -367,8 +367,8 @@ pre.install span { color: var(--ink-3); }
 
 /* With the script: the section pins, and scrolling steps through the stops. */
 .tour.live .scrolly { margin-top: 12px; }
-.tour.live .pin { position: sticky; top: 0; height: 100vh; display: flex; align-items: center; }
-.tour.live .layout { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 20px; align-items: center; width: 100%; max-height: 100vh; }
+.tour.live .pin { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; justify-content: center; gap: 16px; padding: 12px 0; }
+.tour.live .layout { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 20px; align-items: start; width: 100%; min-height: 0; }
 .tour.live .detail { margin-top: 0; padding: 20px 22px 16px; }
 .tour.live .stop { display: none; padding: 0; border: 0; }
 .tour.live .stop.on { display: block; animation: tour-in .25s ease-out; }
@@ -377,10 +377,10 @@ pre.install span { color: var(--ink-3); }
 @keyframes tour-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes tour-sweep { from { background-size: 0 100%; } to { background-size: 100% 100%; } }
 @media (min-width: 901px) {
-  .tour.live .detail { display: flex; flex-direction: column; max-height: calc(100vh - 24px); }
+  .tour.live .detail { display: flex; flex-direction: column; max-height: calc(100vh - 40px - var(--loop-h, 140px)); }
   .tour.live .body { overflow-y: auto; min-height: 0; flex: 0 1 auto; }
 }
-@media (min-width: 901px) and (min-height: 760px) { .tour.live .body { min-height: 468px; } }
+@media (min-width: 901px) and (min-height: 820px) { .tour.live .body { min-height: 468px; } }
 
 .tour.live .tree { display: block; position: relative; padding: 12px 0 12px 34px; font: 14px/1.4 var(--mono); }
 .tour .pipe { position: absolute; left: 18px; width: 3px; border-radius: 2px; background: var(--line-2); }
@@ -423,10 +423,11 @@ pre.install span { color: var(--ink-3); }
 .tour.live .key { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 12px; font-size: 13.5px; color: var(--ink-3); }
 .tour .key i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
 
-/* The loop: the five layers in a row, the request out along the top and the
-   answer back along the bottom, a dot per stop beside its layer (tour.js). */
+/* The loop, pinned above the tree and the panel: the five layers in a row, the
+   request out along the top and the answer back along the bottom, a dot per
+   stop beside its layer (tour.js). */
 .tour .loop { display: none; }
-.tour.live .loop { display: block; container-type: inline-size; margin: -20px -22px 14px; padding: 12px 18px 10px; border-bottom: 1px solid var(--line); font: 500 11px/1.4 var(--mono); }
+.tour.live .loop { display: block; flex: none; container-type: inline-size; padding: 12px 18px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; font: 500 11px/1.4 var(--mono); }
 .tour .loop .ends { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 12px; }
 .tour .loop .cap { text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
 .tour .loop .req { color: var(--accent-ink); } .tour .loop .res { color: var(--teal-ink); }
@@ -453,6 +454,13 @@ pre.install span { color: var(--ink-3); }
 .tour .loop .badge { margin: 0; font-size: 9.5px; padding: 2px 3px; }
 .tour .loop .short, .tour .loop .badge { display: none; }
 @container (min-width: 560px) { .tour .loop .badge { display: inline; } }
+@container (min-width: 820px) {
+  .tour .loop .ends { font-size: 12px; }
+  .tour .lane .ly { font-size: 13px; gap: 6px; padding: 5px 12px; }
+  .tour .lane.sm.here .ly { padding: 4px 11px; }
+  .tour .loop .badge { font-size: 10px; padding: 2px 5px; }
+  .tour .lanes { --bend: 26px; }
+}
 @container (max-width: 379px) { .tour .loop .long { display: none; } .tour .loop .short { display: inline; } }
 .tour .loop .d { flex: none; box-sizing: border-box; width: 8px; height: 8px; border-radius: 50%; background: var(--surface); border: 1.5px solid var(--line-2); --c: var(--accent); transition: width .25s, height .25s, background .25s, box-shadow .25s; }
 .tour .loop .d.back { --c: var(--teal); } .tour .loop .d.start { --c: var(--amber-ink); }
@@ -470,8 +478,8 @@ pre.install span { color: var(--ink-3); }
 
 /* A narrow screen has a line saying where the request is, in place of the tree. */
 @media (max-width: 900px) {
-  .tour.live .pin { align-items: stretch; padding: 8px 0; }
-  .tour.live .layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); gap: 8px; align-items: stretch; }
+  .tour.live .pin { justify-content: flex-start; gap: 8px; padding: 8px 0; }
+  .tour.live .layout { flex: 1 1 0; grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); gap: 8px; align-items: stretch; }
   .tour.live .tree { display: none; }
   .tour.live .crumb:not([hidden]) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font: 500 13px/1.3 var(--mono); padding: 10px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--flow); min-width: 0; }
   .tour .crumb b { font-weight: 600; } .tour .crumb .sep { color: var(--ink-3); }

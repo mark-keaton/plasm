@@ -156,7 +156,10 @@
   window.addEventListener("scroll", function () {
     if (!waiting) { waiting = true; requestAnimationFrame(function () { waiting = false; onScroll(); }); }
   }, { passive: true });
-  window.addEventListener("resize", function () { place(); onScroll(); });
+  // The panel's height is what the pinned loop leaves of the screen.
+  function fit() { root.style.setProperty("--loop-h", loop.offsetHeight + "px"); }
+  fit();
+  window.addEventListener("resize", function () { fit(); place(); onScroll(); });
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(place);
   onScroll();
   window.addEventListener("keydown", function (e) {
