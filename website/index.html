@@ -95,10 +95,22 @@ let orderPage page size (q: Query&lt;Order&gt;) =
 
       <div class="crumb" id="tour-crumb" hidden></div>
       <div class="panel detail">
+        <div class="loop" id="tour-loop" aria-hidden="true">
+          <div class="ends"><span class="req"><span class="cap">Request →</span> POST /equipment/{id}/bookings</span><span class="at" id="tour-step"></span></div>
+          <div class="lanes">
+            <i class="track out"></i><i class="fill out"></i><i class="track back"></i><i class="fill back"></i><i class="bend"></i>
+            <div class="lane http"><span class="slot out"></span><span class="ly"><span class="long">HTTP</span><span class="short">HTTP</span></span><span class="slot back"></span></div>
+            <div class="lane cs" data-rows="program"><span class="slot out"></span><span class="ly"><span class="long">Program.cs</span><span class="short">C#</span><span class="badge">C#</span></span><span class="slot back"></span></div>
+            <div class="lane sm" data-rows="seam"><span class="slot out"></span><span class="ly"><span class="long">The seam</span><span class="short">seam</span><span class="badge">gen</span></span><span class="slot back"></span></div>
+            <div class="lane fs" data-rows="domain store booking"><span class="slot out"></span><span class="ly"><span class="long">MyApp.Data</span><span class="short">F#</span><span class="badge">F#</span></span><span class="slot back"></span></div>
+            <div class="lane db" data-rows="db"><span class="slot out"></span><span class="ly"><span class="long">Database</span><span class="short">SQL</span><span class="badge">SQL</span></span><span class="slot back"></span></div>
+          </div>
+          <div class="ends"><span class="res"><span class="cap">← Response</span></span><span class="codes"><span class="fn">.ToHttp(): </span>200 · 404 · 422 · 409 · 400</span></div>
+        </div>
         <div class="meta"><span class="dir-chip" id="tour-chip"></span><span class="path" id="tour-path"></span></div>
         <div class="body" id="tour-body" aria-live="polite">
 
-<article class="stop" data-chapter="0" data-row="program" data-path="src/MyApp.Api/Program.cs">
+<article class="stop" data-chapter="0" data-startup data-row="program" data-path="src/MyApp.Api/Program.cs">
 <h3>It starts like any ASP.NET application</h3>
 <p>A builder, services, endpoints, <code>app.Run()</code>. Nothing here is specific to Plasm, and it stays that way.</p>
 <pre class="tcode" data-lang="cs" data-as="MyApp" data-hl="1" data-from="examples/Starter/src/Starter.Api/Program.cs">var builder = WebApplication.CreateSlimBuilder(args);
@@ -108,7 +120,7 @@ var app = builder.Build();
 app.Run();</pre>
 </article>
 
-<article class="stop" data-chapter="0" data-row="program" data-path="src/MyApp.Api/Program.cs">
+<article class="stop" data-chapter="0" data-startup data-row="program" data-path="src/MyApp.Api/Program.cs">
 <h3>The data layer is one line, where AddDbContext would go</h3>
 <p>The build writes <code>AddBookingData</code> for you from the F# project. It takes its clock from the container and logs its SQL through <code>ILogger</code>.</p>
 <p>When the host starts, Plasm checks every record and every query against the real schema. If they disagree, the application stops before it serves a request.</p>

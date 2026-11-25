@@ -86,10 +86,32 @@
     dots.appendChild(b);
   });
 
+  // -- the loop: a dot per stop beside its layer, above the chip on the way
+  // down, below it on the way back. A layer's data-rows names its tree rows.
+  var loop = $("loop"), lanes = Array.prototype.slice.call(loop.querySelectorAll(".lane")), last = lanes.length - 1;
+  var marks = S.map(function (s) {
+    s.lane = -1;
+    lanes.forEach(function (l, n) { if ((l.dataset.rows || "").split(" ").indexOf(s.row) >= 0) s.lane = n; });
+    var d = document.createElement("i");
+    d.className = "d " + (s.up ? "back" : s.el.hasAttribute("data-startup") ? "start" : "out");
+    if (s.lane >= 0) lanes[s.lane].querySelector(s.up ? ".slot.back" : ".slot.out").appendChild(d);
+    return d;
+  });
+  function strip(s) {
+    var start = s.el.hasAttribute("data-startup");
+    lanes.forEach(function (l, n) { l.classList.toggle("here", n === s.lane); });
+    marks.forEach(function (d, n) { d.classList.toggle("on", n === i); d.classList.toggle("done", n < i); });
+    loop.style.setProperty("--to", start ? 0 : s.up ? last : s.lane);
+    loop.style.setProperty("--from", s.up ? s.lane : last);
+    loop.classList.toggle("turned", s.up || s.lane === last);
+    $("step").textContent = (i + 1) + " / " + N;
+  }
+
   function show(k) {
     if (k === i) return;
     i = k;
     var s = S[i];
+    strip(s);
     root.classList.toggle("up", s.up);
     Object.keys(rows).forEach(function (key) { rows[key].classList.toggle("here", s.lit.indexOf(key) >= 0); });
     $("seam").classList.toggle("on", s.seam);

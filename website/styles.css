@@ -423,6 +423,51 @@ pre.install span { color: var(--ink-3); }
 .tour.live .key { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 12px; font-size: 13.5px; color: var(--ink-3); }
 .tour .key i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
 
+/* The loop: the five layers in a row, the request out along the top and the
+   answer back along the bottom, a dot per stop beside its layer (tour.js). */
+.tour .loop { display: none; }
+.tour.live .loop { display: block; container-type: inline-size; margin: -20px -22px 14px; padding: 12px 18px 10px; border-bottom: 1px solid var(--line); font: 500 11px/1.4 var(--mono); }
+.tour .loop .ends { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 12px; }
+.tour .loop .cap { text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+.tour .loop .req { color: var(--accent-ink); } .tour .loop .res { color: var(--teal-ink); }
+.tour .loop .at, .tour .loop .codes { color: var(--ink-3); }
+.tour .lanes { --bend: 18px; position: relative; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 2px var(--bend) 2px 0; }
+.tour .lanes .track, .tour .lanes .fill { position: absolute; height: 2px; }
+.tour .lanes > .out { top: 10px; } .tour .lanes > .back { bottom: 10px; }
+.tour .lanes .track { left: 10%; right: 10%; }
+.tour .lanes .track.out { background: color-mix(in srgb, var(--accent) 30%, var(--surface)); }
+.tour .lanes .track.back { background: color-mix(in srgb, var(--teal) 30%, var(--surface)); }
+.tour .lanes .fill.out { left: 10%; width: calc(var(--to, 0) * 20%); background: var(--accent); }
+.tour .lanes .fill.back { left: calc(10% + var(--from, 4) * 20%); width: calc((4 - var(--from, 4)) * 20%); background: var(--teal); }
+.tour .lanes .fill { transition: left .5s cubic-bezier(.6,0,.2,1), width .5s cubic-bezier(.6,0,.2,1); }
+.tour .lanes .bend { position: absolute; left: 90%; right: calc(-1 * var(--bend)); top: 10px; bottom: 10px; border: 2px solid var(--line-2); border-left: 0; border-radius: 0 24px 24px 0; transition: border-color .3s; }
+.tour .loop.turned .bend { border-color: var(--teal); }
+.tour .lane { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.tour .lane .slot { position: relative; z-index: 1; height: 22px; display: flex; align-items: center; gap: 4px; }
+.tour .lane .ly { position: relative; z-index: 1; display: flex; align-items: center; gap: 4px; padding: 4px 7px; border-radius: 8px; border: 1px solid transparent; white-space: nowrap; color: var(--ink); transition: box-shadow .25s, border-color .25s; }
+.tour .lane.http .ly { background: var(--sunk); color: var(--ink-3); }
+.tour .lane.cs .ly { background: var(--amber-soft); } .tour .lane.fs .ly { background: var(--accent-soft); } .tour .lane.db .ly { background: var(--teal-soft); }
+.tour .lane.sm .ly { background: var(--surface); border: 1px dashed var(--line-2); }
+.tour .lane.here .ly { box-shadow: 0 0 0 2px var(--flow); }
+.tour .lane.sm.here .ly { box-shadow: none; border: 2px dashed var(--flow); padding: 3px 6px; }
+.tour .loop .badge { margin: 0; font-size: 9.5px; padding: 2px 3px; }
+.tour .loop .short, .tour .loop .badge { display: none; }
+@container (min-width: 560px) { .tour .loop .badge { display: inline; } }
+@container (max-width: 379px) { .tour .loop .long { display: none; } .tour .loop .short { display: inline; } }
+.tour .loop .d { flex: none; box-sizing: border-box; width: 8px; height: 8px; border-radius: 50%; background: var(--surface); border: 1.5px solid var(--line-2); --c: var(--accent); transition: width .25s, height .25s, background .25s, box-shadow .25s; }
+.tour .loop .d.back { --c: var(--teal); } .tour .loop .d.start { --c: var(--amber-ink); }
+.tour .loop .d.done { background: var(--c); border-color: var(--c); }
+.tour .loop .d.on { width: 14px; height: 14px; background: var(--c); border: 3px solid var(--surface); box-shadow: 0 0 0 2px var(--c); }
+@container (max-width: 379px) {
+  .tour .loop .at { display: none; }
+  .tour .lanes { --bend: 12px; }
+  .tour .lane .slot { gap: 2px; }
+  .tour .lane .ly { padding: 4px 6px; }
+  .tour .loop .d { width: 6px; height: 6px; }
+  .tour .loop .d.on { width: 11px; height: 11px; border-width: 2px; }
+}
+@container (max-width: 299px) { .tour .loop .fn { display: none; } }
+
 /* A narrow screen has a line saying where the request is, in place of the tree. */
 @media (max-width: 900px) {
   .tour.live .pin { align-items: stretch; padding: 8px 0; }
@@ -440,7 +485,8 @@ pre.install span { color: var(--ink-3); }
   .tour.live .key { padding-bottom: 8px; }
   .tour .dots { gap: 3px; } .tour .dots button.gap { margin-left: 5px; }
 }
+@media (max-width: 360px) { .tour .chapter { display: none; } }
 @media (prefers-reduced-motion: reduce) {
-  .tour .dot, .tour .trail, .tour .proj { transition: none; }
+  .tour .dot, .tour .trail, .tour .proj, .tour .lanes .fill, .tour .lanes .bend, .tour .lane .ly, .tour .loop .d { transition: none; }
   .tour.live .stop.on, .tour.live .stop.on pre.tcode span.hl { animation: none; }
 }
