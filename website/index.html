@@ -20,10 +20,11 @@
   <div>
     <p class="eyebrow accent">For C# applications · native AOT first, always</p>
     <h1>A stricter data layer for your C# application.</h1>
-    <p class="claim">You write the domain in one small F# project. Everything else stays C#.</p>
+    <p class="claim">Your domain types, rules and queries go in one small F# project. Your ASP.NET application calls it like any other library.</p>
     <p class="sub">ASP.NET, your host and your team's C# stay as they are. In the F# project Plasm stores immutable records, checks every query and makes every write a typed transaction. C# calls plain async methods and switches over the outcomes. All of it compiles ahead of time.</p>
     <div class="ctas">
       <a class="btn primary" href="{{docs}}">Get started</a>
+      <a class="btn" href="#why">Compare with EF Core</a>
       <a class="btn" href="koans/">Learn with the koans</a>
       <a class="btn quiet" href="{{repo}}">GitHub</a>
     </div>
@@ -56,6 +57,107 @@ let orderPage page size (q: Query&lt;Order&gt;) =
 <div id="prompt">
 <!--prompt-->
 </div>
+  </div>
+</section>
+
+<section class="band" id="why">
+  <div class="wrap why">
+    <div class="lede">
+      <p class="eyebrow teal">Why not EF Core?</p>
+      <h2>The same endpoint, both ways</h2>
+      <p>Book a piece of equipment for someone. It can be missing, out of service, already taken, changed by someone else since you read it, or the request can be invalid. Both versions handle all of that. The difference is who remembers to.</p>
+    </div>
+
+    <div class="vs">
+      <figure class="side ef">
+        <figcaption><b>EF Core 11</b><span>Program.cs, beside the model's classes and configuration</span></figcaption>
+        <div class="codes">
+<pre>app.MapPost("/equipment/{id:guid}/bookings", async (
+    Guid id, NewBooking input, AppDb db, CancellationToken ct) =&gt;
+{
+    if (string.IsNullOrWhiteSpace(input.Who))
+        return Results.UnprocessableEntity(new { code = "WhoRequired" });
+    if (input.Until &lt;= input.From)
+        return Results.UnprocessableEntity(new { code = "EndsBeforeItStarts" });
+
+    var equipment = await db.Equipment.Include(e =&gt; e.Bookings)
+        .SingleOrDefaultAsync(e =&gt; e.Id == id, ct);
+    if (equipment is null) return Results.NotFound();
+<span class="hl">    if (equipment.OutOfServiceReason is not null)               // ③</span>
+        return Results.UnprocessableEntity(new { code = "NotAvailable" });
+
+    var taken = equipment.Bookings.FirstOrDefault(
+        b =&gt; b.From &lt; input.Until &amp;&amp; input.From &lt; b.Until);
+    if (taken is not null)
+        return Results.UnprocessableEntity(new { code = "AlreadyBooked" });
+
+    db.Entry(equipment).Property(e =&gt; e.Version).OriginalValue = input.Version;
+<span class="hl">    equipment.Version++;                                        // ②</span>
+    equipment.Bookings.Add(new Booking { /* … */ });
+<span class="hl">    try { await db.SaveChangesAsync(ct); }                      // ①
+    catch (DbUpdateConcurrencyException) { return Results.Conflict(); }</span>
+    return Results.Ok(ToView(equipment));
+});</pre>
+        </div>
+        <ol class="notes">
+          <li><i>①</i><span><b>Forget the catch and it still compiles.</b> A stale write becomes a 500 at run time.</span></li>
+          <li><i>②</i><span><b>Remove <code>Version++</code> and it still compiles.</b> Two people can then book the same hour at once: both read the same version, and with only a booking added, neither save writes the equipment's row, so neither sees the other.</span></li>
+          <li><i>③</i><span><b>Out of service is two nullable columns.</b> A reason without a date can be saved; nothing stops it.</span></li>
+        </ol>
+      </figure>
+
+      <figure class="side plasm">
+        <figcaption><b>Plasm</b><span>Program.cs, BookingData.fs and Domain.fs</span></figcaption>
+        <div class="codes">
+          <p class="file">Program.cs · C#</p>
+<pre data-as="MyApp" data-from="examples/Starter/src/Starter.Api/Program.cs">app.MapPost("/equipment/{id:guid}/bookings", (Guid id, NewBooking input, BookingData d, CancellationToken ct) =&gt;
+    d.BookAsync(id, input, ct).ToHttp());</pre>
+          <p class="file">BookingData.fs · F#</p>
+<pre data-from="examples/Starter/src/Starter.Data/BookingData.fs">let rule = Equipment.book booking request.Who from until
+repo.Change(Db.byId id, request.Version, rule, cancellationToken)</pre>
+          <p class="file">Domain.fs · F#: the state, and the rule as a plain function</p>
+<pre data-from="examples/Starter/src/Starter.Data/Domain.fs">type Condition =
+    | Available
+    | OutOfService of reason: string * since: DateTimeOffset
+// ...
+let book (id: BookingId) (who: string) (from: DateTimeOffset) (until: DateTimeOffset) (equipment: Equipment) =
+    if String.IsNullOrWhiteSpace who then
+        Error WhoRequired
+    elif until &lt;= from then
+        Error EndsBeforeItStarts
+    else
+        match equipment.Condition with
+        | OutOfService(reason, _) -&gt; Error(NotAvailable reason)
+        | Available -&gt;
+// ...</pre>
+        </div>
+        <ol class="notes">
+          <li><i>①</i><span><b>Every outcome is a case of a C# union.</b> <code>ToHttp()</code> is a switch with no default; leave a case out and the build fails.</span></li>
+          <li><i>②</i><span><b>The version is checked and advanced on every change,</b> even one that only adds a booking, so the second of two simultaneous bookings is <code>Stale</code> (409).</span></li>
+          <li><i>③</i><span><b>Out of service always has its reason and date.</b> The half-and-half state can't be written.</span></li>
+        </ol>
+      </figure>
+    </div>
+
+    <h3>Where they differ</h3>
+    <div class="table-box">
+      <table class="compare differ">
+        <thead><tr><th scope="col">When…</th><th scope="col">EF Core</th><th scope="col">Plasm</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">An endpoint misses a failure</th><td>Compiles. Exceptions and null checks are yours to remember.</td><td class="win">The build fails: every outcome is a union case, and the switch has no default.</td></tr>
+          <tr><th scope="row">Someone changed it first</th><td>A concurrency token, and a <code>DbUpdateConcurrencyException</code> to catch. The token is checked only when the parent's own row is written, so when you only add a child, a change made between your read and your save is missed unless you bump the version yourself.</td><td class="win">The version is checked and advanced on every change and comes back as <code>Stale</code> (409).</td></tr>
+          <tr><th scope="row">A state should not exist</th><td>Nullable columns and validation you write; nothing stops a bad combination being saved.</td><td class="win">Unions and private constructors: the bad state cannot be built, so it cannot be written.</td></tr>
+          <tr><th scope="row">A query cannot be translated</th><td><code>InvalidOperationException</code> when the query first runs.</td><td class="win">Every query is translated and checked against the schema at start-up, before the first request.</td></tr>
+          <tr><th scope="row">Lists are loaded with a record</th><td><code>Include</code>; a cartesian product unless you choose <code>AsSplitQuery</code>. Lazy loading is opt-in.</td><td class="win">One command per list for a whole page of records. No lazy loading, no cartesian product.</td></tr>
+          <tr><th scope="row">Publishing native AOT</th><td>Precompiled queries, which its documentation calls highly experimental.</td><td class="win">Supported: no warnings from Plasm, measured on AWS Lambda.</td></tr>
+          <tr><th scope="row">The schema changes</th><td class="win">Migrations, generated and applied for you.</td><td>Plasm prints the DDL and checks the schema at start; you apply changes with your own tool.</td></tr>
+          <tr><th scope="row">You want to write queries in C#</th><td class="win">LINQ, in C#, anywhere.</td><td>Queries are written in F#, in the data project.</td></tr>
+          <tr><th scope="row">You need another database</th><td class="win">Many providers: SQL Server, PostgreSQL, SQLite, MySQL, Oracle, Cosmos DB and more.</td><td>PostgreSQL and SQLite.</td></tr>
+          <tr><th scope="row">You need the ecosystem</th><td class="win">Identity stores, OData, scaffolding, years of answers and books.</td><td>Young: one project, its docs and its examples.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small">Teal marks the side that does better on that row; EF Core leads on the last four. <a href="docs/comparison.html">The longer comparison, written for F# developers</a></p>
   </div>
 </section>
 
